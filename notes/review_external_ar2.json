@@ -1,0 +1,148 @@
+{
+  "events": [
+    {
+      "id": "395349fe",
+      "verdict": "confirmed",
+      "queries_tried": [
+        "heavy rain flooding India Bangladesh Myanmar August 19 2026 cyclone Bay of Bengal",
+        "reliefweb Bangladesh Myanmar flooding August 2026 monsoon update flash flood",
+        "reliefweb Flash Update Ayeyarwady Kayin Myanmar 19 August 2026",
+        "IMD press release 19 August 2026 (internal.imd.gov.in press release index)"
+      ],
+      "evidence": [
+        {
+          "source": "AHA Centre (ASEAN) via ReliefWeb",
+          "url": "https://reliefweb.int/report/myanmar/flash-update-no-1-flooding-ayeyarwady-and-kayin-myanmar-19-august-2026",
+          "date": "2026-08-19",
+          "quote": "Heavy and continuous rainfall since 30 July 2026 triggered flooding in several areas in Myanmar... severe weather resulted to flooding and riverbank erosion that caused a breach in the Ngawun River embankment in Laymyethna Township, Ayeyarwady Region, which resulted in flooding of five urban wards, major roads, and 150 surrounding villages... Ayeyarwady Region: Affected townships Laymyethna, Hinthada, Yekyi, and Kyangin; 63K affected population; 15K displaced households."
+        },
+        {
+          "source": "AHA Centre (ASEAN)",
+          "url": "https://ahacentre.org/flash-update/flash-update-no-1-flooding-in-ayeyarwady-and-kayin-myanmar-19-august-2026/",
+          "date": "2026-08-19",
+          "quote": "FLASH UPDATE: No. 1 - Flooding in Ayeyarwady and Kayin, Myanmar - 19 August 2026. OVERVIEW: Heavy and continuous rainfall since 30 July 2026 triggered flooding in several areas in Myanmar... In Kayin State, DDM reported displaced households and a casualty due to overflowing of the Thanlwin River."
+        },
+        {
+          "source": "AHA Centre via ReliefWeb (context; monsoon regime just after window)",
+          "url": "https://reliefweb.int/report/lao-peoples-democratic-republic/flash-update-no-1-tropical-cyclone-narra-and-southwest-monsoon-countries-under-monitoring-lao-pdr-myanmar-thailand-viet-nam-sunday-23-august-2026-1200-hrs-utc-7",
+          "date": "2026-08-23",
+          "quote": "A monsoon trough extending across the upper North of Thailand and upper Lao PDR, combined with a strong Southwest Monsoon over the Bay of Bengal, Andaman Sea, and the Gulf of Thailand, is prevailing across mainland Southeast Asia. Over the Gulf of Tonkin, Tropical Cyclone NARRA is tracking near the northern Vietnam coast... bringing thunderstorms and heavy rainfall across Lao PDR, Myanmar, Thailand, and Viet Nam."
+        },
+        {
+          "source": "India Meteorological Department (press release index)",
+          "url": "https://internal.imd.gov.in/pages/press_release_mausam.php",
+          "date": "2026-08-19",
+          "quote": "PRESS RELEASE DATED: 19TH AUGUST 2026 ISOLATED HEAVY TO VERY HEAVY RAINFALL ALSO LIKELY OVER WESTERN HIMALAYAN REGION ON TODAY, THE 19TH AUGUST, 2026. / PRESS RELEASE DATED: 20TH AUGUST 2026 UNDER THE INFLUENCE OF WELL-MARKED LOW PRESSURE AREA OVER NORTHEAST MADHYA PRADESH & NEIGHBOURHOOD, ISOLATED HEAVY TO VERY HEAVY RAIN [over east Madhya Pradesh on 20-21 Aug]. (Note: these monsoon-low releases are India-wide; the Bay of Bengal/Myanmar/Indochina part of the bbox is covered by the AHA Centre updates.)"
+        }
+      ]
+    },
+    {
+      "id": "9700e4af",
+      "verdict": "confirmed",
+      "queries_tried": [
+        "atmospheric river California heavy rain flooding late September 2026",
+        "\"September 29\" OR \"September 30\" OR \"October 1\" 2026 atmospheric river California Oregon Washington heavy rain NWS flood watch",
+        "WPC 2026 storm summaries (wpc.ncep.noaa.gov)"
+      ],
+      "evidence": [
+        {
+          "source": "NOAA Weather Prediction Center",
+          "url": "https://www.wpc.ncep.noaa.gov/storm_summaries/storm_summaries.shtml",
+          "date": "2026-10-02",
+          "quote": "September 29-October 02, 2026 - Southwest to Central U.S. Heavy Rainfall"
+        },
+        {
+          "source": "NOAA Weather Prediction Center (storm summary archive)",
+          "url": "https://www.wpc.ncep.noaa.gov/storm_summaries/storm18/storm18_archive.shtml",
+          "date": "2026-10-02",
+          "quote": "Storm Summary 1 issued at 15Z Tuesday September 29, 2026 ... Storm Summary 7 issued at 15Z Friday October 02, 2026."
+        },
+        {
+          "source": "NWS Quad Cities (weather.gov)",
+          "url": "https://www.weather.gov/dvn/summary_EndSept_HeavyRain",
+          "date": "2026-10-02",
+          "quote": "Following a stretch of heavy rain and flooding in mid-September another round of heavy rain brought more flooding to end the month and begin October. This round of heavy rain was driven by the remnants of Hurricane Polo and a slow-moving frontal boundary. ... Much of the area received between 1-3\" of rain from when it started on September 29th to when it ended on October 1st. Areas from around Washington, Wapello and Aledo through the Quad Cities received 3-5\"... flooding of several creeks, streams and rivers that led to road closures."
+        },
+        {
+          "source": "CBS News",
+          "url": "https://www.cbsnews.com/news/tropical-storm-polo-path-tracking-forecast/",
+          "date": "2026-09-30",
+          "quote": "100 million under flood alerts in U.S. after Polo slams Mexico... The remnants of former Hurricane Polo are expected to bring heavy rain and flooding to parts of the southern and midwestern [US]. Flood watches extended more than 1,200 miles across the center of the U.S. on Wednesday."
+        }
+      ]
+    },
+    {
+      "id": "029719d1",
+      "verdict": "confirmed",
+      "queries_tried": [
+        "southeast Australia heavy rain flooding early October 2026 BOM Victoria NSW"
+      ],
+      "evidence": [
+        {
+          "source": "ABC News (Australia) meteorologist Tom Saunders",
+          "url": "https://www.abc.net.au/news/2026-10-02/floods-storms-forecast-south-east-australia-after-dry-spetember/107217872",
+          "date": "2026-10-02",
+          "quote": "A major rain and storm event intensifying across south-east Australia could trigger flooding during the next 48 hours... for many areas, even heavier rain is still to come as a stream of tropical moisture feeds into a low-pressure system over the southern Murray Basin. The system is notable for its slow movement... focus across northern and eastern Victoria, along with the south-east corner of New South Wales. ... Melbourne only picked up 18mm last month, but was soaked by 20mm in just one hour on Thursday afternoon."
+        },
+        {
+          "source": "Bureau of Meteorology severe weather warning (via EWN alert mirror)",
+          "url": "https://ewn.com.au/alerts/alert.aspx?alerturl=vic-severe-weather-warning-heavy-rainfall-730588",
+          "date": "2026-10-03",
+          "quote": "Source: Bureau of Meteorology. A low pressure system is expected to linger over eastern parts of the state during Saturday... HEAVY RAINFALL which may lead to FLASH FLOODING is forecast during the remainder of Saturday and into early Sunday. For GEELONG and the OTWAYS: 6-hourly rainfall totals between 35 and 55 mm are likely... 24-hourly totals between 60 and 90 mm are likely, with isolated falls up to 150 mm possible about elevated parts of the Otways."
+        },
+        {
+          "source": "Weatherzone",
+          "url": "https://www.weatherzone.com/au/news/heavy-rainfall-event-developing-in-victoria/1891584",
+          "date": "2026-10-01",
+          "quote": "Rain is spreading into Victoria from southern New South Wales and the southeastern corner of South Australia... The first of a series of troughs is crossing Victoria this Thursday. This system is tapping into tropical moisture which has travelled all the way across the continent from the Indian Ocean. The BoM issued an initial flood watch for parts of the Gippsland, North East And Central forecast districts as early as Wednesday ahead of this system."
+        },
+        {
+          "source": "The Guardian (AAP)",
+          "url": "https://www.theguardian.com/australia-news/2026/oct/03/victoria-flood-watch-weather-rain-thunderstorms-forecast-nsw",
+          "date": "2026-10-03",
+          "quote": "Flood watch for most of Victoria as heavy rain continues, with storms forecast in parts of NSW. BoM expects falls of up to 90mm in parts of Victoria as severe weather system continues to sweep the southern states... A severe weather system continues to dump heavy rain into sodden riverine catchments across Victoria."
+        },
+        {
+          "source": "The New Daily",
+          "url": "https://www.thenewdaily.com.au/news/state/vic/2026-10-02/heavy-rain-smashes-victoria",
+          "date": "2026-10-02",
+          "quote": "Some places in Victoria had a month's worth of rain in just one day, according to the Bureau of Meteorology, with the worst-hit areas recording more than 50 millimetres in the 24 hours to 8am on Friday... The storms cut power to around 6000 homes across Victoria overnight, while the State Emergency Service responded to nearly 200 calls for help."
+        }
+      ]
+    },
+    {
+      "id": "66b5b9f6",
+      "verdict": "confirmed",
+      "queries_tried": [
+        "North Sea Scandinavia storm rain October 14-17 2026 Baltic flooding"
+      ],
+      "evidence": [
+        {
+          "source": "Bundesamt fuer Seeschifffahrt und Hydrographie (BSH, German Federal Maritime and Hydrographic Agency)",
+          "url": "https://www.bsh.de/DE/THEMEN/Wasserstand_und_Gezeiten/Sturmfluten/_Anlagen/Downloads/Ostsee_Sturmflut_20261018.pdf?__blob=publicationFile&v=3",
+          "date": "2026-10-18",
+          "quote": "Sturmflut an der deutschen Ostseekueste vom 17. bis 18. Oktober 2026. Zusammenfassung: Am 17. und 18. Oktober 2026 fuehrte anhaltend starker bis stuermischem Wind aus Nord und Nordost zu einer Sturmflut an der deutschen Ostseekueste... Am Freitag, dem 16.10.2026 um 07:17 Uhr, veroeffentlichte das BSH eine Vorabinformation. [Luebeck recorded 'Mittlere Sturmflut' 125 cm; Rostock 'Sturmflut' 113 cm.]"
+        },
+        {
+          "source": "Sweden Herald (TT News Agency), reporting SMHI",
+          "url": "https://swedenherald.com/article/smhi-issues-flooding-warning-for-skanes-south-coast-as-water-levels-rise",
+          "date": "2026-10-16",
+          "quote": "SMHI has issued a yellow warning for high water levels along Skane's southern coast. The high water level combined with windy weather creates a local risk of flooding and erosion. The warning is valid from 7 p.m. on Saturday to 7 a.m. on Sunday, from the Oresund Bridge to Simrishamn... There is a yellow warning for gale-force winds in the southern, southeastern, central and northern Baltic Sea."
+        },
+        {
+          "source": "Meteoalarm (EUMETNET) via Global Incident Tracker",
+          "url": "https://globalincidenttracker.com/incident/wind-level-1-northern-baltic-sea-265505",
+          "date": "2026-10-15",
+          "quote": "Official severe-weather warning issued by the national meteorological service of Estonia for Northern Baltic Sea. Warning level: Moderate. Valid from 2026-10-15T22:00 to 2026-10-16T23:00."
+        },
+        {
+          "source": "Copernicus Climate Change Service (ERA5-based monthly bulletin)",
+          "url": "https://climate.copernicus.eu/precipitation-relative-humidity-soil-moisture-and-river-flow-october-2026",
+          "date": "2026-11-05",
+          "quote": "Wetter-than-average conditions across the three indicators occurred in... northern Germany, southern Scandinavia... Severe low-pressure systems brought intense and widespread rainfall and triggered flash flooding across several regions, particularly during the second half of the month... Above-average flows were most widespread in... Scandinavia."
+        }
+      ]
+    }
+  ],
+  "summary": "All 4 ERA5-detected AR events for Aug-Oct 2026 cross-check against independent official/agency sources. 395349fe (Aug 19-21): confirmed - ongoing monsoon-trough flooding in Myanmar/Lao PDR (AHA Centre flash updates of 19 Aug) and IMD monsoon-low press releases; peak IVT 1298 kg/m/s is plausible for the BoB/SCS monsoon flow but near a late-window tropical cyclone (NARRA, 23-26 Aug), so minor TC-circulation contamination cannot be excluded (below the 2000 flag threshold). 9700e4af (Sep 28-Oct 1): confirmed by NOAA WPC storm summary 'September 29-October 02, 2026 - Southwest to Central U.S. Heavy Rainfall' (7 issued summaries) and NWS/WFO summaries - but the moisture plume was tropical-origin (remnants of ex-Cat-5 Hurricane Polo + frontal boundary) affecting the Southwest/Central US rather than a classic BC/West-coast landfall; peak IVT 1785 kg/m/s is high but sub-threshold, with possible contamination from Polo's remnants over Mexico (bbox includes Polo track). 029719d1 (Sep 29-Oct 3): confirmed by BOM severe weather warnings and Australian media (ABC, Guardian, Weatherzone): 48-90 mm daily totals, flood watch over most of Victoria Oct 1-3; IVT 715 plausible; note event followed record-dry September (Copernicus/ABC). 66b5b9f6 (Oct 14-17): confirmed - Baltic gale/storm-surge sequence building Oct 15-16 (Estonian SMHI/Meteoalarm, SMHI yellow warnings for Skane, BSH Vorabinformation 16 Oct) peaking as the first autumn 'mittlere Sturmflut' on the German Baltic coast Oct 17-18 (end of window); Copernicus October bulletin confirms wet anomaly over N Germany/southern Scandinavia; IVT 815 plausible. No peak IVT exceeds the 2000 kg/m/s TC-contamination flag threshold; 9700e4af is flagged as near-threshold with documented tropical-remnant influence in-bbox."
+}

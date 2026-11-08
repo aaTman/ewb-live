@@ -1,0 +1,304 @@
+{
+  "events": [
+    {
+      "id": "bdb9bb08",
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "source": "ICPAC Greater Horn of Africa Weekly Climate Outlook (11-18 Aug 2026)",
+          "url": "https://icpac.net/weekly-forecast/11-august-2026-18-august-2026",
+          "date": "2026-08-11",
+          "quote": "Elevated heat stress within the 'Danger' category expected over parts of the Afar region in Ethiopia extending into parts of central Eritrea, isolated areas along the coastline of Eritrea and a few pockets over both northern Sudan... Warmer than usual temperatures expected over most parts of the GHA."
+        },
+        {
+          "source": "ICPAC Greater Horn of Africa Weekly Climate Outlook (19-26 Aug 2026)",
+          "url": "https://icpac.net/weekly-forecast/19-august-2026-26-august-2026",
+          "date": "2026-08-19",
+          "quote": "Elevated temperatures exceeding 32°C expected over... north-eastern parts of Ethiopia... Elevated heat stress within the 'Danger' category expected over parts of the Afar region in Ethiopia extending into parts of central Eritrea."
+        }
+      ],
+      "queries_tried": ["Ethiopia Eritrea heat wave August 2026 temperatures", "reliefweb.int Global Weather Hazards Summary August 2026 abnormal heat Ethiopia Eritrea Sudan"]
+    },
+    {
+      "id": "64a046c1",
+      "verdict": "context",
+      "evidence": [
+        {
+          "source": "FEWS NET / NOAA CPC, Global Weather Hazards Summary (ReliefWeb), 27 Aug-2 Sep 2026",
+          "url": "https://reliefweb.int/report/world/global-weather-hazards-summary-august-27-2026-september-2-2026",
+          "date": "2026-08-26",
+          "quote": "Abnormal heat is anticipated across the Sahel region of West Africa and extending into Eastern Africa... In the coming week, abnormal heat is expected across parts of northern Algeria, parts of Sudan, South Sudan, northwestern and eastern Ethiopia, and western Eritrea."
+        },
+        {
+          "source": "ICPAC Weekly Climate Outlook (26 Aug-02 Sep 2026)",
+          "url": "https://icpac.net/weekly-forecast/26-august-02-september-2026",
+          "date": "2026-08-26",
+          "quote": "Elevated heat stress within the 'Danger' category expected over parts of the Afar region in Ethiopia extending into parts of central Eritrea... 'Extreme Caution' over most parts of South Sudan, Sudan, Eritrea, Djibouti, central to northern Somalia and north-eastern regions of Ethiopia."
+        }
+      ],
+      "queries_tried": ["Ethiopia Eritrea heat wave August 2026 temperatures", "reliefweb.int Global Weather Hazards Summary August 2026 abnormal heat"]
+    },
+    {
+      "id": "971b7528",
+      "verdict": "context",
+      "evidence": [
+        {
+          "source": "INMET weekly forecast note, 31 Aug 2026",
+          "url": "https://portal.inmet.gov.br/noticias/previs%C3%A3o-para-ter%C3%A7a-feira-01-e-quarta-feira-02",
+          "date": "2026-08-31",
+          "quote": "o calor intenso persiste no Norte e Nordeste... O calor será intenso no sul da Amazônia. A mínima será de 22 °C em Rio Branco (AC), mas a máxima alcança 39 °C em Palmas (TO) e Porto Velho (RO)."
+        },
+        {
+          "source": "CariCOF / RCC-FCT Heat Outlook for September 2026 to February 2027",
+          "url": "https://rcc.cimh.edu.bb/files/2026/09/CariCOF_Heat_Outlook_September2026_to_February2027.pdf",
+          "date": "2026-09",
+          "quote": "September to November 2026 is forecast to likely be at least as warm as usual, with intense night-time and daytime heat expected, especially in September (in the Guianas: September & October)... High to extremely high potential [of hot-spell days] in most areas of the Guianas."
+        },
+        {
+          "source": "4 Billion Years On - Venezuela climate update (NCEI/ERA5-based national stats)",
+          "url": "https://4billionyearson.org/climate/venezuela",
+          "date": "2026-10 (data through Sep 2026)",
+          "quote": "Venezuela has recorded its warmest July to September period in 87 years of records, capping off a spell of unseasonable heat across northern South America... The relentless heat is being reinforced by a strong El Niño."
+        }
+      ],
+      "queries_tried": ["Venezuela Guianas Suriname heat wave August September 2026 record temperature", "onda de calor Amazônia Roraima setembro 2026 INMET recorde temperatura"]
+    },
+    {
+      "id": "eecddeca",
+      "verdict": "context",
+      "evidence": [
+        {
+          "source": "FEWS NET / NOAA CPC, Global Weather Hazards Summary (ReliefWeb), 10-16 Sep 2026",
+          "url": "https://reliefweb.int/report/world/global-weather-hazards-summary-september-10-2026-september-16-2026",
+          "date": "2026-09-10",
+          "quote": "El Niño is strengthening. Abnormal heat continues to threaten many parts of northern and eastern Africa, Hispaniola, Central America, and northern South America."
+        },
+        {
+          "source": "FEWS NET / NOAA CPC, Global Weather Hazards Summary (ReliefWeb), 3-9 Sep 2026",
+          "url": "https://reliefweb.int/report/world/global-weather-hazards-summary-september-3-september-9-2026",
+          "date": "2026-09-03",
+          "quote": "abnormal heat is expected across northern and central Morocco, Western Sahara, western Mauritania, parts of Sudan, South Sudan, DR Congo, Uganda, western and eastern Ethiopia, and western Eritrea."
+        }
+      ],
+      "queries_tried": ["ReliefWeb Global Weather Hazards Summary September 2026 Ethiopia Kenya Uganda abnormal heat"]
+    },
+    {
+      "id": "bace10fe",
+      "verdict": "context",
+      "evidence": [
+        {
+          "source": "INMET - Destaques Climáticos de Setembro 2026 (monthly highlights)",
+          "url": "https://portal.inmet.gov.br/uploads/notastecnicas/Destaques-Setembro.pdf",
+          "date": "2026-10",
+          "quote": "O mês de setembro de 2026 foi marcado por temperaturas elevadas em grande parte do Brasil, especialmente nos estados de Amazonas, Roraima e Pará na Região Norte."
+        },
+        {
+          "source": "Climatempo (INMET data) - record heat in Manaus",
+          "url": "https://www.climatempo.com.br/noticia/norte/chuva-nos-proximos-dias-alivia-o-calor-de-41c-no-norte-do-brasil",
+          "date": "2026-09-24",
+          "quote": "No dia 22 de setembro, a temperatura chegou a 39,4°C [em Manaus]... Pelo histórico de dados do INMET, foi a maior temperatura na capital do Amazonas, para um dia de setembro, desde os anos 1990."
+        }
+      ],
+      "queries_tried": ["onda de calor Amazônia Roraima setembro 2026 INMET recorde temperatura"]
+    },
+    {
+      "id": "457f3f87",
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "source": "Newsweek",
+          "url": "https://www.newsweek.com/heat-dome-12-states-dangerous-weather-alerts-12449300",
+          "date": "2026-09-16",
+          "quote": "A powerful heat dome [moving into] South and South-Central regions of the United States starting September 16, bringing potentially 'record-challenging' temperatures and dangerous humidity to at least 12 states [incl. Kansas, Kentucky, Louisiana, Mississippi, Missouri, Oklahoma, Tennessee, Texas]."
+        },
+        {
+          "source": "NWS Norman OK Area Forecast Discussion",
+          "url": "https://forecast.weather.gov/product.php?format=CI&glossary=0&issuedby=OUN&product=AFD&site=GUM&version=12",
+          "date": "2026-09-14",
+          "quote": "The relentless heat wave will continue on Tuesday and Wednesday with the Southern Plains on the western periphery of the ~595+ dam subtropical ridge... high temperatures in the mid 90s to the mid 100s deg F, which is ~15 deg F above normal for mid-September."
+        },
+        {
+          "source": "Weather.com",
+          "url": "https://weather.com/2026-09-17/forecast/regional/record-september-heat-wave-texas",
+          "date": "2026-09-17",
+          "quote": "A heat dome currently sits across the Southern Plains and lower Mississippi Valley, bringing more brutal heat to the region for the next few days. Several cities could break daily record highs this weekend."
+        },
+        {
+          "source": "Nature World News (summarizing NASA Earth Observatory / NWS / CPC)",
+          "url": "https://www.natureworldnews.com/articles/73329/20260922/fall-arrives-southern-plains-stay-hot-after-heat-dome-pushed-september-12-degrees-above-normal.htm",
+          "date": "2026-09-22",
+          "quote": "A persistent heat dome made the first half of the month the hottest on record for dozens of cities, including Austin, Dallas, Oklahoma City... NASA's Earth Observatory captured the event in a modeled temperature map for 4 p.m. Central Time on Sept. 15... More than 41 million people... were under an NWS extreme heat advisory, watch or warning that day."
+        }
+      ],
+      "queries_tried": ["Texas Oklahoma heat wave September 2026 NWS excessive heat"]
+    },
+    {
+      "id": "47275382",
+      "verdict": "context",
+      "evidence": [
+        {
+          "source": "FEWS NET / NOAA CPC, Global Weather Hazards Summary (ReliefWeb), 17-23 Sep 2026",
+          "url": "https://reliefweb.int/report/world/global-weather-hazards-summary-september-17-2026-september-23-2026",
+          "date": "2026-09-17",
+          "quote": "El Niño is strengthening. Abnormal heat continues to threaten parts of northern and eastern Africa, Hispaniola, Central America, and northern South America."
+        }
+      ],
+      "queries_tried": ["ReliefWeb Global Weather Hazards Summary September 2026 Ethiopia abnormal heat"]
+    },
+    {
+      "id": "8a462d8d",
+      "verdict": "context",
+      "evidence": [
+        {
+          "source": "FEWS NET / NOAA CPC, Global Weather Hazards Summary (ReliefWeb), 24-30 Sep 2026",
+          "url": "https://reliefweb.int/report/world/global-weather-hazards-summary-september-24-2026-september-30-2026",
+          "date": "2026-09-24",
+          "quote": "In the coming week, abnormal heat is expected in western Morocco, Western Sahara, eastern Niger, central Chad, Sudan, South Sudan, northern Uganda, northwestern Kenya, and northeastern Ethiopia."
+        }
+      ],
+      "queries_tried": ["ReliefWeb Global Weather Hazards Summary September 2026 Ethiopia abnormal heat"]
+    },
+    {
+      "id": "e7fa2290",
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "source": "FEWS NET / NOAA CPC, Global Weather Hazards Summary (ReliefWeb), 24-30 Sep 2026",
+          "url": "https://reliefweb.int/report/world/global-weather-hazards-summary-september-24-2026-september-30-2026",
+          "date": "2026-09-24",
+          "quote": "In the coming week, abnormal heat is expected in... Sudan, South Sudan, northern Uganda, northwestern Kenya, and northeastern Ethiopia [defined as] maximum temperatures forecast to exceed the 90th percentile for at least three consecutive days. Drought has been declared across western Sudan, southern/southeastern South Sudan, northern Uganda and parts of Ethiopia's northern, eastern and central regions."
+        }
+      ],
+      "queries_tried": ["ReliefWeb Global Weather Hazards Summary September 24 2026", "Ethiopia heat wave September 2026 Afar ReliefWeb EMA alert"]
+    },
+    {
+      "id": "08cf5a90",
+      "verdict": "context",
+      "evidence": [
+        {
+          "source": "INMET Informativo Meteorológico Semanal nº 40/2026 (observed 30 Sep-4 Oct, outlook 5-12 Oct)",
+          "url": "https://portal.inmet.gov.br/uploads/informartivos/Informativo-Semanal-40.pdf",
+          "date": "2026-10-05",
+          "quote": "Na Região Norte, as temperaturas máximas variaram entre 30 °C e 41 °C... máximas esperadas variam entre 30°C e 42°C com pontuais de até 44°C [semana de 5 a 9 de outubro]."
+        },
+        {
+          "source": " Cemaden/Gov.br Painel El Niño, Boletim Mensal nº 05 (Outubro 2026)",
+          "url": "https://www.gov.br/cemaden/pt-br/assuntos/monitoramento/el-nino/boletim-do-painel-el-nino-ndeg-05-outubro-de-2026-potenciais-impactos-e-orientacoes/painel-el-nino-boletim-05-outubro-2026.pdf/@@download/file",
+          "date": "2026-10",
+          "quote": "a calha do rio Negro/Branco, ao norte da Amazônia é o destaque das secas... A área com seca grave (S2) dobrou de 4% para 8% entre agosto e setembro. O grande destaque... foi o expressivo aumento do número de incêndios florestais, sobretudo no estado do Amazonas, incluindo áreas em torno da capital Manaus."
+        },
+        {
+          "source": "G1 globo (Rio Negro drought at Manaus)",
+          "url": "https://g1.globo.com/am/amazonas/noticia/2026-10-02/rio-negro-esta-quase-4-metros-abaixo-do-nivel-registrado-no-mesmo-periodo-de-2025-em-manaus.ghtml",
+          "date": "2026-10-02",
+          "quote": "O Rio Negro em Manaus atingiu 18,59 metros nesta quinta-feira (2), ficando 3,85 metros abaixo do registrado em 2025. A estiagem pôs 22 municípios em emergência."
+        }
+      ],
+      "queries_tried": ["Amazon drought heat wave October 2026 Roraima Brazil INMET record heat", "INMET outubro 2026 calor acima da média Amazônia"]
+    },
+    {
+      "id": "559d8626",
+      "verdict": "context",
+      "evidence": [
+        {
+          "source": "FEWS NET / NOAA CPC, Global Weather Hazards Summary (ReliefWeb), 15-21 Oct 2026",
+          "url": "https://reliefweb.int/report/world/global-weather-hazards-summary-october-15-2026-october-21-2026",
+          "date": "2026-10-15",
+          "quote": "Long-term abnormal dryness and abnormal heat persist across areas of Africa... Abnormal heat is forecast in southern Chad, eastern CAR, southern Sudan, South Sudan, and northwestern Uganda... as well-above-average temperatures are expected to persist for 3 or more consecutive days."
+        },
+        {
+          "source": "NOAA CPC / FEWS NET Africa Hazard Outlook, 22-28 Oct 2026",
+          "url": "https://cpc.ncep.noaa.gov/products/international/globalweatherhazard/Current.pdf",
+          "date": "2026-10-22",
+          "quote": "Hotter than average temperatures observed across the western parts of East Africa are expected to continue into next week. Abnormal heat risk is expected in areas where maximum temperatures are forecast to exceed the 90th percentile for at least three consecutive days."
+        }
+      ],
+      "queries_tried": ["Ethiopia Sudan heat October 2026 abnormal heat hazards"]
+    },
+    {
+      "id": "88bb73d7",
+      "verdict": "none found",
+      "evidence": [],
+      "queries_tried": ["Greenland cold snap October 2026 ice sheet freezing temperatures anomaly", "Greenland cold October 2026 DMI Polar Portal freeze refreeze ice sheet early cold", "C3S Copernicus climate bulletin October 2026 global temperature highlights"]
+    }
+  ],
+  "missed": [
+    {
+      "description": "Record-shattering East Asia heatwave: South Korea all-time record 42.5C at Yangsan (2 Aug), ~1.2M livestock dead, 3,445 heat illnesses/31 deaths by 18 Aug; Japan's first-ever 'kokushobi' (>40C) days; Hong Kong 39.8C (9 Aug, station-record era high); Xinjiang station hit 50C in July.",
+      "region": "South Korea / Japan / Hong Kong / eastern China",
+      "dates": "late July - mid August 2026 (peak 2-12 Aug)",
+      "source_url": "https://theguardian.com/world/2026/aug/13/asia-heatwave-south-korea-potatoes-boil-ground-record-heat-hong-kong-japan",
+      "note": "Detector window starts 2026-08-08, so the 2-7 Aug peak was outside the window; the 8-12 Aug tail is small-area (Korean peninsula, Japanese islands) and humid-heat dominated - a p95-relative daily-mean detector with persistence AND area floors would likely fail the area floor, and possibly persistence at grid level."
+    },
+    {
+      "description": "Western/Central/Southeastern Europe: warmest summer on record for western Europe (+2.54C vs 1991-2020, beating 2003), succession of intense heatwaves May-September; August heat much-above-average (+3-5C) across France, Italy, Balkans (Bosnia, Croatia, Hungary, Romania), with severe drought and record-low river flows (Rhine, Danube, Seine, Po).",
+      "region": "Western/Central/Southeastern Europe",
+      "dates": "June - early September 2026 (heatwaves continuing through August and into early September)",
+      "source_url": "https://climate.copernicus.eu/surface-air-temperature-august-2026",
+      "note": "August heatwaves (e.g. France/Italy/Balkans +3-5C anomalies, 3rd-warmest August on record for Europe) fall INSIDE the 08-08..11-06 detector window and cover large contiguous land area - a p95-relative detector with persistence/area floors should have caught at least the late-August/early-September events; their absence from the event list is a genuine detector gap, not a window artifact."
+    },
+    {
+      "description": "Brazil Cerrado/Pantanal/Sudeste heatwave: national 2026 record 43.3C at Nova Xavantina (MT, 28 Sep), 43.2C Corumbá (MS); 42 INMET stations >=40C on 28 Sep across 9 states; INMET red 'onda de calor' alert for eastern MS, north/northwest SP, SE Goiás and most of MG (incl. Belo Horizonte) valid 28-30 Sep, meeting INMET's own criterion of 5 consecutive days >=5C above climatology.",
+      "region": "Central Brazil (Mato Grosso, Mato Grosso do Sul, Goiás, Minas Gerais, São Paulo, Tocantins)",
+      "dates": "approx. 24-30 September 2026",
+      "source_url": "https://portal.inmet.gov.br/noticias/calor-intenso-e-registros-acima-dos-40-c-em-nove-estados-marcam-o-domingo-27-e-a-segunda-feira-28-no-brasil",
+      "note": "Large contiguous area meeting a formal heatwave criterion (>=5 days, >=5C above normal) - a p95-relative ERA5 detector with persistence/area floors should have detected this; event list only covers northern Amazon box in Brazil."
+    },
+    {
+      "description": "Early-spring cold outbreak and frosts in southern Brazil: min temps 0.2-0.5C at General Carneiro (PR), Bagé/Relvado (RS), Palmeira das Missões (RS) on 6-7 Sep; 'Forte'-intensity frost reported at Bagé, Bom Jesus, Canela; min-temp anomalies below -6C across RS, SC and western PR.",
+      "region": "Rio Grande do Sul / Santa Catarina / Paraná",
+      "dates": "6-7 September 2026",
+      "source_url": "https://portal.inmet.gov.br/uploads/notastecnicas/Destaques-Setembro.pdf",
+      "note": "Short-lived (1-2 day) cold surge confined to one corner of southern Brazil - likely filtered by a detector requiring >=3-day persistence and a minimum contiguous area; also, relative-anomaly freeze detection is weak where the September climatology is mild."
+    },
+    {
+      "description": "Northern Australia severe-to-extreme heatwave: first 45C+ anywhere in Australia in nine months (Fitzroy Crossing 45.1C, 3 Nov), Mandora 47.4C breaking November records (4 Nov, 3rd-hottest ever recorded in WA), BOM severe heatwave warnings across WA Kimberley/Pilbara and north QLD (high 30s-low 40s inland, mins ~30C); this capped a spring in which WA recorded dozens of temperature records.",
+      "region": "Western Australia (Kimberley, Pilbara), northern Northern Territory, north Queensland",
+      "dates": "approx. 29 October - 6 November 2026",
+      "source_url": "https://www.weatherzone.com/au/news/wa-heatwave-brings-australias-first-45c-of-the-season/1891638",
+      "note": "Sits at the very end of the detector window (ends 11-06): persistence (>=3-4 days) and area thresholds may not have been satisfiable before the window closed; late-window truncation is the most likely reason for the miss."
+    },
+    {
+      "description": "Record late-season heat in East Asia: Seoul 30.1C on 12 Oct (hottest October day since 1907), Korea 5th-warmest October since 1973 (15.8C, +1.5C); Tokyo and Osaka both exceeded 30C on 21 Oct - latest in the year ever recorded in both cities.",
+      "region": "South Korea / Pacific-coast Japan",
+      "dates": "10-13 October and 20-22 October 2026",
+      "source_url": "https://koreatimes.co.kr/southkorea/environment-animals/20261104/from-t-shirts-to-padded-jackets-why-koreas-october-weather-swung-so-wildly",
+      "note": "Only 2-4 day duration and limited spatial footprint - persistence and area floors of the detector would filter this out by design, even though it set century-scale station records."
+    },
+    {
+      "description": "Late-October Arctic cold outbreak over Korea: Ural blocking pushed Arctic air south; nationwide (Korea) daily-mean temperature plunged from 22.1C (12 Oct) to 8.1C (28 Oct), the 4th-largest October warmest-to-coldest swing on record.",
+      "region": "Korean peninsula / Northeast Asia",
+      "dates": "24-28 October 2026",
+      "source_url": "https://dongascience.com/en/news/80714",
+      "note": "An absolute-threshold 'freeze' detector will never flag it (8C is not freezing); only a relative cold-percentile detector could, and its short duration/peninsula size would again stress persistence/area floors - illustrates that the current event set (absolute-threshold freeze) is blind to relative cold snaps."
+    },
+    {
+      "description": "Record warm October across the central/eastern United States: dozens of US cities posted their warmest autumn rankings; October 2026 was the warmest October globally (C3S, 1.75C above pre-industrial, 3rd consecutive month above 1.5C) with an exceptionally strong El Nino (Nino3.4 monthly SST anomaly record 3.21C).",
+      "region": "Central/eastern United States; global (El Nino-forced)",
+      "dates": "October 2026",
+      "source_url": "https://upi.com/Top_News/World-News/2026-11-06/october-temperatures-warm-record/6011793995805",
+      "note": "Monthly record warmth from a quasi-persistent ridge can be a month-long mild positive anomaly rather than a discrete p95 excursion; event-detector design (discrete anomalies with start/end) may legitimately not classify it as an event, but it is a major reported extreme the review should note."
+    }
+  ],
+  "search_log": [
+    {"query": "Ethiopia Eritrea heat wave August 2026 temperatures", "hits": 8, "best": "ICPAC weekly outlooks 05-Aug..02-Sep 2026 (Danger heat stress, Afar-Eritrea); climate.co.ke weekly GHA forecasts"},
+    {"query": "C3S Copernicus climate bulletin August 2026 Europe hotspots", "hits": 8, "best": "climate.copernicus.eu August 2026 bulletin/surface-air-temperature pages (warmest August globally; W Europe warmest summer on record)"},
+    {"query": "Amazon drought heat wave October 2026 Roraima Brazil INMET record heat", "hits": 8, "best": "mostly 2023/2024 context; led to INMET monthly/weekly products via follow-ups"},
+    {"query": "Texas Oklahoma heat wave September 2026 NWS excessive heat", "hits": 8, "best": "Newsweek 16-Sep, weather.com 17-Sep, NWS OUN AFD 14-Sep, natureworldnews 22-Sep"},
+    {"query": "Greenland cold snap October 2026 ice sheet freezing temperatures anomaly", "hits": 8, "best": "nothing specific to 16-21 Oct; Met Office Arctic end-of-season report (cool/stormy Arctic 2026)"},
+    {"query": "Ethiopia heat wave September 2026 Afar borena ReliefWeb EMA alert", "hits": 8, "best": "ReliefWeb Global Weather Hazards Summary pages (FEWS NET/CPC)"},
+    {"query": "onda de calor Amazônia Roraima setembro 2026 INMET recorde temperatura", "hits": 8, "best": "INMET Destaques-Setembro.pdf; climatempo Manaus record 39.4C 22-Sep; folhabv Roraima Sept record"},
+    {"query": "C3S Copernicus climate bulletin October 2026 global temperature highlights", "hits": 8, "best": "climate.copernicus.eu warmest-October pages (no Greenland-cold or Africa-heatwave spotlight)"},
+    {"query": "ReliefWeb Global Weather Hazards Summary September 2026 Ethiopia Kenya Uganda abnormal heat", "hits": 8, "best": "full text of 3-9 Sep, 24-30 Sep, 15-21 Oct editions extracted"},
+    {"query": "Ethiopia Sudan heat October 2026 abnormal heat hazards", "hits": 8, "best": "CPC Africa Hazard Outlook PDF 22-28 Oct (observed heat in western East Africa persisting)"},
+    {"query": "Amazon drought 2026 El Nino river levels October 2026 Manaus Negro", "hits": 8, "best": "g1 02-Oct & 27-Oct (Rio Negro 2.7-3.9 m below 2025, 22-46 municipalities emergency); Cemaden Painel El Nino bulletim 05"},
+    {"query": "Venezuela Guianas Suriname heat wave August September 2026 record temperature", "hits": 8, "best": "CariCOF Heat Outlook Sep2026-Feb2027 (Guianas heat peak Sep-Oct); Venezuela warmest Jul-Sep in 87 yrs"},
+    {"query": "reliefweb.int Global Weather Hazards Summary September 10/17 2026 abnormal heat", "hits": 8, "best": "10-16 Sep and 17-23 Sep editions exist; global header 'abnormal heat continues to threaten northern/eastern Africa'"},
+    {"query": "reliefweb.int Global Weather Hazards Summary August 11/18/25 2026 abnormal heat", "hits": 8, "best": "2026 August edition URLs not resolvable via extract; relied on ICPAC weeklies + 27-Aug ReliefWeb edition"},
+    {"query": "Greenland cold October 2026 DMI Polar Portal freeze refreeze ice sheet early cold", "hits": 8, "best": "Carbon Brief 27-Oct (Greenland cool 2026 summer, omega jet); DMI Polar Portal GSMB data (no melt from early Oct) - no corroboration of a specific cold outbreak"},
+    {"query": "INMET outubro 2026 calor acima da media Amazonia Roraima Amazonas temperatura destaque", "hits": 8, "best": "INMET Informativos Semanais 40/42/43 (N-region max 30-41C observed, forecasts to 44C)"},
+    {"query": "Australia heat wave spring October November 2026 record heat temperature", "hits": 8, "best": "weatherzone 03-Nov (Fitzroy Crossing 45.1C), wisevoter 04-Nov (Mandora 47.4C Nov record), BOM QLD severe heatwave warnings"},
+    {"query": "Japan China Korea South Asia heat wave September October 2026 record", "hits": 8, "best": "Guardian 13-Aug (East Asia record heatwave), KMA via koreatimes/dongascience (Seoul 30.1C 12-Oct), CNA (Tokyo/Osaka 30C+ 21-Oct)"}
+  ],
+  "summary": "Of 12 detected events: 3 confirmed by same-region/same-window external products (457f3f87 US Southern Plains heat dome - NWS warnings + press; e7fa2290 E Africa abnormal heat 24-30 Sep - FEWS NET/CPC hazard product with explicit p90-based abnormal-heat flag; bdb9bb08 Afar/Red Sea Aug 11-19 - ICPAC 'Danger'-category heat-stress outlooks), 8 corroborated only as regional/seasonal context (the persistent FEWS NET/CPC 'abnormal heat' regime over the Sahel/East Africa and the INMET-documented hot, El Nino-dry Amazon in Aug-Oct 2026; most Amazon and Sahel events lack any specific press event report because daily-mean 2m ~33C heat there is rarely reported as a discrete event), and 1 (Greenland freeze 88bb73d7) has no external corroboration at all - no bulletin or news item mentions a cold outbreak 16-21 Oct 2026; note that ~-40C daily means are climatologically near-normal over the high-elevation north-greenland ice sheet in October, so the raw value is not obviously extreme and relative-anomaly evidence should be the bar. Notable reported extremes missing from the event set: East Asia's record early-August heatwave (window start may explain), Western Europe's record summer including August heatwaves +3-5C (genuine detector gap - inside window), Brazil's late-September 43.3C national-record heatwave with INMET red heatwave alert (genuine detector gap), southern-Brazil September frosts, northern-Australia early-November 45-47C heatwave (late-window truncation), record Oct warmth in Korea/Japan and the US (sub-threshold durations), and Korea's late-October Arctic cold outbreak (absolute-threshold freeze detector is blind to relative cold snaps)."
+}

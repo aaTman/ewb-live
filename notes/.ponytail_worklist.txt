@@ -1,0 +1,6 @@
+RUN STAMP: 2026-11-08T22:17:13Z
+MODE: INCREMENTAL
+Review ONLY these files (changed since 2026-11-08T21:16:46Z) with the ponytail-review skill; read connected code as needed:
+dashboard/styles.css
+ewb_live/scoring/truth_mirror.py
+tests/test_stall_fixes.py

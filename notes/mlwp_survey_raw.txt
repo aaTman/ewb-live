@@ -1,0 +1,24 @@
+
+## AURO_v100_GFS  (165 files surveyed, 165 errors)
+   first error: AttributeError: 'DimensionProxy' object has no attribute '_name' e.g. noaa-oar-mlwp-data/AURO_v100_GFS/2026/0709/AURO_v100_GFS_2026070900_f000_f240_06.nc
+
+## AURO_v100_IFS  (237 files surveyed, 237 errors)
+   first error: AttributeError: 'DimensionProxy' object has no attribute '_name' e.g. noaa-oar-mlwp-data/AURO_v100_IFS/2026/0710/AURO_v100_IFS_2026071012_f000_f240_06.nc
+
+## FOUR_v200_GFS  (165 files surveyed, 165 errors)
+   first error: AttributeError: 'DimensionProxy' object has no attribute '_name' e.g. noaa-oar-mlwp-data/FOUR_v200_GFS/2026/0709/FOUR_v200_GFS_2026070900_f000_f240_06.nc
+
+## FOUR_v200_IFS  (237 files surveyed, 237 errors)
+   first error: AttributeError: 'DimensionProxy' object has no attribute '_name' e.g. noaa-oar-mlwp-data/FOUR_v200_IFS/2026/0710/FOUR_v200_IFS_2026071012_f000_f240_06.nc
+
+## GRAP_v100_GFS  (165 files surveyed, 165 errors)
+   first error: AttributeError: 'DimensionProxy' object has no attribute '_name' e.g. noaa-oar-mlwp-data/GRAP_v100_GFS/2026/0709/GRAP_v100_GFS_2026070900_f000_f240_06.nc
+
+## GRAP_v100_IFS  (240 files surveyed, 240 errors)
+   first error: AttributeError: 'DimensionProxy' object has no attribute '_name' e.g. noaa-oar-mlwp-data/GRAP_v100_IFS/2026/0709/GRAP_v100_IFS_2026070900_f000_f240_06.nc
+
+## PANG_v100_GFS  (165 files surveyed, 165 errors)
+   first error: AttributeError: 'DimensionProxy' object has no attribute '_name' e.g. noaa-oar-mlwp-data/PANG_v100_GFS/2026/0709/PANG_v100_GFS_2026070900_f000_f240_06.nc
+
+## PANG_v100_IFS  (237 files surveyed, 237 errors)
+   first error: AttributeError: 'DimensionProxy' object has no attribute '_name' e.g. noaa-oar-mlwp-data/PANG_v100_IFS/2026/0710/PANG_v100_IFS_2026071012_f000_f240_06.nc
