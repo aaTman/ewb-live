@@ -1,0 +1,6052 @@
+{
+ "rows": [
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 0.615,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 0.661,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.4
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 0.647,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.2
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 0.625,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 1.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 0.654,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 0.581,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.5
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 0.592,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 0.636,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.5
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 0.652,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.2
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 0.613,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 0.625,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 0.561,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.2
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 0.569,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 0.618,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 0.62,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 0.588,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.4
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 0.611,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.4
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 0.541,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -4.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 0.524,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 0.582,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.2
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 0.569,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 0.548,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 0.557,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.4
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 0.502,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -4.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 0.49,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 0.54,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.2
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 0.531,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 0.51,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 0.525,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 0.457,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -6.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 0.43,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 0.473,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 0.466,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 0.45,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 0.456,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 0.405,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.8
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 0.382,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 0.423,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 0.416,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.8
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 0.393,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 2.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 0.408,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.8
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 0.351,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -8.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 0.303,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 0.348,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 0.342,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 0.316,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 0.328,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "csi",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 0.276,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -8.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 152.312,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 138.151,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 136.419,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.4
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 144.645,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 140.169,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 159.793,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -4.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 164.813,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 148.142,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 147.305,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 155.656,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 151.386,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 171.019,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -3.8
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 185.467,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 166.353,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 168.01,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.4
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 175.112,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 170.434,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 196.612,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -6.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 217.188,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 197.316,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 194.792,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 205.099,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 200.817,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.5
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 230.834,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -6.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 248.567,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 220.268,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.4
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 216.315,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 13.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 231.1,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 224.53,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 260.163,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -4.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 296.792,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 260.78,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 255.654,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 13.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 276.418,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 265.687,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.5
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 310.573,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -4.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 337.908,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 291.486,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 13.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 292.017,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 13.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 313.663,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.2
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 301.893,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 363.95,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -7.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 393.329,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 338.009,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 331.908,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 15.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 362.909,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 347.344,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "ivt_rmse_kg_m_s",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 423.987,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -7.8
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 50.994,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 56.322,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.4
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 55.937,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 51.964,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 1.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 53.268,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.5
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 49.074,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -3.8
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 48.975,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 53.66,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 52.533,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 50.769,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 51.958,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 46.977,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -4.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 45.301,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 50.394,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.2
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 50.094,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 47.529,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 49.221,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 44.628,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -1.5
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 40.97,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 45.778,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 44.613,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 43.371,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 44.466,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.5
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 38.929,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 36.966,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 41.35,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 40.574,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.8
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 38.836,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 39.496,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.8
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 35.593,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -3.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 30.586,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 33.752,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.4
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 33.889,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.8
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 31.912,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 33.065,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 28.416,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -7.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 24.646,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 27.678,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 27.019,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 25.682,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.2
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 26.777,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 22.945,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -6.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 16.359,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 18.742,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 18.462,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 17.446,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 17.809,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "onset_lead_hours",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 15.221,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -7.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 106.903,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 96.036,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.2
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 96.479,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.8
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 103.678,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 98.06,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 112.214,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 120.423,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 109.964,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 108.851,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 114.682,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.8
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 111.461,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.4
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 126.186,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -4.8
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 140.7,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 127.715,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.2
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 125.205,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 134.284,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 129.945,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.6
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 148.959,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.9
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 174.099,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 155.86,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.5
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 155.366,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.8
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 164.597,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.5
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 159.342,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.5
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 182.888,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 198.965,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 178.548,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 176.747,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.2
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 190.436,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 182.924,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 211.974,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -6.5
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 248.764,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 220.72,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 218.618,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 233.1,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 226.053,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 261.576,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.2
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 289.88,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 251.739,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 13.2
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 249.003,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 274.656,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 260.536,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.1
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 311.315,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -7.4
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 347.726,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 297.978,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 290.912,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 16.3
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 320.806,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 303.563,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.7
+  },
+  {
+   "event_type": "atmospheric_river",
+   "metric": "spatial_displacement_km",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 369.376,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -6.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 0.432,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 0.405,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 0.403,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 0.421,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 2.6
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 0.409,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 0.446,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -3.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 0.517,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 0.482,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 0.477,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 7.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 0.497,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 3.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 0.49,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 0.527,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -1.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 0.644,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 0.596,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 7.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 0.59,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 0.626,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 2.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 0.615,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 0.653,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -1.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 0.851,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 0.787,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 7.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 0.781,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 0.818,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 3.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 0.806,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 0.876,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -3.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 1.033,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 0.952,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 7.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 0.938,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 9.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 0.982,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 0.966,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 1.056,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -2.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 1.326,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 1.22,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 1.187,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 10.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 1.264,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 1.24,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 1.367,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -3.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 1.592,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 1.453,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 1.436,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 9.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 1.529,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 3.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 1.459,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 1.63,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -2.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 1.945,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 1.744,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 10.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 1.725,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 1.827,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 1.776,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "duration_error_days",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 2.01,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -3.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 1.095,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 0.997,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 0.974,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 1.059,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 3.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 1.032,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 1.147,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -4.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 1.186,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 1.074,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 9.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 1.054,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 1.136,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 1.089,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 1.231,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -3.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 1.336,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 1.193,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 10.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 1.189,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 1.274,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.6
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 1.234,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 7.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 1.386,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -3.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 1.565,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 1.391,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 1.376,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 12.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 1.503,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 1.416,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 9.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 1.628,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -4.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 1.769,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 1.562,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 1.547,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 12.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 1.662,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 1.6,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 9.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 1.838,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -3.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 2.085,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 1.849,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 1.816,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 12.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 1.999,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 1.86,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 10.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 2.183,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -4.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 2.389,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 2.054,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 14.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 2.045,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 14.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 2.25,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 2.118,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 2.515,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -5.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 2.777,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 2.337,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 15.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 2.304,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 17.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 2.601,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 2.425,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 12.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "mae_k",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 2.945,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -6.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 0.33,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 0.308,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 0.308,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 0.32,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 3.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 0.318,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 3.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 0.343,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -3.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 0.418,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 0.387,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 7.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 0.385,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 7.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 0.397,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 0.395,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 0.423,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -1.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 0.537,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 0.506,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 0.512,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 0.526,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 2.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 0.512,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 0.548,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -2.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 0.745,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 0.693,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 7.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 0.691,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 7.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 0.723,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 3.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 0.702,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 0.761,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -2.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 0.92,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 0.866,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 0.843,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 0.889,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 3.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 0.864,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 0.95,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -3.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 1.231,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 1.131,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 1.113,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 9.6
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 1.169,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 1.156,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 1.26,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -2.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 1.478,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 1.374,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 7.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 1.346,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 1.431,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 3.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 1.374,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 7.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 1.545,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -4.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 1.849,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 1.663,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 10.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 1.625,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 12.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 1.748,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 1.68,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 9.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "onset_error_days",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 1.924,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -4.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 1.338,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 1.192,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 10.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 1.182,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.6
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 1.27,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 1.22,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 1.376,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -2.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 1.451,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 1.284,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 1.259,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 13.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 1.385,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 1.317,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 9.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 1.49,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -2.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 1.627,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 1.442,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 1.441,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 1.566,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 3.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 1.494,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 1.688,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -3.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 1.933,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 1.677,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 13.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 1.669,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 13.6
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 1.855,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 1.734,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 10.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 1.989,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -2.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 2.159,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 1.886,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 12.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 1.88,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 12.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 2.026,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 1.934,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 10.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 2.256,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -4.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 2.567,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 2.236,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 12.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 2.167,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 15.6
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 2.432,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 5.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 2.272,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 2.719,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -5.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 2.948,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 2.457,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 16.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 2.465,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 16.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 2.771,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 2.583,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 12.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 3.066,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -4.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 3.447,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 2.872,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 16.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 2.795,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 18.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 3.226,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 2.989,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 13.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "rmse_k",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 3.598,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -4.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 1.475,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 1.355,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 1.337,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 9.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 1.459,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 1.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 1.37,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 7.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 1.552,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -5.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 1.595,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 1.457,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.6
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 1.459,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 1.55,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 2.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 1.488,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 6.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 1.673,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -4.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 1.823,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 1.625,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 10.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 1.613,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.6
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 1.749,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 1.647,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 9.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 1.875,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -2.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 2.115,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 1.901,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 10.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 1.873,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 2.043,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 3.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 1.942,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 2.217,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -4.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 2.354,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 2.083,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 2.084,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 11.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 2.281,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 3.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 2.147,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 8.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 2.529,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -7.4
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 2.819,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 2.453,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 13.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 2.473,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 12.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 2.712,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 3.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 2.54,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 9.9
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 3.009,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -6.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 3.229,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 2.807,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 13.1
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 2.746,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 15.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 3.094,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.2
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 2.82,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 12.7
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 3.422,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -6.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 3.715,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 3.138,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 15.5
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 3.122,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 16.0
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 3.557,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 4.3
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 3.24,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": 12.8
+  },
+  {
+   "event_type": "freeze",
+   "metric": "tmin_mae_k",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 4.027,
+   "n_events": 6,
+   "relative_skill_vs_ifs_pct": -8.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 0.398,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 0.379,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 0.372,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 0.391,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 1.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 0.379,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 0.413,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -3.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 0.478,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 0.449,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 0.445,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 0.459,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 0.458,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 0.484,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -1.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 0.592,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 0.553,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 0.554,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 0.57,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 0.568,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 0.608,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -2.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 0.786,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 0.73,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 0.725,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 0.763,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 2.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 0.747,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 0.81,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -3.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 0.948,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 0.874,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 0.868,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 0.913,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 0.893,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 0.954,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -0.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 1.215,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 1.116,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 1.112,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 1.181,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 2.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 1.135,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 1.257,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -3.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 1.462,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 1.337,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 1.319,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 1.4,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 1.359,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 1.512,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -3.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 1.779,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 1.625,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 1.589,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 1.703,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 1.644,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "duration_error_days",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 1.866,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -4.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 0.981,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 0.887,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 0.881,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 0.949,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 0.914,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 1.035,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 1.073,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 0.96,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 0.949,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 1.031,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 0.99,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 1.111,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -3.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 1.204,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 1.075,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 1.083,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 1.161,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 1.108,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 1.234,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -2.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 1.405,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 1.267,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 1.26,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 1.358,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 1.302,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 1.485,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 1.598,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 1.417,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 1.408,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 1.53,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 1.48,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 1.675,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -4.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 1.937,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 1.657,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 1.664,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 1.849,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 1.735,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 2.052,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 2.168,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 1.879,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 13.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 1.872,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 13.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 2.085,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 1.947,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 2.332,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -7.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 2.55,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 2.142,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 16.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 2.154,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 15.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 2.421,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 2.249,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "mae_k",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 2.745,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -7.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 0.303,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 0.281,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 0.283,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 0.293,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 0.289,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 0.31,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -2.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 0.377,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 0.356,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 0.35,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 0.361,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 0.359,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 0.383,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -1.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 0.495,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 0.467,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 0.461,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 0.478,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 0.473,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 0.507,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -2.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 0.688,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 0.637,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 0.638,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 0.657,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 0.654,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 0.699,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -1.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 0.849,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 0.79,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 6.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 0.775,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 0.816,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 0.801,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 0.867,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -2.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 1.125,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 1.047,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 1.03,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 1.085,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 1.06,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 1.158,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -2.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 1.381,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 1.241,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 1.246,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 1.31,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 1.26,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 1.386,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -0.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 1.696,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 1.518,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 1.49,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 1.626,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 1.573,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "onset_error_days",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 1.746,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -3.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 1.214,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 1.098,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 1.07,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 1.177,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 1.118,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 1.263,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -4.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 1.313,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 1.17,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 1.168,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 1.267,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 1.212,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 7.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 1.381,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 1.494,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 1.31,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 1.308,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 1.435,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 1.348,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 1.569,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 1.746,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 1.544,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 1.513,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 13.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 1.663,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 1.592,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 1.854,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -6.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 2.0,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 1.747,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 1.706,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 1.925,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 1.769,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 2.083,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -4.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 2.375,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 2.032,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 2.04,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 2.263,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 2.144,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 2.472,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -4.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 2.702,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 2.321,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 2.258,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 16.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 2.59,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 2.384,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 2.878,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -6.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 3.172,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 2.63,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 17.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 2.601,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 18.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 3.016,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 2.705,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "rmse_k",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 3.373,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -6.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 6,
+   "model": "ifs_hres",
+   "mean_value": 1.397,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 6,
+   "model": "graphcast",
+   "mean_value": 1.247,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 6,
+   "model": "pangu_weather",
+   "mean_value": 1.236,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 6,
+   "model": "aifs",
+   "mean_value": 1.34,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 6,
+   "model": "aurora",
+   "mean_value": 1.278,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 6,
+   "model": "fourcastnet",
+   "mean_value": 1.441,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -3.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 12,
+   "model": "ifs_hres",
+   "mean_value": 1.5,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 12,
+   "model": "graphcast",
+   "mean_value": 1.364,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 12,
+   "model": "pangu_weather",
+   "mean_value": 1.354,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 12,
+   "model": "aifs",
+   "mean_value": 1.451,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 12,
+   "model": "aurora",
+   "mean_value": 1.374,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 12,
+   "model": "fourcastnet",
+   "mean_value": 1.587,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 24,
+   "model": "ifs_hres",
+   "mean_value": 1.676,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 24,
+   "model": "graphcast",
+   "mean_value": 1.514,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 24,
+   "model": "pangu_weather",
+   "mean_value": 1.507,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 24,
+   "model": "aifs",
+   "mean_value": 1.628,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 2.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 24,
+   "model": "aurora",
+   "mean_value": 1.538,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 24,
+   "model": "fourcastnet",
+   "mean_value": 1.768,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -5.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 48,
+   "model": "ifs_hres",
+   "mean_value": 2.011,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 48,
+   "model": "graphcast",
+   "mean_value": 1.765,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 48,
+   "model": "pangu_weather",
+   "mean_value": 1.765,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 48,
+   "model": "aifs",
+   "mean_value": 1.919,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 4.6
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 48,
+   "model": "aurora",
+   "mean_value": 1.811,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 48,
+   "model": "fourcastnet",
+   "mean_value": 2.09,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -3.9
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 72,
+   "model": "ifs_hres",
+   "mean_value": 2.228,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 72,
+   "model": "graphcast",
+   "mean_value": 1.989,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 72,
+   "model": "pangu_weather",
+   "mean_value": 1.979,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 72,
+   "model": "aifs",
+   "mean_value": 2.172,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 2.5
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 72,
+   "model": "aurora",
+   "mean_value": 2.04,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 8.4
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 72,
+   "model": "fourcastnet",
+   "mean_value": 2.363,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -6.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 120,
+   "model": "ifs_hres",
+   "mean_value": 2.631,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 120,
+   "model": "graphcast",
+   "mean_value": 2.307,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.3
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 120,
+   "model": "pangu_weather",
+   "mean_value": 2.32,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 11.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 120,
+   "model": "aifs",
+   "mean_value": 2.546,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 120,
+   "model": "aurora",
+   "mean_value": 2.376,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 9.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 120,
+   "model": "fourcastnet",
+   "mean_value": 2.817,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -7.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 168,
+   "model": "ifs_hres",
+   "mean_value": 3.036,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 168,
+   "model": "graphcast",
+   "mean_value": 2.605,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.2
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 168,
+   "model": "pangu_weather",
+   "mean_value": 2.579,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 15.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 168,
+   "model": "aifs",
+   "mean_value": 2.92,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 3.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 168,
+   "model": "aurora",
+   "mean_value": 2.71,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 10.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 168,
+   "model": "fourcastnet",
+   "mean_value": 3.217,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -6.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 240,
+   "model": "ifs_hres",
+   "mean_value": 3.511,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 0.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 240,
+   "model": "graphcast",
+   "mean_value": 2.99,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 14.8
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 240,
+   "model": "pangu_weather",
+   "mean_value": 2.961,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 15.7
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 240,
+   "model": "aifs",
+   "mean_value": 3.331,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 5.1
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 240,
+   "model": "aurora",
+   "mean_value": 3.09,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": 12.0
+  },
+  {
+   "event_type": "heat_wave",
+   "metric": "tmax_mae_k",
+   "lead_time_hours": 240,
+   "model": "fourcastnet",
+   "mean_value": 3.785,
+   "n_events": 7,
+   "relative_skill_vs_ifs_pct": -7.8
+  }
+ ]
+}
