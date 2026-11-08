@@ -1,0 +1,10 @@
+[Unit]
+Description=EWB Live: enforce 90% context handoff for Hermes agents
+
+[Service]
+WorkingDirectory=/home/orca/orca/workspaces/ewb-live/dogfish
+ExecStart=/bin/sh -c 'while true; do /usr/bin/python3 -B ops/context_watchdog.py --threshold 0.9 --interval 120 >> logs/context-watchdog.log 2>&1; sleep 5; done'
+Restart=always
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=EWB Live 90d scoring (persistent unit; env via ops/run_scoring.sh)
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/bin/sh __REPO__/ops/run_scoring.sh
+Restart=on-failure
+RestartSec=60
+# documented memory-exclusions (EWB oversized-case memory bombs, see
+# notes/ewb.md 2026-11-07); extend per-run via systemctl edit
+Environment=EWB_LIVE_SKIP_EVENTS=a3bb50ccde3d,4a9c67b01f25
+# box RAM 128->256 GB (owner 2026-11-08): 3 AR lanes (~60-75 GB peak each
+# measured) + 1 std lane, memguard budget keeps ~40 GB+ headroom
+Environment=EWB_LIVE_AR_JOBS=3
+
+[Install]
+WantedBy=multi-user.target
