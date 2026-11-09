@@ -33,11 +33,12 @@
   --medal-gold: #c9930f;  --medal-silver: #8e979e;  --medal-bronze: #b3703c;
 
   /* ---- Duration ramp (channel_consecutive_days §5): heat/freeze paint by
-     consecutive-day bin 1/2/3/4-6/7+; bin5 = the series token, low bins
+     consecutive-day bins — heat 1,2,3,4,5,6,7+ / freeze 1,2,3+; top bin = the
+     series token, low bins
      darken so every stop keeps >=3:1 on canvas/paper/map-ocean (min 4.28).
-     The per-bin alpha ramp (115..215) lives in mergedmap.js RUN_ALPHA. ---- */
-  --dur-heat-1: #8b332a;  --dur-heat-2: #9a392f;  --dur-heat-3: #aa3f34;  --dur-heat-4: #b84438;  --dur-heat-5: var(--series-heat);
-  --dur-freeze-1: #123769;  --dur-freeze-2: #143e75;  --dur-freeze-3: #164481;  --dur-freeze-4: #18498c;  --dur-freeze-5: var(--series-freeze);
+     The per-bin alpha ramps live in mergedmap.js RUN_ALPHA. ---- */
+  --dur-heat-1: #7c2b23;  --dur-heat-2: #8b332a;  --dur-heat-3: #9a392f;  --dur-heat-4: #aa3f34;  --dur-heat-5: #b84438;  --dur-heat-6: #c94d40;  --dur-heat-7: var(--series-heat);
+  --dur-freeze-1: #123769;  --dur-freeze-2: #164481;  --dur-freeze-3: var(--series-freeze);
 
   /* Lightness ladder is fixed: AR 26.1 < freeze 34.0 < heat 48.4 (L*), never inverted. */
 
@@ -104,10 +105,11 @@ html[data-theme="dark"] {
   --stone-grey:           #acab9c;
   --medal-gold: #d9a92c;  --medal-silver: #a7b0b8;  --medal-bronze: #c98a52;
 
-  /* Duration ramp, dark (mirrors the light block; on the dark ground low bins
+  /* Duration ramp, dark (mirrors the light block; heat 7 bins / freeze 3 bins;
+     on the dark ground low bins
      lighten — every stop keeps >=3:1 on canvas/paper/map-ocean, min 3.26). */
-  --dur-heat-1: #f89c90;  --dur-heat-2: #f79083;  --dur-heat-3: #f68576;  --dur-heat-4: #f67b6b;  --dur-heat-5: var(--series-heat);
-  --dur-freeze-1: #829dd2;  --dur-freeze-2: #7492cd;  --dur-freeze-3: #6687c8;  --dur-freeze-4: #597dc3;  --dur-freeze-5: var(--series-freeze);
+  --dur-heat-1: #f9a99e;  --dur-heat-2: #f89c90;  --dur-heat-3: #f79083;  --dur-heat-4: #f68576;  --dur-heat-5: #f67b6b;  --dur-heat-6: #f46d5c;  --dur-heat-7: var(--series-heat);
+  --dur-freeze-1: #829dd2;  --dur-freeze-2: #6687c8;  --dur-freeze-3: var(--series-freeze);
 
   --bg: var(--canvas);
   --bg-panel: var(--paper);

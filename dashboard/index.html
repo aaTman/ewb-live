@@ -179,16 +179,19 @@
     <h3>Events</h3>
     <ul>
       <li><b>Heat wave</b> — ERA5 2&nbsp;m temperature above the 85th percentile of the
-      Operational WeatherBench ERA5 1990–2019 climatology (per day of year and hour) at every
-      6-hourly step, over land, for at least 3 consecutive days across at least 200,000&nbsp;km².</li>
+      Operational WeatherBench ERA5 1990–2019 climatology (per day of year and hour) at <em>every</em>
+      6-hourly step of a UTC day, over land, for at least 3 consecutive days across at least
+      200,000&nbsp;km².</li>
       <li><b>Freeze</b> — the same rule below the 15th percentile. A window with no freeze is a
       valid result.</li>
       <li><b>Atmospheric river</b> — EWB’s AR mask: integrated vapour transport (IVT) of at least
       400&nbsp;kg&nbsp;m⁻¹&nbsp;s⁻¹ with a ridge criterion. The river must start over the ocean and
       reach land; objects entirely over land are excluded, and tropical cyclones are screened out using IBTrACS best tracks.</li>
-      <li>The raw detector map shows the unfiltered upstream heat/freeze masks and the filtered
-      AR layer: AR mask = EWB detection minus tropical objects (any cell within 15&nbsp;deg of
-      the equator) and tropical cyclones.</li>
+      <li>The raw detector map shades each cell by its consecutive <b>completed</b> UTC days
+      meeting the daily rule (solid; heat ramp 1–7+, freeze ramp 1–3+), with today’s in-progress
+      day dithered as provisional; the same unfiltered heat/freeze daily criterion is the one the
+      detector applies within its AND-chain. The AR layer is EWB detection minus tropical objects
+      (any cell within 15&nbsp;deg of the equator) and tropical cyclones.</li>
       <li>Parts of one system are merged, no two events overlap in time and space, and each type
       is capped at 15 events.</li>
     </ul>

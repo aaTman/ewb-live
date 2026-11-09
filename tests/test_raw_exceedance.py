@@ -51,7 +51,7 @@ def test_build_frames_incremental(tmp_path, monkeypatch):
         n = len(day_times)
         m = np.zeros((n, 8, 8), bool)
         m[:, 2:4, 2:4] = True
-        return m, np.zeros_like(m), np.zeros_like(m)
+        return m, np.zeros_like(m), np.zeros_like(m), np.zeros((n, 8, 8), np.uint16)
 
     frames: list[str] = []
     assert rx.build_frames(tmp_path, times, layer_fn, False, frames) == 4
@@ -74,3 +74,53 @@ def test_to_display_native_to_contract(tmp_path, monkeypatch):
     d = rx._to_display(a)
     assert d[8 - 1 - 2, (3 - 4) % 8]        # flipped rows, rolled cols
     assert d.sum() == 1
+
+
+# ---- duration sidecar v2 (sawtooth fix, diurnal investigation 2026-11-09):
+# low 7 bits = consecutive COMPLETED days (constant within a UTC day),
+# bit 7 = today so far (provisional) ----
+
+def test_run_recurrence_v2_completed_days():
+    T, F = np.ones((1, 1), bool), np.zeros((1, 1), bool)
+    days = [[T, T, T, T],            # D1 all steps -> today only (prov, 0 done)
+            [T, T, F, F],            # D2 breaks at step 2 -> done=1 after step1
+            [T, T, T, T]]            # D3 restarts: completed streak back to 0
+    g = rx.run_recurrence(days)
+    assert [int(v[0, 0]) for v in g] == \
+        [0x80] * 4 + [0x81, 0x81, 0x01, 0x01] + [0x80] * 4
+    # solid count never changes within a day: no provisional +1 at 00Z, no
+    # midnight reset — the whole sawtooth fix in one assertion
+    assert {int(v[0, 0]) & 0x7F for v in g[4:8]} == {1}
+
+
+def test_run_recurrence_v2_seed_and_saturation():
+    T, F = np.ones((1, 1), bool), np.zeros((1, 1), bool)
+    g = rx.run_recurrence([[T, F, T, T]], seed=np.full((1, 1), 3, np.uint8))
+    assert [int(v[0, 0]) for v in g] == [0x83, 0x03, 0x03, 0x03]
+    # saturated streak stays at RUN_CAP (no u8 overflow into the prov bit)
+    grids, c = rx._run_day([T, T, T, T], np.full((1, 1), rx.RUN_CAP, np.uint8))
+    assert int(c[0, 0]) == rx.RUN_CAP
+
+
+def test_run_sidecar_v2_in_incremental_build(tmp_path, monkeypatch):
+    monkeypatch.setattr(rx, "LAT_N", 8)
+    monkeypatch.setattr(rx, "LON_N", 8)
+    times = [np.datetime64("2026-08-10T00"), np.datetime64("2026-08-10T06"),
+             np.datetime64("2026-08-11T00"), np.datetime64("2026-08-11T06")]
+
+    def layer_fn(day_times):
+        n = len(day_times)
+        m = np.zeros((n, 8, 8), bool)
+        m[:, 2:4, 2:4] = True
+        return m, np.zeros_like(m), np.zeros_like(m)
+
+    assert rx.build_frames(tmp_path, times, layer_fn, True, []) == 4
+    h1, f1 = rx.run_from_bytes((tmp_path / "2026081000.run").read_bytes(), (8, 8))
+    assert (h1[2:4, 2:4] == 0x80).all() and not (h1 & 0x7F).any() and not f1.any()
+    # day 2 with the pipeline's seed contract (run_seed from _daily_runs):
+    # C(2026-08-10) = 1 completed day -> base 1 at every step of day 2
+    seed = {"2026-08-10": (np.full((8, 8), 1, np.uint8),
+                           np.zeros((8, 8), np.uint8))}
+    assert rx.build_frames(tmp_path, times, layer_fn, True, [], seed) == 4
+    h2, _ = rx.run_from_bytes((tmp_path / "2026081100.run").read_bytes(), (8, 8))
+    assert (h2[2:4, 2:4] == 0x81).all()   # 1 completed day + today provisional

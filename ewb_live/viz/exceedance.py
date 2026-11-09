@@ -14,11 +14,15 @@ Frame file <YYYYMMDDHH>.bin = zlib( packbits(heat) ++ packbits(freeze) ++
 packbits(ar) ); each layer row-major over DISPLAY orientation: lat -90..90
 (row 0 = south), lon -180..179.75 (col 0 = west) — mirror-native (N→S,
 0-360) is flipped/rolled at load. Sidecar <YYYYMMDDHH>.run = zlib( u8 heat_run
-++ u8 freeze_run ) per consecutive-day duration (contract
-notes/channel_consecutive_days.md §2/§4): a cell-day counts iff ALL FOUR
-00/06/12/18Z steps exceeded (house daily rule); the frame value is the trailing
-run of consecutive exceeded days, current day provisional, seeded from the
-earliest mirror step. index.json (frontend contract, channel 13:40/14:05):
+++ u8 freeze_run ) per consecutive-day duration (dur rev v2, contract
+notes/channel_consecutive_days.md §4): low 7 bits = CONSECUTIVE COMPLETED UTC
+days the cell met the daily rule (all four 00/06/12/18Z steps exceeded),
+constant across all four frames of a UTC day (no provisional +1, no midnight
+reset — sawtooth fix, diurnal investigation 2026-11-09); bit 7 = today so far
+(in-progress day, all steps known to date exceeded) — render as provisional.
+Counts saturate at 127. Seeded from the earliest mirror step. v1 sidecars
+(pre-v2) hold the old provisional per-step run; JS keys off index dur.rev.
+index.json (frontend contract, channel 13:40/14:05):
 {schema, generated, grid{res_deg,ny,nx,lat0,lon0,step_lat,step_lon},
 frames:["YYYYMMDDHH",... asc], cutoff:"YYYYMMDDHH", window:{start,end},
 dur:{rev,seed}}. Incremental: existing frames skip (a frame is done only with
@@ -104,30 +108,45 @@ def _frame_name(t: np.datetime64) -> str:
 
 
 RUN_NAME = ".run"   # <frame>.run sidecar: zlib(u8 heat_run ++ u8 freeze_run)
-DUR_REV = "v1"      # duration semantics version (index.json "dur.rev")
+DUR_REV = "v2"      # duration semantics version (index.json "dur.rev")
+RUN_CAP = 127       # completed-day count saturates here; bit 7 = provisional
+
+
+def _run_day(day: list[np.ndarray], c: np.ndarray
+             ) -> tuple[list[np.ndarray], np.ndarray]:
+    """One day of v2 run grids + the next day's C grid.
+
+    value(step j of day D) = min(C(D-1),127) | 0x80 if steps 0..j of D all
+    exceeded else min(C(D-1),127); C(D) = min(C(D-1)+1,127) if ALL steps of D
+    exceeded else 0. The solid count is the COMPLETED-day streak: constant
+    across all four frames of a UTC day — no provisional +1 at 00Z, no
+    midnight reset (diurnal sawtooth fix 2026-11-09). Today rides only in the
+    provisional bit and lands in the solid count with day D+1's frames.
+    """
+    acc = day[0].copy()               # running AND of steps 0..j
+    base = np.minimum(c, RUN_CAP).astype(np.uint8)
+    grids = []
+    for step in day:
+        acc &= step
+        grids.append(np.where(acc, base | np.uint8(0x80), base).astype(np.uint8))
+    return grids, np.where(acc, np.minimum(base + 1, RUN_CAP), 0).astype(np.uint8)
 
 
 def run_recurrence(days: list[list[np.ndarray]],
                    seed: np.ndarray | None = None) -> list[np.ndarray]:
-    """Consecutive-day run recurrence (contract §2) over day groups of
-    per-step bool masks in chronological order (up to 4 steps per group).
-
-    R(step j of day D) = C(D-1)+1 if steps 0..j of D all exceeded, else 0
-    (current day counts provisionally); C(D) = C(D-1)+1 if ALL steps of D
-    exceeded, else 0. seed = the C grid of the day before days[0] (pre-window
-    mirror history, §3); None = zeros (run truncates at mirror start).
-    Returns one u8 grid per step (raw consecutive day count, capped at 255).
+    """Consecutive-day run recurrence (contract §2, dur rev v2) over day
+    groups of per-step bool masks in chronological order (up to 4 steps per
+    group); see _run_day for the value semantics. seed = the C grid of the day
+    before days[0] (pre-window mirror history, §3); None = zeros (run
+    truncates at mirror start). Returns one u8 grid per step.
     """
     c = (np.zeros(days[0][0].shape, np.uint8) if seed is None
-         else np.asarray(seed, np.uint8))
+         else np.minimum(np.asarray(seed, np.uint8) & 0x7F, RUN_CAP))
     out: list[np.ndarray] = []
     for day in days:
-        acc = day[0].copy()          # running AND of steps 0..j
-        for step in day:
-            acc &= step
-            out.append(np.where(acc, np.minimum(c, 254) + 1, 0))
-        c = out[-1]                  # last step's partial AND = daily mask,
-    return out                       # so its R grid IS C(D) (§2)
+        grids, c = _run_day(day, c)
+        out.extend(grids)
+    return out                       # one u8 grid per step (v2 encoded)
 
 
 def run_bytes(heat_run: np.ndarray, freeze_run: np.ndarray) -> bytes:
@@ -296,8 +315,8 @@ def _daily_runs(mirror, clim_hi, clim_lo, land,
                                for t in group])["2m_temperature"]
         heat, freeze = _step_heat_freeze(t2m, clim_hi, clim_lo, land,
                                          len(group))
-        ch = run_recurrence([list(heat)], ch)[-1]   # single-day call: last
-        cf = run_recurrence([list(freeze)], cf)[-1]  # R grid == C(D)
+        _, ch = _run_day(list(heat), ch)   # C(D) directly (v2 grids are encoded)
+        _, cf = _run_day(list(freeze), cf)
         runs[str(np.datetime64(group[0], "D"))] = (_to_display(ch),
                                                    _to_display(cf))
     return runs

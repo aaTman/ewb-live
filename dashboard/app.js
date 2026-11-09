@@ -26,8 +26,8 @@ const TYPE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river'];
    Criteria wording mirrors ewb_live/events/temperature.py + ar.py thresholds —
    keep in sync if detection parameters change. */
 const TYPE_CRITERIA = {
-  heat_wave: 'Daily 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology, at least 3 consecutive days, over a region ≥200,000 km².',
-  freeze: 'Daily 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology, at least 3 consecutive days, over a region ≥200,000 km².',
+  heat_wave: 'Every 6-hourly step of a UTC day has 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². The map shades consecutive COMPLETED days meeting this daily rule (dithered = today so far).',
+  freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². The map shades consecutive COMPLETED days meeting this daily rule (dithered = today so far).',
   atmospheric_river: 'Integrated water-vapour transport peaking at ≥400 kg m⁻¹ s⁻¹ and reaching land.',
 };
 const emptyLaneLine = (t) => t === 'all'
