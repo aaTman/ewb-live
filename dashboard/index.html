@@ -138,7 +138,6 @@
         <tbody></tbody>
       </table>
     </div>
-    <p class="tall-note">Swipe the table sideways for Days · Peak.</p>
   </div>
 </section>
 
@@ -187,8 +186,9 @@
       <li><b>Atmospheric river</b> — EWB’s AR mask: integrated vapour transport (IVT) of at least
       400&nbsp;kg&nbsp;m⁻¹&nbsp;s⁻¹ with a ridge criterion. The river must start over the ocean and
       reach land; objects entirely over land are excluded, and tropical cyclones are screened out using IBTrACS best tracks.</li>
-      <li>The raw detector map shows the unfiltered upstream masks: heat above P85, freeze below P15 and
-      EWB’s AR mask before the tropical-cyclone (IBTrACS) screen that the event list applies.</li>
+      <li>The raw detector map shows the unfiltered upstream heat/freeze masks and the filtered
+      AR layer: AR mask = EWB detection minus tropical objects (any cell within 15&nbsp;deg of
+      the equator) and tropical cyclones.</li>
       <li>Parts of one system are merged, no two events overlap in time and space, and each type
       is capped at 15 events.</li>
     </ul>

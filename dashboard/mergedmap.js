@@ -12,7 +12,9 @@
    qualified_at is added by the ewb lane; until it lands, boxes fall back
    to the event `start` day at 00Z and one console.warn says so.
    Data: data/results/raw_exceedance/{index.json,<ts>.bin} (zlib, layer-major
-   bit-packed rows heat/freeze/ar, row0=lat0, MSB-first) and
+   bit-packed rows heat/freeze/ar, row0=lat0, MSB-first), duration sidecars
+   <ts>.run (zlib, two raw u8 planes heat/freeze of consecutive-day counts,
+   only when index.dur — else heat/freeze paint binary) and
    data/results/global_timeline.json (events[]: id,type,title,start,end,bbox,
    grid,day,days,masks[,qualified_at]).
    Reduced motion: playback is frame-stepping only; nothing auto-plays.
@@ -23,10 +25,14 @@
   const PAD = 12;
   const HIT_MIN = 44;                      // min touch target (px)
   const LAYERS = [                         // draw order bottom→top
-    { key: 'h', name: 'heat',   label: 'Heat > P85' },
-    { key: 'f', name: 'freeze', label: 'Freeze < P15' },
-    { key: 'a', name: 'ar',     label: 'AR mask', tip: 'AR mask (EWB, before cyclone screen): the raw upstream detector output. The event list additionally screens out tropical cyclones (IBTrACS).' },
+    { key: 'h', name: 'heat',   label: 'Heat — days > P85', ramp: true,
+      tip: 'Consecutive UTC days the cell has exceeded the P85 climatology at all four 6-hourly steps; darkest = 7+ days.' },
+    { key: 'f', name: 'freeze', label: 'Freeze — days < P15', ramp: true,
+      tip: 'Consecutive UTC days the cell has fallen below the P15 climatology at all four 6-hourly steps; darkest = 7+ days.' },
+    { key: 'a', name: 'ar',     label: 'AR mask', tip: 'AR mask: EWB detection minus tropical objects (any cell within 15 deg of the equator) and tropical cyclones.' },
   ];
+  const RUN_ALPHA = [115, 140, 165, 190, 215];   // bin opacities: low ~0.45 → current 215
+  const runBin = (r) => (r >= 7 ? 4 : r >= 4 ? 3 : r >= 3 ? 2 : r >= 2 ? 1 : 0);  // bins 1/2/3/4-6/7+ (3 = detection floor)
   const TYPES = {
     heat_wave:          { css: 'heat',   short: 'Heat' },
     freeze:             { css: 'freeze', short: 'Freeze' },
@@ -79,6 +85,13 @@
     return new Date(iso + 'T00:00:00Z')
       .toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
   };
+  const dayMs = (d) => {                 // date part of compact 'YYYYMMDD[HH]' or ISO, at 00Z
+    const s = String(d);
+    const iso = /^\d{10}$/.test(s) ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : s.slice(0, 10);
+    return Date.parse(iso + 'T00:00:00Z');
+  };
+  // tooltip event length: calendar span, end EXCLUSIVE (end-1d = last live day) — contract #6
+  const evSpan = (ev) => ` · ${Math.round((dayMs(ev.end) - dayMs(ev.start)) / 86400e3)} days`;
 
   /* ---- event instants (contract: qualified_at — compact 'YYYYMMDDHH' as the
      ewb builder emits, ISO also accepted; fallback: event `start` day at 00Z) ---- */
@@ -118,21 +131,32 @@
   /* ---------------- frame load ---------------- */
   const rawLast = () => (raw.cutoff && raw.cutoff >= raw.frames[0] && raw.cutoff <= raw.frames[raw.frames.length - 1]
     ? raw.cutoff : raw.frames[raw.frames.length - 1]);   // last ts with a .bin on disk
-  function getFrame(i) {                   // -> Promise<Uint8Array|null>
+  function inflateUrl(url) {              // fetch + zlib-decompress one asset
+    return fetch(url, { cache: 'no-cache' })
+      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+      .then(async (buf) => {
+        const ds = new DecompressionStream('deflate');
+        const stream = new Blob([buf]).stream().pipeThrough(ds);  // ArrayBuffer has no pipeThrough
+        return new Uint8Array(await new Response(stream).arrayBuffer());
+      });
+  }
+  function getFrame(i) {                   // -> Promise<{bin,run}|null>; run=null without index.dur
     const ts = raw.frames[i];
     if (!ts) return Promise.resolve(null);
     if (ts > rawLast()) return Promise.resolve(null);    // past ERA5 cutoff: no frames, boxes only
     if (frameCache.has(ts)) return Promise.resolve(frameCache.get(ts));
     if (inflight.has(ts)) return inflight.get(ts);   // ponytail 20:35: one fetch per frame, ever
-    const p = fetch(`data/results/raw_exceedance/${ts}.bin`, { cache: 'no-cache' })
-      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
-      .then(async (buf) => {
-        const ds = new DecompressionStream('deflate');
-        const stream = new Blob([buf]).stream().pipeThrough(ds);  // ArrayBuffer has no pipeThrough
-        const u8 = new Uint8Array(await new Response(stream).arrayBuffer());
+    const base = `data/results/raw_exceedance/${ts}`;
+    // duration sidecar only when the index advertises it; a 404 paints binary for
+    // this frame with one warn, so an old lane or CDN skew never blanks the map
+    const runP = raw.dur ? inflateUrl(`${base}.run`)
+      .catch((err) => { console.warn('duration sidecar unavailable, painting binary:', ts, err.message); return null; })
+      : Promise.resolve(null);
+    const p = Promise.all([inflateUrl(`${base}.bin`), runP])
+      .then(([bin, run]) => {
         if (frameCache.size >= CACHE_MAX) frameCache.delete(frameCache.keys().next().value);
-        frameCache.set(ts, u8);
-        return u8;
+        frameCache.set(ts, { bin, run });
+        return frameCache.get(ts);
       })
       .catch((err) => {
         // transient failure (mid-publish .bin, brief blip): warn and return
@@ -203,13 +227,14 @@
      Earth is pseudocylindrical: one screen row = one latitude, longitude
      linear in x). One pixel → one cell: no strip overlaps, no scanline
      stripes, clean date-line wrap, pole rows blank. */
-  let lut = null, rasterCv = null, packedCache = null;   // packed colours: one cache per theme
+  let lut = null, rasterCv = null, packedCache = null, rampCache = null;   // packed colours: one cache per theme
   function buildLut() {
     const g = raw.grid, nx = g.nx, ny = g.ny, stride = Math.ceil(nx / 8);
     const dpr = window.devicePixelRatio || 1;
     const cw = Math.round(fit.W * dpr), ch = Math.round(fit.H * dpr);
     const byteIdx = new Int32Array(cw * ch).fill(-1);
     const bitMask = new Uint8Array(cw * ch);
+    const cellIdx = new Int32Array(cw * ch).fill(-1);   // raw u8-plane index (run sidecar, no bit packing)
     const cx = proj.translate()[0];
     // d3's invert CLAMPS outside the sphere — bound the rows, leave pole rows blank
     const yTop = proj([0, 90])[1], yBot = proj([0, -90])[1];
@@ -223,7 +248,7 @@
       if (j <= 0 || j >= ny - 1) continue;                    // pole rows = replicated point
       const kx = proj([1, lat])[0] - proj([0, lat])[0];       // screen px per lon degree
       if (!(kx > 0)) continue;
-      const rowOff = j * stride, o = y * cw;
+      const rowOff = j * stride, cellRow = j * nx, o = y * cw;
       for (let x = 0; x < cw; x++) {
         const lon = ((x + 0.5) / dpr - cx) / kx;
         if (lon < -180 || lon > 180) continue;
@@ -231,9 +256,10 @@
         i = ((i % nx) + nx) % nx;                             // +180 wraps onto -180
         byteIdx[o + x] = rowOff + (i >> 3);
         bitMask[o + x] = 1 << (7 - (i & 7));
+        cellIdx[o + x] = cellRow + i;
       }
     }
-    lut = { cw, ch, byteIdx, bitMask };
+    lut = { cw, ch, byteIdx, bitMask, cellIdx };
   }
   function rgbOf(v) {
     const p = document.createElement('span');
@@ -242,14 +268,16 @@
     p.remove();
     return [+m[0], +m[1], +m[2]];
   }
-  function paintFrame(u8) {
+  function paintFrame(frame) {
     const cv = $('#raw-canvas');
     const ctx = cv.getContext('2d');
     drawBase(ctx);
-    if (!u8 || !raw || !fit) return;
+    if (!frame || !raw || !fit) return;
+    const u8 = frame.bin;
+    const run = (raw.dur && frame.run) ? frame.run : null;   // null → binary paint (fallback)
     if (!lut || lut.cw !== cv.width || lut.ch !== cv.height) buildLut();
-    const g = raw.grid, plane = g.ny * Math.ceil(g.nx / 8);
-    const { cw, ch, byteIdx, bitMask } = lut;
+    const g = raw.grid, plane = g.ny * Math.ceil(g.nx / 8), cells = g.ny * g.nx;
+    const { cw, ch, byteIdx, bitMask, cellIdx } = lut;
     if (!rasterCv || rasterCv.width !== cw || rasterCv.height !== ch) {
       rasterCv = document.createElement('canvas');
       rasterCv.width = cw; rasterCv.height = ch;
@@ -257,17 +285,19 @@
     const rctx = rasterCv.getContext('2d');
     const img = rctx.createImageData(cw, ch);
     const px = new Uint32Array(img.data.buffer);
-    // ABGR little-endian packed colour per layer (alpha 215/255). rgbOf forces a
+    // ABGR little-endian packed colours: flat per layer (alpha 215, binary paint)
+    // + the heat/freeze 5-bin duration ramp (token alpha RUN_ALPHA). rgbOf forces a
     // style flush per span — too heavy for the paint loop, so memoize per theme
     // (the data-theme observer invalidates)
     if (!packedCache) {
       const cs = getComputedStyle(document.documentElement);
-      packedCache = LAYERS.map((L) => {
-        const [r, gc, b] = rgbOf(cs.getPropertyValue(`--series-${L.name}`));
-        return ((215 << 24) | (b << 16) | (gc << 8) | r) >>> 0;
-      });
+      const pack = (c, al) => ((al << 24) | (c[2] << 16) | (c[1] << 8) | c[0]) >>> 0;
+      packedCache = LAYERS.map((L) => pack(rgbOf(cs.getPropertyValue(`--series-${L.name}`)), 215));
+      rampCache = LAYERS.map((L) => (L.ramp
+        ? RUN_ALPHA.map((al, b) => pack(rgbOf(cs.getPropertyValue(`--dur-${L.name}-${b + 1}`)), al))
+        : null));
     }
-    const packed = packedCache;
+    const packed = packedCache, ramp = rampCache;
     const act = LAYERS.map((L, li) => (on[L.key] ? li : -1)).filter((li) => li >= 0);
     const n = cw * ch;
     for (let p = 0; p < n; p++) {
@@ -276,7 +306,10 @@
       const m = bitMask[p];
       for (let a = 0; a < act.length; a++) {                  // later layers paint over earlier
         const li = act[a];
-        if (u8[li * plane + bi] & m) px[p] = packed[li];
+        if (run && ramp[li]) {
+          const r = run[li * cells + cellIdx[p]];             // heat plane 0, freeze plane 1; 0 = unpainted
+          if (r > 0) px[p] = ramp[li][runBin(r)];
+        } else if (u8[li * plane + bi] & m) px[p] = packed[li];
       }
     }
     rctx.putImageData(img, 0, 0);
@@ -289,17 +322,23 @@
   /* ---------------- event boxes (SVG overlay, same projection) ---------------- */
   const FULL_BAND_SPAN = 300;
   function bboxSpan(b) { return b[3] >= b[2] ? b[3] - b[2] : b[3] + 360 - b[2]; }
-  function isFullBand(b) { return Array.isArray(b) && b[3] >= b[2] && bboxSpan(b) >= FULL_BAND_SPAN; }
+  function isFullBand(b) { return Array.isArray(b) && bboxSpan(b) >= FULL_BAND_SPAN; }
   function bboxPaths(ev) {
-    // bbox [lat_min, lat_max, lon_min, lon_max]; wrap → two rects (catalog parity)
-    const [s, n, w, e] = ev.bbox;
+    // bbox [lat_min, lat_max, lon_min, lon_max]; the box is the EASTWARD arc
+    // lon_min→lon_max normalized to [-180,180): a 0–360 producer form like
+    // 350E→20E (the Oct-3 UK AR) draws as ONE rect at −10→20, not split at
+    // ±180 and not a whole-globe band. Split only where the arc crosses ±180
+    // (the map's own seam).
+    const [s, n] = ev.bbox;
     if (isFullBand(ev.bbox)) return '';        // degenerate band: never paint world-wide
+    const norm = (l) => ((l + 180) % 360 + 360) % 360 - 180;
+    const w = norm(ev.bbox[2]), e = w + bboxSpan(ev.bbox);
     const rect = (wa, ea) => {
       const tl = proj([wa, n]), tr = proj([ea, n]), br = proj([ea, s]), bl = proj([wa, s]);
       return `M${tl[0].toFixed(1)} ${tl[1].toFixed(1)}L${tr[0].toFixed(1)} ${tr[1].toFixed(1)}`
         + `L${br[0].toFixed(1)} ${br[1].toFixed(1)}L${bl[0].toFixed(1)} ${bl[1].toFixed(1)}Z`;
     };
-    return w <= e ? rect(w, e) : rect(w, 180) + rect(-180, e);
+    return e <= 180 ? rect(w, e) : rect(w, 180) + rect(-180, e - 360);
   }
   /* Antimeridian safety net (port of GlobalDash): a producer that recorded
      min/max of raw wrapped longitudes yields a ~whole-band box; recover the
@@ -381,7 +420,7 @@
       const bd = bboxPaths(ev);
       if (!bd) { node.remove(); continue; }
       mk('title', {}, node).textContent =
-        `${ev.title} — qualified ${fmtShort(qualTs(ev))} → ${fmtShort(ev.end)}`;
+        `${ev.title} — qualified ${fmtShort(qualTs(ev))} → ${fmtShort(ev.end)}${evSpan(ev)}`;
       if (sel.has(ev.id)) mk('path', { class: 'gm-halo', d: bd }, node);
       mk('path', { class: `gm-bbox t-${t.css}`, d: bd,
                    style: `stroke: var(--series-${t.css}); fill: var(--series-${t.css})` }, node);
@@ -482,7 +521,7 @@
           stroke: isSel ? 'var(--canvas)' : 'none', 'stroke-width': isSel ? 1 : 0,
           cursor: 'pointer',
         }, svg);
-        mk('title', {}, bar).textContent = `${ev.title} — qualified ${fmtShort(q)}`;
+        mk('title', {}, bar).textContent = `${ev.title} — qualified ${fmtShort(q)}${evSpan(ev)}`;
         bar.addEventListener('click', () => {
           if (!sel.has(ev.id)) sel.add(ev.id); else sel.delete(ev.id);
           jumpTo(q);
@@ -523,17 +562,17 @@
     badge.textContent = past ? `raw layers end ${fmtShort(raw.cutoff)} ${raw.cutoff.slice(8, 10)}Z · ERA5 lag` : '';
     renderBoxes();
     renderGantt();
-    getFrame(idx).then((u8) => {
+    getFrame(idx).then((frame) => {
       if (seq !== renderSeq) return;
       const note = $('#raw-note');
-      if (u8 === null && ts && !past) {
+      if (frame === null && ts && !past) {
         note.classList.remove('hidden');
         note.textContent = `Frame ${fmtReadout(ts)} is not available yet — `
           + 'the raw exceedance build has not produced it.';
         paintFrame(null);
       } else {
         note.classList.add('hidden');
-        paintFrame(u8);
+        paintFrame(frame);
       }
       prefetch(idx);
     });
@@ -612,7 +651,9 @@
       b.dataset.layer = L.key;
       if (L.tip) b.title = L.tip;
       b.setAttribute('aria-pressed', on[L.key] ? 'true' : 'false');
-      b.innerHTML = `<i style="background: var(--series-${L.name})"></i>${L.label}`;
+      b.innerHTML = `<i style="${L.ramp
+        ? `background: linear-gradient(90deg, ${[1, 2, 3, 4, 5].map((bi) => `var(--dur-${L.name}-${bi})`).join(', ')})`
+        : `background: var(--series-${L.name})`}"></i>${L.label}`;
       b.onclick = () => {
         on[L.key] = !on[L.key];
         if (!on.h && !on.f && !on.a) on[L.key] = true;   // never all-off (no blank map)
@@ -645,7 +686,7 @@
     slider.addEventListener('input', () => { stopPlay(); idx = +slider.value; writeUrl(false); render(); });
     // theme flip: the canvas bakes ocean/land/series colours at paint time, so repaint
     new MutationObserver(() => {
-      packedCache = null;                             // theme flip: repack colours
+      packedCache = null; rampCache = null;                 // theme flip: repack colours
       if (raw && fit) paintFrame(frameCache.get(raw.frames[idx]) || null);
     })
       .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
@@ -733,5 +774,10 @@
 
   window.MergedMap = { mount, urlParams, applyUrl,
     onTabChange: () => { if (mounted) render(); },
-    _dbg: () => ({ idx, frames: raw && raw.frames, on, sel: Array.from(sel), mounted, tl: !!tl }) };
+    // project/ramp/dpr/grid: the e2e bin-probe reads painted pixels at known cells
+    _dbg: () => ({ idx, frames: raw && raw.frames, on, sel: Array.from(sel), mounted, tl: !!tl,
+      dpr: window.devicePixelRatio || 1, grid: raw && raw.grid,
+      project: (ll) => (proj ? proj(ll) : null),
+      ramp: (li, b) => (rampCache && rampCache[li] ? [rampCache[li][b] & 255,
+        (rampCache[li][b] >> 8) & 255, (rampCache[li][b] >> 16) & 255, rampCache[li][b] >>> 24] : null) }) };
 })();

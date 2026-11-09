@@ -32,6 +32,13 @@
   --stone-grey:           #848475;
   --medal-gold: #c9930f;  --medal-silver: #8e979e;  --medal-bronze: #b3703c;
 
+  /* ---- Duration ramp (channel_consecutive_days §5): heat/freeze paint by
+     consecutive-day bin 1/2/3/4-6/7+; bin5 = the series token, low bins
+     darken so every stop keeps >=3:1 on canvas/paper/map-ocean (min 4.28).
+     The per-bin alpha ramp (115..215) lives in mergedmap.js RUN_ALPHA. ---- */
+  --dur-heat-1: #8b332a;  --dur-heat-2: #9a392f;  --dur-heat-3: #aa3f34;  --dur-heat-4: #b84438;  --dur-heat-5: var(--series-heat);
+  --dur-freeze-1: #123769;  --dur-freeze-2: #143e75;  --dur-freeze-3: #164481;  --dur-freeze-4: #18498c;  --dur-freeze-5: var(--series-freeze);
+
   /* Lightness ladder is fixed: AR 26.1 < freeze 34.0 < heat 48.4 (L*), never inverted. */
 
   /* ---- Type (§3): seven steps, nothing between ---- */
@@ -96,6 +103,11 @@ html[data-theme="dark"] {
   --series-unknown:       #acab9c;  --series-unknown-soft:  #3b3b34;
   --stone-grey:           #acab9c;
   --medal-gold: #d9a92c;  --medal-silver: #a7b0b8;  --medal-bronze: #c98a52;
+
+  /* Duration ramp, dark (mirrors the light block; on the dark ground low bins
+     lighten — every stop keeps >=3:1 on canvas/paper/map-ocean, min 3.26). */
+  --dur-heat-1: #f89c90;  --dur-heat-2: #f79083;  --dur-heat-3: #f68576;  --dur-heat-4: #f67b6b;  --dur-heat-5: var(--series-heat);
+  --dur-freeze-1: #829dd2;  --dur-freeze-2: #7492cd;  --dur-freeze-3: #6687c8;  --dur-freeze-4: #597dc3;  --dur-freeze-5: var(--series-freeze);
 
   --bg: var(--canvas);
   --bg-panel: var(--paper);
@@ -313,8 +325,8 @@ table { border-collapse: separate; border-spacing: 0; width: 100%;
 /* DR2-M4 residual: no row opacity (axe dark fail); pass with real inks */
 .unscored-row .model-col { color: var(--ink-secondary); font-style: italic; }
 .unscored-row td.cell { color: var(--ink-muted); }
-/* DR2 M7: phone hint under the tall event table — permanently hidden by
-   the .tall-note guard at the leaflet block (table fits without swipe) */
+/* DR2 M7: phone hint under the tall event table — retired 2026-11-08,
+   table fits without sideways swipe (element and guard deleted) */
 /* Owner 2026-11-07: empty-lane state — quiet line, criteria on hover */
 .lane-empty { color: var(--ink-secondary); font-size: var(--text-sm); font-style: italic;
   margin: 10px 2px 4px; line-height: 1.4; }
@@ -704,7 +716,6 @@ html[data-theme="dark"] { --map-line: #6d7f92; }   /* 3.2:1 on the ocean fill; g
 .leaflet-bar a, .leaflet-bar a:hover { background: var(--paper); color: var(--matte-black); border-color: var(--border); }
 .leaflet-bar a:hover { background: var(--tint); }
 .leaflet-bar { border: 1px solid var(--border); box-shadow: var(--shadow); }
-.tall-note { display: none !important; }  /* table now fits without sideways swipe */
 /* no model panels (unscored / pending event): observed map alone, not half a page */
 #detail-viz .ev3-root:not(:has(.ev3-grid .ev3-panel)) > .ev3-obsblock { grid-column: 1 / -1; max-width: 640px; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
