@@ -17,7 +17,7 @@ Static frontend, no build step, no framework. Plain ES2020 scripts loaded with
 |---|---|
 | `dashboard/index.html` | Page skeleton: header, controls (tabs/metrics/leads/week picker), merged global map section, scorecard, catalog map + events table, detail overlay, about. Script tags (defer order): vendor/leaflet → vendor/d3 → app.js → eventviz.js → mergedmap.js. |
 | `dashboard/app.js` | Boot, data loading (`loadData`), state + URL routing, controls, scorecard, catalog Leaflet map + table, detail overlay orchestration, themes, week archive. Owns the global `state` const and `window.renderMap/renderControls/renderEventTable`. |
-| `dashboard/mergedmap.js` | The merged global map (one Equal Earth surface, replaces `globalmap.js` + `rawmap.js`): 6-hourly raw exceedance layers on canvas + event boxes from `qualified_at` → `end` on SVG, timeline strip (gantt) + 6-hourly slider, selection (multi), play/speed, layer chips. IIFE exposing `window.MergedMap = {mount, urlParams, applyUrl, _dbg}`. URL `#map=YYYYMMDDHH&sel=<ids>&layers=h,f,a` (layers omitted when all-on; `sel=` empty when none). Old links (`#raw=`, `#global=&date=`) are redirected once on boot AND on same-document hashchange, then stripped. Past the ERA5 cutoff the canvas honestly empties, a badge shows "raw layers end {cutoff}Z · ERA5 lag", and boxes keep animating (the time axis extends past the last raw frame). Hero parks on the busiest step (most active boxes, ties → latest). Frames: zlib'd layer-major bitpacked `.bin` decoded via `Blob.stream().pipeThrough(DecompressStream('deflate'))`; each lat row drawn as a horizontal strip through the projection half-widths; per-layer ABGR packed colours memoized per theme. Boxes: hit-rect click toggles selection (stopPropagation — overlap-safe), in-box `open` pill (SVG, only when the box is wide enough); keyboard: Enter toggles selection and keeps focus (guardian contract), a second Enter on the selected box opens the detail; antimeridian-safe projection of wrapped bboxes (split path at ±180). |
+| `dashboard/mergedmap.js` | The merged global map (one Equal Earth surface, replaces `globalmap.js` + `rawmap.js`): 6-hourly raw exceedance layers on canvas + event boxes from `qualified_at` → `end` on SVG, timeline strip (gantt) + 6-hourly slider, selection (multi), play/speed, layer chips. IIFE exposing `window.MergedMap = {mount, urlParams, applyUrl, _dbg}`. URL `#map=YYYYMMDDHH&sel=<ids>&layers=h,f,a` (layers omitted when all-on; `sel=` empty when none). Old links (`#raw=`, `#global=&date=`) are redirected once on boot AND on same-document hashchange, then stripped. Past the ERA5 cutoff the canvas honestly empties, a badge shows "raw layers end {cutoff}Z · ERA5 lag", and boxes keep animating (the time axis extends past the last raw frame). Hero parks on the busiest step (most active boxes, ties → latest). Frames: zlib'd layer-major bitpacked `.bin` decoded via `Blob.stream().pipeThrough(DecompressStream('deflate'))`; each lat row drawn as a horizontal strip through the projection half-widths; per-layer ABGR packed colours memoized per theme. Boxes: hit-rect click toggles selection (stopPropagation — overlap-safe), in-box `open` pill (SVG, only when the box is wide enough); keyboard: Enter toggles selection and keeps focus (guardian contract), a second Enter on the selected box opens the detail; antimeridian-safe projection of wrapped bboxes: each box is the EASTWARD arc lon_min→lon_max normalized to [−180,180) — 350E→20E draws ONE minimal rect (−10→20), split at ±180 only where the arc crosses the map seam; the 0–360 and continuous (350,380) producer forms normalize identically. |
 | `dashboard/eventviz.js` | Event detail renderer (`window.EventViz.render/teardown`): observed + per-model Leaflet panels, IVT ramp for ARs, daily-bits overlays, lead toolbar, colorbars. |
 | `dashboard/styles.css` | Single stylesheet. Design tokens as CSS custom properties; `[data-theme=dark]` overrides. Page shell: `.shell { max-width: var(--shell-max); margin-inline: auto }` with `--shell-max: min(75vw, 1280px)` at ≥1100px, full-width + padding below. |
 | `dashboard/vendor/` | leaflet.js (label 1.1.1, actually 1.2-era API), d3-array@3.2.4, d3-geo@3.1.1 (global dashboard only). |
@@ -148,6 +148,23 @@ suite):
 - Global tests use a synthetic deterministic timeline (`_gd_timeline()`),
   including a bbox-only ghost event (the 06:24 MUST regression), an
   ISO-`qualified_at` event (pins the qualTs ISO branch), and a dateline AR.
+- Prime-meridian rendering contracts (Nov 9 seam fix): merged `bboxPaths`
+  draws the minimal EASTWARD arc (norm lon_min → +span) — never min/max,
+  never the raw 0–360 form (a +360 box wraps the globe). Leaflet detail
+  additionally SNAPS the box onto the field grid's world copy (grid
+  `lon[0]` anchor ±360 loop): vector layers don't repeat across copies,
+  so box/overlay/fitBounds must share ONE copy. `fieldBounds` is
+  EAST-ORDERED (`lon[0]`..`lon[last]`+360 if wrapped) — min/max of a
+  wrapped lon array is the "stitched AR field" bug itself (spans 330°).
+  Fixture gm5 (`test_detail_prime_meridian_field_and_box`) pins it: AR
+  viz needs `kind:'ar_ivt'` + a non-empty `models` (loader routes on
+  kind; `Object.keys(viz.models)` crashes otherwise). `occFit` seeds its
+  lon window at ±Infinity, NEVER ±180 — a grid entirely >180 (continuous
+  PM window) can never lower a 180-seeded `w` (shrink-only min) → 211°
+  hemisphere fit (the Nov-9 flake). occFit fits the OCCUPIED blob (A4
+  owner contract), not the field grid: a small blob in a big grid means
+  the view ⊉ overlay BY DESIGN — test blob-in-view + overlay-continuous-
+  same-copy, not overlay ⊆ view.
 - Merged-map gotchas: slider↔gantt alignment is a two-file contract — CSS
   `margin-inline: 36px 4px` on `#raw-slider` (thumb-centre maths: LAB(44)−8
   left, trailing(12)−8 right) must move in lockstep with renderGantt's

@@ -36,6 +36,13 @@ def _cache_path(cache_dir: Path, event_type: str, start: dt.date, end: dt.date) 
         clip = _mode_clim()[event_type]
         qv = clip["q_lower"] if event_type == "heat_wave" else clip["q_upper"]
         tag = f"_{os.environ.get('EWB_LIVE_CLIM', 'owb')}{qv}"
+    if event_type == "atmospheric_river":
+        # bump when AR rules change (mask rules / tropical screen / TC
+        # radius) so an old scan can't resurrect under new code —
+        # v2 = SPEC "AR tropical exclusion" 2026-11-08
+        from .ar import AR_RULE_REV
+
+        tag = f"_{AR_RULE_REV}"
     return cache_dir / f"{event_type}{tag}_{start:%Y-%m-%d}_{end:%Y-%m-%d}.json"
 
 

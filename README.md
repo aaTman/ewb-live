@@ -116,7 +116,7 @@ ssh root@192.168.0.121 'cd /opt/ewb-live && ./ops/install.sh'   # installs /etc/
   step is then a no-op catch-up; both are flock-guarded so they never race.
 - The local `ewb-live-context-watchdog.service` on this container is agent
   management, not EWB compute — it stays.
-- The local `ewb-live-ponytail-review.timer` (systemd **--user**, hourly,
+- The local `ewb-live-ponytail-review.timer` (systemd **--user**, daily (09:15 UTC),
   `Persistent=true`) runs the Ponytail code review: one Hermes agent audits
   changed code (full-repo sweep once a day) and files findings to code owners
   in `notes/channel_ponytail_<owner>.md`. Agent tooling, static review only —

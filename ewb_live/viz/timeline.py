@@ -20,6 +20,7 @@ import base64
 import datetime as dt
 import json
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
@@ -180,7 +181,7 @@ def build(results_dir: Path) -> Path:
     if len(raw) > SIZE_LIMIT:
         raise RuntimeError(f"global_timeline.json {len(raw)} B exceeds {SIZE_LIMIT} B target")
     out = results_dir / OUT_NAME
-    tmp = out.with_suffix(".json.tmp")
+    tmp = out.with_name(out.name + f".tmp.{os.getpid()}")  # sweep matches *.tmp.*
     tmp.write_text(raw)
     tmp.rename(out)
     logger.info("timeline: %d events, %.0f KB -> %s", len(entries), len(raw) / 1024, out)

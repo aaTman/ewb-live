@@ -21,7 +21,7 @@ heat_wave   keep: max_consecutive_days >= 3 (upstream already enforces)
             event bbox across its days/synoptic hours
 freeze      symmetric with q0.15: anomaly_K = mean q0.15 - min daily-mean t2m
 atmospheric_river
-            keep: landfall_days >= 3 and peak IVT >= 600 kg/m/s
+            keep: landfall_days >= 1 (owner 2026-11-09; was 3) and peak IVT >= 600 kg/m/s
             severity = landfall_days x peak_land_pixels x (peak_IVT - 400)
 
 PRODUCT RULE (owner, 2026-11-06, revised same day): NO two events may
@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_TOP_N = 15
 
 # AR extra floors (see module docstring)
-AR_MIN_LANDFALL_DAYS = 3
+AR_MIN_LANDFALL_DAYS = 1  # owner 2026-11-09: floor relaxed 3 -> 1 (landfall funnel review)
 AR_MIN_PEAK_IVT = 600.0
 AR_IVT_BASELINE = 400.0  # the EWB mask threshold
 # ceiling = TC-core plausibility cap, mirrors ar.AR_IVT_MAX_KGM_S (B8):
@@ -104,21 +104,13 @@ def _bbox_clim_mean(q: float, bbox, start: dt.datetime, end: dt.datetime,
         return None
     lat0, lat1, lon0, lon1 = bbox
 
-    def arc(x0, x1):
-        return [(x0, x1)] if x0 <= x1 else [(x0, 180.0), (-180.0, x1)]
+    # seam handling = PeriodicBoundaryIndex everywhere (owner 2026-11-09):
+    # the arc [lon0 -> lon1] eastward as one continuous sel slice in the
+    # grid's own domain (0-360 or -180..180) — no manual segment split.
+    from ..periodic_index import attach_periodic, lon_slice
 
-    # climatology may use 0-360 longitudes (ARCO convention)
-    shifted = float(da.longitude.min()) >= 0.0
-    segs = []
-    for a, b in arc(lon0, lon1):
-        if not shifted:
-            segs.append((a, b))
-        else:
-            A, B = a % 360.0, b % 360.0
-            if B >= A:
-                segs.append((A, B))
-            else:  # arc crosses the 0/360 seam
-                segs += [(A, 360.0), (0.0, B)]
+    da = attach_periodic(da)
+    sl = lon_slice(np.asarray(da.longitude.values, float), lon0, lon1)
 
     days = [start + dt.timedelta(days=i) for i in range((end - start).days + 1)]
     # bound the read at 11 probes but sample across the WHOLE window:
@@ -127,17 +119,10 @@ def _bbox_clim_mean(q: float, bbox, start: dt.datetime, end: dt.datetime,
     days = days[::max(1, len(days) // 11)]
     doy = [d.timetuple().tm_yday for d in days]
 
-    acc = 0.0
-    wsum = 0.0
-    for lo, hi in segs:
-        sub = da.sel(latitude=slice(lat0, lat1), longitude=slice(lo, hi)).sel(dayofyear=doy)
-        if sub.size == 0:
-            continue
-        m = float(sub.mean().compute().values)
-        w = hi - lo
-        acc += m * w
-        wsum += w
-    return acc / wsum if wsum else None
+    sub = da.sel(latitude=slice(lat0, lat1), longitude=sl).sel(dayofyear=doy)
+    if sub.size == 0:
+        return None
+    return float(sub.mean().compute().values)
 
 
 def _detail(e, key: str, default: float = 0.0) -> float:

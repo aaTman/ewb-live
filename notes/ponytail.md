@@ -1,4 +1,4 @@
-# Ponytail hourly code review (setup by agent `ponytail-setup`)
+# Ponytail daily (09:15 UTC) code review (setup by agent `ponytail-setup`)
 
 ## What Ponytail is (research, 2026-11-07)
 
@@ -29,7 +29,7 @@ Plugin version 5.3.3. No skill flag is needed on launch — plugin skills load a
 ## The hourly loop (agent tooling on THIS container — not EWB compute)
 
 ```
-ewb-live-ponytail-review.timer (systemd --user, hourly at :15, Persistent=true)
+ewb-live-ponytail-review.timer (systemd --user, daily (09:15 UTC) at :15, Persistent=true)
   └─ ewb-live-ponytail-review.service (oneshot, flock -n ⇒ one review at a time)
        └─ ops/ponytail_review.py
             1. mode: FULL SWEEP once per UTC day (ponytail-audit); otherwise
@@ -115,3 +115,4 @@ ls -t logs/ponytail/ | head                                    # per-run logs
 
 ## DONE
 
+- 2026-11-10 owner: Ponytail review changed from hourly to once daily at 09:15 UTC (timer updated).

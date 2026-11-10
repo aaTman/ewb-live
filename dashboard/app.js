@@ -26,8 +26,8 @@ const TYPE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river'];
    Criteria wording mirrors ewb_live/events/temperature.py + ar.py thresholds —
    keep in sync if detection parameters change. */
 const TYPE_CRITERIA = {
-  heat_wave: 'Daily 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology, at least 3 consecutive days, over a region ≥200,000 km².',
-  freeze: 'Daily 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology, at least 3 consecutive days, over a region ≥200,000 km².',
+  heat_wave: 'Every 6-hourly step of a UTC day has 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². The map shades consecutive COMPLETED days meeting this daily rule (dithered = today so far).',
+  freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². The map shades consecutive COMPLETED days meeting this daily rule (dithered = today so far).',
   atmospheric_river: 'Integrated water-vapour transport peaking at ≥400 kg m⁻¹ s⁻¹ and reaching land.',
 };
 const emptyLaneLine = (t) => t === 'all'
@@ -74,6 +74,9 @@ const BINARY_METRICS = new Set(['csi', 'CriticalSuccessIndex', 'Accuracy', 'Earl
 const state = {
   meta: null, events: [], scores: [], scorecard: [], pairStatus: {},
   tab: 'all',                      // 'all' | event_type
+  region: 'global',                // regions.json key (OWB-style Region dropdown)
+  regionData: null,                // parsed data/results/scorecard_by_region.json (null = no region data)
+  regionHit: null,                 // in-flight lazy load promise of that file (boot/week-switch guard)
   models: new Set(),               // visible models
   leads: new Set(),                // selected leads (scorecard)
   allModels: [], allLeads: [],
@@ -90,6 +93,8 @@ const state = {
   scMore: false,                   // scorecard: show all metrics (hero shows headline only)
   detailLead: null,                // lead currently shown by the detail viz
   detailModels: null,              // model-map selection for the detail viz
+  detailLayers: null,              // serialized layer state (#lyr=) for the detail viz
+  detailDay: null,                 // valid-time index (#day=) for the detail viz
   detailChartsPending: null,       // deferred Plotly build until <details> opens
   skillDirty: false,               // skill charts skipped while fold collapsed
 };
@@ -285,6 +290,40 @@ async function loadWeeks() {
   state.weeks = weeks.map((w) => w.week).filter(Boolean).sort().reverse();
 }
 
+/* Region definitions: dashboard/regions.json — the single source shared with
+   Python (ewb_live/regions.py). JS uses key/label/extents only; the event→region
+   assignment and the scorecard slices are the data lane's (scorecard_by_region.json). */
+let REGIONS = [];
+const regionDef = (key) => REGIONS.find((r) => r.key === key) || null;
+async function loadRegions() {
+  const hit = await fetchJSON('regions.json');
+  const rs = hit && hit.json && Array.isArray(hit.json.regions) ? hit.json.regions : [];
+  REGIONS = rs.filter((r) => r && r.key && Array.isArray(r.lat) && Array.isArray(r.lon));
+}
+
+/* Parse the region contract: {regions:[{key,label,n_events,by_type}],
+   by_region:{key:{rows}}}. Rows share scorecard.json's shape, so the same
+   normalise+bin path applies. Global is deliberately absent from by_region
+   (scorecard.json IS the global slice — regions-data contract). */
+function parseRegionJson(hit) {
+  const rj = hit && hit.json;
+  if (!rj || !Array.isArray(rj.regions) || !rj.regions.some((r) => r && r.key)
+      || !rj.by_region || typeof rj.by_region !== 'object') return null;
+  const rows = {};
+  for (const [k, v] of Object.entries(rj.by_region)) {
+    rows[k] = mergeBinned(asRows(v && v.rows).map(normScRow),
+      ['mean_value', 'ci_lo', 'ci_hi'], 'n_events', 'event_type');
+  }
+  /* Server-side assignment (ewb_live/regions.py): the authoritative event →
+     region map, computed from the event's real footprint mask (>25 % overlap
+     rule, owner 2026-11-10). The UI filters from THIS map so the map, list and
+     tables can never disagree; the JS centroid port below is only the fallback
+     for ids the file does not cover. */
+  const evMap = (rj.events && typeof rj.events === 'object') ? rj.events : null;
+  return { regions: rj.regions.filter((r) => r && r.key), rows,
+           events: evMap, assignment: rj.assignment || null };
+}
+
 async function loadData(week) {
   const [meta, eventsSel, eventsAll, scores, scorecard, pairStatus] = await Promise.all([
     loadJSON('meta.json', week),
@@ -301,6 +340,23 @@ async function loadData(week) {
   const scJson = scorecard && scorecard.json;
   // bin leads to standard slots and merge, so 6 h-step data lines up in columns
   state.scorecard = mergeBinned(asRows(scJson).map(normScRow), ['mean_value', 'ci_lo', 'ci_hi'], 'n_events', 'event_type');
+  /* Region slices (scorecard_by_region.json, regions-data contract): ~2.1 MB on
+     real data, so it loads in the BACKGROUND — the dropdown and region view
+     appear when it lands (never delay first paint). Archived weeks pre-dating
+     the lane 404 -> regionData stays null -> the dropdown hides itself
+     (honest: no region data for this week). */
+  state.regionData = null;
+  {
+    const p = loadJSON('scorecard_by_region.json', week);
+    state.regionHit = p;
+    p.then((hit) => {
+      if (state.regionHit !== p) return;   // superseded by a newer week's load
+      state.regionHit = null;
+      state.regionData = parseRegionJson(hit);
+      renderControls();                    // reveals the dropdown, re-validates state.region
+      if (state.region !== 'global') renderAll();   // deep link that waited on this file
+    }).catch(() => {});
+  }
   state.events = asRows(events && events.json);
   if (typeof window !== 'undefined') window.__debug = { get state() { return state; } };
   state.scores = mergeBinned(asRows(scores && scores.json), ['value'], null, 'event_id');
@@ -411,12 +467,15 @@ function renderHeader() {
   const rosterN = Math.max(state.allModels.length,
     Array.isArray(m.models) ? m.models.length : 0);
   const truthShort = truth.text.split(' \u00b7 ')[0];
+  const reg = regionEntry();
   const kv = (k, v, title) =>
     `<span class="kv"><span class="k">${k}</span>` +
     `<span class="v"${title ? ` title="${esc(title)}"` : ''}>${v}</span></span>`;
   $('#kv-line').innerHTML = [
-    kv('events', String(state.events.length),
-      state.week ? `archived week ${state.week}` : 'events in the latest run window'),
+    kv('events', String(reg ? reg.n_events : state.events.length),
+      state.week ? `archived week ${state.week}` : (reg
+        ? `scored events in ${reg.label} (bbox-centroid rule)`
+        : 'events in the latest run window')),
     kv('models', `${nModels} scored · ${rosterN} in roster`,
       'models with score rows vs models declared for this run'),
     kv('window', days ? `${days} d` : '\u2014',
@@ -473,6 +532,9 @@ async function switchWeek(week) {
   }
   closeDetail({ push: false });
   renderHeader(); renderControls(); renderAll();
+  // region resets on week switch (older weeks have no region file) — the hash
+  // must not keep claiming a region the scorecard no longer shows (review 2026-11-09)
+  if (hashParams().region) setHashParam('region', null);
 }
 
 function restoreState() {
@@ -491,20 +553,28 @@ function saveState() {
   } catch (e) { /* preference just won't persist */ }
 }
 
+/* The event-type filter is the one page-wide control: it narrows the map
+   (layers + boxes), the timeline, the event list and the scorecard together. */
+function setTab(id) {
+  state.tab = id; saveState(); renderControls(); renderAll();
+  if (window.MergedMap) MergedMap.onTabChange(id);
+}
+
 function renderControls() {
   const tabs = $('#type-tabs');
   tabs.innerHTML = '';
   const mkTab = (id, label) => {
     const b = el('button', state.tab === id ? 'on' : '', label);
     b.setAttribute('role', 'tab');
-    b.onclick = () => { state.tab = id; saveState(); renderControls(); renderAll();
-      if (window.MergedMap) MergedMap.onTabChange(); };   // lane dim ⇄ tab parity
+    b.setAttribute('aria-selected', String(state.tab === id));
+    b.onclick = () => setTab(id);
     tabs.appendChild(b);
   };
-  mkTab('all', 'All');
+  const inReg = (e) => state.region === 'global' || inRegion(e);
+  mkTab('all', `All <span class="n">${state.events.filter(inReg).length}</span>`);
   for (const t of TYPE_ORDER) {
-    const n = state.events.filter((e) => e.event_type === t).length;
-    mkTab(t, `${TYPE_META[t].label} (${n})`);
+    const n = state.events.filter((e) => e.event_type === t && inReg(e)).length;
+    mkTab(t, `<i class="type-dot" style="background:${TYPE_META[t].color}"></i>${TYPE_META[t].label} <span class="n">${n}</span>`);
   }
 
   const pills = $('#model-pills');
@@ -514,7 +584,7 @@ function renderControls() {
   pills.innerHTML = '';
   const dd = document.createElement('details'); dd.className = 'dd'; dd.open = ddWasOpen;
   const sum = document.createElement('summary');
-  sum.innerHTML = `<span class="ctl-label">Models</span>&nbsp;${state.models.size}/${state.allModels.length}`;
+  sum.innerHTML = `<span class="ctl-label">Models</span>&nbsp;${state.models.size} of ${state.allModels.length} <span class="caret" aria-hidden="true">▾</span>`;
   dd.appendChild(sum);
   const body = el('div', 'dd-body');
   state.allModels.forEach((m, i) => {
@@ -556,7 +626,7 @@ function renderControls() {
     chips.appendChild(b);
   });
   const more = $('#lead-more');
-  more.textContent = state.leadsMore ? 'less' : 'more';
+  more.textContent = state.leadsMore ? 'fewer leads' : 'more leads';
   more.setAttribute('aria-expanded', String(state.leadsMore));
   more.onclick = () => { state.leadsMore = !state.leadsMore; renderControls(); };
   /* A2 regression (owner 2026-11-07): the 'more metrics' button used to be
@@ -574,6 +644,50 @@ function renderControls() {
     b.classList.toggle('on', b.dataset.mode === state.chartMode);
     b.onclick = () => { state.chartMode = b.dataset.mode; saveState(); renderControls(); renderSkillCharts(); };
   });
+
+  /* Region dropdown (OWB-style), in the explore filter row beside the type tabs:
+     like the type filter it narrows the map, the list and the scorecard, and the
+     scorecard echoes it. Options come from scorecard_by_region.json's ordered
+     `regions` (labels + honest counts live there); map extents live in
+     dashboard/regions.json. No region data (e.g. an archived week predating the
+     lane) -> the control hides itself rather than offering a broken filter. */
+  const rsel = $('#region-select');
+  if (rsel) {
+    const usable = !!(state.regionData && state.regionData.regions.length > 1 && REGIONS.length > 1);
+    if (state.region !== 'global'
+        && !(usable && state.regionData.regions.some((r) => r.key === state.region))) {
+      state.region = 'global';   // region vanished under us (week switch / data refresh)
+    }
+    const rgrp = rsel.closest('.ctl-group');   // labeled group hides with the control
+    if (rgrp) rgrp.classList.toggle('hidden', !usable);
+    rsel.classList.toggle('hidden', !usable);
+    if (usable) {
+      const sig = state.regionData.regions.map((r) => r.key).join(',');
+      if (rsel.dataset.sig !== sig) {
+        rsel.dataset.sig = sig;
+        rsel.innerHTML = '';
+        for (const r of state.regionData.regions) {
+          const o = document.createElement('option');
+          o.value = r.key; o.textContent = r.label;
+          rsel.appendChild(o);
+        }
+      }
+      rsel.value = state.region;
+      rsel.onchange = () => setRegion(rsel.value, true);
+    }
+  }
+}
+
+/* Region switch (dropdown or URL sync): re-render the scorecard, move the
+   map, persist to the hash (#region=, Global = no param). */
+function setRegion(key, push) {
+  if (key === state.region) return;
+  state.region = key;
+  renderHeader();      // the EVENTS stat is region-scoped
+  renderControls();    // type-tab counts follow the region
+  renderAll();
+  if (window.MergedMap) MergedMap.setRegion(regionDef(key));
+  syncUrl(push);
 }
 
 /* ------------------------------------------------------------------ */
@@ -583,11 +697,60 @@ function activeTypes() {
   return state.tab === 'all' ? TYPE_ORDER : [state.tab];
 }
 
+/* Scorecard rows of the active region: rows come pre-sliced server-side
+   (scorecard_by_region.json, regions-data contract); Global reuses scorecard.json
+   itself (identical by construction — the contract omits the global blob). The
+   model/lead rosters in loadData keep reading the global state.scorecard, so a
+   region never shrinks the model list or the lead pills. */
+function scRows() {
+  if (state.region === 'global' || !state.regionData) return state.scorecard;
+  return state.regionData.rows[state.region] || [];
+}
+// the selected region's entry ({key,label,n_events,by_type}) from the contract, or null for Global
+const regionEntry = () => (state.region !== 'global' && state.regionData
+  ? state.regionData.regions.find((r) => r.key === state.region) || null
+  : null);
+
+/* JS port of ewb_live/regions.py assign_regions (keep in sync): the bbox
+   centroid — lon follows the EASTWARD arc so antimeridian-wrapped boxes
+   (lon_min > lon_max, EWB convention) land right — must sit inside the
+   region's lat/lon box, inclusive on all edges. NH/SH boxes start at ±20°,
+   so subtropical centroids belong to Tropics only; multi-membership is
+   expected (a centroid in Europe is also Northern Hemisphere). */
+function eventRegions(bbox) {
+  if (!Array.isArray(bbox) || bbox.length !== 4) return [];
+  const [latmin, latmax, lonmin, lonmax] = bbox;
+  const lat = (latmin + latmax) / 2;
+  const dlon = ((lonmax - lonmin) % 360 + 360) % 360;
+  const lon = (((lonmin + dlon / 2 + 180) % 360) + 360) % 360 - 180;
+  const keys = [];
+  for (const r of REGIONS) {
+    if (r.key === 'global') { keys.push('global'); continue; }
+    const lonIn = ((lon - r.lon[0]) % 360 + 360) % 360 <= (r.lon[1] - r.lon[0]);
+    if (r.lat[0] <= lat && lat <= r.lat[1] && lonIn) keys.push(r.key);
+  }
+  return keys;
+}
+const inRegion = (e) => state.region === 'global' || regionsOf(e).includes(state.region);
+/* Regions of one event: the server's footprint-based map when the contract
+   carries it (authoritative — the tables were built from exactly these keys),
+   the centroid port otherwise (older region file / id the file does not cover). */
+function regionsOf(e) {
+  const m = state.regionData && state.regionData.events;
+  if (m && e && m[e.id]) return m[e.id];
+  return eventRegions(e && e.bbox);
+}
+window.EwbRegions = { eventRegions, forEvent: (id, bbox) => regionsOf({ id, bbox }) };
+// small-sample threshold (owner 2026-11-10): cells under this read as small-n
+const minSample = () => (state.regionData && state.regionData.assignment
+  && Number.isFinite(state.regionData.assignment.min_sample)
+  ? state.regionData.assignment.min_sample : 5);
+
 function scIndex() {
   // (etype,metric,lead) -> {model: {mean, rel, n}}; lead may be null (event-level metrics)
   const idx = new Map();
   const B = state.baseline;
-  for (const r of state.scorecard) {
+  for (const r of scRows()) {
     if (!state.models.has(r.model)) continue;
     const key = `${r.event_type}|${r.metric}|${r.lead_time_hours}`;
     let g = idx.get(key);
@@ -611,7 +774,7 @@ function metricsFor(etype) {
   const fromMeta = state.meta.metrics
     ? Object.keys(state.meta.metrics).filter((k) => (state.meta.metrics[k].event_types || []).includes(etype))
     : [];
-  const fromData = [...new Set(state.scorecard.filter((r) => r.event_type === etype).map((r) => r.metric))];
+  const fromData = [...new Set(scRows().filter((r) => r.event_type === etype).map((r) => r.metric))];
   const seen = new Set();
   const all = [...fromMeta, ...fromData].filter((m) => (seen.has(m) ? false : (seen.add(m), fromData.includes(m))));
   // compact hero: one headline metric per event type unless 'more metrics' is on
@@ -635,9 +798,75 @@ function metricColumns(idx, etype, met, leads) {
   return null; // no data at all
 }
 
+/* Verdict strip (design.md P1.4): answer-first summary above the tables.
+   For each active event type, find the model with the best mean relative skill
+   over the currently visible metric × lead cells, and how many cells it wins.
+   Recomputed on every scorecard render so it follows tab/model/lead filters. */
+function renderVerdictStrip(idx) {
+  const host = $('#verdict-strip');
+  if (!host) return;
+  const B = state.baseline;
+  const leads = state.allLeads.filter((h) => state.leads.has(h));
+  const visible = state.allModels.filter((m) => state.models.has(m));
+  const parts = [];
+  for (const etype of activeTypes()) {
+    // metric × lead cells that actually have data for this lane
+    const cols = [];
+    for (const met of metricsFor(etype)) {
+      const c = metricColumns(idx, etype, met, leads);
+      if (c) cols.push({ met, columns: c });
+    }
+    if (!cols.length) continue;
+    // accumulate relative skill per model over visible cells
+    const acc = {};
+    for (const m of visible) if (m !== B) acc[m] = { s: 0, n: 0, wins: 0 };
+    let cellN = 0;
+    for (const { met, columns } of cols) {
+      for (const c of columns) {
+        if (c.kind === 'mean') continue;   // mean duplicates lead data
+        const lead = c.kind === 'lead' ? c.lead : null;
+        const g = idx.get(`${etype}|${met}|${lead}`);
+        if (!g) continue;
+        const rels = {};
+        for (const m of visible) {
+          if (m === B) continue;
+          const cell = g[m];
+          if (!cell || !Number.isFinite(cell.rel)) continue;
+          rels[m] = cell.rel;
+          acc[m].s += cell.rel; acc[m].n += 1;
+        }
+        const scored = Object.keys(rels);
+        if (!scored.length) continue;
+        cellN += 1;
+        const best = scored.reduce((a, b) => (rels[b] > rels[a] ? b : a));
+        acc[best].wins += 1;
+      }
+    }
+    const ranked = Object.keys(acc).filter((m) => acc[m].n > 0)
+      .sort((a, b) => (acc[b].s / acc[b].n) - (acc[a].s / acc[a].n));
+    if (!ranked.length) continue;
+    const leader = ranked[0];
+    const meanRel = acc[leader].s / acc[leader].n;
+    const cells = acc[leader].wins;
+    parts.push({
+      etype, model: leader, meanRel, cells, total: cellN,
+    });
+  }
+  if (!parts.length) { host.hidden = true; host.innerHTML = ''; return; }
+  host.hidden = false;
+  host.innerHTML = parts.map((p) => {
+    const chip = `<span class="type-chip" style="background:${TYPE_META[p.etype].color}">${esc(TYPE_META[p.etype].short)}</span>`;
+    const sign = p.meanRel >= 0 ? '+' : '';
+    const txt = `<b>${esc(p.model)}</b> best · ${sign}${p.meanRel.toFixed(1)}% vs ${esc(B)}` +
+      ` · won ${p.cells}/${p.total} cells`;
+    return `<span class="verdict-item">${chip}<span class="v-text">${txt}</span></span>`;
+  }).join('');
+}
+
 function renderScorecard() {
   const host = $('#scorecard-tables');
   host.innerHTML = '';
+  let anySmallN = false;      // any rendered cell rests on < minSample() events
   // partial-results badge: shows until every meta-declared model has scores
   // (or the run declares itself complete). Auto-clears when the full run lands.
   const badge = $('#scorecard-status');
@@ -650,8 +879,28 @@ function renderScorecard() {
       : `partial results — ${scored.size} of ${declared.length} models scored`;
     badge.classList.toggle('hidden', complete);
   }
+  const scope = $('#sc-scope');
+  if (scope) {
+    scope.innerHTML = '';
+    const re = regionEntry();
+    if (re) {
+      scope.appendChild(el('span', '', `in ${esc(re.label)} \u00b7 `));
+      const g = el('button', 'linkbtn', 'all regions');
+      g.type = 'button';
+      g.onclick = () => setRegion('global', true);
+      scope.appendChild(g);
+    }
+    if (state.tab !== 'all') {
+      scope.appendChild(el('span', '', `${esc(TYPE_META[state.tab].label)} only \u00b7 `));
+      const all = el('button', 'linkbtn', 'show all types');
+      all.type = 'button';
+      all.onclick = () => setTab('all');
+      scope.appendChild(all);
+    }
+  }
   const idx = scIndex();
   tooltipIdx = idx;
+  renderVerdictStrip(idx);
   const leads = state.allLeads.filter((h) => state.leads.has(h));
   const B = state.baseline;
 
@@ -691,19 +940,30 @@ function renderScorecard() {
     });
   for (const etype of activeTypes()) {
     const cols = etypeCols.get(etype);
-    const nEv = state.events.filter((e) => e.event_type === etype).length;
+    // honest event counts: regions report the scored-event split from the data
+    // contract (n_events/by_type, centroid rule owned by ewb_live/regions.py);
+    // Global counts the curated catalog (same universe as before this feature).
+    const re = regionEntry();
+    const nEv = re ? (re.by_type || {})[etype] || 0
+      : state.events.filter((e) => e.event_type === etype).length;
 
     const block = el('div', 'sc-block');
+    const smallLane = nEv > 1 && nEv < minSample();
     block.appendChild(el('h3', '',
       `<span class="type-chip" style="background:${TYPE_META[etype].color}">${esc(TYPE_META[etype].short)}</span>` +
-      `${nEv} event${nEv === 1 ? '' : 's'}${nEv === 1 ? ' · indicative' : ''}`));
+      `${nEv} event${nEv === 1 ? '' : 's'}` +
+      (nEv === 1 ? ' · indicative' : smallLane ? ' · small sample' : '')));
 
     /* Owner 2026-11-07: an empty lane is a legitimate outcome, not a bug —
        calm one-line note + criteria tooltip instead of a table of dashes. */
     if (!nEv) {
       const note = el('p', 'lane-empty');
-      note.textContent = emptyLaneLine(etype);
-      note.title = TYPE_CRITERIA[etype];
+      const re2 = regionEntry();
+      note.textContent = re2
+        ? `No ${TYPE_META[etype].label.toLowerCase()} in ${re2.label} this window`
+        : emptyLaneLine(etype);
+      note.title = re2 ? 'Events are assigned to regions by the centroid of their bounding box'
+        : TYPE_CRITERIA[etype];
       block.appendChild(note);
       host.appendChild(block);
       continue;
@@ -746,10 +1006,15 @@ function renderScorecard() {
         for (const c of columns) {
           if (c.kind === 'mean') {
             const mv = meanVisible(idx, etype, met, model, leads);
-            const meanTd = el('td', 'cell mean', mv === null ? '—' : fmtVal(met, mv));
+            const mN = meanSample(idx, etype, met, model, leads);
+            const mSmall = mN !== null && mN < minSample();
+            const meanTd = el('td', 'cell mean' + (mSmall ? ' small-n' : ''),
+              mv === null ? '—' : fmtVal(met, mv));
             meanTd.dataset.model = model;
             if (n) meanTd.style.background = model === B ? '' : cellColor(s / n);
-            attachTip(meanTd, etype, met, { kind: 'mean', mean: mv, rel: n ? s / n : null, nLeads: n });
+            if (mSmall) anySmallN = true;
+            attachTip(meanTd, etype, met, { kind: 'mean', mean: mv, rel: n ? s / n : null,
+              nLeads: n, n: mN, small: mSmall });
             tr.appendChild(meanTd);
             continue;
           }
@@ -762,10 +1027,14 @@ function renderScorecard() {
           }
           any = true;
           if (Number.isFinite(cell.rel)) { s += cell.rel; n += 1; }
-          const td = el('td', 'cell' + (model === B ? ' baseline' : ''), fmtVal(met, cell.mean));
+          const small = Number.isFinite(cell.n) && cell.n < minSample();
+          if (small) anySmallN = true;
+          const td = el('td', 'cell' + (model === B ? ' baseline' : '')
+            + (small ? ' small-n' : ''), fmtVal(met, cell.mean));
           td.dataset.model = model;
           td.style.background = model === B ? '' : cellColor(cell.rel);
-          attachTip(td, etype, met, { kind: c.kind, lead, mean: cell.mean, rel: cell.rel, n: cell.n, lo: cell.lo, hi: cell.hi });
+          attachTip(td, etype, met, { kind: c.kind, lead, mean: cell.mean, rel: cell.rel,
+            n: cell.n, lo: cell.lo, hi: cell.hi, small });
           tr.appendChild(td);
         }
         void any;
@@ -814,6 +1083,20 @@ function renderScorecard() {
     };
     requestAnimationFrame(() => { updScroll(); wrap.addEventListener('scroll', updScroll, { passive: true }); });
   }
+  /* Small-sample warning (owner 2026-11-10): cells under minSample() events get
+     a red edge + glow; say what that means once, next to the tables, and only
+     when the current view actually contains such a cell. */
+  const note = $('#sc-sample-note');
+  if (note) {
+    note.hidden = !anySmallN;
+    if (anySmallN) {
+      const re = regionEntry();
+      note.innerHTML = `<span class="sn-mark" aria-hidden="true"></span> Glowing cells rest on `
+        + `<b>fewer than ${minSample()} events</b>`
+        + (re ? ` in ${esc(re.label)}` : '') + '. '
+        + 'They are indicative, not a verdict: one event can move a cell by tens of percent.';
+    }
+  }
 }
 
 function meanVisible(idx, etype, met, model, leads) {
@@ -823,6 +1106,22 @@ function meanVisible(idx, etype, met, model, leads) {
     if (g && g[model] && Number.isFinite(g[model].mean)) { s += g[model].mean; n += 1; }
   }
   return n ? s / n : null;
+}
+
+/* Largest n_events behind any visible lead cell of one (etype, metric, model):
+   the mean column averages leads of the SAME event set, so its own sample is
+   that union — the biggest per-lead n is the honest estimate. Used only for the
+   small-sample cue (owner 2026-11-10: warn below 5 events). */
+function meanSample(idx, etype, met, model, leads) {
+  let best = null;
+  for (const h of leads) {
+    const g = idx.get(`${etype}|${met}|${h}`);
+    const c = g && g[model];
+    if (c && Number.isFinite(c.mean) && Number.isFinite(c.n)) {
+      best = best === null ? c.n : Math.max(best, c.n);
+    }
+  }
+  return best;
 }
 
 /* tooltip (B1, DR2: mouse + keyboard + touch)
@@ -856,6 +1155,13 @@ function attachTip(td, etype, met, c) {
     }
     if (c.kind !== 'mean' && Number.isFinite(c.n)) {
       rows.push(`<div class="t-row"><span>n events</span><b>${c.n}</b></div>`);
+    }
+    /* small-sample cue (owner 2026-11-10): say it in the tooltip too, so the
+       red edge never reads as a performance colour */
+    if (c.small) {
+      const nTxt = Number.isFinite(c.n) ? `${c.n} event${c.n === 1 ? '' : 's'}` : 'tiny';
+      rows.push(`<div class="t-row t-small"><span>sample</span>`
+        + `<b class="t-warn">${nTxt} \u00b7 below ${minSample()}</b></div>`);
     }
     rows.push(`<div class="t-row t-dir"><span>${mm.dir === 'zero' ? 'closer to 0 is better' : mm.higher_is_better ? 'higher is better' : 'lower is better'}</span></div>`);
     if (c.kind === 'mean' && Number.isFinite(c.nLeads)) {
@@ -1021,6 +1327,7 @@ function renderSkillCharts() {
   if (typeof Plotly === 'undefined') { ensurePlotly().then(() => renderSkillCharts()).catch(() => {}); return; }
   const mode = state.chartMode;
   const pending = [];
+  const rows = scRows();   // region-aware rows (same accessor as the tables)
 
   for (const etype of activeTypes()) {
     const metrics = metricsFor(etype);
@@ -1038,13 +1345,13 @@ function renderSkillCharts() {
       const traces = [];
       state.allModels.forEach((model, mIdx) => {
         if (!state.models.has(model)) return;
-        const pts = state.scorecard
+        const pts = rows
           .filter((r) => r.event_type === etype && r.metric === met && r.model === model
             && r.lead_time_hours !== null && Number.isFinite(r.mean_value))
           .sort((a, b) => a.lead_time_hours - b.lead_time_hours);
         if (!pts.length) return;
         const refByLead = {};
-        if (mode === 'rel') for (const r of state.scorecard)
+        if (mode === 'rel') for (const r of rows)
           if (r.event_type === etype && r.metric === met && r.model === state.baseline) refByLead[r.lead_time_hours] = r.mean_value;
         const ys = pts.map((p) => mode === 'rel'
           ? relSkill(p.mean_value, refByLead[p.lead_time_hours], met)   // null when no reference → line gap
@@ -1358,6 +1665,9 @@ function syncUrl(push) {
   const params = {};
   if (state.selectedEvent) params.event = state.selectedEvent;
   if (state.detailLead) params.lead = `${state.detailLead}h`;
+  if (state.detailLayers) params.lyr = state.detailLayers;
+  if (state.detailDay != null) params.day = state.detailDay;
+  if (state.region && state.region !== 'global') params.region = state.region;
   // the merged global map's #map/#layers/#sel ride along so Back from a
   // detail restores the slider/selection state (URL is the source of truth)
   if (window.MergedMap) Object.assign(params, MergedMap.urlParams());
@@ -1368,168 +1678,37 @@ function syncUrl(push) {
   } catch (e) { /* file:// or sandboxed */ }
 }
 
-let map = null;
-let mapFitted = false;
-const mapRects = new Map();   // id -> L.layerGroup (1-2 rectangles; split at antimeridian)
-let mapHalo = null;           // canvas-color halo layer under the last-viewed box
-
-/* M3 (DR2): catalog map uses the same theme-matched Esri gray base as the
-   detail maps — dark mode gets World Dark Gray, replacing the OSM tiles that
-   were faked dark with a CSS invert filter (land read near-white). */
-let homeTileLayer = null;
-function homeTiles() {
-  if (!map) return;
-  if (homeTileLayer) { map.removeLayer(homeTileLayer); homeTileLayer = null; }
-  const dark = document.documentElement.dataset.theme === 'dark';
-  homeTileLayer = L.tileLayer(
-    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_' +
-    (dark ? 'Dark' : 'Light') + '_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-    { maxZoom: 10, minZoom: 1,
-      attribution: 'Powered by Esri | Sources: Esri, Garmin, GEBCO, NOAA, USGS, and the GIS User Community' },
-  ).addTo(map);
-}
-
-function eventRectLayers(ev) {
-  const [lmin, lmax, lonmin, lonmax] = ev.bbox;
-  const color = typeColor(ev.event_type);
-  // design spec 2026-11-08: base stroke 2 px, fill tint .12 (hover 3 px/.22)
-  const style = { color, weight: 2, fillColor: color, fillOpacity: 0.12 };
-  if (isFullBandBox(ev.bbox)) return [];   // degenerate world-wide band (no footprint to recover from): draw nothing
-  const boxes = lonmin <= lonmax
-    ? [[[lmin, lonmin], [lmax, lonmax]]]
-    : [[[lmin, lonmin], [lmax, 180]], [[lmin, -180], [lmax, lonmax]]]; // wrapped arc across the antipode
-  return boxes.map((b) => L.rectangle(b, { ...style, keyboard: false }));
-}
-
-/* globalmap.js recovered a wrapped bbox for a degenerate full-band event: patch the catalog's
-   copy and redraw its box (see mergedmap.js repairBboxes) */
+/* The merged map recovered a wrapped bbox for a degenerate full-band event:
+   patch the catalog's copy (see mergedmap.js repairBboxes) */
 const bboxFixes = {};   // the merged map self-starts, so it can resolve BEFORE state.events is loaded
 window.applyBboxFix = function (id, bbox) {
   bboxFixes[id] = bbox;
   const ev = state.events.find((e) => e.id === id);
   if (!ev) return;
   ev.bbox = bbox;
-  const grp = mapRects.get(id);
-  if (grp && map) { map.removeLayer(grp); mapRects.delete(id); }
-  if (map) renderMap();
+  delete ev._region;
+  renderEventTable();
 };
-function isFullBandBox(b) { return Array.isArray(b) && b[3] >= b[2] && (b[3] - b[2]) >= 300; }
-function bboxAreaDeg(ev) {
-  const [lmin, lmax, lonmin, lonmax] = ev.bbox;
-  const w = lonmax >= lonmin ? lonmax - lonmin : (180 - lonmin) + (lonmax + 180);
-  return (lmax - lmin) * w;
-}
 
-/* Design spec 2026-11-08: hover = stroke 2→3 px, fill .12→.22; the box of
-   the event you last viewed keeps a 3 px stroke + 1.5 px canvas-color halo
-   on return to the list (drawn underneath, box stroke re-raised on top). */
-function applyBoxStyle(ev, hover) {
-  const group = mapRects.get(ev.id);
-  if (!group) return;
-  const c = typeColor(ev.event_type);
-  let w = 2, fill = 0.12;
-  if (state.selectedEvent === ev.id) { w = 3; fill = 0.45; }
-  else if (state.lastViewedEvent === ev.id) { w = 3; fill = 0.22; }
-  if (hover) { w = 3; fill = Math.max(fill, 0.22); }
-  group.eachLayer((r) => r.setStyle({ color: c, weight: w, fillColor: c, fillOpacity: fill }));
-}
-
-function renderMap() {
-  if (typeof L === 'undefined') return;
-  if (!map) {
-    /* Esri tiles end at ~85°N and the world is ~2:1 in this frame: bound the view
-       so no empty strip shows above the tile cutoff (G-22) */
-    map = L.map('map', { worldCopyJump: true, scrollWheelZoom: true,
-      maxBounds: [[-60, -540], [85, 540]], maxBoundsViscosity: 1 }).setView([28, 5], 2);
-    homeTiles();
-    window.__catalogMap = map;   // debug/e2e hook (same pattern as __debug)
-  }
-  for (const [id, group] of mapRects) { if (!state.events.some((e) => e.id === id)) { map.removeLayer(group); mapRects.delete(id); } }
-  // create groups once; smallest-area box is created LAST so it paints
-  // topmost and wins the click on overlap (design spec 2026-11-08)
-  const byAreaDesc = [...state.events].sort((a, b) => bboxAreaDeg(b) - bboxAreaDeg(a));
-  for (const ev of byAreaDesc) {
-    if (mapRects.has(ev.id)) continue;
-    // featureGroup (NOT layerGroup): only FeatureGroup propagates child
-    // rectangle click/mouseover/mouseout to the group handlers below.
-    const group = L.featureGroup(eventRectLayers(ev));
-    // tooltip per RECTANGLE — a LayerGroup has no anchorable latlng in this
-    // Leaflet build ("Unable to get source layer LatLng" throws mid-dispatch
-    // and kills the click handler that fires after it)
-    const tip = `${ev.title} · ${fmtDate(ev.start)} – ${fmtDate(eventLastDay(ev))}`;
-    group.eachLayer((r) => r.bindTooltip(tip, { direction: 'top', sticky: true }));
-    group.on('click', () => selectEvent(ev.id, false));  // same history/save semantics as a list-row click (owner 2026-11-08)
-    group.on('mouseover', () => applyBoxStyle(ev, true));
-    group.on('mouseout', () => applyBoxStyle(ev));
-    mapRects.set(ev.id, group);
-  }
-  const visible = byAreaDesc.filter((ev) =>
-    (state.tab === 'all' || state.tab === ev.event_type) && matchesSearch(ev));
-  const visIds = new Set(visible.map((e) => e.id));
-  for (const ev of state.events) {          // hide what the lane filtered out
-    const group = mapRects.get(ev.id);
-    if (group && !visIds.has(ev.id) && map.hasLayer(group)) map.removeLayer(group);
-  }
-  for (const ev of visible) {                // (re-)add in paint order
-    const group = mapRects.get(ev.id);
-    if (!map.hasLayer(group)) group.addTo(map);
-    applyBoxStyle(ev);
-    group.eachLayer((r) => {                 // e2e + a11y: tag paths with the event id
-      const p = r.getElement && r.getElement();
-      if (p) { p.setAttribute('data-ev', ev.id); p.setAttribute('aria-hidden', 'true'); }
-    });
-  }
-  // canvas-color halo under the last-viewed box (1.5 px ring around the 3 px stroke)
-  if (mapHalo) { map.removeLayer(mapHalo); mapHalo = null; }
-  const lv = visible.find((e) => e.id === state.lastViewedEvent && state.selectedEvent !== e.id);
-  if (lv) {
-    const canvas = cssVar('--bg-inset', '#fff');
-    const [, , lonmin, lonmax] = lv.bbox;
-    const rects = lonmin <= lonmax ? [lv.bbox]
-      : [[lv.bbox[0], lv.bbox[1], lv.bbox[2], 180], [lv.bbox[0], lv.bbox[1], -180, lv.bbox[3]]];
-    mapHalo = L.layerGroup(rects.map((b) => L.rectangle(
-      [[b[0], b[2]], [b[1], b[3]]], { color: canvas, weight: 6, fill: false, interactive: false, keyboard: false })));
-    mapHalo.addTo(map);
-    for (const id of visIds) {
-      const g = mapRects.get(id);
-      if (g && lv.id !== id) g.eachLayer((r) => r.bringToFront && r.bringToFront());
+/* Human name for a list row / detail title: "Heat wave · Iran". Region comes
+   from the bbox vote once the country table is loaded (vague band before). */
+function eventName(ev, viz) {
+  const t = (TYPE_META[ev.event_type] || {}).short || ev.event_type;
+  let region;
+  if (viz) region = eventRegion(ev, viz);
+  else {
+    if (!ev._region || ev._regionRough !== !COUNTRIES) {
+      ev._region = eventRegion(ev, null); ev._regionRough = !COUNTRIES;
     }
-    const g = mapRects.get(lv.id);
-    if (g) g.eachLayer((r) => r.bringToFront && r.bringToFront());
+    region = ev._region;
   }
-  if (!mapFitted && state.events.length) {
-    mapFitted = true;
-    const lats = state.events.flatMap((e) => [e.bbox[0], e.bbox[1]]);
-    const lons = state.events.flatMap((e) => e.bbox[2] <= e.bbox[3] ? [e.bbox[2], e.bbox[3]] : [e.bbox[2], 180, -180, e.bbox[3]]);
-    map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]],
-                  { padding: [16, 16], maxZoom: 3 });
-  }
-  /* Empty-lane note over the map (owner 2026-11-07): same quiet line as the
-     table, so an empty freeze lane reads as "nothing here", not "broken". */
-  const shownN = state.events.filter((e) =>
-    (state.tab === 'all' || state.tab === e.event_type) && matchesSearch(e)).length;
-  let overlay = document.getElementById('map-lane-empty');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'map-lane-empty';
-    overlay.className = 'lane-empty';
-    overlay.setAttribute('role', 'status');
-    document.getElementById('map').appendChild(overlay);
-  }
-  if (shownN === 0) {
-    const searching = !!(state.search && state.search.trim());
-    overlay.textContent = searching ? 'No events match your search' : emptyLaneLine(state.tab);
-    overlay.title = searching ? '' : (TYPE_CRITERIA[state.tab] || '');
-    overlay.classList.remove('hidden');
-  } else {
-    overlay.classList.add('hidden');
-  }
+  return `${t} \u00b7 ${String(region).split(',')[0]}`;
 }
 
 function matchesSearch(ev) {
   if (!state.search) return true;
   const q = state.search.toLowerCase();
-  return (ev.title + ' ' + ev.id + ' ' + (ev.details?.synoptic || '') + ' ' + ev.event_type).toLowerCase().includes(q);
+  return (ev.title + ' ' + eventName(ev) + ' ' + ev.id + ' ' + (ev.details?.synoptic || '') + ' ' + ev.event_type).toLowerCase().includes(q);
 }
 
 const EVENT_TABLE_MAX_ROWS = 400;   // real runs detect 1000+ events; don't build 1500 DOM rows
@@ -1556,6 +1735,7 @@ function renderEventTable() {
   let n = 0, drawn = 0;
   for (const ev of state.events) {
     if (state.tab !== 'all' && ev.event_type !== state.tab) continue;
+    if (!inRegion(ev)) continue;   // Region dropdown: list follows the region
     if (!matchesSearch(ev)) continue;
     n += 1;
     if (drawn >= EVENT_TABLE_MAX_ROWS) continue;   // count all, render a bounded prefix
@@ -1566,7 +1746,8 @@ function renderEventTable() {
     // DR2 minor: column-abbreviated unit so Peak isn't clipped at 1440; full unit in title
     const units = peakUnitFull;
     const peak = typeof ev.peak_value === 'number' && Number.isFinite(ev.peak_value)
-      ? (Math.abs(ev.peak_value) >= 100 ? Math.round(ev.peak_value) : ev.peak_value.toFixed(1)) + (units ? ' ' + units : '')
+      ? (Math.abs(ev.peak_value) >= 100 ? Math.round(ev.peak_value) : ev.peak_value.toFixed(1))
+        + (units ? ` <span class="ev-unit">${esc(units)}</span>` : '')
       : '—';
     const tr = el('tr', state.selectedEvent === ev.id ? 'sel' : '');
     /* DR3: documented-exclusion events get the pair_status reason as a row
@@ -1585,29 +1766,43 @@ function renderEventTable() {
     tr.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectEvent(ev.id, false); }
     });
+    const short = (iso) => fmtDate(iso).replace(/, \d{4}$/, '');
+    const days = eventDurationDays(ev);
     tr.innerHTML =
       `<td><span class="type-dot" style="background:${tm.color}" title="${esc(ev.event_type.replace('_', ' '))}"></span></td>` +
-      `<td>${esc(ev.title)}</td>` +
-      `<td>${fmtDate(ev.start)}</td><td>${fmtDate(eventLastDay(ev))}</td>` +
-      `<td class="num">${eventDurationDays(ev) ?? '—'}</td><td class="num" title="${esc(peakUnitFull)}">${peak}</td>`;
+      `<td><span class="ev-name">${esc(eventName(ev))}</span>` +
+      `<span class="ev-sub">${short(ev.start)} \u2013 ${short(eventLastDay(ev))}${days ? ` \u00b7 ${days} day${days === 1 ? '' : 's'}` : ''}` +
+      `<span class="ev-live" hidden> \u00b7 on map now</span></span></td>` +
+      `<td class="num" title="${esc(peakUnitFull)}">${peak}</td>`;
+    // list ⇄ map: pointing at a row outlines the event on the map and timeline
+    tr.addEventListener('pointerenter', () => { if (window.MergedMap) MergedMap.preview(ev.id); });
+    tr.addEventListener('pointerleave', () => { if (window.MergedMap) MergedMap.preview(null); });
+    tr.addEventListener('focus', () => { if (window.MergedMap) MergedMap.preview(ev.id); });
+    tr.addEventListener('blur', () => { if (window.MergedMap) MergedMap.preview(null); });
     tr.onclick = () => selectEvent(ev.id, false);
     tbody.appendChild(tr);
   }
   if (n > drawn) {
     const tr = el('tr', 'more-rows');
-    tr.innerHTML = `<td></td><td colspan="5">… ${n - drawn} more — refine with the filter</td>`;
+    tr.innerHTML = `<td></td><td colspan="2">… ${n - drawn} more — refine with the filter</td>`;
     tbody.appendChild(tr);
   } else if (n === 0) {
     // Owner 2026-11-07: empty lane = legitimate outcome; note + criteria tooltip.
     const tr = el('tr', 'lane-empty-row');
     const searching = !!(state.search && state.search.trim());
-    const note = searching ? 'No events match your search' : emptyLaneLine(state.tab);
+    const re = regionEntry();
+    const note = searching ? 'No events match your search'
+      : re && state.tab === 'all' ? `No events in ${re.label} this window`
+      : re ? `No ${TYPE_META[state.tab] ? TYPE_META[state.tab].label.toLowerCase() : ''} in ${re.label} this window`
+      : emptyLaneLine(state.tab);
     const crit = searching ? ''
+      : re ? 'Events are assigned to regions by the centroid of their bounding box'
       : state.tab === 'all' ? 'Events must clear the detection criteria for their type in the 90-day window.' : TYPE_CRITERIA[state.tab];
-    tr.innerHTML = `<td></td><td colspan="5"><span class="lane-empty"${crit ? ` title="${esc(crit)}"` : ''}>${esc(note)}${crit ? ' <span class="crit-mark" aria-hidden="true">ⓘ</span>' : ''}</span></td>`;
+    tr.innerHTML = `<td></td><td colspan="2"><span class="lane-empty"${crit ? ` title="${esc(crit)}"` : ''}>${esc(note)}${crit ? ' <span class="crit-mark" aria-hidden="true">ⓘ</span>' : ''}</span></td>`;
     tbody.appendChild(tr);
   }
   $('#event-count').textContent = `${n} event${n === 1 ? '' : 's'}`;
+  markMapRows();
   /* M7 (DR2): same horizontal-scroll affordance as the scorecard tables */
   const evWrap = tbody.closest('.table-wrap');
   if (evWrap) {
@@ -1641,6 +1836,31 @@ function renderEventTable() {
             { passive: true, once: true }));
       }
     }
+  }
+}
+
+/* list ⇄ map: the merged map reports which events are on screen at the
+   current time step and which are selected; rows mirror that. */
+let mapRowState = { active: [], sel: [] };
+window.onMapEvents = (active, sel) => {
+  const scroll = sel.length && sel.join() !== mapRowState.sel.join();
+  mapRowState = { active, sel };
+  markMapRows(scroll);
+};
+function markMapRows(scroll) {
+  const act = new Set(mapRowState.active), sel = new Set(mapRowState.sel);
+  let first = null;
+  document.querySelectorAll('#event-table tbody tr[data-id]').forEach((tr) => {
+    const id = tr.dataset.id, live = tr.querySelector('.ev-live');
+    tr.classList.toggle('live', act.has(id));
+    if (live) live.hidden = !act.has(id);
+    tr.classList.toggle('picked', sel.has(id));
+    if (sel.has(id) && !first) first = tr;
+  });
+  if (scroll && first) {                    // bring the picked row into the list's own viewport
+    const wrap = first.closest('.table-wrap');
+    const r = first.getBoundingClientRect(), w = wrap.getBoundingClientRect();
+    if (r.top < w.top + 30 || r.bottom > w.bottom) wrap.scrollTop += r.top - w.top - w.height / 3;
   }
 }
 
@@ -1758,7 +1978,7 @@ function selectEvent(id, fromMap, nav) {
   nav = nav || { push: true };
   const wasOpen = !!state.selectedEvent && state.selectedEvent !== id;
   const openingFromList = !state.selectedEvent;
-  if (wasOpen) { state.detailModels = null; state.detailLead = null; state.detailChartsPending = null; }
+  if (wasOpen) { state.detailModels = null; state.detailLead = null; state.detailLayers = null; state.detailDay = null; state.detailChartsPending = null; }
   if (openingFromList) {
     /* A1: remember the list view (page + table scroll) so close/Back lands
        the owner exactly where they left it; filters live in state + the
@@ -1776,6 +1996,11 @@ function selectEvent(id, fromMap, nav) {
     const h = parseInt(hashParams().lead, 10);
     state.detailLead = Number.isFinite(h) ? h : null;
   }
+  if (state.detailLayers == null) state.detailLayers = hashParams().lyr || null;
+  if (state.detailDay == null) {
+    const dd = parseInt(hashParams().day, 10);
+    state.detailDay = Number.isFinite(dd) ? dd : null;
+  }
   syncUrl(nav.push && openingFromList);
   const sec = $('#detail-sec');
   sec.classList.remove('hidden');
@@ -1783,16 +2008,13 @@ function selectEvent(id, fromMap, nav) {
   $('#scorecard-sec').classList.add('hidden');
   $('#events-sec').classList.add('hidden');
   $('#global-sec').classList.add('hidden');   // one primary view at a time (QA 2026-11-06)
+  document.body.classList.add('detail-open');
   const ev = state.events.find((e) => e.id === id);
   if (!ev) return;
   /* G-12: "Heat wave · S. Sudan" (type · region) — the dated data title stays in the data, the
      dates are in the story line. Region upgrades once the country table is loaded. */
   const h2 = $('#detail-title');
-  const humanTitle = () => {
-    const t = (TYPE_META[ev.event_type] || {}).short || ev.event_type;
-    const pn = eventRegion(ev, state._vizFor === id ? state._viz : null);
-    return `${t} \u00b7 ${String(pn).split(',')[0]}`;
-  };
+  const humanTitle = () => eventName(ev, state._vizFor === id ? state._viz : null);
   h2.textContent = humanTitle();
   h2.title = ev.title;
   const chips = $('#detail-chips');
@@ -1858,8 +2080,11 @@ function selectEvent(id, fromMap, nav) {
       EventViz.initialLead = state.detailLead;
       EventViz.onLead = (lead) => { state.detailLead = lead; syncUrl(false); };
       EventViz.onModels = (ms) => { state.detailModels = ms; };
+      EventViz.onLayers = (s) => { state.detailLayers = s || null; syncUrl(false); };
+      EventViz.onDay = (d) => { state.detailDay = d === '' || d == null ? null : d; syncUrl(false); };
       if (!state.detailModels || !state.detailModels.length) state.detailModels = pickDetailModels(ev, viz);
-      EventViz.render(vizHost, viz, ev, { models: state.detailModels, baseline: state.baseline });
+      EventViz.render(vizHost, viz, ev, { models: state.detailModels, baseline: state.baseline,
+        layers: state.detailLayers, day: state.detailDay });
     }).catch((err) => {
       if (state.selectedEvent !== id) return;
       console.warn('viz asset failed for event ' + id + ': ' + err);
@@ -1937,7 +2162,7 @@ function selectEvent(id, fromMap, nav) {
   };
   state.detailChartsPending = buildCharts;
 
-  if (!fromMap) renderEventTable(), renderMap();
+  if (!fromMap) renderEventTable();
   sec.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
 }
 
@@ -1946,10 +2171,13 @@ function closeDetail(nav) {
   state.selectedEvent = null;
   state.detailLead = null;
   state.detailModels = null;
+  state.detailLayers = null;
+  state.detailDay = null;
   state.detailChartsPending = null;
-  if (window.EventViz) { EventViz.onLead = null; EventViz.onModels = null; EventViz.initialLead = null; EventViz.teardown(); }
+  if (window.EventViz) { EventViz.onLead = null; EventViz.onModels = null; EventViz.onLayers = null; EventViz.onDay = null; EventViz.initialLead = null; EventViz.teardown(); }
   syncUrl(!!nav.push);
   $('#detail-sec').classList.add('hidden');
+  document.body.classList.remove('detail-open');
   $('#scorecard-sec').classList.remove('hidden');
   $('#events-sec').classList.remove('hidden');
   syncWindowSections();   // week-aware re-show (ponytail 2026-11-08 16:15)
@@ -1958,7 +2186,7 @@ function closeDetail(nav) {
   const mini = $('#detail-mini'); if (mini) mini.innerHTML = '';
   const charts = $('#detail-charts'); if (charts) charts.innerHTML = '';
   const fold = $('#detail-scores'); if (fold) fold.open = false;
-  renderEventTable(); renderMap();
+  renderEventTable();
   /* A1: restore the list scroll position (page + event table) once the home
      layout is back. Two passes: rAF catches the un-hidden layout, a second
      pass after the map/table re-layout finishes (single rAF clamps short).
@@ -1969,7 +2197,6 @@ function closeDetail(nav) {
     // a11y: hand focus back to the row the user came from (Esc/close/Back)
     const row = retId && document.querySelector(`#event-table tr[data-id="${retId}"]`);
     if (row) row.focus({ preventScroll: true });
-    if (map) map.invalidateSize();
     window.scrollTo(0, back ? back.y : 0);
     const wrap = document.querySelector('#events-sec .table-wrap.tall');
     if (wrap && back) { wrap.scrollLeft = back.x; wrap.scrollTop = back.ty; }
@@ -2004,14 +2231,13 @@ function applyTheme() {
     ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
     : state.themePref;
   document.documentElement.dataset.theme = eff;
-  homeTiles();   // M3: swap catalog basemap with the theme
   $('#theme-toggle').textContent =
     { auto: '◐ auto', light: '☀ light', dark: '☾ dark' }[state.themePref];
 }
 function cycleTheme() {
   state.themePref = { auto: 'light', light: 'dark', dark: 'auto' }[state.themePref];
   saveState(); applyTheme(); renderSkillCharts();
-  renderEventTable(); renderMap();   // type tokens are theme-paired — re-paint dots/boxes
+  renderEventTable();   // type tokens are theme-paired — re-paint dots
   if (state.selectedEvent) selectEvent(state.selectedEvent, true);
 }
 
@@ -2021,7 +2247,6 @@ function cycleTheme() {
 function renderAll() {
   renderScorecard();
   renderSkillCharts();
-  renderMap();
   renderEventTable();
   syncWindowSections();
 }
@@ -2049,11 +2274,15 @@ async function boot() {
     // boxes/table dots/minis read theme-paired CSS tokens at render time;
     // 09:18: and an open detail resolved its palette at build time — re-select
     if (state.themePref === 'auto') {
-      applyTheme(); renderSkillCharts(); renderEventTable(); renderMap();
+      applyTheme(); renderSkillCharts(); renderEventTable();
       if (state.selectedEvent) selectEvent(state.selectedEvent, true);
     }
   });
   $('#detail-close').onclick = () => closeDetail();
+  document.querySelectorAll('[data-jump]').forEach((b) => {   // buttons, not #anchors: the hash carries app state
+    b.onclick = () => document.getElementById(b.dataset.jump).scrollIntoView({
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  });
   /* A1: Esc returns from the event detail to the list (owner bug A1). The
      About dialog and the fullscreen map panel own Esc while they are open. */
   document.addEventListener('keydown', (e) => {
@@ -2082,7 +2311,7 @@ async function boot() {
   });
   $('#event-search').addEventListener('input', (e) => {
     state.search = e.target.value.trim();
-    renderEventTable(); renderMap();
+    renderEventTable();
   });
   let pendingNote = null;
   try {
@@ -2094,6 +2323,7 @@ async function boot() {
     // with the results instead of in front of them (saves a round trip before first paint)
     const dataP = params.get('week') ? null : loadData(null);
     if (dataP) dataP.catch(() => {});   // rejection is surfaced by the await below; no stray unhandledrejection meanwhile
+    const regionsP = loadRegions().catch(() => {});   // region defs for the dropdown/map, in parallel
     await loadWeeks();
     if (params.get('week') && !state.weeks.includes(params.get('week'))) {
       // unknown/expired snapshot: show the current week and drop the stale param
@@ -2106,11 +2336,26 @@ async function boot() {
       pendingNote = 'That weekly snapshot is not available — showing the current week.';
     }
     await (dataP || loadData(state.week));
+    await regionsP;
     if (urlEvent && state.events.some((e) => e.id === urlEvent)) state.selectedEvent = urlEvent;
     else if (urlEvent) {
       setHashParam('event', null);
       setHashParam('lead', null);
       pendingNote = 'That event is not in the current 90-day window (events roll over weekly) — showing the catalog.';
+    }
+    /* Region from the URL (#region=), validated against the data contract: a deep
+       link restores the region view; an unknown key is dropped from the URL and
+       never silently kept (URL/state must agree after boot). The region file is
+       lazy — a region deep link waits for it (a plain Global load never does). */
+    {
+      const urlRegion = hashParams().region;
+      if (urlRegion && urlRegion !== 'global') {
+        if (state.regionHit) await state.regionHit.catch(() => {});
+        const ok = state.regionData && regionDef(urlRegion)
+          && state.regionData.regions.some((r) => r.key === urlRegion);
+        if (ok) state.region = urlRegion;
+        else setHashParam('region', null);
+      }
     }
   } catch (err) {
     console.error(err);
@@ -2125,14 +2370,34 @@ async function boot() {
     if (ev) ev.bbox = bboxFixes[id];
   }
   renderAll();
+  loadCountries().then(() => { if (!state.selectedEvent) renderEventTable(); });   // vague bands → country names
   if (pendingNote) routeNote(pendingNote);
-  if (window.MergedMap) MergedMap.mount();   // one global map (briefs/merged_global_map.md); self-reports failure
+  if (window.MergedMap) {
+    MergedMap.mount();   // one global map (briefs/merged_global_map.md); self-reports failure
+    if (state.region !== 'global') MergedMap.setRegion(regionDef(state.region));   // deep-linked region view
+  }
   if (state.selectedEvent) selectEvent(state.selectedEvent, true, { push: false });
   document.documentElement.classList.remove('deeplink');
   /* A1: one sync path for every way the URL can change under us — Back/Forward
      (popstate) and a pasted/edited #event=… link (hashchange). App-initiated
      pushState/replaceState fire neither, so this never echoes. */
   const syncFromLocation = () => {
+    /* Region follows the URL on Back/Forward (and pasted #region= links) without
+       writing back; an unknown or dropped key falls back to Global. */
+    const reg = hashParams().region || 'global';
+    const wantReg = reg !== 'global' && state.regionData
+      && regionDef(reg) && state.regionData.regions.some((r) => r.key === reg) ? reg : 'global';
+    if (wantReg !== state.region) {
+      state.region = wantReg;
+      renderControls();   // sync the dropdown selection + tab counts
+      renderHeader();     // EVENTS stat follows the region
+      renderAll();
+      if (window.MergedMap) MergedMap.setRegion(regionDef(wantReg));
+    }
+    // a key that is truly unknown (not just a lazy file still in flight) never survives
+    if (reg !== 'global' && wantReg === 'global' && state.regionData && !regionDef(reg)) {
+      setHashParam('region', null);
+    }
     if (window.MergedMap) MergedMap.applyUrl(hashParams());
     const id = hashParams().event;
     if (id && state.events.some((e) => e.id === id)) {
@@ -2148,9 +2413,6 @@ async function boot() {
   };
   window.addEventListener('popstate', syncFromLocation);
   window.addEventListener('hashchange', syncFromLocation);
-  window.addEventListener('resize', () => { /* Plotly responsive handles charts; Leaflet: */
-    if (map) map.invalidateSize();
-  });
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

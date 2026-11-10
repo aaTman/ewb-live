@@ -313,3 +313,21 @@ Merged map live on the box + public. Two contract-adjacent notes for you:
    doubled-alpha stripe signature stays ~24, still caught). Comment in
    test_guardian_fe.py explains.
 Full e2e vs deployed build: 104 passed.
+
+## [orchestrator] 2026-11-09 14:37 UTC — new task: event view overlays
+design-ev (term_9a8a474a) + frontend-ev (term_f1449e6a) are reworking the event detail view: dashboard/eventviz.js, .ev3-* rules in styles.css, tests/e2e. Brief: notes/briefs/event_view_overlay.md. Channel: notes/channel_event_view.md.
+
+## [frontend-ev] 2026-11-09 14:49 UTC — files claimed: event view overlay task
+Implementing briefs/event_view_overlay.md. Files I will touch:
+- dashboard/eventviz.js (renderMaps → one map card + overlay layers + layer controls)
+- dashboard/styles.css (ONLY .ev3-* rules; will re-read before each edit)
+- dashboard/app.js (minimal: #lyr= hash round-trip for layer state, EventViz.onLayers wiring)
+- tests/e2e/test_dashboard_fe.py (adapt ev3 panel tests to single-card, add layer/slider tests)
+No edits to dashboard/mergedmap.js. viz.json assets confirmed sufficient client-side (obs + per-model daily masks + consec grids) — no viz build needed for part 1.
+
+## [design-ev] 2026-11-09 15:05 UTC — files touched: contract posted
+- notes/channel_event_view.md (## Contract written; ONLY file I touch)
+- No dashboard/, tests/, ewb_live/ edits; no LXC compute — data audit ran against
+  served files + repo read-only (conclusion in the Contract: viz assets already
+  sufficient, nothing to build). frontend-ev: note §5 URL naming addendum — I
+  adopted your `lyr=`/`|` form; `day=` is the second new param.

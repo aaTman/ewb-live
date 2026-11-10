@@ -28,6 +28,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import regions
+
 logger = logging.getLogger("ewb_live.pipeline")
 
 RESULTS = Path("data/results")
@@ -520,34 +522,42 @@ def run(
             lambda f: json.dump([e.to_dict() for e in all_events], f, indent=1),
         )
         events = detect_events(start, end, top_n=top_n)
-        # curation decisions (chain merges, cross-type drops) as an auditable
-        # artifact next to the selection (owner rule 2026-11-06)
-        from ewb_live.events import select as _select
-
-        _atomic_write(
-            RESULTS / "curation.json",
-            lambda f: json.dump(_select.LAST_DECISIONS, f, indent=1),
-        )
         # 1b. PUBLISH GATE (Weather Explorer pattern, design channel 2026-11-06):
         # refuse any curated event whose claims (title dates, value ranges,
         # cross-field consistency) don't hold — it must not reach
         # events_selected, scoring, or weekly output. Rejections stay visible in
-        # events.json (full catalogue) and the log.
+        # events.json (full catalogue) and the log, AND land in curation.json
+        # (science-review 2026-11-09: 3 rejections had no artifact paper trail,
+        # 15->12 invisible to funnel replays).
         from ewb_live.events.validate import validate_event
 
         kept: list = []
+        gate_rejects: list[dict] = []
         for e in events:
             probs = validate_event(e)
             if probs:
                 for p in probs:
                     logger.error("publish gate REJECTS event %s (%s): %s",
                                  e.id, e.event_type, p)
+                    gate_rejects.append({"stage": "publish_gate", "id": e.id,
+                                         "event_type": e.event_type,
+                                         "problem": p})
             else:
                 kept.append(e)
         if len(kept) != len(events):
             logger.error("publish gate: %d/%d selected events rejected",
                          len(events) - len(kept), len(events))
         events = kept
+        # curation decisions (chain merges, cross-type drops, publish-gate
+        # rejects) as an auditable artifact next to the selection (owner rule
+        # 2026-11-06; gate entries appended 2026-11-09)
+        from ewb_live.events import select as _select
+
+        _atomic_write(
+            RESULTS / "curation.json",
+            lambda f: json.dump(_select.LAST_DECISIONS + gate_rejects, f,
+                                indent=1),
+        )
         # merged-global-map contract (owner 2026-11-08, briefs/
         # merged_global_map.md): first 6-hourly step the event met its
         # detection criteria; plain attribute, outside fingerprint
@@ -720,6 +730,11 @@ def run(
         )
         scorecard = build_scorecard(scores[SCORE_COLUMNS])
         _atomic_write(RESULTS / "scorecard.json", lambda f: json.dump(scorecard, f, indent=1))
+        _atomic_write(RESULTS / "scorecard_by_region.json", lambda f: json.dump(
+            regions.build_region_scorecards(
+                events, scores[SCORE_COLUMNS],
+                footprints=regions.load_footprints(RESULTS, [e.id for e in events])),
+            f, indent=1))
         expected_pairs = {(e.id, m) for e in events for m in models}
         scored_pairs = {(r0, r1) for r0, r1 in zip(scores["event_id"], scores["model"])} \
             if len(scores) else set()

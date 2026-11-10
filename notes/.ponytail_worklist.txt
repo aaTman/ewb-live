@@ -1,6 +1,23 @@
-RUN STAMP: 2026-11-08T22:17:13Z
+RUN STAMP: 2026-11-10T09:20:13Z
 MODE: INCREMENTAL
-Review ONLY these files (changed since 2026-11-08T21:16:46Z) with the ponytail-review skill; read connected code as needed:
+Review ONLY these files (changed since 2026-11-10T00:17:13Z) with the ponytail-review skill; read connected code as needed:
+dashboard/app.js
+dashboard/eventviz.js
+dashboard/index.html
+dashboard/mergedmap.js
 dashboard/styles.css
-ewb_live/scoring/truth_mirror.py
-tests/test_stall_fixes.py
+ewb_live/events/ar_filter.py
+ewb_live/viz/exceedance.py
+ops/context_watchdog.py
+ops/ponytail_review.py
+scripts/dev_preview.py
+scripts/review/rank_cap_replay.py
+scripts/review/sr13_flicker.py
+scripts/review/sr15_event_lifecycle.py
+scripts/review/sr16_clamp_sim.py
+scripts/review/sr17_region_assignment.py
+scripts/review/sr_gate.py
+tests/e2e/test_dashboard_fe.py
+tests/e2e/test_guardian_fe.py
+tests/test_ar_filter.py
+tests/test_raw_exceedance.py

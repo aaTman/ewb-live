@@ -31,6 +31,7 @@ import datetime as dt
 import json
 import logging
 import math
+import os
 import time
 from pathlib import Path
 
@@ -160,8 +161,16 @@ def truth_times(start: dt.datetime, end: dt.datetime) -> list[dt.datetime]:
     return out
 
 
+def _lon_slice(lon_native: np.ndarray, onmin: float, onmax: float) -> slice:
+    """Delegate to the shared ewb_live.periodic_index.lon_slice (one seam
+    formula everywhere; owner direction 2026-11-09)."""
+    from ewb_live.periodic_index import lon_slice
+    return lon_slice(lon_native, onmin, onmax)
+
+
 def _lon_idx(lon_native: np.ndarray, onmin: float, onmax: float) -> np.ndarray:
-    """Native-coordinate indices for a [-180,180] lon window (handles 0-360 + wrap)."""
+    """Legacy native-coordinate indices for a [-180,180] lon window — kept
+    ONLY for masked stores whose lon coord has NaN holes (no index then)."""
     native = lon_native.copy()
     wrap360 = float(np.nanmax(native)) > 180.0
     if wrap360:
@@ -172,6 +181,18 @@ def _lon_idx(lon_native: np.ndarray, onmin: float, onmax: float) -> np.ndarray:
     if lo <= hi:
         return np.where((native >= lo) & (native <= hi))[0]
     return np.concatenate([np.where(native >= lo)[0], np.where(native <= hi)[0]])
+
+
+def _crop_lon(obj, lon_native, onmin, onmax):
+    """Longitude crop through PeriodicBoundaryIndex (design-lane windows).
+    Fallback: legacy index math for legacy masked stores with NaN lons."""
+    from ewb_live.periodic_index import attach_periodic
+    if np.isnan(lon_native).any():   # masked-stores path (lon has NaN holes)
+        idx = _lon_idx(np.where(np.isnan(lon_native), 361.0, lon_native),
+                       onmin, onmax)
+        return obj.isel(longitude=idx), lon_native[idx]
+    sub = attach_periodic(obj).sel(longitude=_lon_slice(lon_native, onmin, onmax))
+    return sub, np.asarray(sub.longitude.values, float)
 
 
 
@@ -199,10 +220,10 @@ def open_truth_window(times: list[dt.datetime], bbox, cutoff):
     lon_native = np.asarray(da.longitude.values, float)
     lats = lat_native[(lat_native >= lmin - 1) & (lat_native <= lmax + 1)]
     lat_idx = np.where((lat_native >= lmin - 1) & (lat_native <= lmax + 1))[0]
-    lon_idx = _lon_idx(np.where(np.isnan(lon_native), 361.0, lon_native), onmin - 1, onmax + 1)
-    da = da.isel(longitude=lon_idx, latitude=lat_idx)
+    da, lon_sel = _crop_lon(da, lon_native, onmin - 1, onmax + 1)
+    da = da.isel(latitude=lat_idx)
     da = da.sel(time=[np.datetime64(t) for t in times])
-    lon = np.where(lon_native[lon_idx] > 180, lon_native[lon_idx] - 360, lon_native[lon_idx])
+    lon = np.where(lon_sel > 180, lon_sel - 360, lon_sel)
     field = np.asarray(da.transpose("time", "latitude", "longitude").values, np.float32)
     return field, lon, lats, src
 
@@ -254,11 +275,7 @@ def thresholds_for(times: list[dt.datetime], lats, lons, quantile: float,
         # store requested positions, not 1-based coord labels
         lat_slice = slice(lat1, lat0) if float(cl.latitude[1]) < float(cl.latitude[0]) \
             else slice(lat0, lat1)
-        if wrap360 and on0 > on1:  # box crosses Greenwich in the 0-360 domain
-            lon_sel = np.where((cl_lon_native >= on0) | (cl_lon_native <= on1))[0]
-            sub = sub.isel(longitude=lon_sel)
-        else:
-            sub = sub.sel(longitude=slice(on0, on1))
+        sub, _ = _crop_lon(sub, cl_lon_native, on0, on1)
         sub = sub.sel(latitude=lat_slice).load()
         sub_doy = np.asarray(doys)
         sub_hr = np.asarray(sub.hour.values)
@@ -463,9 +480,9 @@ def _ar_inputs_window(t0, t1, bbox):
     lat_native = np.asarray(ds.latitude.values, float)
     lon_native = np.asarray(ds.longitude.values, float)
     lat_idx = np.where((lat_native >= lmin - 2) & (lat_native <= lmax + 2))[0]
-    lon_idx = _lon_idx(np.where(np.isnan(lon_native), 361.0, lon_native), onmin - 2, onmax + 2)
+    ds, _ = _crop_lon(ds, lon_native, onmin - 2, onmax + 2)
     return (ds.sel(valid_time=slice(t0, t1 - dt.timedelta(hours=6)))
-            .isel(latitude=lat_idx, longitude=lon_idx)
+            .isel(latitude=lat_idx)
             .chunk({"valid_time": 1, "level": -1, "latitude": -1, "longitude": -1}))
 
 
@@ -581,7 +598,7 @@ def build_event(ev: dict, cutoff: dt.datetime, heat_leads, ar_leads) -> dict:
 def write_event(ev_id: str, doc: dict) -> Path:
     d = OUT_DIR / ev_id
     d.mkdir(parents=True, exist_ok=True)
-    tmp = d / "viz.json.tmp"
+    tmp = d / f"viz.json.tmp.{os.getpid()}"  # sweep matches *.tmp.*
     tmp.write_text(json.dumps(doc, separators=(",", ":"), allow_nan=False))
     tmp.rename(d / "viz.json")
     return d / "viz.json"
@@ -599,6 +616,6 @@ def update_index(entries: dict[str, dict]) -> None:
     old.update(entries)
     doc = {"schema": SCHEMA, "generated_at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
            "events": old}
-    tmp = path.with_suffix(".json.tmp")
+    tmp = path.with_name(path.name + f".tmp.{os.getpid()}")  # sweep *.tmp.*
     tmp.write_text(json.dumps(doc, separators=(",", ":")))
     tmp.rename(path)

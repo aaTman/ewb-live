@@ -47,73 +47,127 @@
     <h1>EWB&nbsp;Live</h1>
     <span id="sample-badge" class="badge warn hidden" title="Showing generated sample data.">sample</span>
     <span id="mini-badge" class="badge warn hidden"></span>
+    <p class="tagline">AI weather models, scored on recent extreme weather</p>
   </div>
-  <select id="week-picker" class="hidden" title="Weekly snapshots" aria-label="Weekly snapshot"></select>
-  <span class="hdr-meta">updated <span id="m-updated" class="mono">—</span></span>
-  <button id="about-btn" class="mini">About</button>
-  <button id="theme-toggle" class="mini" title="Toggle theme (auto / light / dark)">◐ theme</button>
+  <nav class="jump home-only" aria-label="Page sections">
+    <button type="button" class="linkbtn" data-jump="explore">Events</button>
+    <button type="button" class="linkbtn" data-jump="scorecard-sec">Scorecard</button>
+  </nav>
+  <div class="hdr-tools">
+    <select id="week-picker" class="hidden" title="Weekly snapshots" aria-label="Weekly snapshot"></select>
+    <span class="hdr-meta">updated <span id="m-updated" class="mono">—</span></span>
+    <button id="about-btn" class="mini">About</button>
+    <button id="theme-toggle" class="mini" title="Toggle theme (auto / light / dark)">◐ theme</button>
+  </div>
  </div>
 </header>
 
-<nav class="controls" aria-label="dashboard filters">
- <div class="shell">
-  <div class="ctl-group" id="type-tabs" role="tablist"></div>
-  <div class="ctl-group models" id="model-pills"></div>
-  <div class="ctl-group leads">
-    <span class="ctl-label">Leads</span>
-    <span id="lead-chips"></span>
-    <button id="lead-more" class="mini" aria-expanded="false">more</button>
-    <button id="metrics-more" class="mini" type="button" aria-pressed="false">more metrics</button>
-  </div>
- </div>
-</nav>
-
 <main>
 
-<section id="global-sec" aria-label="Global events and raw detector output — last 90 days">
-  <div class="sec-head">
-    <h2>Global events — last 90 days
-      <span class="sec-badge" id="raw-badge" hidden>IFS analysis (ERA5 lag)</span></h2>
-    <span class="count" id="gm-count"></span>
+<!-- EXPLORE: the event-type filter sits directly on what it filters (map,
+     timeline, list); the scorecard below echoes it. Nothing up here acts on
+     content further down the page. -->
+<div class="explore" id="explore">
+  <div class="explore-head home-only">
+    <div class="sec-head">
+      <h2>Extreme events — last 90 days
+        <span class="sec-badge" id="raw-badge" hidden>IFS analysis (ERA5 lag)</span></h2>
+      <span class="count" id="gm-count"></span>
+    </div>
+    <p class="sec-lede">Shading shows where the heat, freeze and atmospheric-river detectors fired;
+      dashed boxes are the events the models are scored on. Move through time below the map, or pick an event.</p>
+    <div class="type-filter">
+      <span class="ctl-label" id="type-tabs-label">Show</span>
+      <div class="ctl-group" id="type-tabs" role="tablist" aria-labelledby="type-tabs-label"></div>
+      <div class="ctl-group ctl-region hidden" id="region-group">
+        <label class="ctl-label" for="region-select">Region</label>
+        <select id="region-select" title="Events, map and scorecard by region"></select>
+      </div>
+    </div>
   </div>
-  <div class="raw-map-wrap" id="raw-map-wrap">
-    <div class="raw-skeleton" id="raw-skel" aria-hidden="true"></div>
-    <canvas id="raw-canvas" role="img" aria-label="Equal Earth world map of raw threshold exceedances and event boxes" hidden></canvas>
-    <svg id="gm-boxes" hidden></svg>
-  </div>
-  <div class="raw-ctl-row">
-    <span id="raw-layers" class="gm-chips" role="group" aria-label="Layer toggles"></span>
-    <span class="raw-play-row">
-      <button id="raw-prev" class="mini" type="button" aria-label="−6h, step back 6 hours">−6h</button>
-      <button id="raw-play" class="mini" type="button" aria-label="Play frames">▶ play</button>
-      <button id="raw-next" class="mini" type="button" aria-label="+6h, step forward 6 hours">+6h</button>
-      <label class="raw-speed">speed
-        <select id="raw-speed" aria-label="Playback speed">
-          <option value="2">2 fps</option>
-          <option value="5" selected>5 fps</option>
-          <option value="10">10 fps</option>
-        </select>
-      </label>
-    </span>
-  </div>
-  <div class="gm-time-row">
-    <span class="gm-date-readout mono" id="raw-readout">—</span>
-    <input id="raw-slider" type="range" min="0" max="0" step="1" value="0"
-           aria-label="Frame time (6-hourly)">
-  </div>
-  <svg id="gm-gantt" role="img" aria-label="Event timeline by type — click a bar to jump to it"></svg>
-  <p class="gm-note hidden" id="raw-note" role="status"></p>
-</section>
+
+  <section id="global-sec" aria-label="Global events and raw detector output — last 90 days">
+    <div class="raw-map-wrap" id="raw-map-wrap">
+      <div class="raw-skeleton" id="raw-skel" aria-hidden="true"></div>
+      <canvas id="raw-canvas" role="img" aria-label="Equal Earth world map of raw threshold exceedances and event boxes" hidden></canvas>
+      <svg id="gm-boxes" hidden></svg>
+    </div>
+    <div class="map-legend">
+      <span class="ctl-label">Map layers</span>
+      <span id="raw-layers" class="gm-chips" role="group" aria-label="Layer toggles"></span>
+      <span id="gm-legend" class="gm-legend" role="img" aria-label="AR IVT magnitude legend"></span>
+    </div>
+    <div class="timeline" role="group" aria-label="Time controls">
+      <div class="tl-head">
+        <span class="raw-play-row">
+          <button id="raw-play" class="tl-play" type="button" aria-label="Play frames">▶ play</button>
+          <button id="raw-prev" class="mini" type="button" aria-label="−6h, step back 6 hours">−6h</button>
+          <button id="raw-next" class="mini" type="button" aria-label="+6h, step forward 6 hours">+6h</button>
+        </span>
+        <span class="gm-date-readout mono" id="raw-readout">—</span>
+        <label class="raw-speed">speed
+          <select id="raw-speed" aria-label="Playback speed">
+            <option value="2">2 fps</option>
+            <option value="5" selected>5 fps</option>
+            <option value="10">10 fps</option>
+          </select>
+        </label>
+      </div>
+      <div class="gm-time-row">
+        <input id="raw-slider" type="range" min="0" max="0" step="1" value="0"
+               aria-label="Frame time (6-hourly)">
+      </div>
+      <svg id="gm-gantt" role="img" aria-label="Event timeline by type — click a bar to jump to it"></svg>
+    </div>
+    <p class="gm-note hidden" id="raw-note" role="status"></p>
+  </section>
+
+  <section id="events-sec" aria-label="Detected events">
+   <div class="evlist">
+    <div class="evlist-head">
+      <h3 class="sec-title">Events</h3>
+      <span class="count" id="event-count"></span>
+      <input id="event-search" type="search" placeholder="filter by place, type or id…" autocomplete="off" aria-label="Filter events">
+    </div>
+    <div class="table-wrap tall">
+      <table id="event-table">
+        <thead><tr><th><span class="sr-only">Type</span></th><th>Event</th><th class="num" title="Heat/freeze: ERA5 daily-mean 2 m temperature at the peak day. Atmospheric river: peak IVT.">Peak</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+   </div>
+  </section>
+</div>
 
 <section id="scorecard-sec">
   <div class="sec-head">
     <h2>Scorecard <span id="scorecard-status" class="sec-badge hidden"></span></h2>
+    <span id="sc-scope" class="sc-scope"></span>
     <span class="sc-key" title="cell colour = skill vs IFS HRES at the same metric &amp; lead">
       <i style="background:rgba(var(--better),.55)"></i>better
-      <i style="background:rgba(var(--worse),.55)"></i>worse
+      <i style="background:rgba(var(--worse),.55)"></i>worse than IFS HRES
+      <span class="sc-ticks" title="relative skill vs baseline at the same metric and lead (%)">
+        <span class="tick-bar"><b class="better"></b><b class="worse"></b></span>
+        <span class="tick-labels"><span>−50</span><span>0</span><span>+50%</span></span>
+      </span>
     </span>
   </div>
+  <p class="sec-lede">Mean score of each model over the events above, by forecast lead time.</p>
+  <nav class="controls" aria-label="Scorecard options">
+    <div class="ctl-group models" id="model-pills"></div>
+    <div class="ctl-group leads">
+      <span class="ctl-label">Lead time</span>
+      <span id="lead-chips"></span>
+      <button id="lead-more" class="mini" aria-expanded="false">more leads</button>
+    </div>
+    <div class="ctl-group">
+      <span class="ctl-label">Metrics</span>
+      <button id="metrics-more" class="mini" type="button" aria-pressed="false">more metrics</button>
+    </div>
+  </nav>
   <div id="kv-line" class="kv-line" aria-label="run summary"></div>
+  <div id="verdict-strip" class="verdict-strip" aria-label="verdict"></div>
+  <p class="sc-note" id="sc-sample-note" hidden></p>
   <div id="scorecard-tables"></div>
   <details id="skill-details" class="fold">
     <summary>Skill vs lead</summary>
@@ -124,28 +178,10 @@
   </details>
 </section>
 
-<section id="events-sec">
-  <div class="sec-head">
-    <h3 class="sec-title">Detected events</h3>
-    <input id="event-search" type="search" placeholder="filter by title / id / region…" autocomplete="off">
-    <span class="count" id="event-count"></span>
-  </div>
-  <div class="events-grid">
-    <div id="map" aria-label="map of event regions"></div>
-    <div class="table-wrap tall">
-      <table id="event-table">
-        <thead><tr><th><span class="sr-only">Type</span></th><th>Event</th><th>Start</th><th>End</th><th class="num">Days</th><th class="num" title="Heat/freeze: ERA5 daily-mean 2 m temperature at the peak day. Atmospheric river: peak IVT.">Peak</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <p class="tall-note">Swipe the table sideways for Days · Peak.</p>
-  </div>
-</section>
-
 <section id="detail-sec" class="hidden">
+  <button id="detail-close" class="backlink" type="button">← All events</button>
   <div class="sec-head">
     <h2 id="detail-title">Event</h2>
-    <button id="detail-close" class="mini">close ✕</button>
   </div>
   <div class="detail-chips" id="detail-chips"></div>
   <p class="event-story" id="detail-story"></p>
@@ -180,15 +216,23 @@
     <h3>Events</h3>
     <ul>
       <li><b>Heat wave</b> — ERA5 2&nbsp;m temperature above the 85th percentile of the
-      Operational WeatherBench ERA5 1990–2019 climatology (per day of year and hour) at every
-      6-hourly step, over land, for at least 3 consecutive days across at least 200,000&nbsp;km².</li>
+      Operational WeatherBench ERA5 1990–2019 climatology (per day of year and hour) at <em>every</em>
+      6-hourly step of a UTC day, over land, for at least 3 consecutive days across at least
+      200,000&nbsp;km².</li>
       <li><b>Freeze</b> — the same rule below the 15th percentile. A window with no freeze is a
       valid result.</li>
       <li><b>Atmospheric river</b> — EWB’s AR mask: integrated vapour transport (IVT) of at least
       400&nbsp;kg&nbsp;m⁻¹&nbsp;s⁻¹ with a ridge criterion. The river must start over the ocean and
-      reach land; objects entirely over land are excluded, and tropical cyclones are screened out using IBTrACS best tracks.</li>
-      <li>The raw detector map shows the unfiltered upstream masks: heat above P85, freeze below P15 and
-      EWB’s AR mask before the tropical-cyclone (IBTrACS) screen that the event list applies.</li>
+      reach land — making landfall on at least one day; objects entirely over land are excluded,
+      and tropical cyclones are screened out using IBTrACS best tracks.</li>
+      <li>The raw detector map shades each cell by its consecutive <b>completed</b> UTC days
+      meeting the daily rule (solid; heat ramp 1–7+, freeze ramp 1–3+), with today’s in-progress
+      day dithered as provisional; the same unfiltered heat/freeze daily criterion is the one the
+      detector applies within its AND-chain. The AR layer is EWB detection minus tropical objects
+      (any cell within 15&nbsp;deg of the equator) and tropical cyclones, dropped whole at the
+      level of the tracked river (no frame-to-frame flicker). A river that briefly dips below
+      threshold for one 6-hour step keeps its id; that step shows its previous footprint with a
+      lighter fill (bridged — display only, the river was not physically detected there).</li>
       <li>Parts of one system are merged, no two events overlap in time and space, and each type
       is capped at 15 events.</li>
     </ul>

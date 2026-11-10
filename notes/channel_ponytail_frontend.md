@@ -335,3 +335,216 @@ live-checked at 192.168.0.121:8050.
   `tests/test_stall_fixes.py` (heartbeat.json never written) — pipeline
   lane, `ewb_live/pipeline.py` is mid-edit by the ewb owner in this tree;
   not dashboard-side. Flagging, not touching.
+
+## 2026-11-09 15:58 UTC — 2 findings (1 should, 1 nice)
+- [SHOULD] dashboard/eventviz.js:859-904 — the layer deep-link feature is not wired on the host: app.js never sets EventViz.onLayers and never passes opts.layers into render (app.js:1860-1862), so pick a model colour/opacity, reload or paste the link → the layer state is gone, contradicting the module header ("a pasted link reproduces the same view"). The docs also disagree on the hash name (#lyr= in the header vs #evlyr= at :860).
+  fix: in app.js renderEventViz set `EventViz.onLayers = (s) => { state.detailLayers = s; writeUrl(); }` and pass `layers: state.detailLayers` into render; pick ONE hash name and fix the other comment. If the host wiring is still in flight, ignore this note.
+- [SHOULD] tests/e2e/test_dashboard_fe.py:925-933 — the PM-detail probe finds the field overlay by hardcoded `opacity === 0.72`, a constant the refactor no longer produces (overlay opacity is now user state, default 85; nothing emits 0.72), so ob is null and ob.getWest() throws → red test on the next run.
+  fix: tag the overlay in addImg (eventviz.js:981 `className: 'ev3-field'`) and probe `.leaflet-image-layer.ev3-field` bounds instead of the opacity constant.
+
+## 2026-11-09 17:45 UTC — 3 findings (1 should-fix, 2 nice-to-have)
+- [SHOULD] dashboard/eventviz.js:735,861 (`buildObsLayer`/`obsEntry` vs `refreshLead`) — every lead-chip click rebuilds the Observed layer entry from hard-coded defaults, silently resetting user edits. Case: user dims Observed to 40% or recolors it, clicks another lead → Observed snaps back to 85%/default tier color (same loss for a model edited at T+0 whose data is missing at the clicked lead: `rebuildLayers` only keeps layers still present, `serializeLayers` drops the absent key, so returning to T+0 restores the one-time `initialSel`). No test covers an edit across a lead change.
+  fix: keep one `const tuned = {}` map in the `renderDetail` closure; in `saveState` write every current layer into it (`tuned[L.key] = {on: L.on, color: L.color, op: L.op}`); in `mkLayer`/`obsEntry` prefer `tuned[key]` over `savedLayers`/`initialSel`/defaults. ~5 lines, no signature changes.
+- [NICE] dashboard/eventviz.js:893-899 (opacity `input` handler) — each slider tick runs the full `paintLayer` (canvas re-render + bilinear resample + `toDataURL` + overlay swap) even though the raster PNG is opacity-independent; a 0→100 drag is ~20 full re-encodes. fix: in the rng handler set `L.ovs.forEach(o => o.setOpacity(L.op / 100))` and call `saveState()`; keep `paintLayer` only for the checkbox and color handlers.
+- [NICE] tests/e2e/test_zz_debug_freeze.py:1 — committed scratch debug ("temp debug: trace imageOverlay pane options"): collected by pytest every e2e pass, launches a whole Chromium, prints, asserts nothing. fix: delete the file (the pane question it probes is already answered by test_overlay_layers_single_card_and_controls).
+- prior run: both findings (lyr never reaching the detail viz; stale opacity test probe) verified FIXED in current code (app.js:1866 `opts.layers` at render; old `test_heat_model_panels_forecast_at_lead` opacity probe replaced by `test_overlay_layers_single_card_and_controls`), not re-filed. The `addImg` pane-shadowing fix also landed mid-run.
+
+## [~10:35 UTC] frontend: triage of the 15:58 findings
+1. [SHOULD] layer deep-link wiring — ALREADY WIRED (sibling landed it while I
+   triaged): app.js:93/1362/1781/1864/1867 (detailLayers state, #lyr= in both
+   directions). Stale `#evlyr=` comment in eventviz.js fixed to `#lyr=`.
+2. [SHOULD] PM-detail probe on hardcoded 0.72 opacity — FIXED as proposed:
+   AR field overlays tagged `ev3-field` at both addImg sites
+   (dashboard/eventviz.js:993/1000), probe now selects on the class
+   (tests/e2e/test_dashboard_fe.py:955).
+Collateral found while testing: the sibling's layer-pane refactor dimmed
+off-state TEXT to opacity .45 → 12 axe color-contrast violations on detail
+(light+dark, guardian runs against the box so it stayed red until sync).
+Fixed in eventviz.js:292: dim the opacity slider + grayscale the swatch,
+never the text. Detail renders also crashed mid-refactor (panes named,
+never created) — sibling's createPane landed before I patched; no action.
+
+## 2026-11-09 20:40 UTC — 2 findings (1 must, 1 nice)
+- [MUST] dashboard/eventviz.js:581 (also :678, :690/:696/:1067/:1070, :985-:1046, :1056) —
+  renderMaps still references five variables that the single-card rewrite deleted and never
+  re-created: cbRow, obsBlock, box, chip, toolbar. Failure case: open any event detail with
+  Leaflet loaded -> ReferenceError at the first `host.appendChild(cbRow)`, app.js catch paints
+  "viz asset failed", the map never renders (verified undeclared in the 20:08Z snapshot; the
+  20:08 pass already re-landed initialSel/anchorDay/ui, these five are left).
+  fix: re-create the deleted scaffolding in renderMaps before first use — a `toolbar`
+  div (`class="ev-toolbar"`, appended to host before the panel), `cbRow`
+  (`class="ev3-cbrow"`, or delete the three cbRow lines with the colorbar row), `obsBlock`
+  (`class="ev3-obsblock"`, appended to host), and the `box` + `chip` IIFEs from
+  `git show HEAD:dashboard/eventviz.js` (:539-611, the antimeridian-continuous version).
+  file is mid-refactor at review time — re-verify state before patching.
+- [NICE] dashboard/eventviz.js:526 — tierRGB is computed in renderMaps and never read
+  (grep-verified). fix: delete the line.
+
+## 2026-11-09 23:59 UTC — 3 findings (1 should, 2 nice)
+- [SHOULD] dashboard/eventviz.js:1146 (+706-711) — the valid-time play interval survives
+  teardown. `active.teardown` removes keydown + maps but nothing clears the slider's
+  `setInterval(stepDay, 500)`. Failure case: open an event, press play, then close the
+  detail or open another event — the timer keeps firing forever on the closed closure:
+  every 500 ms it re-encodes every layer's duration PNG (durRasterURL), rewrites detached
+  DOM, and touches removed Leaflet layers. Each play+close cycle adds another leaked loop
+  in the long-lived dashboard tab.
+  fix: expose the slider's `stopPlay` into the teardown closure (e.g. `active.stop =
+  stopPlay` after the slider block, call it in teardown) — two lines, no new state.
+- [NICE] dashboard/eventviz.js:530 — carried from 20:40Z: tierRGB is computed in
+  renderMaps and still never read. fix: delete the line.
+- [NICE] dashboard/eventviz.js:886 — the observed AR layer's default contour colour is
+  '#ffffff': on the light theme (light-gray Esri base) the observed-mask contour is
+  invisible on the basemap side of every boundary. The legacy fallback renderer drew it
+  theme-aware (`contourColor: css('--text', '#111')`, :1403).
+  fix: `defColor` for the AR obs layer -> `css('--text', '#111')` (dark theme resolves
+  it near-white on its own, same as the old path).
+
+## 2026-11-10 00:10 UTC — 2 findings (1 must, 1 should)
+Snapshot reviewed: eventviz.js 76125 B sha 4027a1e05b5d (landed after the
+20:40Z MUST; that MUST, the lead-chip-reset SHOULD, the opacity-drag NICE and
+the zz-debug-test NICE all re-read FIXED — tuned{} at :871 and setOpacity-only
+drag at :979-985 verified). Both new findings are in the time-slider code.
+- [MUST] dashboard/eventviz.js:708-712 (teardown) vs :1146 (play interval) —
+  severity escalation of the 23:59Z SHOULD on the same line: it is not only
+  the leak, it corrupts OTHER events' URLs. teardown removes the keydown
+  listener and the maps but never stops the play interval. Failure case:
+  press ▶ then close the detail (or navigate to another event): the
+  setInterval survives forever at 2Hz — stepDay →
+  paintAll re-encodes PNGs into detached DOM (permanent CPU), and its
+  saveState calls window.EventViz.onDay/onLayers, which after the user opens
+  a DIFFERENT event (app.js:1870-1871 rebinds the hooks) overwrite the new
+  event's #day/#lyr URL state and rewrite history at 2Hz. Leaflet calls hit
+  removed maps → uncaught pageerrors. No e2e covers play→close.
+  fix: add `if (timer) stopPlay();` as the first line of active.teardown —
+  `timer`/`stopPlay` share the render() closure scope, one line. Add an e2e:
+  play, close detail, open another event, wait 1.5s, assert no page.errors
+  and that its #day (absent) did not change.
+- [SHOULD] dashboard/eventviz.js:905 + :912 — `customized` starts false even
+  when the view was restored from a shared `#lyr=` (savedLayers :869, applied
+  :888). Failure case: open a `#event=X&lyr=obs|...|0` link, click any lead
+  chip → saveState fires with customized=false → onLayers('') → app nulls
+  detailLayers → the #lyr= vanishes from the URL while the map still shows
+  the restored custom view; copy/back/reload loses it (contract §5: URL must
+  describe the view).
+  fix: `let customized = Object.keys(savedLayers).length > 0;` (one line).
+
+## 2026-11-10 00:15 UTC — 3 findings (1 must, 2 should)
+Snapshot: eventviz.js 3d591bff…, mergedmap.js d7bdb6ff… (both rewritten under
+review; cite positions, not line numbers). The 20:40Z MUST (deleted scaffolding)
+and the AR-legend SHOULD re-read FIXED (toolbar/cbRow/obsBlock/box/chip at
+:587-:654, cbRow hidden only for non-AR :620, tierRGB now read :530).
+- [MUST] dashboard/eventviz.js:709 vs :1136/:1148 — the play-leak fix landed
+  half-applied: teardown reads `active.stopFn`, and nothing in the file ever
+  assigns it (only occurrence is the read). Failure case unchanged from the
+  00:10Z MUST: press ▶ play, close the detail or open another event — the
+  `setInterval(stepDay, 500)` at :1148 keeps firing at 2 Hz on the closed
+  closure, re-encoding every layer's duration PNG and calling saveState →
+  EventViz.onDay/onLayers, which after app.js rebinds the hooks overwrite the
+  NEW event's #day/#lyr URL state. The guard silently no-ops, so the leak now
+  looks intentional.
+  fix: `active.stopFn = stopPlay;` right after the `stopPlay` definition in the
+  slider block (one line; same closure scope as `timer`).
+- [SHOULD] dashboard/eventviz.js:994-1008 (layerRuns) vs dashboard/mergedmap.js
+  getFrame/`raw.dur` — duration run counts on the home map and on the event
+  detail are not the same quantity, though :988 claims "the same rule as the
+  front page; runs truncate at window.days[0] — accepted cut, same as
+  mergedmap". The home map paints server `.run` planes seeded from the mirror
+  history before the window (`index.dur.seed`); layerRuns seeds `prev = null`,
+  so it restarts at the window's first day. Failure case: a heat cell already
+  on day 8 of a run when viz.json's `window.days[0]` opens shows the 14-day
+  colour on the front page and "3 days" in the detail panel and in the
+  "runs Nd" stat (:934/:937) for the same event and valid time.
+  fix: have viz.json carry the seeded run grid per lead (reuse the shared
+  `run_recurrence` rule in the viz build and store day 0's grid), seed
+  `layerRuns` from it, and delete the two now-false comments — or drop the
+  duration overlay + "runs" claim from detail until it agrees.
+- [SHOULD] dashboard/mergedmap.js getFrame (:156-:162) — a failed `.run`/`.ivt`
+  fetch returns null and is CACHED per frame (the `.then` stores whatever
+  `Promise.all` resolved), while a failed `.bin` deliberately isn't cached.
+  That asymmetry is right for a transient blip, but it makes a lane that stops
+  writing a sidecar permanently invisible: every frame keeps the binary
+  fallback with no signal beyond one console line at load. Related: neither
+  payload is length-checked — a truncated `.run` makes `run[li*cells + cellIdx]`
+  `undefined` → falsy → `cls = 0` → cells silently unpainted, where the Python
+  reader (`run_from_bytes`) raises. The strict read is cheap on the JS side too.
+  fix: in getFrame's `.then`, `if (run && run.byteLength !== 2*cells) run = null;`
+  (likewise `ivt` vs `cells`), and count sidecar misses so one summary warn
+  fires after the first frame pass.
+
+## 2026-11-10 09:28 UTC — 5 findings (1 must, 3 should, 1 nice)
+Snapshot: mergedmap.js + eventviz.js (overlay rewrite) + test_guardian_fe.py as of
+03:43Z landing; connected reads: ewb_live/viz/exceedance.py (ghost-cell fold-in,
+index tracks/bridged, .run/.ivt writers), ewb_live/events/ar_filter.py (gap bridge),
+ewb_live/viz/build.py (CELL), tests/e2e fixtures (`base` = EWB_LIVE_URL live box).
+Static review only; nothing run.
+
+- [MUST] dashboard/mergedmap.js:333-335 (+338-345 AR branch): gap-bridge ghost
+  pixels are painted exactly like real detections — no lighter render, no marker.
+  The lane deliberately folds them in ("fold them into the returned keep for the
+  raw layer only, and expose them per track so the frontend can paint them
+  lighter", exceedance.py:523-529) and publishes `index.tracks[sid].bridged`
+  (exceedance.py:719-725), but NOTHING in dashboard/ reads `bridged` or
+  `index.tracks` (grep: zero hits in app.js/mergedmap.js/eventviz.js).
+  Failure case: any AR that physically drops out for one 6-hourly step (the
+  owner's Japan blink case) → in the gap frame the map paints an opaque IVT-class
+  AR band (and the hover tooltip quotes a class, mergedmap.js:786-791) for pixels
+  ERA5 never detected, indistinguishable from a real detection. Scrubbing across
+  the gap reads as "the AR was there"; the honesty marker the owner asked for
+  ("render those cells lighter so the display stays honest", LAYER_REV v6 note)
+  is unimplemented, so the published site misreports data.
+  fix: cheapest honest patch is one extra class in the plane you already fetch —
+  the data lane writes 6 in the .ivt plane where the cell is a ghost (it knows:
+  `ghost6`, exceedance.py:528) and mergedmap paints index 6 at ~35 % alpha
+  (`RUN_ALPHA.ar` gets a 6th entry + a legend note), no extra request.
+  Alternative in your lane alone: fetch `<ts>.trk` in getFrame and dither every
+  cell whose sid is listed in index.tracks[sid].bridged for that tag.
+- [SHOULD] dashboard/mergedmap.js:159-169 (getFrame) — a transient sidecar failure
+  is cached for the session, although the .bin path deliberately refuses to.
+  `runP`/`ivtP` `.catch(... return null)` and the frame is then cached as
+  `{bin, run:null, ivt:null}` (:169); the outer "don't miss-cache a transient"
+  guard only covers the .bin. Failure case: one 500/blip on `<ts>.run` (a 90-day
+  window is ~1,080 sidecar fetches per pass) → that step paints the binary
+  fallback while its neighbours show the day-count ramp, and every repaint of
+  the CURRENT step (layer toggle, theme flip, ResizeObserver, back-navigation)
+  re-reads the poisoned cache entry, so the wrong encoding stays on screen until
+  you scrub 7 frames away and back. fix: mark the miss in the catch
+  (`runP = ...catch(() => (degraded = true, null))`) and skip `frameCache.set`
+  when degraded (inflight is already cleared, so the next visit retries).
+- [SHOULD] dashboard/mergedmap.js:338-339 (paintFrame duration branch) — CORRECTION
+  to my 00:10Z entry, which said a truncated `.run` "paints binary": it paints
+  NOTHING. A short plane makes `run[...]` `undefined` → `runCount` 0 → `continue`,
+  and the `continue` skips the `else if (u8[...] & m)` binary fallback in the same
+  branch — the cell loses even the bit it has in `.bin`, silently. Same input
+  bytes make the Python reader raise (exceedance.py run_from_bytes length check),
+  so the two decoders disagree about a truncated frame.
+  fix: one line per sidecar in getFrame's `.then` —
+  `if (run && run.length !== 2*cells) { console.warn('truncated .run', ts); run = null; }`
+  (and `ivt.length !== cells`) — then the existing binary fallback does its job.
+  Also fixes the cache path in the finding above.
+- [SHOULD] dashboard/eventviz.js:433-445 + 1042 (durRasterURL on the play path) —
+  the duration raster is drawn at 8 device px per cell (a (nx·8)×(ny·8) canvas)
+  and PNG-encoded with toDataURL for EVERY visible layer on EVERY repaint, and
+  paintAll runs on each 500 ms play tick (:1148). `.ev3-crisp` already sets
+  `image-rendering: pixelated` (eventviz.js:324) and durRasterURL draws flat
+  fills only (no hairlines, unlike tierDataURL), so the 8× upscale buys nothing.
+  Failure case: a large heat wave (40°×80° bbox at build.py CELL 0.25 → 160×320
+  cells) with observed + 2 models visible → each tick re-encodes three ~2560×1280
+  PNGs and rebuilds three L.imageOverlays; the 500 ms interval cannot keep up,
+  the animation skips/stalls and pegs a core. fix: draw 1 px per cell (or fill an
+  ImageData once) and let `image-rendering: pixelated` upscale — ~64× less pixel
+  work per layer per frame, visually identical on screen.
+- [NICE] dashboard/eventviz.js:424-431 (durAlpha comment) — it claims the bins
+  "mirror the front page (mergedmap heatRunBin/freezeRunBin)", and they do not:
+  the front page paints 7 heat bins for 1..7+ days (RUN_ALPHA.heat has 7 entries,
+  `runBin = min(count-1, 6)`), the detail paints nothing under 3 days and uses
+  5 classes (3/4/5-6/7-13/14+). Failure case: a cell with a 2-day run is
+  light-orange on the home map and blank in the event detail; 5- and 6-day cells
+  get different shades on the two surfaces. If the divergence is intended, fix
+  the comment to say so (the parity claim is what a future reader will trust);
+  if not, share one bin table between mergedmap.js and eventviz.js.
+- Verified FIXED since the last pass (no action): play-teardown `active.stopFn =
+  stopPlay` (eventviz.js:1158, read at :708) and the dead `tierRGB` line (gone,
+  grep-verified). STILL OPEN from 00:10Z: layerRuns local-only vs the server
+  `.run`+`index.dur.seed` parity — the code now documents it as an "accepted cut"
+  but the comment still says "same as mergedmap", which is not true (mergedmap
+  uses the mirror-seeded server plane); if the cut stands, correct the comment.

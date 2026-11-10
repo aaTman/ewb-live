@@ -924,3 +924,43 @@ Deviation from upstream EWB AR definition, documented per owner instruction:
 - H4 ROOT CAUSE (science-review 19:5xZ major): the remote-ARCO truth branch — taken whenever mirror_covers(start,end) is False, i.e. for the FRESHEST window events — served truth without the G-34 longitude normalization (which lives in the mirror branch's _crop_bbox). Remote store is 0–360 (verified) vs forecast −180..180 → zero-overlap CSI for western events. 8fe8ae212d73 was the only shipped victim. Fix: _normalized_target wraps the remote-ARCO target, canonicalizing lon after subset_data_to_case (scoring/truth.py) + offline test test_remote_arco_target_normalizes_after_subset. 8fe8 purged (957 rows, 11 pairs, 11 parts, 1 sidecar); weekly re-run scoring it now (bg on box, watcher proc_62e6db676d7e).
 - H3 minors: day-slack pinned in tc_screen docstring (day-resolution gate, ~36–48 h effective); tc_screen-provenance absence on the 15 shipped ARs disclosed to science-review (claim holds from the next detection cycle).
 - On weekly completion: verify 8fe8 CSI nonzero/decaying + scorecard duration-skill nulls + W45 history re-snapshotted clean + scrub CLEAN, then refresh ## DONE honestly.
+
+## AR tropical boundary-cell policy (SPEC pin, owner rule 2026-11-09)
+The tropical exclusion band is STRICT: an AR track is dropped when any of its
+mask cells lies at |lat| < 15.0 (ar_filter.py `band = |lat| < TROPICAL_LAT`).
+Cells at EXACTLY |lat| = 15.00 do not touch the band and are RETAINED
+(science-review 02:2xZ: 19 such pixels window-wide are compliant, not a gap).
+Rationale: the band is an open interval in the SPEC copy ("ANY mask cell
+between 15S and 15N"); a cell centered on the boundary is outside "between".
+Same strict inequality in the detection scan and the raw-map track screen
+(one shared function, so the two can never disagree).
+
+## PeriodicBoundaryIndex — seam handling (owner direction 2026-11-09, design)
+`PeriodicBoundaryIndex` is NOT in the installed stack: xarray (2026.9.0)
+does not ship one (pydata/xarray#7031 open — sel-only, isel explicitly
+not supported), and `extremeweatherbench` 1.1.1 (installed) does not
+include it. The package that provides it is the EWB repo itself:
+`data_prep/temperature_events.py` @ develop 3b6506b (MIT). Vendored to
+**`ewb_live/periodic_index.py`** (attribution + one fix: upstream's
+wrap formula `min+(label-max)%period` shifts in-range labels by one grid
+step on half-open grids like ours (0..359.75, max-min=359.75<period); we
+use `min+(label-min)%period`, identity on any step=period/n grid).
+Use:
+    from ewb_live.periodic_index import PeriodicBoundaryIndex, attach_periodic
+    ds = attach_periodic(ds)              # coord="longitude", period=360
+    sub = ds.sel(longitude=slice(350.0, 380.0))   # continuous labels ONLY
+Versions: xarray 2026.9.0, pandas 2.3.3, numpy 2.5.4 (import paths
+`xarray.core.indexes.{PandasIndex,IndexSelResult,_query_slice}` +
+`xarray.core.indexing._expand_slice` verified; pin on xarray upgrade).
+Conventions/limits (tests/test_periodic_index.py):
+- cross-boundary windows use start<stop CONTINUOUS labels: 350E-20E =
+  slice(350,380); 170E-170W = slice(170,190). slice(350,20) -> EMPTY.
+- isel/join/align stay plain PandasIndex; datasets on one grid must
+  share a lon convention (mirror 0..359.75, viz windows -180..180 —
+  _lon_slice in ewb_live/viz/build.py maps a window into the grid's own
+  domain so either grid works).
+- scipy.ndimage.label keep-union wrap step stays (index drives crops
+  only). NaN-hole lon coords (legacy masked stores) fall back to the
+  legacy _lon_idx path in build.py.
+Design-lane adoption done: build.py open_truth_window / climatology
+thresholds / _ar_inputs_window now crop via attach_periodic+sel.
