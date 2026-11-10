@@ -1,0 +1,90 @@
+diff --git a/ewb_live/events/ar_mask.py b/ewb_live/events/ar_mask.py
+index 3bf82f0..01b5291 100644
+--- a/ewb_live/events/ar_mask.py
++++ b/ewb_live/events/ar_mask.py
+@@ -62,6 +62,26 @@ AR_SIGMA = 3.0
+ AR_DILATION_RADIUS = 8
+ AR_MIN_SIZE_GRIDPOINTS = 500
+ AR_MIN_ABS_LAT = 15.0
++#
++# One AR is a narrow filament. A labelled component that spreads over most of a
++# latitude circle is not one AR — it is the whole moisture band, stitched into a
++# ring by exactly the periodic labelling this module adds. That is not
++# hypothetical: the subtropical/tropical IVT band connects across the
++# antimeridian, so on a global grid the S-Atlantic ARs, the Pacific ARs and the
++# Indian-Ocean ARs become ONE object whose mean latitude is near the equator —
++# and the |mean lat| > 15 floor above then deletes every one of them at once,
++# silently, before tracking (no ledger entry, nothing to audit). Measured on the
++# live lane: real southern-Atlantic ARs (~5 000 kept cells at 08-13 00Z, 4 900 at
++# 08-14 18Z) publish ZERO painted cells because their component's mean lat fell
++# under 15 with the ring attached. The same rings are what let Typhoon PEILOU
++# delete a 150 691-cell 'track' that also held the North Atlantic ARs.
++#
++# So: any component spanning more than this many degrees of longitude is split
++# where the wrap connection is (a plain non-periodic label of its own cells cuts
++# the antimeridian seam) and the floors are applied to the pieces. An AR that
++# genuinely crosses the seam spans tens of degrees, not hundreds, so the seam fix
++# this module exists for is untouched.
++AR_MAX_LON_SPAN_DEG = 200.0
+ 
+ # Wrap pad, in longitude COLUMNS (0.25 deg grid): the blurred Laplacian needs
+ # 4*sigma = 12 columns of true neighbours on each side of the trimmed region
+@@ -183,6 +203,47 @@ def _label_periodic_stack(mask: np.ndarray, periodic: bool) -> np.ndarray:
+     return out
+ 
+ 
++def _split_wrapped_components(lab: np.ndarray, lon_deg: float) -> np.ndarray:
++    """Re-label globe-spanning components without the periodic wrap.
++
++    Keeps every other label exactly as it is; a component whose cells cover more
++    than AR_MAX_LON_SPAN_DEG of longitude is replaced by its ordinary 3-D
++    connected parts (the seam connection is the only thing that made it one
++    object), each with a fresh id. See AR_MAX_LON_SPAN_DEG.
++    """
++    from scipy import ndimage
++
++    n = int(lab.max())
++    if n == 0:
++        return lab
++    # 6-connectivity: the 2-D cross the mask is labelled with, plus the time link
++    # the stack labelling adds, minus the wrap.
++    s = np.zeros((3, 3, 3), dtype=bool)
++    s[1, :, 1] = s[:, 1, 1] = s[:, :, 1] = True
++    nlon = lab.shape[-1]
++    flat = lab.ravel()
++    cells = np.nonzero(flat)[0]
++    labs = flat[cells]
++    col = cells % nlon
++    lo = np.full(n + 1, nlon, dtype=np.int64)
++    hi = np.full(n + 1, -1, dtype=np.int64)
++    np.minimum.at(lo, labs, col)
++    np.maximum.at(hi, labs, col)
++    span = (hi - lo + 1) * lon_deg
++    bad = [i for i in range(1, n + 1) if span[i] > AR_MAX_LON_SPAN_DEG]
++    if not bad:
++        return lab
++    out = lab.copy()
++    nxt = n
++    for i in bad:
++        part, k = ndimage.label(out == i, structure=s)
++        if k <= 1:
++            continue
++        nxt += 1
++        out[part > 0] = part[part > 0] + nxt
++    return out
++
++
+ def filter_components(mask: np.ndarray, lats: np.ndarray, *,
+                       min_size: int = AR_MIN_SIZE_GRIDPOINTS,
+                       min_abs_lat: float = AR_MIN_ABS_LAT,
+@@ -200,6 +261,10 @@ def filter_components(mask: np.ndarray, lats: np.ndarray, *,
+     else:
+         squeeze = False
+     lab = _label_periodic_stack(m, periodic)
++    if periodic and m.shape[-1] > 1:
++        # 360 / nlon; the grid is the merged map's, so this is exact enough for
++        # a "is this a ring or an AR" test.
++        lab = _split_wrapped_components(lab, 360.0 / m.shape[-1])
+     n = int(lab.max())
+     if n == 0:
+         return np.zeros(m.shape, bool)[0] if squeeze else np.zeros(m.shape, bool)
