@@ -731,7 +731,10 @@ def run(
         scorecard = build_scorecard(scores[SCORE_COLUMNS])
         _atomic_write(RESULTS / "scorecard.json", lambda f: json.dump(scorecard, f, indent=1))
         _atomic_write(RESULTS / "scorecard_by_region.json", lambda f: json.dump(
-            regions.build_region_scorecards(events, scores[SCORE_COLUMNS]), f, indent=1))
+            regions.build_region_scorecards(
+                events, scores[SCORE_COLUMNS],
+                footprints=regions.load_footprints(RESULTS, [e.id for e in events])),
+            f, indent=1))
         expected_pairs = {(e.id, m) for e in events for m in models}
         scored_pairs = {(r0, r1) for r0, r1 in zip(scores["event_id"], scores["model"])} \
             if len(scores) else set()

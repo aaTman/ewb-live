@@ -16,7 +16,7 @@ import pandas as pd
 
 from ewb_live.events.types import Event
 from ewb_live.pipeline import SCORE_COLUMNS
-from ewb_live.regions import build_region_scorecards
+from ewb_live.regions import build_region_scorecards, load_footprints
 
 
 def _load_events(d: Path) -> list:
@@ -49,7 +49,10 @@ def main(results_dir: str) -> None:
     df = pd.DataFrame(scores_raw)
     if isinstance(df.get("init_time"), pd.Series):
         df["init_time"] = pd.to_datetime(df["init_time"])
-    out = build_region_scorecards(events, df.loc[:, SCORE_COLUMNS])
+    # footprint masks come from the same results dir's viz assets (the rule the
+    # owner chose 2026-11-10); events without an asset fall back to the centroid
+    fps = load_footprints(d, [e.id for e in events])
+    out = build_region_scorecards(events, df.loc[:, SCORE_COLUMNS], footprints=fps)
     scored = set(df["event_id"].unique()) if len(df) else set()
     missing = sorted(scored - {e.id for e in events})
     if missing:
@@ -58,7 +61,10 @@ def main(results_dir: str) -> None:
               f"(no bbox -> excluded from region counts): {missing[:5]}")
     dest = d / "scorecard_by_region.json"
     dest.write_text(json.dumps(out, indent=1))
-    print(f"wrote {dest} ({len(out['by_region'])} regions)")
+    a = out["assignment"]
+    print(f"wrote {dest} ({len(out['by_region'])} regions; footprints "
+          f"{a['events_with_footprint']}/{a['events_total']} events, "
+          f"rule {a['rule']}>{a['threshold']:g}, fallback {a['fallback']})")
 
 
 if __name__ == "__main__":

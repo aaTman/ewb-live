@@ -130,11 +130,12 @@
   // type tabs of the page (state is a top-level const in app.js — bare identifier)
   const pageTab = () => (typeof state !== 'undefined' && state.tab) || 'all';
   /* Region view (app.js Region dropdown): boxes, gantt bars and the count all
-     follow the region's centroid rule (window.EwbRegions, JS port of
-     ewb_live/regions.py). If the helper isn't loaded yet, show everything —
-     honest fallback, never a wrong filter. */
-  const inRegionView = (e) => !region || !(window.EwbRegions && window.EwbRegions.eventRegions)
-    || window.EwbRegions.eventRegions(e.bbox).includes(region.key);
+     follow the server's per-event region map (window.EwbRegions.forEvent —
+     footprint-overlap rule from ewb_live/regions.py, centroid port as the
+     fallback). If the helper isn't loaded yet, show everything — honest
+     fallback, never a wrong filter. */
+  const inRegionView = (e) => !region || !(window.EwbRegions && window.EwbRegions.forEvent)
+    || window.EwbRegions.forEvent(e.id, e.bbox).includes(region.key);
   const tlEvents = () => (tl ? tl.events.filter(inRegionView) : []);
   function jumpTo(tsStr) {                 // first frame >= ts (clamped)
     let i = raw.frames.findIndex((f) => f >= tsStr);

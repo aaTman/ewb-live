@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import threading
+import time
 from datetime import date, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
@@ -530,10 +531,24 @@ def test_freeze_detail_reference_component(freeze_server, page_ctx):
 # and the event list sit side by side and talk to each other; every control
 # sits on the thing it changes.
 
+def _wait_js(page, expr, timeout=20000):
+    """Poll a JS expression through evaluate(). wait_for_function() compiles the
+    string in the *page* world, which the CSP the public endpoint serves forbids
+    (its script-src has no 'unsafe-eval'); evaluate() is protocol-level and
+    CSP-immune. Same reason tests/e2e/test_guardian_fe.py carries its own
+    wait_js — three live-mode tests here failed on ewb.espr.ai over it, 2026-11-10."""
+    end = time.time() + timeout / 1000
+    while time.time() < end:
+        if page.evaluate("() => !!(" + expr + ")"):
+            return
+        page.wait_for_timeout(100)
+    raise AssertionError(f"timed out waiting for: {expr}")
+
+
 def _home(page, live_url):
     page.goto(live_url + "/")
     page.wait_for_selector("#event-table tbody tr[data-id]", timeout=25000)
-    page.wait_for_function("MergedMap._dbg().mounted === true", timeout=20000)
+    _wait_js(page, "MergedMap._dbg().mounted === true", timeout=20000)
     page.wait_for_timeout(600)
 
 
@@ -996,7 +1011,7 @@ def gd404_server(tmp_path_factory):
 
 def _mm_goto(page, base, hash_=""):
     page.goto(base + "/" + hash_)
-    page.wait_for_function("MergedMap._dbg().mounted === true", timeout=20000)
+    _wait_js(page, "MergedMap._dbg().mounted === true", timeout=20000)
     page.wait_for_timeout(400)
 
 
@@ -1162,7 +1177,7 @@ def test_merged_dateline_region_label_avoids_russia(gd_server, page_ctx):
     _mm_goto(page, gd_server)
     page.click('#event-table tbody tr[data-id="gm4"]')   # "AR Dateline (e2e)"; rows show place names now
     page.wait_for_selector("#detail-sec:not(.hidden)", timeout=25000)
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#detail-title').textContent.includes('United States')",
         timeout=15000)
     title = page.inner_text("#detail-title")
@@ -1253,7 +1268,7 @@ def test_merged_slider_spans_gantt_axis(gd_server, page_ctx):
 def test_raw_renders_steps_and_badge(raw_server, page_ctx):
     page = page_ctx
     page.goto(raw_server + "/")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('Valid time')",
         timeout=20000)
     assert page.is_visible("#raw-canvas")
@@ -1268,7 +1283,7 @@ def test_raw_renders_steps_and_badge(raw_server, page_ctx):
                          "return c.width > 100; })()")
     # one 6h step back: 06:00 = cutoff frame — ERA5 layers paint, badge clears
     page.click("#raw-prev")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('06:00 UTC')")
     assert not page.is_visible("#raw-badge"), "frame == cutoff is still ERA5"
     # a heat-token pixel is actually painted on the canvas (poll: the frame
@@ -1281,7 +1296,7 @@ def test_raw_renders_steps_and_badge(raw_server, page_ctx):
 def test_raw_layer_toggles_and_url(raw_server, page_ctx):
     page = page_ctx
     page.goto(raw_server + "/")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('Valid time')",
         timeout=20000)
     chips = page.locator("#raw-layers .gm-chip")
@@ -1293,7 +1308,7 @@ def test_raw_layer_toggles_and_url(raw_server, page_ctx):
     assert "layers" not in page.evaluate("location.hash")
     # deep link: frame + only-heat layers survive a load
     page.goto(raw_server + "/#raw=2025110606&layers=h")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('06:00 UTC')",
         timeout=20000)
     chips = page.locator("#raw-layers .gm-chip")
@@ -1320,28 +1335,28 @@ def test_raw_play_and_scrub(raw_server, page_ctx):
     auto-stops at the last frame; slider scrub lands the exact frame."""
     page = page_ctx
     page.goto(raw_server + "/")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('12:00 UTC')",
         timeout=20000)
     # slider scrub: jump to the first frame
     page.evaluate("""(() => { const s = document.querySelector('#raw-slider');
         s.value = '0'; s.dispatchEvent(new Event('input', {bubbles: true})); })()""")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('00:00 UTC')")
     # play from the start: crosses 06:00, then auto-stops back at 12:00
     page.click("#raw-play")
     assert page.inner_text("#raw-play") == "⏸ pause"
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('06:00 UTC')",
         timeout=5000)
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('12:00 UTC')"
         " && document.querySelector('#raw-play').textContent === '▶ play'",
         timeout=5000)
     # play pressed at the END wraps to frame 0 before advancing (checked the
     # readout flips off 12:00 within one 5fps tick)
     page.click("#raw-play")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('00:00 UTC')",
         timeout=3000)
     page.click("#raw-play")   # pause mid-roll, leave it deterministic
@@ -1399,8 +1414,8 @@ _AR_CENSUS_JS = """() => {
 
 def _ar_ramp_wait(page, base, hash_):
     page.goto(base + "/" + hash_)
-    page.wait_for_function("MergedMap._dbg().mounted === true", timeout=20000)
-    page.wait_for_function(
+    _wait_js(page, "MergedMap._dbg().mounted === true", timeout=20000)
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('Valid time')",
         timeout=20000)
     page.locator("#raw-canvas").scroll_into_view_if_needed()
@@ -1429,7 +1444,7 @@ def test_ar_ramp_paints_class_plane(ar_ramp_server, page_ctx):
     page.wait_for_selector("#tooltip:not(.hidden)", timeout=3000)
     assert "750\u20131000" in page.inner_text("#tooltip")
     page.mouse.move(5, 5)   # pointerleave: tooltip must clear
-    page.wait_for_function("document.querySelector('#tooltip').classList.contains('hidden')",
+    _wait_js(page, "document.querySelector('#tooltip').classList.contains('hidden')",
                            timeout=3000)
 
 
@@ -1528,7 +1543,7 @@ def test_dur_fallback_binary_without_run(raw_server, page_ctx):
     fetches are even attempted)."""
     page = page_ctx
     page.goto(raw_server + "/#raw=2025110606&layers=h")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('06:00 UTC')",
         timeout=20000)
     page.wait_for_function(_HEAT_PIXEL_JS, timeout=10000)

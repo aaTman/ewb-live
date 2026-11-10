@@ -11,8 +11,11 @@ from ewb_live.events.types import Event
 from ewb_live.pipeline import BASELINE, SCORE_COLUMNS, build_scorecard
 from ewb_live.regions import (
     assign_regions,
+    assign_regions_footprint,
     bbox_centroid,
     build_region_scorecards,
+    footprint_cells,
+    load_footprints,
     load_regions,
 )
 
@@ -185,3 +188,133 @@ def test_build_region_scores_script_sees_every_scored_event(tmp_path):
     assert {r["event_type"] for r in sh} == {"freeze"}
     eu = out["by_region"]["europe"]["rows"]
     assert {r["event_type"] for r in eu} == {"heat_wave"}
+
+
+# ------------------------------------------------- footprint overlap rule ----
+# Owner 2026-11-10: an event belongs to every region holding >25 % of its
+# FOOTPRINT (the detection mask), not to the region of its bbox centroid.
+
+def _grid(lats, lons):
+    return list(lats), list(lons)
+
+
+def _mask(rows):
+    return [[c == "1" for c in row] for row in rows]
+
+
+def test_footprint_overlap_threshold_is_strict():
+    """Membership needs MORE THAN 25 % of the footprint; exactly 25 % does not qualify."""
+    # fractions are of the FOOTPRINT (cells switched on), not of the grid
+    lats, lons = _grid([15.0, 15.5, 25.0, 30.0], [0.0])   # 2 tropics cells, 2 NH cells
+    regs = load_regions()
+    # all four cells on: tropics 2/4 = 50 %, NH 2/4 = 50 % -> both
+    keys = assign_regions_footprint(lats, lons, _mask(["1", "1", "1", "1"]), regs)
+    assert set(keys) == {"global", "tropics", "northern_hemisphere"}
+    # one tropics cell out of four ON (3 cells): tropics 1/4 = exactly 25 %, not more
+    lats3, lons3 = _grid([15.0, 25.0, 30.0, 40.0], [0.0])
+    keys = assign_regions_footprint(lats3, lons3, _mask(["1", "1", "1", "1"]), regs)
+    assert set(keys) == {"global", "northern_hemisphere"}
+
+
+def test_footprint_straddle_beats_centroid():
+    """Centroid sits in NH (bbox centroid rule -> NH only), but half the
+    footprint is subtropical -> the footprint rule puts it in Tropics as well."""
+    lats, lons = _grid([25.0, 26.0, 15.0, 5.0], [0.0])
+    bbox = (5.0, 45.0, 0.0, 0.0)          # centroid lat 25 -> NH only under the old rule
+    assert assign_regions(bbox) == ["global", "northern_hemisphere"]
+    keys = assign_regions_footprint(lats, lons, _mask(["1", "1", "1", "1"]),
+                                    load_regions())
+    assert set(keys) == {"global", "northern_hemisphere", "tropics"}
+
+
+def test_footprint_falls_back_to_largest_overlap():
+    """Defensive path: if no box clears the threshold, the largest overlap wins —
+    a region-less event would silently vanish from every breakdown. Needs boxes
+    that do NOT partition the sphere (the hemispheric bands always clear 25 %)."""
+    boxes = [{"key": "global", "label": "Global", "lat": [-90, 90], "lon": [-180, 180]},
+             {"key": "a", "label": "A", "lat": [0, 10], "lon": [0, 10]},
+             {"key": "b", "label": "B", "lat": [20, 30], "lon": [0, 10]}]
+    lats, lons = _grid([5.0, 5.5, 25.0, 25.5, 45.0, 45.5, 65.0, 65.5], [5.0])
+    # all 8 footprint cells on: 1 in A, 1 in B (12.5 % each), 6 in neither box,
+    # so nothing clears 25 % and the largest overlap (first, on a tie) wins
+    keys = assign_regions_footprint(lats, lons, _mask(["1"] * 8), boxes, threshold=0.25)
+    assert keys == ["global", "a"]
+
+
+def test_footprint_parsing_both_viz_kinds():
+    ar = {"kind": "ar_ivt", "grid": {"lat": [40.0, 41.0], "lon": [0.0, 10.0]},
+          "obs": {"mask": "10/01"}}
+    got = footprint_cells(ar)
+    assert got is not None and got[2] == [[True, False], [False, True]]
+    days = {"kind": "consecutive_days",
+            "grid": {"lat": [40.0, 41.0], "lon": [0.0, 10.0]},
+            "obs": {"daily": ["10/00", "00/01"]}}              # OR across days
+    got = footprint_cells(days)
+    assert got is not None and got[2] == [[True, False], [False, True]]
+    assert footprint_cells({"kind": "consecutive_days", "grid": {}, "obs": {}}) is None
+    assert footprint_cells({"kind": "consecutive_days",
+                            "grid": {"lat": [1.0], "lon": [1.0]}, "obs": {"daily": ["0"]}}) is None
+    assert footprint_cells(None) is None
+
+
+def test_footprint_bits_unpack_matches_text_masks():
+    """daily_bits is the packed twin of daily (viz.build.pack_bits: day-major over
+    the FLATTENED grid, one pad tail per day) — parse both, get the same footprint."""
+    import base64
+    import numpy as np
+
+    days = np.array([[[True, False, True, False, True], [False, False, False, False, False]],
+                     [[False, True, False, False, False], [True, False, False, False, False]]])
+    parts = [np.packbits(days[d].ravel()) for d in range(2)]
+    blob = np.concatenate(parts)
+    packed = {"kind": "consecutive_days",
+              "grid": {"lat": [10.0, 20.0], "lon": [0.0, 10.0, 20.0, 30.0, 40.0]},
+              "obs": {"daily_bits": {"b64": base64.b64encode(blob.tobytes()).decode(),
+                                     "ndays": 2, "ny": 2, "nx": 5}}}
+    text = {"kind": "consecutive_days",
+            "grid": packed["grid"],
+            "obs": {"daily": ["/".join("".join("1" if v else "0" for v in r)
+                                       for r in days[d]) for d in range(2)]}}
+    a = footprint_cells(packed)
+    b = footprint_cells(text)
+    assert a is not None and b is not None and a[2] == b[2]
+
+
+def test_build_region_scorecards_publishes_assignment_and_event_map():
+    """Contract additions: `assignment` (rule + threshold) and `events` (id -> region
+    keys) — the dashboard filters from that map, so the tables and the JS views
+    can never disagree about which event is in which region."""
+    import pandas as pd
+
+    evs = [_event("eu", "heat_wave", (40.0, 50.0, 0.0, 10.0)),
+           _event("sh", "freeze", (-40.0, -30.0, 140.0, 150.0))]
+    df = pd.DataFrame([{"event_id": e.id, "event_type": e.event_type, "model": m,
+                        "lead_time_hours": 24, "metric": "RMSE", "value": 1.0,
+                        "init_time": pd.Timestamp("2026-11-02")}
+                       for e in evs for m in (BASELINE, "m2")])[SCORE_COLUMNS]
+    out = build_region_scorecards(evs, df)
+    assert out["assignment"]["rule"] == "bbox-centroid" or "rule" in out["assignment"]
+    assert out["assignment"]["events_with_footprint"] == 0
+    assert out["events"] == {"eu": ["global", "northern_hemisphere", "europe"],
+                             "sh": ["global", "southern_hemisphere"]}
+    # with a footprint, the same event lands by area instead of by centroid
+    fp = {"sh": ([ -40.0, -30.0], [140.0, 150.0], [[True, True], [True, True]])}
+    out2 = build_region_scorecards(evs, df, footprints=fp)
+    assert out2["assignment"]["events_with_footprint"] == 1
+    assert out2["events"]["sh"] == ["global", "southern_hemisphere"]
+
+
+def test_load_footprints_reads_viz_assets_and_survives_corruption(tmp_path):
+    import json
+
+    d = tmp_path / "results"
+    good = d / "events" / "a"
+    good.mkdir(parents=True)
+    (good / "viz.json").write_text(json.dumps(
+        {"kind": "ar_ivt", "grid": {"lat": [40.0], "lon": [0.0]}, "obs": {"mask": "1"}}))
+    bad = d / "events" / "b"
+    bad.mkdir()
+    (bad / "viz.json").write_text("{ not json")
+    (d / "events" / "c").mkdir()          # no asset at all
+    fps = load_footprints(d, ["a", "b", "c"])
+    assert list(fps) == ["a"]

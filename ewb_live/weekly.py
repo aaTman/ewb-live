@@ -223,6 +223,21 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
             except Exception as exc:  # noqa: BLE001 — best-effort like viz
                 logger.warning("ewb_live.viz.exceedance step failed (non-fatal): %s", exc)
 
+        # 6c. regional scorecard refresh (regions lane): pipeline.run wrote
+        # scorecard_by_region.json BEFORE viz assets existed for newly detected
+        # events, so those fell back to the bbox-centroid rule. Re-run the regen
+        # now that viz (step 6) published the footprint masks, so the published
+        # numbers are footprint-based in the same cycle. Non-fatal: the file
+        # written in step 3 is already a valid (centroid-fallback) breakdown.
+        try:
+            proc = subprocess.run(
+                [sys.executable, "scripts/build_region_scores.py", "data/results"],
+                timeout=1800,
+            )
+            logger.info("build_region_scores exited %d", proc.returncode)
+        except Exception as exc:  # noqa: BLE001 — best-effort like viz
+            logger.warning("region scorecard refresh failed (non-fatal): %s", exc)
+
         # 7. final public leak gate (re-check after meta/viz writes)
         if not _leak_gate("post-publish"):
             return 1

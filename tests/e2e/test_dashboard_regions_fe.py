@@ -66,7 +66,7 @@ def _sc(types_n):   # {etype: n_events} -> scorecard rows (values not pinned; co
             for m in ("ifs_hres", "m2") for l in (24, 72)]
 
 
-BY_TYPE = {  # scored-event split per region (centroid rule, ewb_live/regions.py)
+BY_TYPE = {  # scored-event split per region (footprint rule, ewb_live/regions.py)
     "global": {"heat_wave": 2, "freeze": 2, "atmospheric_river": 1},
     "tropics": {"heat_wave": 0, "freeze": 0, "atmospheric_river": 1},
     "northern_hemisphere": {"heat_wave": 2, "freeze": 2, "atmospheric_river": 0},
@@ -74,12 +74,31 @@ BY_TYPE = {  # scored-event split per region (centroid rule, ewb_live/regions.py
     "north_america": {"heat_wave": 1, "freeze": 0, "atmospheric_river": 0},
     "europe": {"heat_wave": 1, "freeze": 1, "atmospheric_river": 0},
 }
+# The Global scorecard.json rows deliberately carry n_events >= 5 while the
+# catalog holds 5 events: the small-sample cue (owner 2026-11-10) must be
+# testable in BOTH states, and every region slice here is under 5 events.
+# (Lane headers count the catalog, cells count the rows — see app.js.)
+GLOBAL_ROW_N = {"heat_wave": 6, "freeze": 5, "atmospheric_river": 5}
+# Authoritative server-side assignment (the footprint rule's output): the UI
+# filters from this map, not from its own geometry.
+EVENT_REGIONS = {
+    "h_eu": ["global", "northern_hemisphere", "europe"],
+    "h_na": ["global", "northern_hemisphere", "north_america"],
+    "f_sh": ["global", "southern_hemisphere"],
+    "f_eu": ["global", "northern_hemisphere", "europe"],
+    "a_tp": ["global", "tropics"],
+}
 REGIONS_META = json.loads((DASH / "regions.json").read_text())["regions"]
 REGION_KEYS = [r["key"] for r in REGIONS_META]
 SCORECARD_BY_REGION = {
     "baseline": "ifs_hres",
+    "assignment": {"rule": "footprint-overlap", "threshold": 0.25,
+                   "fallback": "bbox-centroid", "min_sample": 5,
+                   "events_with_footprint": len(EVENT_REGIONS),
+                   "events_total": len(EVENT_REGIONS)},
     "regions": [{"key": k, "label": r["label"], "n_events": sum(BY_TYPE[k].values()),
                  "by_type": BY_TYPE[k]} for k, r in zip(REGION_KEYS, REGIONS_META)],
+    "events": EVENT_REGIONS,
     # 'global' deliberately absent from by_region (contract: scorecard.json IS global)
     "by_region": {k: {"rows": _sc(BY_TYPE[k])} for k in REGION_KEYS if k != "global"},
 }
@@ -108,7 +127,7 @@ def _build(root: Path):
     _write(d / "events.json", EV)          # events files are bare arrays (asRows)
     _write(d / "events_selected.json", EV)
     _write(d / "scores.json", {"rows": SCORES})
-    _write(d / "scorecard.json", {"baseline": "ifs_hres", "rows": _sc(BY_TYPE["global"])})
+    _write(d / "scorecard.json", {"baseline": "ifs_hres", "rows": _sc(GLOBAL_ROW_N)})
     _write(d / "pair_status.json", {})
     _write(d / "weeks.json", {"weeks": [{"week": "2025-W52"}]})
     _write(d / "scorecard_by_region.json", SCORECARD_BY_REGION)
@@ -314,4 +333,51 @@ def test_region_deep_link_waits_for_lazy_file(page_ctx, base):
     page.wait_for_function("() => window.__debug.state.region === 'north_america'", timeout=8000)
     assert "No freezes in North America" in page.content()
     assert "region=north_america" in page.evaluate("() => location.hash")
+    assert errs == []
+
+
+def test_small_sample_cue_marks_cells_and_warns(dash):
+    """Owner 2026-11-10: cells resting on fewer than 5 events carry a subtle red
+    glow, and the page says so — in the note, the lane header and the tooltip.
+    The fixture's Global rows carry n >= 5, so Global must show a clean table;
+    every region slice is under 5, so Europe must show the whole cue."""
+    page, errs, _ = dash
+    small_count = "() => document.querySelectorAll('td.cell.small-n').length"
+    assert page.evaluate(small_count) == 0
+    assert page.is_hidden("#sc-sample-note")
+    page.select_option("#region-select", "europe")
+    page.wait_for_function("() => window.__debug.state.region === 'europe'")
+    assert page.evaluate(small_count) > 0, "no cell flagged small-n in a 1-event region"
+    note = page.inner_text("#sc-sample-note")
+    assert "fewer than 5 events" in note and "Europe" in note and "indicative" in note
+    # the cue is not colour-only: every flagged cell also carries the words
+    page.locator("td.cell.small-n").first.hover()
+    page.wait_for_selector("#tooltip:not(.hidden)", timeout=4000)
+    tip = page.inner_text("#tooltip")
+    assert "sample" in tip and "below 5" in tip
+    # lane header wording: 1 event reads 'indicative', 2..4 read 'small sample'
+    assert "indicative" in lane(page, "Heat wave").locator("h3").inner_text()
+    page.select_option("#region-select", "northern_hemisphere")
+    page.wait_for_function("() => window.__debug.state.region === 'northern_hemisphere'")
+    assert "small sample" in lane(page, "Heat wave").locator("h3").inner_text()
+    assert page.evaluate(small_count) > 0
+    # back to Global: the cue and the note both leave the page
+    page.select_option("#region-select", "global")
+    page.wait_for_function("() => window.__debug.state.region === 'global'")
+    assert page.evaluate(small_count) == 0
+    assert page.is_hidden("#sc-sample-note")
+    assert errs == []
+
+
+def test_regions_come_from_the_server_map_not_client_geometry(dash):
+    """The tables were built from the server's footprint assignment, so the JS
+    views filter with that same map (`events` in the contract). Client geometry
+    is only the fallback for an id the file does not cover."""
+    page, errs, _ = dash
+    # published map wins: a nonsense bbox still returns the server's keys
+    got = page.evaluate("() => window.EwbRegions.forEvent('h_na', [0, 1, 0, 1])")
+    assert got == EVENT_REGIONS["h_na"]
+    # unknown id -> the centroid port (europe + NH for that box)
+    fb = page.evaluate("() => window.EwbRegions.forEvent('not-in-the-run', [40, 50, -5, 10])")
+    assert "europe" in fb and "northern_hemisphere" in fb
     assert errs == []

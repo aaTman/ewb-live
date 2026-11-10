@@ -314,7 +314,14 @@ function parseRegionJson(hit) {
     rows[k] = mergeBinned(asRows(v && v.rows).map(normScRow),
       ['mean_value', 'ci_lo', 'ci_hi'], 'n_events', 'event_type');
   }
-  return { regions: rj.regions.filter((r) => r && r.key), rows };
+  /* Server-side assignment (ewb_live/regions.py): the authoritative event →
+     region map, computed from the event's real footprint mask (>25 % overlap
+     rule, owner 2026-11-10). The UI filters from THIS map so the map, list and
+     tables can never disagree; the JS centroid port below is only the fallback
+     for ids the file does not cover. */
+  const evMap = (rj.events && typeof rj.events === 'object') ? rj.events : null;
+  return { regions: rj.regions.filter((r) => r && r.key), rows,
+           events: evMap, assignment: rj.assignment || null };
 }
 
 async function loadData(week) {
@@ -724,8 +731,20 @@ function eventRegions(bbox) {
   }
   return keys;
 }
-const inRegion = (e) => state.region === 'global' || eventRegions(e.bbox).includes(state.region);
-window.EwbRegions = { eventRegions };   // merged-map region view + e2e parity check
+const inRegion = (e) => state.region === 'global' || regionsOf(e).includes(state.region);
+/* Regions of one event: the server's footprint-based map when the contract
+   carries it (authoritative — the tables were built from exactly these keys),
+   the centroid port otherwise (older region file / id the file does not cover). */
+function regionsOf(e) {
+  const m = state.regionData && state.regionData.events;
+  if (m && e && m[e.id]) return m[e.id];
+  return eventRegions(e && e.bbox);
+}
+window.EwbRegions = { eventRegions, forEvent: (id, bbox) => regionsOf({ id, bbox }) };
+// small-sample threshold (owner 2026-11-10): cells under this read as small-n
+const minSample = () => (state.regionData && state.regionData.assignment
+  && Number.isFinite(state.regionData.assignment.min_sample)
+  ? state.regionData.assignment.min_sample : 5);
 
 function scIndex() {
   // (etype,metric,lead) -> {model: {mean, rel, n}}; lead may be null (event-level metrics)
@@ -847,6 +866,7 @@ function renderVerdictStrip(idx) {
 function renderScorecard() {
   const host = $('#scorecard-tables');
   host.innerHTML = '';
+  let anySmallN = false;      // any rendered cell rests on < minSample() events
   // partial-results badge: shows until every meta-declared model has scores
   // (or the run declares itself complete). Auto-clears when the full run lands.
   const badge = $('#scorecard-status');
@@ -928,9 +948,11 @@ function renderScorecard() {
       : state.events.filter((e) => e.event_type === etype).length;
 
     const block = el('div', 'sc-block');
+    const smallLane = nEv > 1 && nEv < minSample();
     block.appendChild(el('h3', '',
       `<span class="type-chip" style="background:${TYPE_META[etype].color}">${esc(TYPE_META[etype].short)}</span>` +
-      `${nEv} event${nEv === 1 ? '' : 's'}${nEv === 1 ? ' · indicative' : ''}`));
+      `${nEv} event${nEv === 1 ? '' : 's'}` +
+      (nEv === 1 ? ' · indicative' : smallLane ? ' · small sample' : '')));
 
     /* Owner 2026-11-07: an empty lane is a legitimate outcome, not a bug —
        calm one-line note + criteria tooltip instead of a table of dashes. */
@@ -984,10 +1006,15 @@ function renderScorecard() {
         for (const c of columns) {
           if (c.kind === 'mean') {
             const mv = meanVisible(idx, etype, met, model, leads);
-            const meanTd = el('td', 'cell mean', mv === null ? '—' : fmtVal(met, mv));
+            const mN = meanSample(idx, etype, met, model, leads);
+            const mSmall = mN !== null && mN < minSample();
+            const meanTd = el('td', 'cell mean' + (mSmall ? ' small-n' : ''),
+              mv === null ? '—' : fmtVal(met, mv));
             meanTd.dataset.model = model;
             if (n) meanTd.style.background = model === B ? '' : cellColor(s / n);
-            attachTip(meanTd, etype, met, { kind: 'mean', mean: mv, rel: n ? s / n : null, nLeads: n });
+            if (mSmall) anySmallN = true;
+            attachTip(meanTd, etype, met, { kind: 'mean', mean: mv, rel: n ? s / n : null,
+              nLeads: n, n: mN, small: mSmall });
             tr.appendChild(meanTd);
             continue;
           }
@@ -1000,10 +1027,14 @@ function renderScorecard() {
           }
           any = true;
           if (Number.isFinite(cell.rel)) { s += cell.rel; n += 1; }
-          const td = el('td', 'cell' + (model === B ? ' baseline' : ''), fmtVal(met, cell.mean));
+          const small = Number.isFinite(cell.n) && cell.n < minSample();
+          if (small) anySmallN = true;
+          const td = el('td', 'cell' + (model === B ? ' baseline' : '')
+            + (small ? ' small-n' : ''), fmtVal(met, cell.mean));
           td.dataset.model = model;
           td.style.background = model === B ? '' : cellColor(cell.rel);
-          attachTip(td, etype, met, { kind: c.kind, lead, mean: cell.mean, rel: cell.rel, n: cell.n, lo: cell.lo, hi: cell.hi });
+          attachTip(td, etype, met, { kind: c.kind, lead, mean: cell.mean, rel: cell.rel,
+            n: cell.n, lo: cell.lo, hi: cell.hi, small });
           tr.appendChild(td);
         }
         void any;
@@ -1052,6 +1083,20 @@ function renderScorecard() {
     };
     requestAnimationFrame(() => { updScroll(); wrap.addEventListener('scroll', updScroll, { passive: true }); });
   }
+  /* Small-sample warning (owner 2026-11-10): cells under minSample() events get
+     a red edge + glow; say what that means once, next to the tables, and only
+     when the current view actually contains such a cell. */
+  const note = $('#sc-sample-note');
+  if (note) {
+    note.hidden = !anySmallN;
+    if (anySmallN) {
+      const re = regionEntry();
+      note.innerHTML = `<span class="sn-mark" aria-hidden="true"></span> Glowing cells rest on `
+        + `<b>fewer than ${minSample()} events</b>`
+        + (re ? ` in ${esc(re.label)}` : '') + '. '
+        + 'They are indicative, not a verdict: one event can move a cell by tens of percent.';
+    }
+  }
 }
 
 function meanVisible(idx, etype, met, model, leads) {
@@ -1061,6 +1106,22 @@ function meanVisible(idx, etype, met, model, leads) {
     if (g && g[model] && Number.isFinite(g[model].mean)) { s += g[model].mean; n += 1; }
   }
   return n ? s / n : null;
+}
+
+/* Largest n_events behind any visible lead cell of one (etype, metric, model):
+   the mean column averages leads of the SAME event set, so its own sample is
+   that union — the biggest per-lead n is the honest estimate. Used only for the
+   small-sample cue (owner 2026-11-10: warn below 5 events). */
+function meanSample(idx, etype, met, model, leads) {
+  let best = null;
+  for (const h of leads) {
+    const g = idx.get(`${etype}|${met}|${h}`);
+    const c = g && g[model];
+    if (c && Number.isFinite(c.mean) && Number.isFinite(c.n)) {
+      best = best === null ? c.n : Math.max(best, c.n);
+    }
+  }
+  return best;
 }
 
 /* tooltip (B1, DR2: mouse + keyboard + touch)
@@ -1094,6 +1155,13 @@ function attachTip(td, etype, met, c) {
     }
     if (c.kind !== 'mean' && Number.isFinite(c.n)) {
       rows.push(`<div class="t-row"><span>n events</span><b>${c.n}</b></div>`);
+    }
+    /* small-sample cue (owner 2026-11-10): say it in the tooltip too, so the
+       red edge never reads as a performance colour */
+    if (c.small) {
+      const nTxt = Number.isFinite(c.n) ? `${c.n} event${c.n === 1 ? '' : 's'}` : 'tiny';
+      rows.push(`<div class="t-row t-small"><span>sample</span>`
+        + `<b class="t-warn">${nTxt} \u00b7 below ${minSample()}</b></div>`);
     }
     rows.push(`<div class="t-row t-dir"><span>${mm.dir === 'zero' ? 'closer to 0 is better' : mm.higher_is_better ? 'higher is better' : 'lower is better'}</span></div>`);
     if (c.kind === 'mean' && Number.isFinite(c.nLeads)) {
