@@ -132,8 +132,9 @@ def _day(patterns, cell_bits=3):
 
 
 def test_run_recurrence_and_codec():
-    """Acceptance 1: provisional count, mid-day reset, growth across
-    complete days, cap — plus .run codec roundtrip (two u8 planes, zlib)."""
+    """Acceptance 1 (dur rev v2): completed-day count constant within a day,
+    provisional bit 7, growth across complete days, saturation — plus .run
+    codec roundtrip (two u8 planes, zlib)."""
     # cell A: 4 complete days... scenarios as (A,B,C) per step:
     days = [
         _day([(True, False, False)] * 4),                    # day1 all exceed
@@ -145,20 +146,20 @@ def test_run_recurrence_and_codec():
     runs = rx.run_recurrence(days)
     flat = np.stack([r[0] for r in runs])                    # (16, 3)
     a = flat[:, 0]
-    assert list(a[0:4]) == [1, 1, 1, 1]        # day1 provisional count
-    assert list(a[4:8]) == [2, 2, 0, 0]        # provisional then mid-day reset
-    assert list(a[8:12]) == [1, 1, 1, 1]       # day3: C(2)=0 -> back to 1
-    assert list(a[12:16]) == [2, 2, 2, 2]      # growth after complete day3
+    assert list(a[0:4]) == [0x80] * 4          # day1: 0 completed, today provisional
+    assert list(a[4:8]) == [0x81, 0x81, 0x01, 0x01]  # C(1)=1 solid ALL steps (no mid-day reset); prov bit drops at the failed step
+    assert list(a[8:12]) == [0x80] * 4         # day3: C(2)=0 -> completed streak back to 0
+    assert list(a[12:16]) == [0x81] * 4        # day4: C(3)=1, constant all day
     assert list(flat[:, 2]) == [0] * 16        # never-exceeding cell stays 0
     assert all(r.dtype == np.uint8 for r in runs)
-    # cap at 255: 300 single-step all-True days
+    # saturation at RUN_CAP: 300 all-True days never overflow low7 into bit7
     cap = rx.run_recurrence([_day([(True, True, True)])] * 300)
-    assert cap[-1][0, 0] == 255 and cap[299][0, 0] == 255
+    assert cap[-1][0, 0] == 0x80 | rx.RUN_CAP and cap[299][0, 0] == 0x80 | rx.RUN_CAP
     # seed = pre-window history (acceptance 4, recurrence level): the first
-    # in-window frame already exceeds 1 where the lookback says so
+    # in-window frame already carries the seeded completed count
     seeded = rx.run_recurrence([_day([(True, False, False)] * 4)],
                                seed=np.array([[1, 0, 0]], np.uint8))
-    assert seeded[0][0, 0] == 2 and seeded[0][0, 1] == 0
+    assert seeded[0][0, 0] == 0x81 and seeded[0][0, 1] == 0
     # codec: two u8 planes roundtrip, sparse payload compresses, size guarded
     h = np.arange(12, dtype=np.uint8).reshape(3, 4)
     f = np.full((3, 4), 255, np.uint8)
@@ -201,10 +202,10 @@ def test_run_sidecar_backfill_and_prune(tmp_path, monkeypatch):
         assert (tmp_path / f"{tag}.run").exists()
     h0, f0 = rx.run_from_bytes((tmp_path / "2026081000.run").read_bytes(),
                                (8, 8))
-    assert h0[2, 2] == 4 and h0[0, 0] == 0 and f0.max() == 0   # 3 + 1 seeded
+    assert h0[2, 2] == 0x83 and h0[0, 0] == 0 and f0.max() == 0  # 3 completed seeded + today prov
     h7, _ = rx.run_from_bytes((tmp_path / "2026081118.run").read_bytes(),
                               (8, 8))
-    assert h7[2, 2] == 5                       # C(08-10)=4, provisional +1
+    assert h7[2, 2] == 0x84                    # C(08-10)=4 completed, today provisional
     bins_before = {t: (tmp_path / f"{t}.bin").read_bytes() for t in frames}
     (tmp_path / "2026081006.run").unlink()
     assert rx.build_frames(tmp_path, times, layer_fn, False, frames,
@@ -213,7 +214,7 @@ def test_run_sidecar_backfill_and_prune(tmp_path, monkeypatch):
             for t in frames} == bins_before    # masks identical -> bytes equal
     h6, _ = rx.run_from_bytes((tmp_path / "2026081006.run").read_bytes(),
                               (8, 8))
-    assert h6[2, 2] == 4
+    assert h6[2, 2] == 0x83
     # retention: prune_frames drops .bin/.trk/.run older than the floor
     for ext in (".bin", ".trk", ".run"):
         (tmp_path / f"2026070900{ext}").write_bytes(b"x")
@@ -263,3 +264,51 @@ def test_ivt_sidecar_orientation(tmp_path, monkeypatch):
     # the one classed cell sits at the DISPLAY cell of native (0,0):
     # rows flipped, cols rolled by LON_N//2
     assert cls[8 - 1 - 0, (0 - 4) % 8] == 3
+# ---- duration sidecar v2 (sawtooth fix, diurnal investigation 2026-11-09):
+# low 7 bits = consecutive COMPLETED days (constant within a UTC day),
+# bit 7 = today so far (provisional) ----
+
+def test_run_recurrence_v2_completed_days():
+    T, F = np.ones((1, 1), bool), np.zeros((1, 1), bool)
+    days = [[T, T, T, T],            # D1 all steps -> today only (prov, 0 done)
+            [T, T, F, F],            # D2 breaks at step 2 -> done=1 after step1
+            [T, T, T, T]]            # D3 restarts: completed streak back to 0
+    g = rx.run_recurrence(days)
+    assert [int(v[0, 0]) for v in g] == \
+        [0x80] * 4 + [0x81, 0x81, 0x01, 0x01] + [0x80] * 4
+    # solid count never changes within a day: no provisional +1 at 00Z, no
+    # midnight reset — the whole sawtooth fix in one assertion
+    assert {int(v[0, 0]) & 0x7F for v in g[4:8]} == {1}
+
+
+def test_run_recurrence_v2_seed_and_saturation():
+    T, F = np.ones((1, 1), bool), np.zeros((1, 1), bool)
+    g = rx.run_recurrence([[T, F, T, T]], seed=np.full((1, 1), 3, np.uint8))
+    assert [int(v[0, 0]) for v in g] == [0x83, 0x03, 0x03, 0x03]
+    # saturated streak stays at RUN_CAP (no u8 overflow into the prov bit)
+    grids, c = rx._run_day([T, T, T, T], np.full((1, 1), rx.RUN_CAP, np.uint8))
+    assert int(c[0, 0]) == rx.RUN_CAP
+
+
+def test_run_sidecar_v2_in_incremental_build(tmp_path, monkeypatch):
+    monkeypatch.setattr(rx, "LAT_N", 8)
+    monkeypatch.setattr(rx, "LON_N", 8)
+    times = [np.datetime64("2026-08-10T00"), np.datetime64("2026-08-10T06"),
+             np.datetime64("2026-08-11T00"), np.datetime64("2026-08-11T06")]
+
+    def layer_fn(day_times):
+        n = len(day_times)
+        m = np.zeros((n, 8, 8), bool)
+        m[:, 2:4, 2:4] = True
+        return m, np.zeros_like(m), np.zeros_like(m)
+
+    assert rx.build_frames(tmp_path, times, layer_fn, True, []) == 4
+    h1, f1 = rx.run_from_bytes((tmp_path / "2026081000.run").read_bytes(), (8, 8))
+    assert (h1[2:4, 2:4] == 0x80).all() and not (h1 & 0x7F).any() and not f1.any()
+    # day 2 with the pipeline's seed contract (run_seed from _daily_runs):
+    # C(2026-08-10) = 1 completed day -> base 1 at every step of day 2
+    seed = {"2026-08-10": (np.full((8, 8), 1, np.uint8),
+                           np.zeros((8, 8), np.uint8))}
+    assert rx.build_frames(tmp_path, times, layer_fn, True, [], seed) == 4
+    h2, _ = rx.run_from_bytes((tmp_path / "2026081100.run").read_bytes(), (8, 8))
+    assert (h2[2:4, 2:4] == 0x81).all()   # 1 completed day + today provisional

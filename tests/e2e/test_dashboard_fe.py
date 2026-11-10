@@ -1154,7 +1154,7 @@ def test_merged_dateline_region_label_avoids_russia(gd_server, page_ctx):
     land-overlap-weighted label is Alaska — 'United States of America'."""
     page = page_ctx
     _mm_goto(page, gd_server)
-    page.click('#event-table tbody tr:has-text("AR Dateline")')
+    page.click('#event-table tbody tr[data-id="gm4"]')   # "AR Dateline (e2e)"; rows show place names now
     page.wait_for_selector("#detail-sec:not(.hidden)", timeout=25000)
     page.wait_for_function(
         "document.querySelector('#detail-title').textContent.includes('United States')",
@@ -1178,7 +1178,9 @@ def test_region_mask_centroid_handles_schema3_flat_mask(gd_server, page_ctx):
       const grid = { lat: [64, 65, 66], lon: [177, 178, 179, -180, -179] };
       const viz = { obs: { mask: '00111/00111/00111' }, grid };   // 3x5 flat string
       const pt = regionFromViz({}, viz);
-      return pt ? { lon: pt[1], place: placeName(pt[0], pt[1]) } : null;
+      // the coarse band, not placeName: the page now preloads the 110m country
+      // table, whose Chukotka polygon touches lon ±180 at this latitude
+      return pt ? { lon: pt[1], place: regionName(pt[0], pt[1]) } : null;
     })()""")
     assert got is not None, "flat schema-3 mask must yield a mask centroid"
     assert 178.5 < got["lon"] < 179.5 or got["lon"] < -179.5, got   # unwrapped mean of 179..-179
@@ -1463,8 +1465,9 @@ def test_ar_ramp_fallback_without_class_plane(ar_ramp_server, page_ctx):
 # consecutive-day duration layers (channel_consecutive_days acceptance 5-8)
 # ---------------------------------------------------------------------------
 
-# Reads the main canvas at heat cells: run=2 (unpainted), run=3 (bin0),
-# run=0 (unpainted), run=14 (bin4). The effective painted colour is computed
+# Reads the main canvas at heat cells (dur-rev-v2 paint contract, heat ramp
+# 1,2,…,7+ days): run=2 (bin 2), run=3 (bin 3), run=0 (unpainted), run=14
+# (top bin, 7+). The effective painted colour is computed
 # from the app's own ramp pack (colour+alpha) blended over --map-ocean.
 _BIN_PROBE_JS = """(({ j, i }) => {
     const d = MergedMap._dbg(), g = d.grid;
@@ -1488,26 +1491,26 @@ _BIN_PROBE_JS = """(({ j, i }) => {
     const near = (a, b) => a.every((v, k) => Math.abs(v - b[k]) <= 35);
     const count = (cells, col) => cells.reduce((s, c) =>
         s + c.filter((p) => near(p, col)).length, 0);
-    const e0 = eff(0), e4 = eff(4);
-    const allBins = [eff(0), eff(1), eff(2), eff(3), eff(4)];
+    const allBins = [0, 1, 2, 3, 4, 5, 6].map(eff);
     const isNearAnyBin = (p) => allBins.some(b => near(p, b));
-    return { bin0: count([win(i + 1, 0)], e0),  // run=3 -> bin0
-             bin4: count([win(i + 40, 0)], e4),  // run=14 -> bin4
-             unpaintedRun2: win(i, 5).every((p) => !isNearAnyBin(p)),  // run=2
+    return { run3: count([win(i + 1, 0)], eff(2)),    // run=3 -> 3-day bin
+             run14: count([win(i + 40, 0)], eff(6)),  // run=14 -> top bin (7+)
+             run2: count([win(i, 5)], eff(1)),        // run=2 -> 2-day bin
+             distinct: !near(eff(0), eff(6)),
              unpaintedRun0: win(i + 20, 5).every((p) => !isNearAnyBin(p)) }; // run=0
 })"""
 
 
 def test_dur_ramp_bins_painted_and_zero_unpainted(dur_server, page_ctx):
-    """Acceptance 5: with `.run` sidecars the heat layer paints run=3 (bin0) and
-    run=14 (bin4) in distinct ramp colours at the fixture cells, and cells with
-    run=0 and run=2 stay unpainted (heat only appears at run>=3)."""
+    """Acceptance 5 (dur rev v2 contract): with `.run` sidecars the heat layer
+    paints every run >= 1 on the 7-step ramp (run=2, run=3, run=14 -> top bin)
+    and cells with run=0 stay unpainted."""
     page = page_ctx
     _mm_goto(page, dur_server)
     _mm_frame(page, RAW_TS[1])               # frame k=1: heat blob row j=19, cols 30/31/50/70
     got = page.evaluate(_BIN_PROBE_JS, {"j": 19, "i": 30})
-    assert got["bin0"] >= 1 and got["bin4"] >= 1, got
-    assert got["unpaintedRun2"] is True, f"run=2 should be unpainted: {got}"
+    assert got["run3"] >= 1 and got["run14"] >= 1 and got["run2"] >= 1, got
+    assert got["distinct"] is True, f"ramp ends must differ: {got}"
     assert got["unpaintedRun0"] is True, f"run=0 should be unpainted: {got}"
     errs = [e for e in page.errors if "Failed to load resource" not in e]
     assert errs == [], f"unexpected page errors: {errs}"   # 404 = the fixture's absent timeline
@@ -1529,8 +1532,8 @@ def test_dur_fallback_binary_without_run(raw_server, page_ctx):
 
 def test_dur_chip_labels_gradient_and_tips(dur_server, page_ctx):
     """Acceptance 7: the chip row is the ramp legend — heat/freeze labels
-    carry 'days', their swatches are 5-stop gradients, AR stays solid; the
-    heat tip states minimum 3 days and most-intense=14+; freeze unchanged."""
+    carry 'days', their swatches are gradients, AR is the IVT ramp; the tips
+    state the dur-rev-v2 rule (completed days, provisional today, top bins)."""
     page = page_ctx
     _mm_goto(page, dur_server)
     chips = page.locator("#raw-layers .gm-chip")
@@ -1544,10 +1547,10 @@ def test_dur_chip_labels_gradient_and_tips(dur_server, page_ctx):
     assert "var(--dur-ar-5)" in sw[2]   # AR chip is the IVT ramp legend since 2026-11-09 brief
     tips = page.eval_on_selector_all("#raw-layers .gm-chip",
                                      "els => els.map(e => e.title)")
-    assert "minimum 3 days" in tips[0] and "most intense = 14+ days" in tips[0]
-    assert "all four 6-hourly steps" in tips[0]
+    assert "COMPLETED UTC days" in tips[0] and "Darkest = 7+ days" in tips[0]
+    assert "all four 6-hourly steps" in tips[0] and "provisional" in tips[0]
     assert "P15" in tips[1]
-    assert "most intense = 7+ days" in tips[1]  # freeze unchanged
+    assert "Darkest = 3+ days" in tips[1]
     # toggle/URL semantics ride along: clicking freeze off writes layers=h,a
     chips.nth(1).click()
     assert "layers=h,a" in page.evaluate("decodeURIComponent(location.hash)")

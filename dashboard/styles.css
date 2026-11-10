@@ -32,12 +32,13 @@
   --stone-grey:           #848475;
   --medal-gold: #c9930f;  --medal-silver: #8e979e;  --medal-bronze: #b3703c;
 
-  /* ---- Duration ramp (channel_consecutive_days §5): heat/freeze paint by
-     consecutive-day bin 1/2/3/4-6/7+; sequential hue+lightness ramps (gold
-     →maroon, cyan→navy) at flat alpha — every stop token keeps >=3:1 on
-     paper/map-ocean AND adjacent bins blend >=12 dE76 apart, both themes. ---- */
-  --dur-heat-1: #c57b2c;  --dur-heat-2: #c35b2a;  --dur-heat-3: #ad3321;  --dur-heat-4: #7d1619;  --dur-heat-5: #4c0810;
-  --dur-freeze-1: #3596ba;  --dur-freeze-2: #2b77b0;  --dur-freeze-3: #2a58a0;  --dur-freeze-4: #1a2d71;  --dur-freeze-5: #0f1b45;
+  /* ---- Duration ramp (channel_consecutive_days §5, dur rev v2): heat/freeze
+     paint by consecutive COMPLETED-day bins — heat 1,2,3,4,5,6,7+ /
+     freeze 1,2,3+; top bin = the series token, low bins
+     darken so every stop keeps >=3:1 on canvas/paper/map-ocean (min 4.28).
+     The per-bin alpha ramps live in mergedmap.js RUN_ALPHA. ---- */
+  --dur-heat-1: #7c2b23;  --dur-heat-2: #8b332a;  --dur-heat-3: #9a392f;  --dur-heat-4: #aa3f34;  --dur-heat-5: #b84438;  --dur-heat-6: #c94d40;  --dur-heat-7: var(--series-heat);
+  --dur-freeze-1: #123769;  --dur-freeze-2: #164481;  --dur-freeze-3: var(--series-freeze);
 
   /* AR IVT ramp (5 classes: 250-500, 500-750, 750-1000, 1000-1250, >=1250 kg m-1 s-1)
      Light-to-dark green sequential, matching AR green identity (#2e7d32 light / #66bb6a dark).
@@ -109,10 +110,11 @@ html[data-theme="dark"] {
   --stone-grey:           #acab9c;
   --medal-gold: #d9a92c;  --medal-silver: #a7b0b8;  --medal-bronze: #c98a52;
 
-  /* Duration ramp, dark (mirrors the light block; on the dark ground the
-     ramps invert: rust→gold, steel-blue→ice, same token-contrast rule). */
-  --dur-heat-1: #b3542c;  --dur-heat-2: #d97b2f;  --dur-heat-3: #f2a83f;  --dur-heat-4: #ffd46b;  --dur-heat-5: #ffe9a0;
-  --dur-freeze-1: #4672a3;  --dur-freeze-2: #5093cf;  --dur-freeze-3: #6cb3e1;  --dur-freeze-4: #95ceec;  --dur-freeze-5: #c8e7f9;
+  /* Duration ramp, dark (mirrors the light block; heat 7 bins / freeze 3 bins;
+     on the dark ground low bins
+     lighten — every stop keeps >=3:1 on canvas/paper/map-ocean, min 3.26). */
+  --dur-heat-1: #f9a99e;  --dur-heat-2: #f89c90;  --dur-heat-3: #f79083;  --dur-heat-4: #f68576;  --dur-heat-5: #f67b6b;  --dur-heat-6: #f46d5c;  --dur-heat-7: var(--series-heat);
+  --dur-freeze-1: #829dd2;  --dur-freeze-2: #6687c8;  --dur-freeze-3: var(--series-freeze);
   /* AR IVT ramp, dark (inverted: dark-to-light green on dark ground) */
   --dur-ar-1: #3a5a3a;  --dur-ar-2: #4a7a4a;  --dur-ar-3: #66bb6a;  --dur-ar-4: #8fcf8f;  --dur-ar-5: #b8e0b8;
 
@@ -231,6 +233,7 @@ nav.controls {
 #type-tabs button { border-radius: 999px; padding: 4px 12px; display: inline-flex; align-items: center; gap: 6px; }
 #type-tabs .n { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-secondary);
   font-variant-numeric: tabular-nums; }
+#type-tabs button.on .n { color: inherit; }   /* ink-secondary on the selected wash is 4.3:1 */
 .type-filter { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .type-filter:has(#type-tabs:empty), nav.controls:has(#lead-chips:empty) > * { visibility: hidden; }
 .sec-lede { color: var(--ink-secondary); font-size: var(--text-sm); margin: 4px 0 12px; max-width: 86ch; }
@@ -293,6 +296,29 @@ section { margin-bottom: 24px; }
   font-size: var(--text-xs); color: var(--ink-muted); }
 .sc-key i { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border);
   display: inline-block; }
+
+.sc-ticks { display: inline-flex; flex-direction: column; gap: 2px; margin-left: 12px;
+  font-size: var(--text-2xs); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.sc-ticks .tick-bar { display: flex; width: 128px; height: 8px; }
+.sc-ticks .tick-bar b { display: block; height: 100%; width: 64px; }
+.sc-ticks .tick-bar b.better { background: linear-gradient(to right, rgba(var(--better),.55), rgba(var(--better),.06)); }
+.sc-ticks .tick-bar b.worse { background: linear-gradient(to right, rgba(var(--worse),.06), rgba(var(--worse),.55)); }
+.sc-ticks .tick-labels { display: flex; justify-content: space-between; width: 128px;
+  font-size: 10px; line-height: 1.1; }
+
+/* verdict strip (design.md P1.4): answer-first summary of visible cells */
+.verdict-strip { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline;
+  margin: 4px 0 16px; padding: 8px 12px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg-panel); font-size: var(--text-xs);
+  color: var(--ink-secondary); }
+.verdict-strip[hidden] { display: none; }
+.verdict-item { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; }
+.verdict-item b { color: var(--matte-black); font-weight: 500; }
+.verdict-item .v-text { font-variant-numeric: tabular-nums; }
+.verdict-item .type-chip { flex: none; font-size: var(--text-2xs); font-weight: 500; padding: 1px 6px;
+  border-radius: 999px; color: #fff; letter-spacing: 0.05em; text-transform: uppercase; }
+.verdict-item .v-cells { color: var(--ink-muted); font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums; }
 
 /* kv-line (OWB kv-row): tracked micro-labels + mono values — the run summary */
 .kv-line { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 12px 0 16px; }
@@ -450,7 +476,7 @@ tbody tr:hover td.model-col { background: var(--tint); }
 #event-table .ev-name { display: block; font-weight: 500; line-height: 1.3; }
 #event-table .ev-sub { display: block; margin-top: 2px; font-size: var(--text-xs); color: var(--ink-secondary);
   font-variant-numeric: tabular-nums; }
-#event-table .ev-live { color: var(--matte-black); }
+#event-table .ev-live { color: var(--matte-black); white-space: nowrap; }
 #event-table .ev-unit { display: block; margin-top: 2px; font-size: var(--text-2xs); color: var(--ink-muted); }
 .jump .linkbtn { color: var(--ink-secondary); }
 #event-table .type-dot { margin-top: 4px; }
@@ -576,6 +602,7 @@ footer a:hover { color: var(--matte-black); }
   header.top { padding: 8px 0; gap: 8px 12px; }
   header.top .shell { padding-inline: 16px; }
   .brand .tagline, .jump { display: none; }
+  .sc-ticks { display: none; }   /* keep the header light on phones */
   .kv-line { gap: 4px 16px; }
   main { padding: 16px 16px 4px; }
   .chip { font-size: var(--text-xs); padding: 2px 8px; }
@@ -748,7 +775,8 @@ html[data-theme="dark"] { --map-line: #6d7f92; }   /* 3.2:1 on the ocean fill; g
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 /* dark: chip ground is the lightened series hue — ink must flip (axe: white on #f57160 = 2.8:1) */
-html[data-theme="dark"] .sc-block h3 .type-chip, html[data-theme="dark"] .etype-block > h3 .type-chip { color: #1a1a16; }
+html[data-theme="dark"] .sc-block h3 .type-chip, html[data-theme="dark"] .etype-block > h3 .type-chip,
+html[data-theme="dark"] .verdict-item .type-chip { color: #1a1a16; }
 
 /* loading: no half-built chrome while data is in flight (empty filters, blank scorecard) */
 #scorecard-tables:empty, #skill-charts:empty { min-height: 0; }
@@ -757,7 +785,9 @@ html[data-theme="dark"] .sc-block h3 .type-chip, html[data-theme="dark"] .etype-
   animation: gm-shimmer 1.4s infinite; }
 @media (prefers-reduced-motion: reduce) { #scorecard-tables:empty { animation: none; } }
 /* dark freeze chip: mid-tone blue keeps WHITE ink (4.8:1); dark ink gives 3.75:1 */
-html[data-theme="dark"] .sc-block h3 .type-chip[style*="series-freeze"], html[data-theme="dark"] .etype-block > h3 .type-chip[style*="series-freeze"] { color: #fff; }
+html[data-theme="dark"] .sc-block h3 .type-chip[style*="series-freeze"],
+html[data-theme="dark"] .etype-block > h3 .type-chip[style*="series-freeze"],
+html[data-theme="dark"] .verdict-item .type-chip[style*="series-freeze"] { color: #fff; }
 
 /* ---- layout-shift reservations (guardian-frontend, CLS 0.20 → <0.05) -------------
    Everything below is filled by JS after first paint; reserve the final box so the

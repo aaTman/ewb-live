@@ -26,8 +26,8 @@ const TYPE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river'];
    Criteria wording mirrors ewb_live/events/temperature.py + ar.py thresholds —
    keep in sync if detection parameters change. */
 const TYPE_CRITERIA = {
-  heat_wave: 'Daily 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology, at least 3 consecutive days, over a region ≥200,000 km².',
-  freeze: 'Daily 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology, at least 3 consecutive days, over a region ≥200,000 km².',
+  heat_wave: 'Every 6-hourly step of a UTC day has 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². The map shades consecutive COMPLETED days meeting this daily rule (dithered = today so far).',
+  freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². The map shades consecutive COMPLETED days meeting this daily rule (dithered = today so far).',
   atmospheric_river: 'Integrated water-vapour transport peaking at ≥400 kg m⁻¹ s⁻¹ and reaching land.',
 };
 const emptyLaneLine = (t) => t === 'all'
@@ -644,6 +644,71 @@ function metricColumns(idx, etype, met, leads) {
   return null; // no data at all
 }
 
+/* Verdict strip (design.md P1.4): answer-first summary above the tables.
+   For each active event type, find the model with the best mean relative skill
+   over the currently visible metric × lead cells, and how many cells it wins.
+   Recomputed on every scorecard render so it follows tab/model/lead filters. */
+function renderVerdictStrip(idx) {
+  const host = $('#verdict-strip');
+  if (!host) return;
+  const B = state.baseline;
+  const leads = state.allLeads.filter((h) => state.leads.has(h));
+  const visible = state.allModels.filter((m) => state.models.has(m));
+  const parts = [];
+  for (const etype of activeTypes()) {
+    // metric × lead cells that actually have data for this lane
+    const cols = [];
+    for (const met of metricsFor(etype)) {
+      const c = metricColumns(idx, etype, met, leads);
+      if (c) cols.push({ met, columns: c });
+    }
+    if (!cols.length) continue;
+    // accumulate relative skill per model over visible cells
+    const acc = {};
+    for (const m of visible) if (m !== B) acc[m] = { s: 0, n: 0, wins: 0 };
+    let cellN = 0;
+    for (const { met, columns } of cols) {
+      for (const c of columns) {
+        if (c.kind === 'mean') continue;   // mean duplicates lead data
+        const lead = c.kind === 'lead' ? c.lead : null;
+        const g = idx.get(`${etype}|${met}|${lead}`);
+        if (!g) continue;
+        const rels = {};
+        for (const m of visible) {
+          if (m === B) continue;
+          const cell = g[m];
+          if (!cell || !Number.isFinite(cell.rel)) continue;
+          rels[m] = cell.rel;
+          acc[m].s += cell.rel; acc[m].n += 1;
+        }
+        const scored = Object.keys(rels);
+        if (!scored.length) continue;
+        cellN += 1;
+        const best = scored.reduce((a, b) => (rels[b] > rels[a] ? b : a));
+        acc[best].wins += 1;
+      }
+    }
+    const ranked = Object.keys(acc).filter((m) => acc[m].n > 0)
+      .sort((a, b) => (acc[b].s / acc[b].n) - (acc[a].s / acc[a].n));
+    if (!ranked.length) continue;
+    const leader = ranked[0];
+    const meanRel = acc[leader].s / acc[leader].n;
+    const cells = acc[leader].wins;
+    parts.push({
+      etype, model: leader, meanRel, cells, total: cellN,
+    });
+  }
+  if (!parts.length) { host.hidden = true; host.innerHTML = ''; return; }
+  host.hidden = false;
+  host.innerHTML = parts.map((p) => {
+    const chip = `<span class="type-chip" style="background:${TYPE_META[p.etype].color}">${esc(TYPE_META[p.etype].short)}</span>`;
+    const sign = p.meanRel >= 0 ? '+' : '';
+    const txt = `<b>${esc(p.model)}</b> best · ${sign}${p.meanRel.toFixed(1)}% vs ${esc(B)}` +
+      ` · won ${p.cells}/${p.total} cells`;
+    return `<span class="verdict-item">${chip}<span class="v-text">${txt}</span></span>`;
+  }).join('');
+}
+
 function renderScorecard() {
   const host = $('#scorecard-tables');
   host.innerHTML = '';
@@ -672,6 +737,7 @@ function renderScorecard() {
   }
   const idx = scIndex();
   tooltipIdx = idx;
+  renderVerdictStrip(idx);
   const leads = state.allLeads.filter((h) => state.leads.has(h));
   const B = state.baseline;
 

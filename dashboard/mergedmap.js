@@ -13,8 +13,9 @@
    to the event `start` day at 00Z and one console.warn says so.
    Data: data/results/raw_exceedance/{index.json,<ts>.bin} (zlib, layer-major
    bit-packed rows heat/freeze/ar, row0=lat0, MSB-first), duration sidecars
-   <ts>.run (zlib, two raw u8 planes heat/freeze of consecutive-day counts,
-   only when index.dur — else heat/freeze paint binary) and
+   <ts>.run (zlib, two raw u8 planes heat/freeze; dur rev v2: low 7 bits =
+   consecutive COMPLETED UTC days meeting the daily rule — constant across
+   all four frames of a day — bit 7 = today so far, paint provisional) and
    data/results/global_timeline.json (events[]: id,type,title,start,end,bbox,
    grid,day,days,masks[,qualified_at]).
    Reduced motion: playback is frame-stepping only; nothing auto-plays.
@@ -25,18 +26,19 @@
   const PAD = 12;
   const HIT_MIN = 44;                      // min touch target (px)
   const LAYERS = [                         // draw order bottom→top
-    { key: 'h', name: 'heat',   label: 'Heat — days > P85', ramp: true,
-      tip: 'Consecutive UTC days the cell has exceeded the P85 climatology at all four 6-hourly steps; minimum 3 days, most intense = 14+ days.' },
-    { key: 'f', name: 'freeze', label: 'Freeze — days < P15', ramp: true,
-      tip: 'Consecutive UTC days the cell has fallen below the P15 climatology at all four 6-hourly steps; most intense = 7+ days.' },
-    { key: 'a', name: 'ar',     label: 'AR — IVT magnitude', ramp: true,
+    { key: 'h', name: 'heat',   label: 'Heat — days > P85', ramp: true, bins: 7,
+      tip: 'Solid = consecutive COMPLETED UTC days the cell exceeded the P85 climatology at all four 6-hourly steps (constant within a day); dithered = today so far (provisional). Darkest = 7+ days.' },
+    { key: 'f', name: 'freeze', label: 'Freeze — days < P15', ramp: true, bins: 3,
+      tip: 'Solid = consecutive COMPLETED UTC days the cell fell below the P15 climatology at all four 6-hourly steps (constant within a day); dithered = today so far (provisional). Darkest = 3+ days.' },
+    { key: 'a', name: 'ar',     label: 'AR — IVT magnitude', ramp: true, bins: 5,
       tip: 'AR mask with IVT magnitude bins (kg m-1 s-1): 250-500, 500-750, 750-1000, 1000-1250, >=1250' },
   ];
-  const RUN_ALPHA = [215, 215, 215, 215, 215];   // flat opacity: bin separation is carried by colour steps (blended dE>=12, >=3:1 on both map grounds)
-  // Heat: 3 / 4 / 5-6 / 7-13 / 14+ (only paint run >= 3). Freeze: unchanged 1/2/3/4-6/7+
-  const heatRunBin = (r) => (r >= 14 ? 4 : r >= 7 ? 3 : r >= 5 ? 2 : r >= 4 ? 1 : r >= 3 ? 0 : -1);
-  const freezeRunBin = (r) => (r >= 7 ? 4 : r >= 4 ? 3 : r >= 3 ? 2 : r >= 2 ? 1 : r >= 1 ? 0 : -1);
-  const runBin = (li, r) => (li === 0 ? heatRunBin(r) : freezeRunBin(r));
+  const RUN_ALPHA = { heat: [110, 125, 140, 155, 170, 190, 215], freeze: [140, 175, 215],
+                      ar: [255, 255, 255, 255, 255] };  // bin opacities; AR paints opaque (its colour IS the class)
+  // run value -> painted day count: v2 = completed days + provisional day;
+  // v1 sidecars (dur.rev != v2) carry the old provisional per-step run
+  const runCount = (r, v2) => (v2 ? (r & 127) + ((r & 128) ? 1 : 0) : r);
+  const runBin = (count, bins) => Math.min(count - 1, bins - 1);   // bins: 1..bins
   const TYPES = {
     heat_wave:          { css: 'heat',   short: 'Heat' },
     freeze:             { css: 'freeze', short: 'Freeze' },
@@ -298,7 +300,8 @@
     const img = rctx.createImageData(cw, ch);
     const px = new Uint32Array(img.data.buffer);
     // ABGR little-endian packed colours: flat per layer (alpha 215, binary paint)
-    // + the heat/freeze 5-bin duration ramp (token alpha RUN_ALPHA). rgbOf forces a
+    // + the heat (7-bin) / freeze (3-bin) duration ramps (token alpha RUN_ALPHA).
+    // rgbOf forces a
     // style flush per span — too heavy for the paint loop, so memoize per theme
     // (the data-theme observer invalidates)
     if (!packedCache) {
@@ -308,10 +311,11 @@
       // match CSS RGBs exactly; heat/freeze keep RUN_ALPHA (blend-calibrated)
       packedCache = LAYERS.map((L) => pack(rgbOf(cs.getPropertyValue(`--series-${L.name}`)), L.key === 'a' ? 255 : 215));
       rampCache = LAYERS.map((L) => (L.ramp
-        ? RUN_ALPHA.map((al, b) => pack(rgbOf(cs.getPropertyValue(`--dur-${L.name}-${b + 1}`)), L.key === 'a' ? 255 : al))
+        ? RUN_ALPHA[L.name].map((al, b) => pack(rgbOf(cs.getPropertyValue(`--dur-${L.name}-${b + 1}`)), al))
         : null));
     }
     const packed = packedCache, ramp = rampCache;
+    const durV2 = !!(raw.dur && raw.dur.rev === 'v2');
     const act = LAYERS.map((L, li) => (on[L.key] ? li : -1)).filter((li) => li >= 0);
     const ivt = curIvt = (raw.ivt && frame.ivt) ? frame.ivt : null;   // AR IVT class plane (u8, per-cell; hover reads curIvt)
     const n = cw * ch;
@@ -331,8 +335,16 @@
           else if (u8[li * plane + bi] & m) px[p] = packed[li];
         } else if (run && ramp[li]) {
           const r = run[li * cells + cellIdx[p]];             // heat plane 0, freeze plane 1; 0 = unpainted
-          const b = runBin(li, r);
-          if (b >= 0) px[p] = ramp[li][b];
+          const cnt = runCount(r, durV2);
+          if (cnt <= 0) continue;
+          // provisional day (bit 7): 2px checkerboard between the completed
+          // bin and completed+1 — today's day rides visibly unfinished
+          if (durV2 && (r & 128) && ((((p % cw) >> 1) + ((p / cw) | 0) >> 1) & 1)) {
+            const done = r & 127;
+            if (done > 0) px[p] = ramp[li][runBin(done, LAYERS[li].bins)];
+            continue;
+          }
+          px[p] = ramp[li][runBin(cnt, LAYERS[li].bins)];
         } else if (u8[li * plane + bi] & m) px[p] = packed[li];
       }
     }
@@ -700,7 +712,7 @@
       if (L.tip) b.title = L.tip;
       b.setAttribute('aria-pressed', on[L.key] ? 'true' : 'false');
       b.innerHTML = `<i style="${L.ramp
-        ? `background: linear-gradient(90deg, ${[1, 2, 3, 4, 5].map((bi) => `var(--dur-${L.name}-${bi})`).join(', ')})`
+        ? `background: linear-gradient(90deg, ${Array.from({ length: L.bins }, (_, bi) => `var(--dur-${L.name}-${bi + 1})`).join(', ')})`
         : `background: var(--series-${L.name})`}"></i>${L.label}`;
       b.onclick = () => {
         on[L.key] = !on[L.key];
