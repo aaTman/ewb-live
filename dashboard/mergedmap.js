@@ -953,7 +953,9 @@
             const lo = IVT_BINS[b - 1];
             stops.push(legStop(
               `var(--dur-${L.name}-${b})`,
-              L.name === 'ar' ? (b < L.bins ? String(lo) : `\u2265${lo}`) : dayLbl(b, L.bins),
+              // top class reads '1250+' — same '+ suffix as the day ramps; the
+              // caption column stays narrow enough that the digits never touch
+              L.name === 'ar' ? (b < L.bins ? String(lo) : `${lo}+`) : dayLbl(b, L.bins),
               L.name === 'ar'
                 ? (b < L.bins ? `${lo}\u2013${IVT_BINS[b]} kg m\u207b\u00b9 s\u207b\u00b9` : `\u2265${lo} kg m\u207b\u00b9 s\u207b\u00b9`)
                 : dayTip(L, b),
