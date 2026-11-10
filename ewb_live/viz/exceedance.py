@@ -13,18 +13,26 @@ end, which is what the pipeline's own ERA5 copy covers (index `cutoff`).
 Frame file <YYYYMMDDHH>.bin = zlib( packbits(heat) ++ packbits(freeze) ++
 packbits(ar) ); each layer row-major over DISPLAY orientation: lat -90..90
 (row 0 = south), lon -180..179.75 (col 0 = west) — mirror-native (N→S,
-0-360) is flipped/rolled at load. index.json (frontend contract, channel
-13:40/14:05): {schema, generated, grid{res_deg,ny,nx,lat0,lon0,step_lat,
-step_lon}, frames:["YYYYMMDDHH",... asc], cutoff:"YYYYMMDDHH",
-window:{start,end}}. Incremental: existing frames skip. Run on the box:
+0-360) is flipped/rolled at load. Sidecar <YYYYMMDDHH>.run = zlib( u8 heat_run
+++ u8 freeze_run ) per consecutive-day duration (contract
+notes/channel_consecutive_days.md §2/§4): a cell-day counts iff ALL FOUR
+00/06/12/18Z steps exceeded (house daily rule); the frame value is the trailing
+run of consecutive exceeded days, current day provisional, seeded from the
+earliest mirror step. index.json (frontend contract, channel 13:40/14:05):
+{schema, generated, grid{res_deg,ny,nx,lat0,lon0,step_lat,step_lon},
+frames:["YYYYMMDDHH",... asc], cutoff:"YYYYMMDDHH", window:{start,end},
+dur:{rev,seed}}. Incremental: existing frames skip (a frame is done only with
+its .run/.trk sidecars on disk). Run on the box:
 python -m ewb_live.viz.exceedance [--days N] [--force]; also the weekly tail.
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import logging
+import os
 import zlib
 from pathlib import Path
 
@@ -33,8 +41,16 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-SCHEMA = 1
+SCHEMA = 3  # v3: adds AR IVT class plane sidecars .ivt (2026-11-09)
 OUT_DIRNAME = "raw_exceedance"
+LAYER_REV = "v7"  # bump when mask/screen rules change (v7 = .ivt classified in
+# DISPLAY orientation; v6 sidecars were native-mixed garbage — ponytail 23:59Z.
+# v6 = owner gap-bridge
+# 2026-11-09: tracks persist through 1-step (6 h) gaps; the gap frame shows
+# the last footprint with index tracks[sid].bridged listing the gap tags —
+# render those cells lighter so the display stays honest. v5 = forced
+# rebuild: v4 frames written during the 03:51Z durbackfill collision predate
+# the effective screen — 51 shipped tracks sit inside the 500 km TC buffer)
 LAT_N, LON_N = 721, 1440  # mirror grid; tests monkeypatch these
 
 
@@ -61,8 +77,8 @@ def _load_index(out: Path) -> dict:
             "frames": []}
 
 
-def frame_bytes(heat: np.ndarray, freeze: np.ndarray, ar: np.ndarray,
-                level: int = 6) -> bytes:
+def frame_bytes(heat: np.ndarray, freeze: np.ndarray,
+                ar: np.ndarray) -> bytes:
     """3 bool layers (same (lat, lon) shape) -> zlib(packbits x3).
 
     Per-ROW packing (axis=1): matches the JS decoder's ceil(nx/8) row
@@ -70,7 +86,7 @@ def frame_bytes(heat: np.ndarray, freeze: np.ndarray, ar: np.ndarray,
     blob = (np.packbits(heat, axis=1).tobytes()
             + np.packbits(freeze, axis=1).tobytes()
             + np.packbits(ar, axis=1).tobytes())
-    return zlib.compress(blob, level)
+    return zlib.compress(blob, 6)
 
 
 def frame_layers(raw: bytes, shape: tuple[int, int]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -92,35 +108,175 @@ def _frame_name(t: np.datetime64) -> str:
     return pd.Timestamp(str(t)).strftime("%Y%m%d%H") + ".bin"
 
 
+RUN_NAME = ".run"   # <frame>.run sidecar: zlib(u8 heat_run ++ u8 freeze_run)
+DUR_REV = "v1"
+IVT_CLASS_NAME = ".ivt"  # <frame>.ivt sidecar: zlib(u8 AR IVT class plane)      # duration semantics version (index.json "dur.rev")
+
+
+def run_recurrence(days: list[list[np.ndarray]],
+                   seed: np.ndarray | None = None) -> list[np.ndarray]:
+    """Consecutive-day run recurrence (contract §2) over day groups of
+    per-step bool masks in chronological order (up to 4 steps per group).
+
+    R(step j of day D) = C(D-1)+1 if steps 0..j of D all exceeded, else 0
+    (current day counts provisionally); C(D) = C(D-1)+1 if ALL steps of D
+    exceeded, else 0. seed = the C grid of the day before days[0] (pre-window
+    mirror history, §3); None = zeros (run truncates at mirror start).
+    Returns one u8 grid per step (raw consecutive day count, capped at 255).
+    """
+    c = (np.zeros(days[0][0].shape, np.uint8) if seed is None
+         else np.asarray(seed, np.uint8))
+    out: list[np.ndarray] = []
+    for day in days:
+        acc = day[0].copy()          # running AND of steps 0..j
+        for step in day:
+            acc &= step
+            out.append(np.where(acc, np.minimum(c, 254) + 1, 0))
+        c = out[-1]                  # last step's partial AND = daily mask,
+    return out                       # so its R grid IS C(D) (§2)
+
+
+def run_bytes(heat_run: np.ndarray, freeze_run: np.ndarray) -> bytes:
+    """Two (ny, nx) u8 run grids (display orientation) -> zlib bytes."""
+    return zlib.compress(np.asarray(heat_run, np.uint8).tobytes()
+                         + np.asarray(freeze_run, np.uint8).tobytes(), 6)
+
+
+def run_from_bytes(raw: bytes, shape: tuple[int, int]
+                   ) -> tuple[np.ndarray, np.ndarray]:
+    """Decode run_bytes() output (used by tests; the JS decoder is the port)."""
+    b = zlib.decompress(raw)
+    n = shape[0] * shape[1]
+    if len(b) != 2 * n:
+        raise ValueError(f".run payload {len(b)} B != {2 * n} B")
+    a = np.frombuffer(b, np.uint8)
+    return a[:n].reshape(shape), a[n:].reshape(shape)
+
+
+def ivt_class_plane(ivt: np.ndarray, ar_mask: np.ndarray) -> np.ndarray:
+    """Compute AR IVT class plane (u8) from IVT magnitude and AR mask.
+    
+    Bins (kg m-1 s-1):
+    - 0: no AR (mask is False)
+    - 1: 250-500
+    - 2: 500-750
+    - 3: 750-1000
+    - 4: 1000-1250
+    - 5: >=1250
+    
+    Args:
+        ivt: (ny, nx) float array of IVT magnitude
+        ar_mask: (ny, nx) bool array of AR mask
+    
+    Returns:
+        (ny, nx) u8 array with class values 0-5
+    """
+    classes = np.zeros(ivt.shape, dtype=np.uint8)
+    # Only classify cells where AR mask is True
+    ar_cells = ar_mask & np.isfinite(ivt)
+    
+    # Classify IVT values into bins
+    classes[ar_cells & (ivt >= 1250)] = 5
+    classes[ar_cells & (ivt >= 1000) & (ivt < 1250)] = 4
+    classes[ar_cells & (ivt >= 750) & (ivt < 1000)] = 3
+    classes[ar_cells & (ivt >= 500) & (ivt < 750)] = 2
+    classes[ar_cells & (ivt >= 250) & (ivt < 500)] = 1
+    # Cells below 250 or not in AR mask remain 0
+    
+    return classes
+
+
+def ivt_class_bytes(classes: np.ndarray) -> bytes:
+    """(ny, nx) u8 class grid (display orientation) -> zlib bytes."""
+    return zlib.compress(np.asarray(classes, np.uint8).tobytes(), 6)
+
+
+def ivt_class_from_bytes(raw: bytes, shape: tuple[int, int]) -> np.ndarray:
+    """Decode ivt_class_bytes() output."""
+    b = zlib.decompress(raw)
+    n = shape[0] * shape[1]
+    if len(b) != n:
+        raise ValueError(f".ivt payload {len(b)} B != {n} B")
+    return np.frombuffer(b, np.uint8).reshape(shape)
+
+
 def _to_display(a: np.ndarray) -> np.ndarray:
     """Mirror-native (lat 90→-90, lon 0→360) to contract display frame:
     row 0 = south, col 0 = lon -180. Pure index ops, applied per layer."""
     return np.roll(a, -(LON_N // 2), axis=-1)[..., ::-1, :]
 
 
+def _frame_complete(out: Path, tag: str, done: set[str]) -> bool:
+    """A frame is done only if indexed AND all sidecars are on disk —
+    cached .bin-only frames get an idempotent sidecar backfill (contract §4).
+    Shortcut: assumes the lane's layer_fn emits .trk and .ivt sidecars (v3)."""
+    return (tag in done and (out / f"{tag}{RUN_NAME}").exists()
+            and (out / f"{tag}{AR_LABELS_NAME}").exists()
+            and (out / f"{tag}{IVT_CLASS_NAME}").exists())
+
+
+def _seed_for(run_seed: dict | None, t0: np.datetime64):
+    """C grids of the day before t0's day; None = run truncates (§3)."""
+    if not run_seed:
+        return None, None
+    return run_seed.get(str(np.datetime64(t0, "D") - np.timedelta64(1, "D")),
+                        (None, None))
+
+
+def _write_atomic(path: Path, data: bytes) -> None:
+    """Published frames are read concurrently (serve.py per request,
+    qualification.py per event): in-place write_bytes can expose a torn
+    zlib payload on rewrite (ponytail 06:16Z) — same tmp+replace
+    discipline as ar_tracks.json/index.json in this file."""
+    tmp = path.with_name(f".{path.name}.tmp.{os.getpid()}")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+
+
 def build_frames(out: Path, times: list[np.datetime64], layer_fn, force: bool,
-                 frames: list[str]) -> int:
+                 frames: list[str], run_seed: dict | None = None) -> int:
     """Write missing frames; returns count written. layer_fn(day_times) ->
-    (heat, freeze, ar) bool arrays (len(day_times), LAT_N, LON_N)."""
+    (heat, freeze, ar[, labels[, ivt]]) arrays (len(day_times), LAT_N, LON_N):
+    heat/freeze/ar are bool, labels is uint16 track ids, ivt is float IVT values;
+    display orientation. run_seed: {day: (c_heat, c_freeze)} C grids from
+    _daily_runs, seeding the .run recurrence (§2/§3)."""
     out.mkdir(parents=True, exist_ok=True)
     done = set(frames)
     written = 0
     for group in _group_days(times):
-        pending = [t for t in group if _frame_name(t)[:-4] not in done or force]
+        pending = [t for t in group
+                   if force or not _frame_complete(out, _frame_name(t)[:-4],
+                                                   done)]
         if not pending:
             continue
         try:
-            heat, freeze, ar = layer_fn(group)
+            res = layer_fn(group)
         except Exception:  # noqa: BLE001 — one bad day (e.g. AR mask dropping
             # a valid_time step) must not skip every later day or the index
             logger.exception("raw_exceedance: day %s failed — skipping day",
                              _group_label(group))
             continue
+        labels4 = res[3] if len(res) > 3 else None
+        ivt_day = res[4] if len(res) > 4 else None
+        heat, freeze, ar = res[0], res[1], res[2]
+        seed_h, seed_f = _seed_for(run_seed, group[0])
+        h_runs = run_recurrence([list(heat)], seed_h)
+        f_runs = run_recurrence([list(freeze)], seed_f)
         for t in pending:
             i = group.index(t)
             raw = frame_bytes(heat[i], freeze[i], ar[i])
-            (out / _frame_name(t)).write_bytes(raw)
+            _write_atomic(out / _frame_name(t), raw)
             tag = _frame_name(t)[:-4]
+            if labels4 is not None:  # per-frame track labels (owner 2026-11-09)
+                _write_atomic(out / f"{tag}{AR_LABELS_NAME}",
+                              labels_bytes(labels4[i]))
+            _write_atomic(out / f"{tag}{RUN_NAME}",
+                          run_bytes(h_runs[i], f_runs[i]))
+            # AR IVT class plane sidecar (v3 schema)
+            if ivt_day is not None and len(ivt_day) > i:
+                class_plane = ivt_class_plane(ivt_day[i], ar[i])   # both display-oriented
+                _write_atomic(out / f"{tag}{IVT_CLASS_NAME}",
+                              ivt_class_bytes(class_plane))
             if tag in done:
                 frames.remove(tag)
             frames.append(tag)
@@ -143,48 +299,249 @@ def _group_label(group) -> str:
     return str(np.datetime64(group[0], "D"))
 
 
-def _make_layer_fn(mirror, clim_hi, clim_lo, land):
-    """layer_fn for one day of 6-hourly mirror steps."""
+def _step_heat_freeze(t2m, clim_hi, clim_lo, land, n: int):
+    """Per-step heat/freeze masks (mirror-native) for t2m's first n steps —
+    the ONE definition of the frame-level rule, shared by the frame layer_fn
+    and the daily-mask pass so the two can never drift."""
+    heat = np.zeros((n, LAT_N, LON_N), bool)
+    freeze = np.zeros_like(heat)
+    for i in range(n):
+        tt = pd.Timestamp(str(t2m.time.values[i]))
+        doy = min(tt.dayofyear, 366)
+        hi = clim_hi.sel(dayofyear=doy, hour=tt.hour,
+                         latitude=t2m.latitude, longitude=t2m.longitude).to_numpy()
+        lo = clim_lo.sel(dayofyear=doy, hour=tt.hour,
+                         latitude=t2m.latitude, longitude=t2m.longitude).to_numpy()
+        v = t2m.isel(time=i).to_numpy()
+        heat[i] = (v > hi) & land
+        freeze[i] = (v < lo) & land
+    return heat, freeze
+
+
+def _make_layer_fn(mirror, clim_hi, clim_lo, land, keep6, labels6, times6,
+                   remap, ivt6):
+    """layer_fn for one day of 6-hourly mirror steps. AR layer + track
+    labels come from the ONE window-level tracked pass (events/ar_filter) —
+    no per-frame object decisions, so an AR cannot blink between frames
+    (owner 2026-11-09). ivt6 is the full window IVT for AR class plane."""
+    pos_of = {str(np.datetime64(t, "h")): i for i, t in enumerate(times6)}
+
     def layer_fn(day_times):
-        import dask
-        from extremeweatherbench.events import atmospheric_river as ar_ev
-        sl = slice(str(np.datetime64(day_times[0])), str(np.datetime64(day_times[-1])))
-        day = mirror.sel(time=sl)
-        t2m = day["2m_temperature"]
-        heat = np.zeros((len(day_times), LAT_N, LON_N), bool)
-        freeze = np.zeros_like(heat)
-        for i, t in enumerate(day_times):
-            tt = pd.Timestamp(t)
-            doy = min(tt.dayofyear, 366)
-            hi = clim_hi.sel(dayofyear=doy, hour=tt.hour,
-                             latitude=t2m.latitude, longitude=t2m.longitude).to_numpy()
-            lo = clim_lo.sel(dayofyear=doy, hour=tt.hour,
-                             latitude=t2m.latitude, longitude=t2m.longitude).to_numpy()
-            v = t2m.isel(time=i).to_numpy()
-            heat[i] = (v > hi) & land
-            freeze[i] = (v < lo) & land
-        ds = (day[["u_component_of_wind", "v_component_of_wind",
-                   "specific_humidity"]]
-              .rename({"u_component_of_wind": "eastward_wind",
-                       "v_component_of_wind": "northward_wind",
-                       "specific_humidity": "specific_humidity",
-                       "time": "valid_time"})
-              .chunk({"valid_time": 1, "level": -1, "latitude": -1,
-                      "longitude": -1}))
-        with dask.config.set(scheduler="threads", num_workers=6):
-            m = ar_ev.build_atmospheric_river_mask_and_land_intersection(
-                ds, output_variables=["atmospheric_river_mask"])["atmospheric_river_mask"]
-            ar_np = np.asarray(m > 0, bool)
-            mt = np.asarray(m.valid_time)
-        pos = [int(np.where(mt == t)[0][0]) for t in day_times]
-        return _to_display(heat), _to_display(freeze), _to_display(ar_np[pos])
+        # LABEL-select, never positional: the mirror can hold off-6h steps
+        # (ERA5 preliminary data is 3-hourly); a slice+isel would shift
+        # steps 2..4 and pair climatology with the wrong hour — silently
+        # wrong pixels (ponytail 10:16Z). day_times ⊂ mirror times.
+        t2m = mirror.sel(time=[str(np.datetime64(t))
+                               for t in day_times])["2m_temperature"]
+        heat, freeze = _step_heat_freeze(t2m, clim_hi, clim_lo, land,
+                                         len(day_times))
+        pos = [pos_of[str(np.datetime64(t, "h"))] for t in day_times]
+        keep = keep6[pos]
+        lab = np.where(keep, remap[labels6[pos]], np.uint16(0))
+        ivt_day = ivt6[pos] if len(ivt6) > 0 else np.zeros((len(day_times),) + keep[0].shape, float)
+        return (_to_display(heat), _to_display(freeze), _to_display(keep),
+                _to_display(lab),
+                np.stack([_to_display(v) for v in ivt_day]))  # contract: ALL outputs display-oriented
     return layer_fn
+
+
+def _daily_runs(mirror, clim_hi, clim_lo, land,
+                times_all: list[np.datetime64]) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """§2/§3: daily-mask recurrence over the ENTIRE mirror history (heat/
+    freeze only, no AR — minutes of CPU, re-run every build, no persisted
+    state). Returns {day: (c_heat, c_freeze)}: the C grid after each UTC day,
+    display orientation, u8. build_frames seeds day D from key D-1, so runs
+    are exact back to the earliest mirror step (longer runs truncate)."""
+    runs: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    ch = cf = None
+    for group in _group_days(times_all):
+        t2m = mirror.sel(time=[str(np.datetime64(t))
+                               for t in group])["2m_temperature"]
+        heat, freeze = _step_heat_freeze(t2m, clim_hi, clim_lo, land,
+                                         len(group))
+        ch = run_recurrence([list(heat)], ch)[-1]   # single-day call: last
+        cf = run_recurrence([list(freeze)], cf)[-1]  # R grid == C(D)
+        runs[str(np.datetime64(group[0], "D"))] = (_to_display(ch),
+                                                   _to_display(cf))
+    return runs
+
+
+AR_LABELS_NAME = ".trk"       # <frame>.trk sidecar: zlib(uint16 labels)
+TRACK_ID_MAX = 65535          # u2 labels; 0 = no AR cell
+
+
+def labels_bytes(labels: np.ndarray) -> bytes:
+    """(ny, nx) uint16 track labels -> zlib bytes (0 = no AR)."""
+    lab = np.asarray(labels)
+    assert lab.dtype == np.uint16 and lab.max(initial=0) <= TRACK_ID_MAX
+    return zlib.compress(lab.tobytes(), 6)
+
+
+def labels_from_bytes(raw: bytes, shape: tuple[int, int]) -> np.ndarray:
+    return np.frombuffer(zlib.decompress(raw), dtype="<u2").reshape(shape)
+
+
+def flickering_tracks(index: dict, presence: dict[int, set[str]],
+                      min_span: int = 12) -> dict[int, list[str]]:
+    """Track ids absent from an interior step between two appearances —
+    the owner's Japan blink bug. Long-lived = first..last spans >= min_span
+    steps. presence: track id -> frame tags; index order = time order."""
+    order = {tag: i for i, tag in enumerate(index["frames"])}
+    out: dict[int, list[str]] = {}
+    for tid, tags in presence.items():
+        idx = sorted(order[t] for t in tags if t in order)
+        if len(idx) < 2 or idx[-1] - idx[0] < min_span:
+            continue
+        for a, b in zip(idx, idx[1:]):
+            if b - a > 1:                          # interior dropout
+                out.setdefault(tid, []).extend(index["frames"][a + 1:b])
+    return out
+
+
+def read_presence(out: Path, frames: list[str],
+                  shape: tuple[int, int]) -> dict[int, set[str]]:
+    """track id -> frame tags, from the <frame>.trk sidecars (empty when v1)."""
+    presence: dict[int, set[str]] = {}
+    for tag in frames:
+        p = out / f"{tag}{AR_LABELS_NAME}"
+        if not p.exists():
+            continue
+        lab = labels_from_bytes(p.read_bytes(), shape)
+        for tid in np.unique(lab):
+            if tid:
+                presence.setdefault(int(tid), set()).add(tag)
+    return presence
+
+
+def _empty_pass():
+    """Zero-length AR pass: empty window (:361 guard) or every day's AR
+    path failed in the loop (ponytail 08:16Z NICE — same opaque
+    concatenate ValueError the input guard names)."""
+    return (np.zeros((0, LAT_N, LON_N), bool),
+            np.zeros((0, LAT_N, LON_N), np.int32),
+            np.array([], "datetime64[h]"),
+            np.zeros(1, np.uint16),
+            np.zeros((0, LAT_N, LON_N), float),
+            {})
+
+
+def _ar_window_pass(mirror, times, ledger_path: Path):
+    """ONE AR mask + tracking pass over the full frame window. Returns
+    (keep6, labels6, times6, remap, ivt6, bridged). Exclusion happens at
+    TRACK level via the shared events/ar_filter fn — same function detection
+    uses, so map and events cannot diverge (owner 2026-11-09). keep6 here is
+    the DISPLAY mask (physical | gap-bridged footprint — the physical/detec-
+    tion keep stays inside ar_filter). remap maps global track label -> u2
+    sidecar id (kept tracks only); bridged maps sidecar id -> gap frame tags.
+    The ledger json carries {track_id: window/reason} for design's
+    before/after reports."""
+    import dask
+    from extremeweatherbench.events import atmospheric_river as ar_ev
+    from ewb_live.events.ar_filter import ar_filter_tracks
+    from ewb_live.events.tc_screen import TC_SCREEN_ON, load_ibtracs_tracks
+
+    if not times:   # stale/empty mirror with the window rolled forward:
+        # np.concatenate([]) would die with an opaque ValueError and the
+        # weekly lane never writes index.json (ponytail 06:16Z). Empty
+        # pass => build_frames writes nothing; downstream guards handle it.
+        return _empty_pass()
+    ms, ts, ivt_arr = [], [], []
+    with dask.config.set(scheduler="threads", num_workers=6):
+        for group in _group_days(times):
+            try:    # one bad day (AR mask dropping a valid_time step) must
+                # skip that day, not kill the whole raw map (build_frames
+                # tolerates missing frames via layer_fn pos_of)
+                sl = slice(str(np.datetime64(group[0])), str(np.datetime64(group[-1])))
+                day = mirror.sel(time=sl)
+                ds = (day[["u_component_of_wind", "v_component_of_wind",
+                           "specific_humidity"]]
+                      .rename({"u_component_of_wind": "eastward_wind",
+                               "v_component_of_wind": "northward_wind",
+                               "time": "valid_time"})
+                      .chunk({"valid_time": 1, "level": -1, "latitude": -1,
+                              "longitude": -1}))
+                result = ar_ev.build_atmospheric_river_mask_and_land_intersection(
+                    ds, output_variables=["atmospheric_river_mask", "integrated_vapor_transport"])
+                m = result["atmospheric_river_mask"]
+                ivt_day = result["integrated_vapor_transport"]
+                ms.append(np.asarray(m > 0, bool))
+                ivt_arr.append(np.asarray(ivt_day, float))
+                ts.append(np.asarray(m.valid_time, "datetime64[h]"))
+            except Exception:  # noqa: BLE001
+                logger.exception("raw_exceedance: AR window pass failed for "
+                                 "day %s — skipping day", _group_label(group))
+    if not ms:   # every day's AR path failed (ponytail 08:16Z NICE)
+        return _empty_pass()
+    mask6 = np.concatenate(ms)
+    times6 = np.concatenate(ts)
+    ivt6 = np.concatenate(ivt_arr) if ivt_arr else np.zeros_like(mask6, float)
+    years = {int(np.datetime64(t, "Y").astype("int64")) + 1970 for t in times6}
+    years |= {y + 1 for y in years} | {y - 1 for y in years}  # year-boundary gate
+    tc = load_ibtracs_tracks(years) if TC_SCREEN_ON else None
+    keep6, dropped, labels6, tracks = ar_filter_tracks(
+        mask6, np.asarray(mirror.latitude, float),
+        np.asarray(mirror.longitude, float), times6, tc)
+    drop_labels = {d["label"] for d in dropped}
+    remap = np.zeros(len(tracks) + 1, np.uint16)
+    track_map: dict[str, str] = {}
+    n = 0
+    for k, tr in enumerate(tracks, start=1):
+        if k in drop_labels:
+            continue
+        n += 1
+        if n > TRACK_ID_MAX:
+            raise RuntimeError(f"AR tracks in window exceed u2 sidecar cap "
+                               f"({TRACK_ID_MAX}); widen the .trk format")
+        remap[k] = n
+        track_map[str(n)] = tr["id"]
+    # GAP BRIDGE display (owner 2026-11-09): bridged cells live in labels6
+    # (ar_filter) at gap steps but NOT in the physical mask — fold them into
+    # the returned keep for the raw layer only, and expose them per track
+    # so the frontend can paint them lighter ('bridged' honesty flag).
+    surv = remap.astype(bool)
+    ghost6 = surv[labels6] & ~mask6
+    keep6 = keep6 | ghost6
+    bridged: dict[str, list[str]] = {}
+    for k, tr in enumerate(tracks, start=1):
+        if remap[k] and tr.get("bridged"):
+            bridged[str(int(remap[k]))] = [
+                str(np.datetime64(times6[s], "h")).replace("-", "")
+                                     .replace("T", "")[:10]
+                for s in tr["bridged"]]
+    tmp = ledger_path.with_name(ledger_path.name + f".tmp.{os.getpid()}")
+    tmp.write_text(json.dumps({
+        "generated": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
+        "layer_rev": LAYER_REV,
+        "tracks": track_map,
+        "dropped": dropped,
+        "bridged": bridged,
+    }, separators=(",", ":")))
+    os.replace(tmp, ledger_path)   # torn ar_tracks.json kills ar_diff.py
+    return keep6, labels6, times6, remap, ivt6, bridged
+
+
+def prune_frames(out: Path, frames: list[str], floor: str) -> None:
+    """Drop frames older than floor (YYYYMMDDHH) from the keep-list and
+    delete their .bin/.trk/.run/.ivt files (published-window retention)."""
+    for t in [f for f in frames if f < floor]:
+        for ext in (".bin", AR_LABELS_NAME, RUN_NAME, IVT_CLASS_NAME):
+            (out / f"{t}{ext}").unlink(missing_ok=True)
+        frames.remove(t)
+
+
+def label_sig(remap) -> str:
+    """Fingerprint of the sid numbering (numpy remap array; json would
+    not serialize a bare ndarray — ponytail 04:15Z MUST)."""
+    return hashlib.md5(json.dumps(
+        np.asarray(remap).tolist(), sort_keys=True).encode()).hexdigest()[:12]
 
 
 def build(root: Path, days: int | None = None, force: bool = False) -> Path:
     """Incremental build over the meta window, capped at the mirror end."""
     root = Path(root)
     out = root / "data/results" / OUT_DIRNAME
+    from ewb_live.pipeline import _sweep_orphan_temps
+    _sweep_orphan_temps(out)   # index.json.tmp.<pid> orphans from killed runs
     import xarray as xr
     from ewb_live.climatology import owb_clim
     from ewb_live.events._upstream import temperature_events
@@ -205,6 +562,18 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
 
     index = _load_index(out)
     index.setdefault("frames", [])
+    # snapshot BEFORE the wipes: a rev-bump or --force rebuild that hits
+    # the all-AR-fail path must keep serving the last good index, not take
+    # the "fresh index" branch and publish blank (ponytail 10:16Z)
+    had_frames = bool(index["frames"])
+    # layer-rule version: frames are cached by name only, so a mask/screen
+    # rule change must wipe the done-set (bump on AR/heat rule changes;
+    # v2 = SPEC "AR tropical exclusion" 2026-11-08)
+    if index.get("layer_rev") != LAYER_REV:
+        logger.info("raw_exceedance: layer_rev %s -> %s, full rebuild",
+                    index.get("layer_rev"), LAYER_REV)
+        index["frames"] = []
+        index["layer_rev"] = LAYER_REV
     if force:
         index["frames"] = []
 
@@ -213,47 +582,141 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
         xr.DataArray(mirror.latitude, dims="latitude")).to_numpy()
     clim_hi = owb_clim.get_climatology_owb(0.85).sortby("latitude")
     clim_lo = owb_clim.get_climatology_owb(0.15).sortby("latitude")
-    layer_fn = _make_layer_fn(mirror, clim_hi, clim_lo, land)
 
     times = [np.datetime64(t, "h") for t in mirror.time.values
              if w_start <= pd.Timestamp(t).date() <= end
              and pd.Timestamp(t).hour in (0, 6, 12, 18)]
-    if days:
-        times = [t for t in times
-                 if t >= np.datetime64(str(start)) ]
-    logger.info("raw_exceedance: %d candidate frames %s -> %s (mirror end %s)",
-                len(times), times[0] if times else "-",
-                times[-1] if times else "-", mirror_end)
-    build_frames(out, times, layer_fn, force, index["frames"])
-
-    index["frames"].sort()
+    # --days caps ONLY what build_frames writes. Capping `times` also caps
+    # _ar_window_pass: numbering differs from the weekly build, label_sig
+    # wipes index["frames"] and the published window shrinks for a week
+    # (ponytail 08:16Z SHOULD). layer_fn is unaffected (pos_of spans
+    # ar_times over the full window).
+    build_times = ([t for t in times if t >= np.datetime64(str(start))]
+                   if days else times)
 
     def fmt(t) -> str:
         return str(np.datetime64(t, "h")).replace("-", "").replace(
             "T", "")[:10]
 
-    # retention: frames outside the published window would desync the raw
-    # slider from index["window"] and accumulate forever (ponytail 17:17Z)
+    logger.info("raw_exceedance: %d candidate frames %s -> %s (mirror end %s)",
+                len(times), times[0] if times else "-",
+                times[-1] if times else "-", mirror_end)
+    # ONE tracked AR pass for the whole window (owner 2026-11-09): track-level
+    # exclusion, per-frame labels, ledger for design. Frames cached by name
+    # only, so LAYER_REV bumped to v3 (tracking) forces the full rebuild.
+    keep6, labels6, ar_times, remap, ivt6, bridged = _ar_window_pass(
+        mirror, times, out / "ar_tracks.json")
+    if not len(ar_times) and had_frames:
+        # AR pass saw nothing (stale mirror or every day failed): the
+        # degenerate remap's sig wipes index["frames"], layer_fn KeyErrors
+        # on every day, and a BLANK index would publish for up to a week
+        # while all .bin/.trk/.run data sits fine on disk (ponytail
+        # 09:15Z). Keep the last good published index untouched. A fresh
+        # v1 index (no frames) still proceeds and builds.
+        logger.warning("raw_exceedance: empty AR pass with %d published "
+                       "frames — keeping last good index", len(index["frames"]))
+        return out
+    layer_fn = _make_layer_fn(mirror, clim_hi, clim_lo, land, keep6, labels6,
+                              ar_times, remap, ivt6)
+    # owner 2026-11-09: track-level filtering must not blink a long-lived AR
+    # across consecutive frames (off-Japan bug) — gate every build, BEFORE
+    # any write AND before the expensive recurrence (ponytail 12:16Z: the
+    # gate needs only the AR-pass outputs). Limit: a day whose AR pass
+    # FAILED this run but succeeded last leaves its cached sidecar pixels
+    # unseen here — exceptional path, and the gate fails closed at the build.
+    presence: dict[int, set] = {}
     if times:
-        floor = fmt(times[0])
-        for t in [f for f in index["frames"] if f < floor]:
-            (out / f"{t}.bin").unlink(missing_ok=True)
-            index["frames"].remove(t)
+        # a frame not in ar_times can ONLY ever fire this gate falsely:
+        # presence iterates ar_times, so its pixels are unseen — unseen
+        # must not be fatal (ponytail 08:16Z MUST: a transient AR day
+        # failure froze the whole lane). Gate only frames the pass saw.
+        # Physical blinks re-link as NEW ids in ar_filter, invisible here
+        # by design — sr13_flicker's overlap chains are the real detector
+        # (post-rebuild box gate, like d2).
+        planned = sorted({fmt(t) for t in ar_times})
+        for i, t in enumerate(ar_times):
+            tag = fmt(t)
+            for sid in np.unique(remap[labels6[i]]).tolist():
+                if sid:
+                    presence.setdefault(int(sid), set()).add(tag)
+        flick = flickering_tracks({"frames": planned}, presence)
+        if flick:
+            raise RuntimeError(f"raw_exceedance: AR flicker in {len(flick)} "
+                               f"tracks: {flick}")
+    # §3: daily-mask recurrence. u8 runs saturate at 255 d, so history older
+    # than window-start - 255 d cannot affect published frames — the mirror
+    # is append-only, so an untrimmed recurrence grows forever (ponytail
+    # 04:15Z). dur.seed reports the (trimmed) first day it actually used.
+    t_lo = np.datetime64(str(w_start)) - np.timedelta64(255, "D")
+    times_all = [np.datetime64(t, "h") for t in mirror.time.values
+                 if pd.Timestamp(t).hour in (0, 6, 12, 18)
+                 and np.datetime64(t, "h") >= t_lo]
+    run_seed = _daily_runs(mirror, clim_hi, clim_lo, land, times_all)
+    # the recurrence loop needs the full seed span, but build_frames only
+    # ever reads [w_start-1d, end] — drop the rest (up to ~0.7 GB of C
+    # grids held across the whole frame-writing phase, ponytail 06:16Z)
+    seed_floor = str(np.datetime64(str(w_start)) - np.timedelta64(1, "D"))
+    run_seed = {k: v for k, v in run_seed.items() if k >= seed_floor}
+    # label ids are remapped per build (creation order among KEPT tracks)
+    # while frames cache by name — any renumbering mixes two numberings in
+    # read_presence (ghost flicker / wrong tooltip ids / pixels of later-
+    # dropped tracks). Fingerprint the numbering itself, not the window
+    # start: mid-week same-base re-runs can shift keep sets too
+    # (ponytail 02:16Z + 03:24Z). _ar_window_pass recomputes the whole
+    # window either way, so a wipe only costs frame rewrites.
+    sig = label_sig(remap)
+    if index.get("label_sig") != sig:
+        logger.info("raw_exceedance: track numbering changed (%s -> %s), "
+                    "full rebuild", index.get("label_sig"), sig)
+        index["frames"] = []
+    index["label_sig"] = sig
+    build_frames(out, build_times, layer_fn, force, index["frames"], run_seed)
 
-    index["window"] = {"start": fmt(times[0]) if times else None,
-                       "end": fmt(times[-1]) if times else None}
-    # owner 2026-11-08: the raw map stays the RAW upstream masks; label the
-    # AR layer so consumers know the event list additionally applies the
-    # IBTrACS tropical-cyclone screen (ewb_live/events/tc_screen.py)
+    index["frames"].sort()
+    # retention: frames outside the published window would desync the raw
+    # slider from index["window"] and accumulate forever (ponytail 17:17Z).
+    # FULL-window builds only: a capped --days backfill must not delete the
+    # ~83 published days it did not rebuild (ponytail 07:19Z data loss).
+    if times and not days:
+        prune_frames(out, index["frames"], fmt(times[0]))
+
+    # window = what actually exists on disk, not what `times` planned:
+    # stops window.end claiming a frame whose day-pass failed un-written,
+    # and keeps a --days run from shrinking the published window (:566)
+    index["window"] = {"start": index["frames"][0] if index["frames"] else None,
+                       "end": index["frames"][-1] if index["frames"] else None}
+    # track spans for the hover tooltip (frontend contract, 00:32Z post);
+    # restricted to surviving frames; absent for v1 (no sidecars)
+    live = set(index["frames"])
+    if presence:
+        index["schema"] = SCHEMA
+        index["tracks"] = {str(tid): dict(
+            {"t0": min(tags & live), "t1": max(tags & live)},
+            **({"bridged": [t for t in bridged.get(str(tid), []) if t in live]}
+               if bridged.get(str(tid)) else {}))
+            for tid, tags in presence.items() if tags & live}
+    else:
+        index.pop("tracks", None)   # stale ids in no .trk (ponytail 05:17Z)
+    # owner 2026-11-08: raw AR layer is now FILTERED like the events —
+    # shared screen ewb_live/events/ar_filter.py drops objects touching
+    # |lat|<15 or IBTrACS-co-located (see channel_design_ewb 22:55Z)
     index["layers"] = {
         "h": "heat exceedance (> P85 climatology)",
         "f": "freeze exceedance (< P15 climatology)",
-        "a": ("AR mask — raw upstream EWB detector output, before the "
-              "IBTrACS tropical-cyclone screen applied to the event list"),
+        "a": ("AR mask: EWB detection minus tropical objects (any cell "
+              "within 15 deg of the equator) and tropical cyclones"),
     }
     index["cutoff"] = fmt(mirror_end)
+    # duration feature-detect (contract §4): consumer paints runs only when
+    # this key exists; seed = earliest mirror step the recurrence saw
+    index["dur"] = {"rev": DUR_REV,
+                    "seed": fmt(times_all[0]) if times_all else None}
+    # AR IVT class plane feature-detect (v3): consumer paints ramp only when
+    # this key exists; bins: 250-500, 500-750, 750-1000, 1000-1250, >=1250 kg m-1 s-1
+    index["ivt"] = {"schema": 1, "bins": [250, 500, 750, 1000, 1250]}
     index["generated"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
-    tmp = _index_path(out).with_suffix(".json.tmp")
+    tmp = _index_path(out).with_name(  # sweep matches *.tmp.*
+        _index_path(out).name + f".tmp.{os.getpid()}")
     tmp.write_text(json.dumps(index, separators=(",", ":")))
     tmp.rename(_index_path(out))
     logger.info("raw_exceedance: %d frames indexed", len(index["frames"]))

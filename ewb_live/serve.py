@@ -161,10 +161,11 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     # weekly snapshot: history/<YYYY-WW>/<file>.json (no sample fallback)
                     return os.path.join(HISTORY_DIR, sub[1], sub[2])
                 if (len(sub) == 2 and sub[0] == "raw_exceedance"
-                        and re.fullmatch(r"\d{10}\.bin|index\.json", sub[1])):
+                        and re.fullmatch(r"\d{10}\.(?:bin|trk|run|ivt)|index\.json", sub[1])):
                     # raw 6-hourly exceedance frames (design lane): exact
-                    # YYYYMMDDHH.bin or index.json only — strict allowlist,
-                    # no listing. Bodies are pre-zlib'd; served octet-stream.
+                    # YYYYMMDDHH.bin/.trk/.run/.ivt or index.json only — strict
+                    # allowlist, no listing. Bodies are pre-zlib'd; served
+                    # octet-stream.
                     return os.path.join(RESULTS_DIR, *sub)
                 if _is_safe_nested_json(sub):
                     # per-event viz assets: events/<event_id>/viz.json, events/index.json

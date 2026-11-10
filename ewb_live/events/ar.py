@@ -29,6 +29,11 @@ logger = logging.getLogger(__name__)
 
 # Land-intersection floors (ar_bounds.py MIN_LAND_PIXELS_FOR_PEAK / window)
 AR_MIN_LAND_PIXELS = 10
+# detection-rule version (cache key, events/__init__._cache_path): bump on
+# any AR mask/screen rule change. v2 = SPEC "AR tropical exclusion" 2026-11-08
+AR_RULE_REV = "v5"  # v3 = track exclusion; v4 = seam-periodic labeling;
+                    # v5 = 1-step gap bridge (display-only bridged cells;
+                    # physical keep unchanged, event ids stable)
 AR_MIN_DAYS = 2
 AR_MAX_DURATION_DAYS = 9   # upstream cases.yaml AR p90 duration (was 12)
 AR_PAD_DEG = 5.0
@@ -122,16 +127,11 @@ def _open_ar_inputs(arco_uri: str, storage_options: dict) -> xr.Dataset:
     return ds[["eastward_wind", "northward_wind", "specific_humidity"]]
 
 
-def _daily_masks(
+def _step_arrays(
     ds_step: xr.Dataset, scheduler_workers: int = 6
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Compute daily land-intersection masks, the full daily AR mask, and
-    daily peak masked IVT.
-
-    ``ds_step`` covers a few days of 6-hourly steps. Returns
-    (daily_land bool (day, lat, lon), daily_ar bool (full mask, day, lat,
-    lon), daily_peak_ivt float32 (day, lat, lon), day_times datetime64[D]).
-    """
+    """Raw 6-hourly arrays for one chunk: (AR mask, land intersection, IVT,
+    step times). Tracking + exclusion happen on the full window above."""
     from extremeweatherbench.events import atmospheric_river as ar
 
     ds_step = ds_step.chunk(
@@ -142,31 +142,37 @@ def _daily_masks(
         output_variables=["atmospheric_river_mask", "atmospheric_river_land_intersection",
                           "integrated_vapor_transport"],
     )
-    li = out["atmospheric_river_land_intersection"] > 0
-    full = out["atmospheric_river_mask"] > 0
-    ivt_masked = out["integrated_vapor_transport"].where(li)
-
-    def _daily(da):
-        return (
-            da.astype("float32")
-            .resample(valid_time="1D")
-            .max(skipna=True)
-            .fillna(0.0)
-            .astype(bool)
-        )
-
-    peak_ivt = ivt_masked.resample(valid_time="1D").max()
     import dask
 
     with dask.config.set(scheduler="threads", num_workers=scheduler_workers):
-        daily_np, ar_np, peak_np = dask.compute(_daily(li), _daily(full), peak_ivt)
-    day_times = np.asarray(daily_np.valid_time).astype("datetime64[D]")
+        m, li, ivt = dask.compute(
+            out["atmospheric_river_mask"] > 0,
+            out["atmospheric_river_land_intersection"] > 0,
+            out["integrated_vapor_transport"].astype("float32"),
+        )
     return (
-        np.asarray(daily_np, dtype=bool),
-        np.asarray(ar_np, dtype=bool),
-        np.asarray(peak_np, dtype=np.float32),
-        day_times,
+        np.asarray(m, dtype=bool),
+        np.asarray(li, dtype=bool),
+        np.asarray(ivt, dtype=np.float32),
+        np.asarray(out.valid_time, "datetime64[h]"),
     )
+
+
+def _dominant_track_id(labels6, days, seg_dates, tracks6, ilat, ilon):
+    """Track id owning most AR cells in the event's segment (persistent id,
+    owner 2026-11-09; labels6 is the shared track-label array)."""
+    counts: dict[int, int] = {}
+    lidx = np.flatnonzero(ilat)
+    oidx = np.flatnonzero(ilon)
+    for D in seg_dates:
+        for s in np.flatnonzero(days == D):
+            lb = labels6[s][np.ix_(lidx, oidx)].ravel()
+            vals, cnt = np.unique(lb[lb > 0], return_counts=True)
+            for v, c in zip(vals, cnt):
+                counts[int(v)] = counts.get(int(v), 0) + int(c)
+    if not counts:
+        return None
+    return tracks6[max(counts.items(), key=lambda kv: kv[1])[0] - 1]["id"]
 
 
 def scan_ar_events(
@@ -193,10 +199,10 @@ def scan_ar_events(
     t = t.sel(valid_time=hours_ok)
     t = t.sel(valid_time=slice(str(load_start), str(end) + "T23:59:59"))
 
-    daily_parts: list[np.ndarray] = []
-    ar_full_parts: list[np.ndarray] = []
-    peak_parts: list[np.ndarray] = []
-    date_parts: list[np.ndarray] = []
+    mask_parts: list[np.ndarray] = []
+    li_parts: list[np.ndarray] = []
+    ivt_parts: list[np.ndarray] = []
+    time_parts: list[np.ndarray] = []
     cur = np.datetime64(load_start)
     end_np = np.datetime64(end)
     while cur <= end_np:
@@ -205,40 +211,89 @@ def scan_ar_events(
         if chunk.sizes["valid_time"] == 0:
             cur = stop + np.timedelta64(1, "D")
             continue
-        d, a, p, days = _daily_masks(chunk, scheduler_workers)
-        daily_parts.append(d)
-        ar_full_parts.append(a)
-        peak_parts.append(p)
-        date_parts.append(days)
+        m6, li6c, ivt6c, tv = _step_arrays(chunk, scheduler_workers)
+        mask_parts.append(m6)
+        li_parts.append(li6c)
+        ivt_parts.append(ivt6c)
+        time_parts.append(tv)
         logger.info("  AR chunk %s..%s: %d land-AR pixels, %d total AR pixels",
-                    cur, stop, int(d.sum()), int(a.sum()))
+                    cur, stop, int(li6c.sum()), int(m6.sum()))
         cur = stop + np.timedelta64(1, "D")
         del chunk
 
-    if not daily_parts:
+    if not mask_parts:
         return []
-    daily = np.concatenate(daily_parts, axis=0)
-    daily_ar = np.concatenate(ar_full_parts, axis=0)
-    peak_ivt = np.concatenate(peak_parts, axis=0)
-    dates = np.concatenate(date_parts, axis=0)
-    del daily_parts, ar_full_parts, peak_parts
+    mask6 = np.concatenate(mask_parts)
+    li6 = np.concatenate(li_parts)
+    ivt6 = np.concatenate(ivt_parts)
+    times6 = np.concatenate(time_parts)
+    del mask_parts, li_parts, ivt_parts, time_parts
+    # chunks overlap by one day (inclusive slice ends); keep first occurrence
+    dup = np.zeros(times6.shape, bool)
+    _, first_idx = np.unique(times6, return_index=True)
+    dup[first_idx] = True
+    mask6, li6, ivt6, times6 = mask6[dup], li6[dup], ivt6[dup], times6[dup]
 
     lats = t.latitude.values
     lons = t.longitude.values
+
+    # owner 2026-11-09 (HIGH): ONE shared track-level screen (events/ar_filter)
+    # — tracks link across the whole window, tropical/TC exclusion drops
+    # WHOLE tracks (no frame-to-frame blink), then daily aggregation and
+    # blob tracking see only surviving AR cells. Same fn drives the raw map.
+    from .ar_filter import ar_filter_tracks
+    from .tc_screen import TC_SCREEN_ON, load_ibtracs_tracks
+
+    years = {int(d.astype("datetime64[Y]").astype(int)) + 1970
+             for d in np.unique(times6.astype("datetime64[Y]"))}
+    years |= {y + 1 for y in years} | {y - 1 for y in years}  # year-boundary IBTrACS gate
+    tc_tracks = load_ibtracs_tracks(years) if TC_SCREEN_ON else None
+    keep6, tracks_dropped, labels6, tracks6 = ar_filter_tracks(
+        mask6, lats, lons, times6, tc_tracks)
+    for tr in tracks_dropped:
+        logger.info("AR track %s %s..%s dropped (%s%s)", tr["id"],
+                    tr["start"], tr["end"], tr["reason"],
+                    f": {tr.get('tc_name')} {tr.get('distance_km')} km"
+                    if tr["reason"] == "tc" else "")
+    days = times6.astype("datetime64[D]")
+    uniq_days = np.unique(days)
+    ny, nx = mask6.shape[1:]
+    daily = np.zeros((len(uniq_days), ny, nx), dtype=bool)
+    daily_ar = np.zeros_like(daily)
+    peak_ivt = np.full((len(uniq_days), ny, nx), np.nan, dtype=np.float32)
+    for j, D in enumerate(uniq_days):
+        s = np.flatnonzero(days == D)
+        g = li6[s] & keep6[s]
+        daily[j] = g.any(axis=0)
+        daily_ar[j] = keep6[s].any(axis=0)
+        vmax = np.max(np.where(g, ivt6[s], -np.inf), axis=0)
+        peak_ivt[j] = np.where(np.isneginf(vmax), np.nan, vmax)
+    # attribution only: zero labels of dropped tracks so a dropped track
+    # can never win _dominant_track_id inside a kept event's bbox
+    # (ponytail 01:17Z SHOULD)
+    labels6[~keep6] = 0
+    del mask6, li6, ivt6, keep6
+    dates = uniq_days
+    logger.info("AR tracked: %d tracks over %d days (%d dropped: %d tropical, %d tc)",
+                len(tracks6), len(dates), len(tracks_dropped),
+                sum(t["reason"] == "tropical" for t in tracks_dropped),
+                sum(t["reason"] == "tc" for t in tracks_dropped))
 
     te = _te()
     blobs = te.detect_events(
         daily, dates, lats, lons, "atmospheric_river", area_grid=None, min_seed_area_km2=0.0
     )
     logger.info("AR raw tracked blobs: %d", len(blobs))
+    # owner 2026-11-09 (HIGH): the upstream tracker labels non-periodically,
+    # so one AR crossing the 0-meridian arrives as two seam pieces; stitch
+    # them back (bbox becomes the minimal arc, wrap = lon_min > lon_max)
+    from .seam import merge_seam_objects, seam_columns
 
-    # owner 2026-11-08 (G-40): IBTrACS TC colocation screen (mask untouched)
-    from .tc_screen import TC_SCREEN_KM, TC_SCREEN_HOURS, TC_SCREEN_ON
-    from .tc_screen import load_ibtracs_tracks, tc_colocation_rule
+    blobs = merge_seam_objects(blobs, lons)
 
-    years = {int(d.astype("datetime64[Y]").astype(int)) + 1970
-             for d in np.unique(dates.astype("datetime64[Y]"))}
-    tc_tracks = load_ibtracs_tracks(years) if TC_SCREEN_ON else None
+    # G-40 screen (belt-and-braces on top of the track-level pass above;
+    # tc_tracks already loaded for the track screen)
+    from .tc_screen import TC_SCREEN_KM, TC_SCREEN_HOURS, tc_colocation_rule
 
     out: list[Event] = []
     win0 = np.datetime64(start)
@@ -253,15 +308,13 @@ def scan_ar_events(
         lat_min, lat_max = float(ev["lat_min"]), float(ev["lat_max"])
         lon_min, lon_max = float(ev["lon_min"]), float(ev["lon_max"])
         ilat = (lats <= lat_max) & (lats >= lat_min)
-        if lon_min <= lon_max:
-            ilon = (lons >= lon_min) & (lons <= lon_max)
-        else:  # bbox arc wraps the 0 meridian in 0-360 space
-            ilon = (lons >= lon_min) | (lons <= lon_max)
+        ilon = seam_columns(lons, lon_min, lon_max)
         ti_all = np.where((dates >= d0) & (dates <= d1))[0]
         if len(ti_all) < AR_MIN_DAYS:
             continue
-        # overlong tracks (monsoon/TC moisture plumes) split into <=12-day
-        # consecutive segments (upstream AR cases: p90 duration 8 d)
+        # overlong tracks (monsoon/TC moisture plumes) split into <=
+        # AR_MAX_DURATION_DAYS-day consecutive segments (upstream AR cases:
+        # p90 duration 8 d)
         n_seg = max(1, int(np.ceil(len(ti_all) / AR_MAX_DURATION_DAYS)))
         for ti in np.array_split(ti_all, n_seg):
             if len(ti) < AR_MIN_DAYS:
@@ -336,6 +389,10 @@ def scan_ar_events(
                     str(dates[ti][rule["landfall_step"]])
                     if rule["landfall_step"] is not None else None),
                 "detection": "EWB AR mask + land intersection blob tracking",
+                # persistent AR track id (owner 2026-11-09): dominant track
+                # label over the segment's steps (shared label array)
+                "track_id": _dominant_track_id(labels6, days, dates[ti],
+                                               tracks6, ilat, ilon),
                 # provenance for the IBTrACS screen (owner 2026-11-08): kept
                 # segments record the screen config they passed
                 "tc_screen": {"radius_km": TC_SCREEN_KM, "hours": TC_SCREEN_HOURS,

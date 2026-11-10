@@ -63,16 +63,14 @@ def make_dev_forecast(
     lat0, lat1, lon0, lon1 = bbox
     lon0 %= 360.0
     lon1 %= 360.0
-    ds = raw[raw_vars].sel(
+    # seam crop via PeriodicBoundaryIndex (owner 2026-11-09): one continuous
+    # slice, the index splits wrap arcs — replaces the manual two-part concat
+    from ewb_live.periodic_index import attach_periodic, lon_slice
+
+    ds = attach_periodic(raw)[raw_vars].sel(
         latitude=slice(max(lat0, lat1), min(lat0, lat1)),  # ARCO lat descending
+        longitude=lon_slice(np.asarray(raw.longitude.values, float), lon0, lon1),
     )
-    if lon0 <= lon1:
-        ds = ds.sel(longitude=slice(lon0, lon1))
-    else:  # wrap
-        ds = xr.concat(
-            [ds.sel(longitude=slice(lon0, 360.0)), ds.sel(longitude=slice(0.0, lon1))],
-            dim="longitude",
-        )
 
     init0 = (event_start - dt.timedelta(hours=max_lead)).replace(hour=0, minute=0, second=0)
     inits = pd.date_range(init0, event_end - pd.Timedelta(hours=1), freq="D")

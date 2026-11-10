@@ -213,3 +213,42 @@ def test_with_retries_retries_429_but_not_404():
     # first call, not walk the backoff ladder (which the old bare-OSError
     # check silently did, 22:21Z finding)
     assert n404["n"] == 1
+
+
+def test_with_retries_not_found_s3_path_raises_first_call():
+    """s3fs surfaces a definitive 404 as FileNotFoundError (OSError
+    subclass) — must raise immediately, not burn the ladder (ponytail
+    2026-11-08 23:42 SHOULD; aigfs .idx probes depend on fast continue)."""
+    from ewb_live.sources import _net
+
+    n = {"n": 0}
+
+    def missing():
+        n["n"] += 1
+        raise FileNotFoundError("NoSuchKey")
+
+    with pytest.raises(FileNotFoundError):
+        _net.with_retries(missing, tries=6, base_delay=0.0)
+    assert n["n"] == 1
+
+
+def test_open_remote_nc_config_not_in_client_kwargs(monkeypatch):
+    """aiobotocore 3.10 D1 collision: config in client_kwargs alongside
+    region raises 'multiple values for config' (ponytail MUST 23:42)."""
+    from ewb_live.sources import _net
+
+    captured = {}
+
+    class _OF:
+        def open(self):
+            return "stream"
+
+    def fake_open(path, **kw):
+        captured.update(kw)
+        return _OF()
+
+    monkeypatch.setattr("fsspec.open", fake_open)
+    assert _net.open_remote_nc("s3://b/k.nc") == "stream"
+    assert "config" not in captured.get("client_kwargs", {})
+    assert captured["client_kwargs"]["region_name"] == "us-east-1"
+    assert captured["config_kwargs"] is not None

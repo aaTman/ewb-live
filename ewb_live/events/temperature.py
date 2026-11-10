@@ -272,11 +272,16 @@ def scan_temperature_events(
 
     # keep only events surviving the upstream filter, mapped to Event schema
     kept = {(r.start_date, r.latitude_min, r.longitude_min) for r in df.itertuples()}
+    # owner 2026-11-09 (HIGH): naive upstream labeling splits one object at
+    # the 0-meridian array seam into two pieces — stitch them back before
+    # bbox/peak attribution (shared seam module; also fixes wrap-bbox slices)
+    from .seam import merge_seam_objects, seam_columns
+
+    events = [e for e in merge_seam_objects(events, lons)
+              if (str(e["start"]), e["lat_min"], e["lon_min"]) in kept
+              or any(k in kept for k in e.get("seam_merged_from", ()))]
     out: list[Event] = []
     for ev in events:
-        key = (str(ev["start"]), ev["lat_min"], ev["lon_min"])
-        if key not in kept:
-            continue
         if np.datetime64(ev["end"]) < np.datetime64(start):
             continue  # active only in the 14-day lookback, outside the window
         start_d = np.datetime64(ev["start"]).astype("datetime64[D]")
@@ -290,10 +295,10 @@ def scan_temperature_events(
         )[0]
         i_s = te._nearest_1d_index(lats, ev["lat_min"])
         i_n = te._nearest_1d_index(lats, ev["lat_max"])
-        i_w = te._nearest_1d_index(lons, ev["lon_min"])
-        i_e = te._nearest_1d_index(lons, ev["lon_max"])
-        sub_t = t2m_daily_np[ti][:, i_s : i_n + 1, i_w : i_e + 1]
-        sub_x = exc_filt[ti][:, i_s : i_n + 1, i_w : i_e + 1]
+        ilon = seam_columns(lons, float(ev["lon_min"]), float(ev["lon_max"]))
+        ic = np.flatnonzero(ilon)
+        sub_t = t2m_daily_np[ti][:, i_s : i_n + 1][:, :, ic]
+        sub_x = exc_filt[ti][:, i_s : i_n + 1][:, :, ic]
         n = min(sub_t.shape[0], sub_x.shape[0])
         active = sub_t[:n][sub_x[:n]]
         if active.size:

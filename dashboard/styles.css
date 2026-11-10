@@ -32,6 +32,18 @@
   --stone-grey:           #848475;
   --medal-gold: #c9930f;  --medal-silver: #8e979e;  --medal-bronze: #b3703c;
 
+  /* ---- Duration ramp (channel_consecutive_days §5): heat/freeze paint by
+     consecutive-day bin 1/2/3/4-6/7+; sequential hue+lightness ramps (gold
+     →maroon, cyan→navy) at flat alpha — every stop token keeps >=3:1 on
+     paper/map-ocean AND adjacent bins blend >=12 dE76 apart, both themes. ---- */
+  --dur-heat-1: #c57b2c;  --dur-heat-2: #c35b2a;  --dur-heat-3: #ad3321;  --dur-heat-4: #7d1619;  --dur-heat-5: #4c0810;
+  --dur-freeze-1: #3596ba;  --dur-freeze-2: #2b77b0;  --dur-freeze-3: #2a58a0;  --dur-freeze-4: #1a2d71;  --dur-freeze-5: #0f1b45;
+
+  /* AR IVT ramp (5 classes: 250-500, 500-750, 750-1000, 1000-1250, >=1250 kg m-1 s-1)
+     Light-to-dark green sequential, matching AR green identity (#2e7d32 light / #66bb6a dark).
+     Adjacent bins >=12 dE76 apart, >=3:1 contrast on both ocean grounds. */
+  --dur-ar-1: #b8e0b8;  --dur-ar-2: #8fbc8f;  --dur-ar-3: #659b65;  --dur-ar-4: #3c7a3c;  --dur-ar-5: #2e7d32;
+
   /* Lightness ladder is fixed: AR 26.1 < freeze 34.0 < heat 48.4 (L*), never inverted. */
 
   /* ---- Type (§3): seven steps, nothing between ---- */
@@ -96,6 +108,13 @@ html[data-theme="dark"] {
   --series-unknown:       #acab9c;  --series-unknown-soft:  #3b3b34;
   --stone-grey:           #acab9c;
   --medal-gold: #d9a92c;  --medal-silver: #a7b0b8;  --medal-bronze: #c98a52;
+
+  /* Duration ramp, dark (mirrors the light block; on the dark ground the
+     ramps invert: rust→gold, steel-blue→ice, same token-contrast rule). */
+  --dur-heat-1: #b3542c;  --dur-heat-2: #d97b2f;  --dur-heat-3: #f2a83f;  --dur-heat-4: #ffd46b;  --dur-heat-5: #ffe9a0;
+  --dur-freeze-1: #4672a3;  --dur-freeze-2: #5093cf;  --dur-freeze-3: #6cb3e1;  --dur-freeze-4: #95ceec;  --dur-freeze-5: #c8e7f9;
+  /* AR IVT ramp, dark (inverted: dark-to-light green on dark ground) */
+  --dur-ar-1: #3a5a3a;  --dur-ar-2: #4a7a4a;  --dur-ar-3: #66bb6a;  --dur-ar-4: #8fcf8f;  --dur-ar-5: #b8e0b8;
 
   --bg: var(--canvas);
   --bg-panel: var(--paper);
@@ -313,8 +332,8 @@ table { border-collapse: separate; border-spacing: 0; width: 100%;
 /* DR2-M4 residual: no row opacity (axe dark fail); pass with real inks */
 .unscored-row .model-col { color: var(--ink-secondary); font-style: italic; }
 .unscored-row td.cell { color: var(--ink-muted); }
-/* DR2 M7: phone hint under the tall event table — permanently hidden by
-   the .tall-note guard at the leaflet block (table fits without swipe) */
+/* DR2 M7: phone hint under the tall event table — retired 2026-11-08,
+   table fits without sideways swipe (element and guard deleted) */
 /* Owner 2026-11-07: empty-lane state — quiet line, criteria on hover */
 .lane-empty { color: var(--ink-secondary); font-size: var(--text-sm); font-style: italic;
   margin: 10px 2px 4px; line-height: 1.4; }
@@ -602,6 +621,11 @@ nav.controls .dd .dd-body {
 #gm-gantt { width: 100%; display: block; margin-top: 10px; overflow: visible; }
 .gm-note { color: var(--text-dim); font-size: var(--text-sm); margin: 8px 0 0; }
 .gm-note[hidden] { display: none; }
+.gm-legend { display: flex; align-items: center; gap: 8px; margin-left: 12px; }
+.gm-legend .swatch { width: 24px; height: 12px; border: 1px solid var(--border-strong);
+  border-radius: 2px; display: inline-block; }
+.gm-legend .label { font-size: var(--text-2xs); color: var(--ink-muted); }
+
 /* base map primitives live in the canvas paint — see mergedmap.js drawBase */
 
 /* ---- raw exceedance map (briefs/raw_exceedance_map.md) ---- */
@@ -651,30 +675,19 @@ nav.controls .dd .dd-body {
   box-shadow: inset 3px 0 0 var(--matte-black); }
 .gm-chip[aria-pressed="false"] { color: var(--ink-secondary); }
 
-/* G-04: event detail — the maps are the page. Observed + first model side by
-   side (the paper's figure), further models flow 2-up; everything else spans. */
-#detail-viz .ev3-root { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-#detail-viz .ev3-root > * { grid-column: 1 / -1; }
-#detail-viz .ev3-root > .ev3-obsblock { grid-column: 1; margin: 0; }
-#detail-viz .ev3-grid { display: contents; }
+/* G-04 superseded 2026-11-09 (briefs/event_view_overlay.md): the event detail
+   is ONE map card with stacked model overlays — the 2-up panel grid retires. */
+#detail-viz .ev3-root > .ev3-obsblock { margin: 0; }
 #detail-viz .ev3-panel.ev3-obs { max-width: none; }
 #detail-viz .ev3-map, #detail-viz .ev3-panel.ev3-obs .ev3-map { height: 400px; }
 #detail-viz .ev3-panel.ev3-fs .ev3-map { height: auto; }
-#detail-viz .ev3-nodata { margin-top: 4px; }
 @media (max-width: 760px) {
-  #detail-viz .ev3-root { grid-template-columns: minmax(0, 1fr); }
-  #detail-viz .ev3-root > .ev3-obsblock { grid-column: 1 / -1; }
   #detail-viz .ev3-map, #detail-viz .ev3-panel.ev3-obs .ev3-map { height: 340px; }
 }
-/* pressed overlay-fill toggle: quiet selected state, not white-on-orange (3:1) */
-#detail-viz .ev3-fill.on { background: var(--alabaster); color: var(--matte-black); border-color: var(--border);
-  box-shadow: inset 3px 0 0 var(--matte-black); }
 #detail-viz .ev3-cb .tick.key { font-weight: 500; color: var(--matte-black); }
 /* panel chrome: calmer than the injected defaults */
 #detail-viz .ev3-panel { border-radius: 6px; }
 #detail-viz .ev3-head b { font-size: var(--text-sm); font-weight: 500; }
-#detail-viz .ev3-chip { font-size: var(--text-2xs); }
-#detail-viz .ev3-foot { font-size: var(--text-xs); }
 #detail-viz .ev3-nodata { font-size: var(--text-xs); }
 
 /* G-14: catalog table — the title already carries the date range, so the
@@ -704,9 +717,6 @@ html[data-theme="dark"] { --map-line: #6d7f92; }   /* 3.2:1 on the ocean fill; g
 .leaflet-bar a, .leaflet-bar a:hover { background: var(--paper); color: var(--matte-black); border-color: var(--border); }
 .leaflet-bar a:hover { background: var(--tint); }
 .leaflet-bar { border: 1px solid var(--border); box-shadow: var(--shadow); }
-.tall-note { display: none !important; }  /* table now fits without sideways swipe */
-/* no model panels (unscored / pending event): observed map alone, not half a page */
-#detail-viz .ev3-root:not(:has(.ev3-grid .ev3-panel)) > .ev3-obsblock { grid-column: 1 / -1; max-width: 640px; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 /* dark: chip ground is the lightened series hue — ink must flip (axe: white on #f57160 = 2.8:1) */

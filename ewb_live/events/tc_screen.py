@@ -41,7 +41,12 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 TC_SCREEN_ON = os.environ.get("EWB_LIVE_TC_SCREEN", "1") != "0"
-TC_SCREEN_KM = float(os.environ.get("EWB_LIVE_TC_SCREEN_KM", "250.0"))
+# owner 2026-11-08 (HIGH, SPEC "AR tropical exclusion" part b): 250 -> 500 km.
+# 250 missed big-hurricane wind fields (34-kt radii commonly >300 km) and
+# extratropical-transition storms whose mask detached from the center;
+# IBTrACS track points carry all statuses so the buffer follows the
+# transitioned remnant too. Applies to BOTH layers (tc_screen + ar_filter).
+TC_SCREEN_KM = float(os.environ.get("EWB_LIVE_TC_SCREEN_KM", "500.0"))
 TC_SCREEN_HOURS = float(os.environ.get("EWB_LIVE_TC_SCREEN_HOURS", "24.0"))
 _MAX_AGE_H = float(os.environ.get("EWB_LIVE_IBTRACS_MAX_AGE_H", "24"))
 

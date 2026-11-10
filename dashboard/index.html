@@ -83,6 +83,7 @@
   </div>
   <div class="raw-ctl-row">
     <span id="raw-layers" class="gm-chips" role="group" aria-label="Layer toggles"></span>
+    <span id="gm-legend" class="gm-legend" role="img" aria-label="AR IVT magnitude legend"></span>
     <span class="raw-play-row">
       <button id="raw-prev" class="mini" type="button" aria-label="−6h, step back 6 hours">−6h</button>
       <button id="raw-play" class="mini" type="button" aria-label="Play frames">▶ play</button>
@@ -138,7 +139,6 @@
         <tbody></tbody>
       </table>
     </div>
-    <p class="tall-note">Swipe the table sideways for Days · Peak.</p>
   </div>
 </section>
 
@@ -186,9 +186,14 @@
       valid result.</li>
       <li><b>Atmospheric river</b> — EWB’s AR mask: integrated vapour transport (IVT) of at least
       400&nbsp;kg&nbsp;m⁻¹&nbsp;s⁻¹ with a ridge criterion. The river must start over the ocean and
-      reach land; objects entirely over land are excluded, and tropical cyclones are screened out using IBTrACS best tracks.</li>
-      <li>The raw detector map shows the unfiltered upstream masks: heat above P85, freeze below P15 and
-      EWB’s AR mask before the tropical-cyclone (IBTrACS) screen that the event list applies.</li>
+      reach land — making landfall on at least one day; objects entirely over land are excluded,
+      and tropical cyclones are screened out using IBTrACS best tracks.</li>
+      <li>The raw detector map shows the unfiltered upstream heat/freeze masks and the filtered
+      AR layer: AR mask = EWB detection minus tropical objects (any cell within 15&nbsp;deg of
+      the equator) and tropical cyclones, dropped whole at the level of the tracked river (no
+      frame-to-frame flicker). A river that briefly dips below threshold for one 6-hour step
+      keeps its id; that step shows its previous footprint with a lighter fill (bridged — display
+      only, the river was not physically detected there).</li>
       <li>Parts of one system are merged, no two events overlap in time and space, and each type
       is capped at 15 events.</li>
     </ul>

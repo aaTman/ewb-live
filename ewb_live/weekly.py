@@ -92,7 +92,7 @@ def snapshot(week: str) -> Path:
     dest.mkdir(parents=True, exist_ok=True)
     for f in RESULTS.iterdir():
         if f.is_file():
-            tmp = dest / (f.name + ".tmp")
+            tmp = dest / (f.name + f".tmp.{os.getpid()}")  # pid suffix: sweep-visible
             shutil.copy2(f, tmp)
             os.replace(tmp, dest / f.name)
     logger.info("snapshot written to %s", dest)
@@ -105,7 +105,7 @@ def _augment_meta(week: str, now: dt.datetime) -> None:
     meta["cycle"] = "weekly"
     meta["week"] = week
     meta["next_update"] = _next_update(now).isoformat()
-    tmp = path.with_suffix(".json.tmp")
+    tmp = path.with_suffix(f".json.tmp.{os.getpid()}")  # pid suffix: sweep-visible
     tmp.write_text(json.dumps(meta, indent=1))
     os.replace(tmp, path)
 

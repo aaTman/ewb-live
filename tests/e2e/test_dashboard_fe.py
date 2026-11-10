@@ -279,12 +279,11 @@ def test_heat_detail_reference_component(live_url, heat_event, page_ctx):
     chip = page.locator(".ev3-namechip").first
     assert chip.is_visible()
     assert chip.inner_text().startswith("Heatwave #")
-    # bottom bar: 'Valid time: …' left, single-swatch legend right
+    # bottom bar: duration-ramp note left, single-swatch legend right
     bar = page.locator(".ev3-panel.ev3-obs .ev3-bbar").first
     assert bar.is_visible()
     left = bar.locator(".bbar-l").inner_text()
-    assert left.startswith("Valid time:")
-    assert "UTC" in left
+    assert left.startswith("Heat \u2014 days >"), left
     legend = bar.locator(".bbar-r")
     assert legend.locator(".ev3-swatch").count() == 1
     q = viz.get("quantile") or 0.85
@@ -307,17 +306,22 @@ def test_heat_detail_reference_component(live_url, heat_event, page_ctx):
                  lonSpan: b.getEast() - b.getWest() }; }""")
     assert fit["zoom"] >= 4, f"map still zoomed out: {fit}"
     assert fit["latSpan"] < 45 and fit["lonSpan"] < 90, f"fit too wide: {fit}"
-    # valid-time stepping: two different frames
-    days = page.locator(".ev-days .ev-day")
-    assert days.count() >= 2
-    bar0 = page.locator(".ev3-panel.ev3-obs .ev3-bbar .bbar-l").inner_text()
-    days.nth(0).click()
-    page.wait_for_timeout(400)
-    bar1 = page.locator(".ev3-panel.ev3-obs .ev3-bbar .bbar-l").inner_text()
-    days.nth(1).click()
-    page.wait_for_timeout(400)
-    bar2 = page.locator(".ev3-panel.ev3-obs .ev3-bbar .bbar-l").inner_text()
-    assert bar1 != bar2, "valid-time stepper must change the frame label"
+    # time slider: play/step/range chrome + readout (contract §4)
+    assert page.locator(".ev3-slider").count() == 1
+    read0 = page.locator(".ev3-readout").inner_text()
+    assert "Valid time" in read0 and "models T+" in read0, read0
+    page.locator(".ev3-next").click()
+    page.wait_for_timeout(300)
+    read1 = page.locator(".ev3-readout").inner_text()
+    assert read1 != read0, "step button must change the valid time"
+    assert "day=" in page.url, "off-anchor valid time belongs in the URL"
+    rng_max = int(page.locator(".ev3-srange").get_attribute("max"))
+    page.locator(".ev3-srange").fill(str(rng_max))
+    page.wait_for_timeout(300)
+    assert "day=" not in page.url or page.locator(".ev3-srange").input_value() == str(rng_max)
+    page.locator(".ev3-play").click()   # play, then pause again (no hang, no errors)
+    page.wait_for_timeout(1100)
+    page.locator(".ev3-play").click()
     os.makedirs(SHOTS, exist_ok=True)
     page.screenshot(path=os.path.join(SHOTS, "fe-detail-heat.png"), full_page=False)
     page.evaluate("window.scrollTo(0, document.querySelector('#detail-sec').offsetTop)")
@@ -325,23 +329,60 @@ def test_heat_detail_reference_component(live_url, heat_event, page_ctx):
     assert page.errors == [], f"console errors: {page.errors}"
 
 
-def test_heat_model_panels_forecast_at_lead(live_url, heat_event, page_ctx):
-    """Same component for forecast-at-lead: model panels carry the bottom bar
-    (valid time from the model's own daily tier field on schema 3)."""
+def test_overlay_layers_single_card_and_controls(live_url, heat_event, page_ctx):
+    """briefs/event_view_overlay.md: one map card; every model with data at the
+    lead is a layer row with visibility/colour/opacity; state round-trips to
+    the URL (#lyr=) and back on reload."""
     page = page_ctx
     _open_event(page, live_url, heat_event[0])
-    leads = page.locator(".ev-lead")
-    assert leads.count() >= 2
-    leads.nth(1).click()
+    assert page.locator("#detail-viz .ev3-panel").count() == 1, "detail must be ONE map card"
+    rows = page.locator("#detail-viz .ev3-layer")
+    assert rows.count() >= 2, "observed + at least one model layer row expected"
+    # observed layer is painted on the map
+    assert page.locator(".ev3-panel.ev3-obs img.ev3-crisp").count() >= 1
+    # toggle a model layer off: overlay removed, state reported through #lyr=
+    # (contract §1: which models are visible by default is baseline + 2, so
+    # find the first model row that IS visible rather than assuming row 1)
+    model_row = None
+    for i in range(1, rows.count()):
+        r = rows.nth(i)
+        cls = r.get_attribute("class") or ""
+        if "dis" not in cls and r.locator(".ev3-lvis").is_checked():
+            model_row = r
+            break
+    assert model_row is not None, "at least one model layer visible by default"
+    model_name = model_row.locator(".ev3-lname").inner_text()
+    model_row.locator(".ev3-lvis").uncheck()
+    page.wait_for_timeout(300)
+    lyr = page.evaluate("() => window.__ev3.layers()")
+    entry = [e for e in lyr.split(",") if e.startswith(model_name + "|")]
+    assert entry and entry[0].endswith("|0"), f"toggled-off layer must report 0: {lyr}"
+    assert "lyr=" in page.url, "layer state must round-trip into the URL hash"
+    # opacity slider repaints the layer and follows the URL
+    obs_row = rows.nth(0)
+    obs_row.locator(".ev3-lop").fill("60")
+    obs_row.locator(".ev3-lop").dispatch_event("input")
+    page.wait_for_timeout(300)
+    assert obs_row.locator(".ev3-lopv").inner_text() == "60%"
+    lyr2 = page.evaluate("() => window.__ev3.layers()")
+    assert "|60|" in lyr2, f"opacity must serialize: {lyr2}"
+    # recolour the observed layer: raster probe follows (pure red fill)
+    obs_row.locator(".ev3-lcol").evaluate(
+        "el => { el.value = '#ff0000'; el.dispatchEvent(new Event('input')); }")
+    page.wait_for_timeout(300)
+    stats = _raster_alpha_stats(page, ".ev3-panel.ev3-obs img.ev3-crisp")
+    assert stats and stats["probe"][0] > 200 and stats["probe"][1] < 60 and stats["probe"][2] < 60, \
+        f"layer colour control must repaint the raster: {stats}"
+    # deep link: the same #lyr= state reproduces on a fresh page
+    url = page.url
+    page.goto("about:blank")
+    page.goto(url)
+    page.wait_for_selector("#detail-viz .ev3-panel", timeout=25000)
     page.wait_for_timeout(900)
-    bars = page.locator(".ev3-grid .ev3-bbar")
-    assert bars.count() >= 1, "model panels must carry the bottom bar too"
-    txt = bars.first.locator(".bbar-l").inner_text()
-    assert txt.startswith("Valid time:"), txt
-    # A5: no struck-through chips visible in the picker
-    dis = page.locator(".ev3-picker button.dis")
-    for i in range(dis.count()):
-        assert not dis.nth(i).is_visible(), "unavailable model chip must be hidden"
+    lyr3 = page.evaluate("() => window.__ev3.layers()")
+    assert "|60|" in lyr3, f"deep link must restore opacity state: {lyr3}"
+    col = page.locator("#detail-viz .ev3-layer").nth(0).locator(".ev3-lcol").input_value()
+    assert col.lower() == "#ff0000", f"colour input must restore from #lyr=: {col}"
     assert page.errors == [], f"console errors: {page.errors}"
 
 
@@ -457,7 +498,7 @@ def test_freeze_detail_reference_component(freeze_server, page_ctx):
     assert chip.inner_text().startswith("Freeze #")
     bar = page.locator(".ev3-panel.ev3-obs .ev3-bbar").first
     assert bar.is_visible()
-    assert bar.locator(".bbar-l").inner_text().startswith("Valid time:")
+    assert bar.locator(".bbar-l").inner_text().startswith("Freeze \u2014 days <")
     legend = bar.locator(".bbar-r")
     assert legend.locator(".ev3-swatch").count() == 1
     assert legend.inner_text().strip() == "P15"
@@ -466,7 +507,10 @@ def test_freeze_detail_reference_component(freeze_server, page_ctx):
     assert rgb.replace(" ", "") == "rgb(33,113,181)", rgb  # --tier-freeze token
     stats = _raster_alpha_stats(page, ".ev3-panel.ev3-obs img.ev3-crisp")
     assert stats and stats["cornerAlpha"] == 0
-    assert stats["probe"] == [33, 113, 181], f"freeze tier color wrong: {stats['probe']}"
+    # dur-alpha raster stores premultiplied alpha -> getImageData rgb may sit
+    # one quantum off the token; compare with the rounding tolerance.
+    assert all(abs(a - b) <= 2 for a, b in zip(stats["probe"], [33, 113, 181])), \
+        f"freeze tier color wrong: {stats['probe']}"
     page.screenshot(path=os.path.join(SHOTS, "fe-freeze.png"))
     page.set_viewport_size({"width": 390, "height": 844})
     page.wait_for_timeout(400)
@@ -664,12 +708,20 @@ def _gd_timeline():
     # dateline-crossing AR (bbox lon_min > lon_max): the region label must
     # follow the land mass (Alaska/USA), not the raw mid-longitude (Chukotka)
     e4 = {"id": "gm4", "type": "atmospheric_river", "title": "AR Dateline (e2e)",
-          "start": "2026-01-02", "end": "2026-01-04",
+          "start": "2026-01-02", "end": "2026-01-05",   # 3-day span: tooltip '· 3 days'
           "bbox": [60.0, 68.0, 178.0, -155.0], "days": _GD_DAYS[1:4],
+          "qualified_at": "2026010200"}
+    # prime-meridian-crossing AR in the 0-360 producer form (350E->20E, the
+    # Oct-3 UK/eastward AR shape): box must render as ONE minimal arc across
+    # 0 deg -- never split at +/-180, never a whole-globe band. Its viz.json
+    # (written by _build_gd_fixture) carries a CONTINUOUS east-ordered grid.
+    e5 = {"id": "gm5", "type": "atmospheric_river", "title": "AR Prime Meridian (e2e)",
+          "start": "2026-01-02", "end": "2026-01-04",
+          "bbox": [50.0, 60.0, 350.0, 20.0], "days": _GD_DAYS[1:4],
           "qualified_at": "2026010200"}
     return {"schema": 1, "generated": "2026-01-11T00:00:00Z",
             "window": {"start": "2026-01-01", "end": "2026-01-11", "days": 11},
-            "events": [e1, e2, e3, e4]}
+            "events": [e1, e2, e3, e4, e5]}
 
 
 GD_RAW_TS = [d.strftime("%Y%m%d%H") for d in
@@ -678,7 +730,7 @@ GD_RAW_TS = [d.strftime("%Y%m%d%H") for d in
               for i in range(41)]]   # 2026-01-01T00 … 2026-01-11T00, 6-hourly
 
 
-def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=None):
+def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=None, raw_run=False, raw_ivt=False):
     src = os.path.join(ROOT, "data", "results")
     root = os.path.join(tmpdir, "webroot")
     os.makedirs(root)
@@ -700,9 +752,10 @@ def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=No
     json.dump({"weeks": []}, open(os.path.join(data_dir, "weeks.json"), "w"))
     if raw_frames is not None:
         _build_raw_fixture(data_dir, frames=raw_frames,
-                           cutoff=raw_cutoff if raw_cutoff is not None else raw_frames[-1])
+                           cutoff=raw_cutoff if raw_cutoff is not None else raw_frames[-1],
+                           run=raw_run, ivt=raw_ivt)
     else:
-        _build_raw_fixture(data_dir)
+        _build_raw_fixture(data_dir, run=raw_run, ivt=raw_ivt)
     if with_timeline:
         tl = _gd_timeline()
         json.dump(tl, open(os.path.join(data_dir, "global_timeline.json"), "w"))
@@ -718,6 +771,33 @@ def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=No
                             "start": e["start"], "end": e["end"],
                             "details": {"region": "e2e"}})
             json.dump(sel, open(sel_p, "w"))
+        # gm5 viz.json: PRIME-MERIDIAN AR with a continuous east-ordered
+        # lon array (350..380) and a blob straddling lon 0 -- exactly the
+        # shape ewb's seam-safe crop emits after the 0-deg fix (schema 3,
+        # '/'-joined mask rows, uint8-scaled ivt per the eventviz decoder)
+        import base64
+        ev_dir = os.path.join(data_dir, "events", "gm5")
+        os.makedirs(ev_dir, exist_ok=True)
+        lat = [50.0 + j for j in range(11)]
+        lon = [350.0 + i for i in range(31)]          # continuous: 350E -> 380E (= 20E)
+        rows = ["".join("1" if (8 <= i <= 12 and 4 <= j <= 7) else "0"
+                        for i in range(31)) for j in range(11)]
+        ivt = bytearray(11 * 31)
+        for j in range(11):
+            for i in range(31):
+                ivt[j * 31 + i] = 200 if (8 <= i <= 12 and 4 <= j <= 7) else 100
+        entry = {"status": "ok", "area_cells": 20, "mask": "/".join(rows),
+                 "ivt": {"b64": base64.b64encode(bytes(ivt)).decode(),
+                         "shape": [11, 31], "lo": 0.0, "hi": 1000.0}}
+        json.dump({"schema": 3, "kind": "ar_ivt", "event_type": "atmospheric_river",
+                   "truth_source": "era5", "ivt_threshold_kg_m_s": 250,
+                   "grid": {"lat": lat, "lon": lon, "cell_deg": 1.0},
+                   "obs": {"anchor_time": "2026-01-03 12:00", "area_cells": 20,
+                           "mask": "/".join(rows),
+                           "ivt": {"b64": base64.b64encode(bytes(ivt)).decode(),
+                                   "shape": [11, 31], "lo": 0.0, "hi": 1000.0}},
+                   "models": {"aifs_single": {"24": dict(entry)}}},
+                  open(os.path.join(ev_dir, "viz.json"), "w"))
     return root
 
 
@@ -732,11 +812,17 @@ def _gd_server(root):
 RAW_TS = ["2025110600", "2025110606", "2025110612"]  # 6-hourly, ts2 is past cutoff
 
 
-def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None):
+def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=False, ivt=False):
     """raw_exceedance asset per the contract in channel_design_frontend.md:
     zlib'd layer-major bitpacked rows (heat,freeze,ar; ny x ceil(nx/8),
     row 0 = lat0 lowest, MSB-first). 5-deg grid; heat blob mid-pacifica,
-    freeze blob south, AR band north — distinct so pixel checks can differ."""
+    freeze blob south, AR band north — distinct so pixel checks can differ.
+    run=True adds the duration sidecars of channel_consecutive_days: index
+    gets `dur`, every frame a `<ts>.run` (zlib, u8 planes heat/freeze ny*nx)
+    with runs for heat: 2 (unpainted), 3 (bin0), 14+ (bin4); freeze unchanged
+    1/7+; a fourth heat bit cell is added with run=0 (must stay unpainted).
+    ivt=True adds AR IVT class plane sidecars (.ivt) with 5 bins (250-500,
+    500-750, 750-1000, 1000-1250, >=1250 kg m-1 s-1) for the AR layer."""
     import zlib
     frames = frames or RAW_TS
     cutoff = cutoff or RAW_TS[1]
@@ -746,10 +832,15 @@ def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None):
     stride = (nx + 7) // 8
     rd = os.path.join(data_dir, "raw_exceedance")
     os.makedirs(rd, exist_ok=True)
-    json.dump({"schema": 1, "generated": "2025-11-06T12:00:00Z", "grid": g,
-               "frames": frames, "cutoff": cutoff,
-               "window": {"start": frames[0][:8], "end": frames[-1][:8]}},
-              open(os.path.join(rd, "index.json"), "w"))
+    idx = {"schema": 1, "generated": "2025-11-06T12:00:00Z", "grid": g,
+           "frames": frames, "cutoff": cutoff,
+           "window": {"start": frames[0][:8], "end": frames[-1][:8]}}
+    if run:
+        idx["dur"] = {"rev": "v1", "seed": frames[0]}
+    if ivt:
+        idx["ivt"] = {"schema": 1, "bins": [250, 500, 750, 1000, 1250]}
+        idx["schema"] = 3  # v3 with IVT class planes
+    json.dump(idx, open(os.path.join(rd, "index.json"), "w"))
     for k, ts in enumerate(frames):
         layers = [bytearray(ny * stride) for _ in range(3)]
         blobs = [(18 + k % 12, 30), (6 + k % 6, 10), (28, 40 + (k % 5) * 6)]
@@ -757,6 +848,12 @@ def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None):
             b = layers[li]
             b[j * stride + (i >> 3)] |= 1 << (7 - (i & 7))
             b[j * stride + ((i + 1) >> 3)] |= 1 << (7 - ((i + 1) & 7))
+        if run:
+            jh, ih = blobs[0]
+            # Add third and fourth heat cells for run=0 (unpainted) and run=14 (bin4)
+            # Space them well apart: 20 columns ~ 20*5=100 deg ~ 200px in Equal Earth at 5N
+            layers[0][jh * stride + ((ih + 20) >> 3)] |= 1 << (7 - ((ih + 20) & 7))
+            layers[0][jh * stride + ((ih + 40) >> 3)] |= 1 << (7 - ((ih + 40) & 7))
         if ts == drop_ts:
             p = os.path.join(rd, ts + ".bin")
             if os.path.exists(p):
@@ -764,6 +861,53 @@ def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None):
             continue
         with open(os.path.join(rd, ts + ".bin"), "wb") as f:
             f.write(zlib.compress(b"".join(bytes(x) for x in layers)))
+        if run:
+            jh, ih = blobs[0]
+            planes = bytearray(2 * ny * nx)
+            # heat plane (li=0): run=2 at (j,i), run=3 at (j,i+1), run=0 at (j,i+20), run=14 at (j,i+40)
+            planes[0 * ny * nx + jh * nx + ih] = 2       # unpainted (< 3)
+            planes[0 * ny * nx + jh * nx + ih + 1] = 3   # bin 0
+            planes[0 * ny * nx + jh * nx + ih + 20] = 0   # unpainted (= 0)
+            planes[0 * ny * nx + jh * nx + ih + 40] = 14  # bin 4
+            # freeze plane (li=1): unchanged 1/7+
+            for li, (j, i) in enumerate(blobs[1:2]):
+                planes[(li + 1) * ny * nx + j * nx + i] = 1
+                planes[(li + 1) * ny * nx + j * nx + i + 1] = 7
+            with open(os.path.join(rd, ts + ".run"), "wb") as f:
+                f.write(zlib.compress(bytes(planes)))
+        if ivt:
+            # AR IVT class plane: create a u8 grid with classes 1-5 for AR cells
+            # AR blob is at blobs[2] = (28, 40 + (k % 5) * 6)
+            j_ar, i_ar = blobs[2]
+            # First, ensure the AR mask in the .bin file has these cells set
+            # The layers[2] (AR layer) needs to have bits set for the AR cells
+            # We set cells at (j_ar, i_ar) through (j_ar, i_ar+4) in the AR layer
+            for di in range(5):
+                if i_ar + di < nx:
+                    col = i_ar + di
+                    layers[2][j_ar * stride + (col >> 3)] |= 1 << (7 - (col & 7))
+            # Now create the .ivt file with classes 1-5
+            ivt_plane = bytearray(ny * nx)  # u8, initialized to 0
+            # Mark AR cells with different classes for testing
+            # Class 1: cell at (j_ar, i_ar)
+            ivt_plane[j_ar * nx + i_ar] = 1
+            # Class 2: cell at (j_ar, i_ar + 1)
+            if i_ar + 1 < nx:
+                ivt_plane[j_ar * nx + i_ar + 1] = 2
+            # Class 3: cell at (j_ar, i_ar + 2)
+            if i_ar + 2 < nx:
+                ivt_plane[j_ar * nx + i_ar + 2] = 3
+            # Class 4: cell at (j_ar, i_ar + 3)
+            if i_ar + 3 < nx:
+                ivt_plane[j_ar * nx + i_ar + 3] = 4
+            # Class 5: cell at (j_ar, i_ar + 4)
+            if i_ar + 4 < nx:
+                ivt_plane[j_ar * nx + i_ar + 4] = 5
+            with open(os.path.join(rd, ts + ".ivt"), "wb") as f:
+                f.write(zlib.compress(bytes(ivt_plane)))
+            # Also update the .bin file with the new AR layer
+            with open(os.path.join(rd, ts + ".bin"), "wb") as f:
+                f.write(zlib.compress(b"".join(bytes(x) for x in layers)))
 
 
 @pytest.fixture(scope="module")
@@ -771,6 +915,29 @@ def raw_server(tmp_path_factory):
     # middle frame's .bin deliberately missing -> graceful-state path
     root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-raw")), with_timeline=False)
     _build_raw_fixture(os.path.join(root, "data", "results"), drop_ts=RAW_TS[0])
+    srv, url = _gd_server(root)
+    yield url
+    srv.shutdown()
+
+
+@pytest.fixture(scope="module")
+def ar_ramp_server(tmp_path_factory):
+    """AR ramp lane: index carries `ivt` schema 3 and every frame has a `.ivt`
+    sidecar with AR IVT class planes (5 bins). AR layer paints with stepped
+    green ramp instead of solid green; binary fallback still works."""
+    root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-ar-ramp")),
+                             with_timeline=False, raw_ivt=True)
+    srv, url = _gd_server(root)
+    yield url
+    srv.shutdown()
+
+
+@pytest.fixture(scope="module")
+def dur_server(tmp_path_factory):
+    """Duration-ramp lane (channel_consecutive_days): index carries `dur` and
+    every frame has a `.run` sidecar (heat/freeze runs 1/7+ + a run=0 bit cell)."""
+    root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-dur")),
+                             with_timeline=False, raw_run=True)
     srv, url = _gd_server(root)
     yield url
     srv.shutdown()
@@ -814,22 +981,73 @@ def test_merged_renders_layers_boxes_and_gantt(gd_server, page_ctx):
     page = page_ctx
     _mm_goto(page, gd_server)
     assert page.is_visible("#raw-canvas")
-    assert "4 events" in page.inner_text("#gm-count")
-    assert page.locator("#gm-gantt .gm-bar").count() == 4
-    # boot parks on the busiest step (G-11): 03 Jan 18:00 — gf1 + gm4 live
+    assert "5 events" in page.inner_text("#gm-count")
+    assert page.locator("#gm-gantt .gm-bar").count() == 5
+    # boot parks on the busiest step (G-11): 03 Jan 18:00 — gf1 + gm4 + gm5 live
     assert "03 Jan 2026" in page.inner_text("#raw-readout")
-    assert page.locator("#gm-boxes .gm-ev").count() == 2
-    # 02 Jan 06:00: freeze gf1 (qualified 06:00) + dateline AR gm4 are live
+    assert page.locator("#gm-boxes .gm-ev").count() == 3
+    # 02 Jan 06:00: freeze gf1 (qualified 06:00) + dateline AR gm4 + PM AR gm5 are live
     _mm_frame(page, "2026010206")
     assert "02 Jan 2026" in page.inner_text("#raw-readout")
     assert "06:00 UTC" in page.inner_text("#raw-readout")
     ids = page.eval_on_selector_all("#gm-boxes .gm-ev", "els => els.map(e => e.dataset.id).sort()")
-    assert ids == ["gf1", "gm4"], ids
+    assert ids == ["gf1", "gm4", "gm5"], ids
     # the dateline box renders SPLIT into two rects (wrapped bbox -> two paths)
     d = page.get_attribute("#gm-boxes .gm-ev[data-id=gm4] path.gm-bbox", "d")
     assert d.count("M") == 2, d
     assert page.errors == [], f"console errors: {page.errors}"
     page.screenshot(path=os.path.join(SHOTS, "fe-merged-fixture.png"))
+
+
+def test_merged_prime_meridian_box_contiguous(gd_server, page_ctx):
+    """350E→20E AR (the Oct-3 UK/eastward producer form) on the merged map:
+    ONE minimal arc across the prime meridian — no ±180 split, no globe wrap."""
+    page = page_ctx
+    _mm_goto(page, gd_server)
+    _mm_frame(page, "2026010206")
+    d = page.get_attribute("#gm-boxes .gm-ev[data-id=gm5] path.gm-bbox", "d")
+    assert d.count("M") == 1, d                     # not split at ±180
+    m = page.evaluate("""() => {
+        const b = document.querySelector('#gm-boxes .gm-ev[data-id=gm5] path.gm-bbox').getBBox();
+        const vb = document.querySelector('#gm-boxes').viewBox.baseVal;
+        return {span: b.width / vb.width, mid: b.x + b.width / 2 - (vb.x + vb.width / 2)};
+    }""")
+    assert m["span"] < 0.25, m                      # a 30° arc is <10% width; a globe wrap ~full
+    assert m["mid"] > 0, m                          # arc centre (≈5°E) sits east of lon 0
+    # dateline box still splits at ±180 correctly (regression guard)
+    d2 = page.get_attribute("#gm-boxes .gm-ev[data-id=gm4] path.gm-bbox", "d")
+    assert d2.count("M") == 2, d2
+    assert page.errors == [], f"console errors: {page.errors}"
+
+
+def test_detail_prime_meridian_field_and_box(gd_server, page_ctx):
+    """Leaflet detail for the 350E→20E AR: field grid (continuous 350→380)
+    and the dashed box share ONE world copy, the box span stays minimal and
+    the fit shows field and box in a single view (no seam, no lost half)."""
+    page = page_ctx
+    _open_event(page, gd_server, "gm5")
+    page.wait_for_function("() => window.__ev3 && window.__ev3.maps.length > 0", timeout=20000)
+    r = page.evaluate("""() => {
+        const m = window.__ev3.maps[0], b = window.__ev3.boxRect;
+        let ob = null;
+        m.eachLayer(l => { if (l.options && (l.options.className || '')
+                .split(' ').includes('ev3-field') && l.getBounds)
+            ob = l.getBounds(); });                       // the AR field imageOverlay
+        const vb = m.getBounds();
+        return {boxSpan: b[1][1] - b[0][1], ovW: ob && ob.getWest(), ovE: ob && ob.getEast(),
+                viewW: vb.getWest(), viewE: vb.getEast()};
+    }""")
+    assert r["boxSpan"] < 60, r                     # 30° arc + 2×13.5° pad; a wrap form is ~330°+
+    # occFit zooms to the OCCUPIED blob (A4 contract), so require: the blob
+    # is fully in view, and the overlay sits on the CONTINUOUS eastward
+    # window (≈349.5→380.5) sharing the view's world copy — a min/max stitch
+    # or a copy-mismatched box puts the field off-screen (the Oct-3 bug).
+    assert 349 <= r["ovW"] <= 351 and 379 <= r["ovE"] <= 381, r
+    assert r["viewW"] <= 358.0 and r["viewE"] >= 362.0, r      # blob (lon 358–362) fully visible
+    assert r["viewW"] >= r["ovW"] - 90, r                     # view is on the overlay's copy, not a jump
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], errs
+    page.screenshot(path=os.path.join(SHOTS, "fe-pm-detail.png"))
 
 
 def test_merged_box_appears_at_qualified_and_gone_after_end(gd_server, page_ctx):
@@ -1115,3 +1333,210 @@ def test_raw_section_honest_without_data(live_url, page_ctx):
     errs = [e for e in page.errors
             if "Failed to load resource" not in e and "raw exceedance" not in e.lower()]
     assert errs == [], f"unexpected page errors: {errs}"
+
+
+# ---------------------------------------------------------------------------
+# AR ramp (atmospheric river IVT class plane tests)
+# ---------------------------------------------------------------------------
+
+# AR ramp bins paint opaque (mergedmap RUN_ALPHA rule): canvas RGB == token.
+# AR fixture truth: frame 2025110606 (k=1) has the AR blob at row j=28, cols
+# i=46..50 carrying classes 1..5; 2025110612 is PAST the fixture cutoff, so
+# ramp tests must drive 2025110606.
+_AR_CENSUS_JS = """() => {
+    const d = MergedMap._dbg();
+    const bins = [0, 1, 2, 3, 4].map((b) => d.ramp(2, b).slice(0, 3));
+    if (!bins.every(Boolean)) return { arPixels: 0, classes: [] };
+    const cv = document.querySelector('#raw-canvas');
+    const px = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    let arPixels = 0; const classes = new Set();
+    for (let i = 0; i < px.length; i += 4) {
+        if (px[i + 3] === 0) continue;
+        const p = [px[i], px[i + 1], px[i + 2]];
+        for (let b = 0; b < 5; b++) {
+            if (bins[b].every((v, k) => Math.abs(v - p[k]) <= 12)) {
+                arPixels++; classes.add(b + 1); break;
+            }
+        }
+    }
+    return { arPixels, classes: [...classes] };
+}"""
+
+
+def _ar_ramp_wait(page, base, hash_):
+    page.goto(base + "/" + hash_)
+    page.wait_for_function("MergedMap._dbg().mounted === true", timeout=20000)
+    page.wait_for_function(
+        "document.querySelector('#raw-readout').textContent.includes('Valid time')",
+        timeout=20000)
+    page.locator("#raw-canvas").scroll_into_view_if_needed()
+    page.wait_for_timeout(400)   # frame promise resolves + canvas painted
+
+
+def test_ar_ramp_paints_class_plane(ar_ramp_server, page_ctx):
+    """2026-10-03-style check on the fixture: AR pixels > 0 and >= 2 distinct
+    ramp classes on the canvas; the fetched class plane decodes cell-true."""
+    page = page_ctx
+    _ar_ramp_wait(page, ar_ramp_server, "#map=2025110606&layers=a")
+    # sidecar fetch + decode matches the fixture truth (classes 1..5 at j=28)
+    assert page.evaluate(
+        "[...Array(5)].map((_, d) => MergedMap._dbg().ivtAt(28, 46 + d))") == [1, 2, 3, 4, 5]
+    census = page.evaluate(_AR_CENSUS_JS)
+    assert census["arPixels"] > 0, census
+    assert len(census["classes"]) >= 2, census
+    # hover over the class-3 cell (lon 60E, lat 50N) shows its IVT bin
+    box = page.evaluate("""() => {
+        const d = MergedMap._dbg(), g = d.grid;
+        const p = d.project([g.lon0 + 48 * g.step_lon, g.lat0 + 28 * g.step_lat]);
+        const r = document.querySelector('#raw-canvas').getBoundingClientRect();
+        return { x: r.left + p[0], y: r.top + p[1] }; }""")
+    page.mouse.move(box["x"] - 60, box["y"])   # start off-cell: no stale tooltip
+    page.mouse.move(box["x"], box["y"])
+    page.wait_for_selector("#tooltip:not(.hidden)", timeout=3000)
+    assert "750\u20131000" in page.inner_text("#tooltip")
+    page.mouse.move(5, 5)   # pointerleave: tooltip must clear
+    page.wait_for_function("document.querySelector('#tooltip').classList.contains('hidden')",
+                           timeout=3000)
+
+
+def test_ar_ramp_legend_shows_5_steps(ar_ramp_server, page_ctx):
+    """Legend: 5 swatches stepped 250/500/750/1000/1250 kg m-1 s-1."""
+    page = page_ctx
+    _ar_ramp_wait(page, ar_ramp_server, "#map=2025110606&layers=a")
+    page.wait_for_selector("#gm-legend:not(.hidden)", timeout=20000)
+    sw = page.locator("#gm-legend .swatch")
+    assert sw.count() == 5
+    titles = [sw.nth(i).get_attribute("title") for i in range(5)]
+    assert [t.split()[0] for t in titles] == ["250", "500", "750", "1000", "1250"], titles
+    assert "AR IVT" in page.inner_text("#gm-legend")
+
+
+def test_ar_ramp_fallback_without_class_plane(ar_ramp_server, page_ctx):
+    """Class plane 404 -> ARs still paint via the binary fallback (the
+    AR-outage bug class: never let the fallback depend on the sidecar)."""
+    page = page_ctx
+    page.route("**/*.ivt", lambda r: r.fulfill(
+        status=404, content_type="application/octet-stream", body=""))
+    _ar_ramp_wait(page, ar_ramp_server, "#map=2025110606&layers=a")
+    assert page.evaluate("MergedMap._dbg().ivtAt(28, 46)") == 0   # no plane
+    n = page.evaluate("""() => {
+        const d = MergedMap._dbg(), c = d.packed(2).slice(0, 3);
+        const cv = document.querySelector('#raw-canvas');
+        const px = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        let n = 0;
+        for (let i = 0; i < px.length; i += 4) {
+            if (c.every((v, k) => Math.abs(v - px[i + k]) <= 12)) n++;
+        }
+        return n; }""")
+    assert n > 0, "binary AR pixels missing while the .ivt sidecar is 404"
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], errs
+
+
+# ---------------------------------------------------------------------------
+# consecutive-day duration layers (channel_consecutive_days acceptance 5-8)
+# ---------------------------------------------------------------------------
+
+# Reads the main canvas at heat cells: run=2 (unpainted), run=3 (bin0),
+# run=0 (unpainted), run=14 (bin4). The effective painted colour is computed
+# from the app's own ramp pack (colour+alpha) blended over --map-ocean.
+_BIN_PROBE_JS = """(({ j, i }) => {
+    const d = MergedMap._dbg(), g = d.grid;
+    const cv = document.querySelector('#raw-canvas');
+    const px = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    const varRgb = (v) => { const s = document.createElement('span'); s.style.color = v;
+        document.body.appendChild(s); const m = getComputedStyle(s).color.match(/\\d+/g);
+        s.remove(); return m.map(Number); };
+    const ground = varRgb('var(--map-ocean)');
+    const eff = (bin) => { const c = d.ramp(0, bin), t = c[3] / 255;
+        return c.slice(0, 3).map((v, k) => v * t + ground[k] * (1 - t)); };
+    const win = (ci, dx) => {
+        const p = d.project([g.lon0 + ci * g.step_lon, g.lat0 + j * g.step_lat]);
+        const x = Math.round(p[0] * d.dpr) + dx, y = Math.round(p[1] * d.dpr);
+        // Use 3x3 window instead of 7x7 to avoid overlap between adjacent cells
+        const out = [];
+        for (let dy = -1; dy <= 1; dy++) for (let ddx = -1; ddx <= 1; ddx++) {
+            const k = 4 * ((y + dy) * cv.width + x + ddx);
+            out.push([px[k], px[k + 1], px[k + 2]]); }
+        return out; };
+    const near = (a, b) => a.every((v, k) => Math.abs(v - b[k]) <= 35);
+    const count = (cells, col) => cells.reduce((s, c) =>
+        s + c.filter((p) => near(p, col)).length, 0);
+    const e0 = eff(0), e4 = eff(4);
+    const allBins = [eff(0), eff(1), eff(2), eff(3), eff(4)];
+    const isNearAnyBin = (p) => allBins.some(b => near(p, b));
+    return { bin0: count([win(i + 1, 0)], e0),  // run=3 -> bin0
+             bin4: count([win(i + 40, 0)], e4),  // run=14 -> bin4
+             unpaintedRun2: win(i, 5).every((p) => !isNearAnyBin(p)),  // run=2
+             unpaintedRun0: win(i + 20, 5).every((p) => !isNearAnyBin(p)) }; // run=0
+})"""
+
+
+def test_dur_ramp_bins_painted_and_zero_unpainted(dur_server, page_ctx):
+    """Acceptance 5: with `.run` sidecars the heat layer paints run=3 (bin0) and
+    run=14 (bin4) in distinct ramp colours at the fixture cells, and cells with
+    run=0 and run=2 stay unpainted (heat only appears at run>=3)."""
+    page = page_ctx
+    _mm_goto(page, dur_server)
+    _mm_frame(page, RAW_TS[1])               # frame k=1: heat blob row j=19, cols 30/31/50/70
+    got = page.evaluate(_BIN_PROBE_JS, {"j": 19, "i": 30})
+    assert got["bin0"] >= 1 and got["bin4"] >= 1, got
+    assert got["unpaintedRun2"] is True, f"run=2 should be unpainted: {got}"
+    assert got["unpaintedRun0"] is True, f"run=0 should be unpainted: {got}"
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"   # 404 = the fixture's absent timeline
+
+
+def test_dur_fallback_binary_without_run(raw_server, page_ctx):
+    """Acceptance 6: a lane whose index has no `dur` (no .run files at all)
+    still paints the binary heat layer, with no console errors (no .run
+    fetches are even attempted)."""
+    page = page_ctx
+    page.goto(raw_server + "/#raw=2025110606&layers=h")
+    page.wait_for_function(
+        "document.querySelector('#raw-readout').textContent.includes('06:00 UTC')",
+        timeout=20000)
+    page.wait_for_function(_HEAT_PIXEL_JS, timeout=10000)
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"
+
+
+def test_dur_chip_labels_gradient_and_tips(dur_server, page_ctx):
+    """Acceptance 7: the chip row is the ramp legend — heat/freeze labels
+    carry 'days', their swatches are 5-stop gradients, AR stays solid; the
+    heat tip states minimum 3 days and most-intense=14+; freeze unchanged."""
+    page = page_ctx
+    _mm_goto(page, dur_server)
+    chips = page.locator("#raw-layers .gm-chip")
+    assert chips.count() == 3
+    labels = chips.all_inner_texts()
+    assert "days > P85" in labels[0] and "days < P15" in labels[1]
+    assert "IVT" in labels[2]
+    sw = page.eval_on_selector_all("#raw-layers .gm-chip i",
+                                   "els => els.map(e => e.style.background)")
+    assert sw[0].startswith("linear-gradient") and sw[1].startswith("linear-gradient")
+    assert "var(--dur-ar-5)" in sw[2]   # AR chip is the IVT ramp legend since 2026-11-09 brief
+    tips = page.eval_on_selector_all("#raw-layers .gm-chip",
+                                     "els => els.map(e => e.title)")
+    assert "minimum 3 days" in tips[0] and "most intense = 14+ days" in tips[0]
+    assert "all four 6-hourly steps" in tips[0]
+    assert "P15" in tips[1]
+    assert "most intense = 7+ days" in tips[1]  # freeze unchanged
+    # toggle/URL semantics ride along: clicking freeze off writes layers=h,a
+    chips.nth(1).click()
+    assert "layers=h,a" in page.evaluate("decodeURIComponent(location.hash)")
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"   # 404 = the fixture's absent timeline
+
+
+def test_merged_event_tooltip_shows_span_days(gd_server, page_ctx):
+    """Acceptance 8: the box and gantt tooltips carry the event length
+    '· N days' (calendar span, end exclusive) — gm4 spans 02→05 Jan = 3 days."""
+    page = page_ctx
+    _mm_goto(page, gd_server)
+    _mm_frame(page, "2026010206")
+    box = page.evaluate("document.querySelector('#gm-boxes .gm-ev[data-id=gm4] title').textContent")
+    bar = page.evaluate("document.querySelector('#gm-gantt .gm-bar[data-id=gm4] title').textContent")
+    assert "· 3 days" in box, box
+    assert "· 3 days" in bar, bar
+    assert page.errors == [], f"console errors: {page.errors}"

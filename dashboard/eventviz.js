@@ -1,15 +1,21 @@
 /* eventviz.js — per-event visual (consecutive-day maps, AR IVT + mask overlap).
  * Design-owned. Renders viz.json (schema 1-3, built by ewb_live/viz) into
- * a host element as a row of synced real-geography Leaflet maps.
+ * a host element as ONE real-geography Leaflet map: the observed field is
+ * the base overlay and every selected model stacks on it as its own layer
+ * (briefs/event_view_overlay.md — one card per event with per-layer color /
+ * opacity / visibility controls).
  *   EventViz.load(id) -> Promise<viz|null>   (silent 404 -> null)
  *   EventViz.render(host, viz, ev, opts)     (idempotent; re-call on theme flip)
- *     opts.models  optional array of model names: render observed + ONLY those
- *                  maps (opts.baseline, default 'ifs_hres', is forced in when
- *                  present; a chip picker drives interactive re-selection and
- *                  reports back through EventViz.onModels).
- *     opts.baseline optional baseline model name for the forced-in + locked chip.
- *   EventViz.initialLead lead (hours) to start on; EventViz.onLead(lead) and
- *   EventViz.onModels([names]) host hooks fire on user changes (and once at
+ *     opts.models  optional array of model names (scorecard hint); overlay
+ *                  mode ignores it for visibility — defaults are baseline
+ *                  (opts.baseline, default 'ifs_hres') + the first 2 roster
+ *                  models with data at the initial lead (contract §1).
+ *     opts.layers  serialized layer state 'name|hex6|op%|01,...' (URL #lyr=).
+ *     opts.day     valid-time index into window.days (URL #day=), clamped.
+ *     opts.baseline optional baseline model name (default visible + color seed).
+ *   EventViz.initialLead lead (hours) to start on; EventViz.onLead(lead),
+ *   EventViz.onModels([names]), EventViz.onLayers(serialized) and
+ *   EventViz.onDay(index|'') host hooks fire on user changes (and once at
  *   build time for onLead) so deep links stay in sync.
  *
  * Design language follows Neil Gordon's Weather Explorer (MIT licensed,
@@ -18,13 +24,12 @@
  * obvious. The mask-overlap contours use a marching-squares boundary trace
  * adapted from the same MIT codebase pattern.
  *
- * Panels: observed first, then one per model-with-data at the selected lead;
- * all maps share one view (moveend sync, guarded against echo). The field is
- * drawn on an offscreen canvas at 2x bilinear upsample and laid down as an
- * L.imageOverlay over the grid extent. Dashed event box, 5° graticule,
- * CARTO dark/light tiles with a one-shot OSM fallback. No-data models render
- * as one reason line instead of blank panels. Without window.L (vendored
- * Leaflet missing) the module degrades to the old canvas-square renderers. */
+ * Each layer is an offscreen-canvas raster laid down as an L.imageOverlay
+ * over the grid extent; its color, opacity and visibility come from the
+ * per-layer state map. Dashed event box, 10° graticule, Esri gray tiles
+ * with a one-shot OSM fallback. Models without data at the lead are listed
+ * as one reason line. Without window.L (vendored Leaflet missing) the
+ * module degrades to the old canvas-square renderers. */
 (function () {
   'use strict';
 
@@ -209,7 +214,9 @@
         ? (viz.obs.mask ? unpackMask(viz.obs.mask, ny) : null)
         : (viz.obs.consec ? unpackU8(viz.obs.consec) : null);
       if (!rows) return rawBox;
-      let s = 90, n = -90, w = 180, e = -180, k = 0;
+      // init ±Infinity (not ±180): a grid entirely >180 (continuous 350→380
+      // prime-meridian window) could never lower a 180-seeded w → 211° fit
+      let s = 90, n = -90, w = Infinity, e = -Infinity, k = 0;
       // antimeridian-safe: track longitude in continuous coords relative to
       // the first occupied cell (AR events cross 180°; the old w>e bail-out
       // fell back to the padded rawBox → hemisphere view, owner bug A4).
@@ -268,14 +275,10 @@
     s.id = STYLE_ID;
     s.textContent = [
       '.ev3-root{margin:0}',
-      '.ev3-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(540px,100%),540px));justify-content:center;gap:12px}',
       '.ev3-panel{background:var(--bg-panel);border:1px solid var(--border);border-radius:10px;' +
         'padding:8px;min-width:0;box-shadow:var(--shadow)}',
       '.ev3-head{display:flex;align-items:baseline;gap:6px;margin:0 2px 6px}',
       '.ev3-head b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:auto}',
-      '.ev3-chip{font-size:10.5px;color:var(--text-dim);background:var(--bg-inset);' +
-        'border:1px solid var(--border);border-radius:999px;padding:1px 7px;white-space:nowrap;' +
-        'font-variant-numeric:tabular-nums}',
       '.ev3-fsbtn{flex:none;width:22px;height:22px;line-height:1;padding:0;border-radius:6px;cursor:pointer;' +
         'background:var(--bg-inset);border:1px solid var(--border);color:var(--text-dim);font-size:12px}',
       '.ev3-fsbtn:hover{color:var(--text);border-color:var(--accent)}',
@@ -284,15 +287,20 @@
       '.ev3-obsblock{margin-bottom:12px}',
       '.ev3-panel.ev3-obs .ev3-map{height:500px}',
       '.ev3-panel.ev3-obs{max-width:780px;margin-inline:auto}',
-      '.ev3-picker{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 2px 10px}',
-      '.ev3-picker button.on{background:var(--alabaster);border-color:var(--border);' +
-        'color:var(--matte-black);font-weight:500;box-shadow:inset 3px 0 0 var(--matte-black)}',
-      '.ev3-picker button.locked{cursor:default}',
-      // A5 (owner 2026-11-07): no struck-through chips — unavailable models
-      // are hidden from the selector and reported in the info line instead.
-      '.ev3-picker button.dis{display:none}',
-      '.ev3-foot{font-size:11px;color:var(--text-dim);margin:6px 2px 0;min-height:14px}',
-      '.ev3-nodata{font-size:11.5px;color:var(--text-dim);margin-top:8px;font-style:italic}',
+      '.ev3-layers{display:flex;flex-direction:column;gap:4px;margin:8px 2px 0;font-size:11.5px}',
+      '.ev3-layer{display:flex;align-items:center;gap:8px;min-width:0}',
+      '.ev3-layer.off .ev3-lop{opacity:.45},.ev3-layer.off .ev3-lsw{filter:grayscale(.8)}',  // axe: never dim text (contrast)
+      '.ev3-lsw{display:flex;align-items:center;gap:6px;flex:none}',
+      '.ev3-lcol{width:22px;height:18px;padding:0;border:1px solid var(--border);border-radius:4px;' +
+        'background:none;cursor:pointer}',
+      '.ev3-lname{font-size:11.5px;max-width:16ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.ev3-lop{width:90px;flex:none}',
+      '.ev3-lopv{font-size:10.5px;color:var(--text-dim);width:3.5ch;flex:none;font-variant-numeric:tabular-nums}',
+      '.ev3-lsum{font-size:10.5px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.ev3-layer.dis .ev3-lsw,.ev3-layer.dis .ev3-lop{opacity:.55}',
+      '.ev3-slider{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}',
+      '.ev3-srange{width:min(220px,36vw)}',
+      '.ev3-readout{font-size:11.5px;color:var(--text-dim);font-variant-numeric:tabular-nums;white-space:nowrap}',
       '.ev3-cbrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:2px 2px 4px;padding-bottom:18px}',
       '.ev3-cb{position:relative;width:min(300px,60vw)}',
       '.ev3-cb canvas{display:block;width:100%;height:12px;border:1px solid var(--border);border-radius:6px}',
@@ -303,7 +311,6 @@
       '.ev3-cb-label{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}',
       '.ev3-panel .leaflet-control-attribution{font-size:9px}',
       '.ev3-cb-note{font-size:11px;font-style:italic;color:var(--text-dim);max-width:60ch}',
-      '.ev3-fill.on{background:var(--accent);color:#fff;border-color:var(--accent)}',
       '.ev3-panel.ev3-fs{position:fixed;inset:16px;z-index:2600;display:flex;flex-direction:column;margin:0}',
       '.ev3-panel.ev3-fs .ev3-map{flex:1;height:auto;min-height:0}',
       '.ev3-panel.ev3-fs .leaflet-container{font:inherit}',
@@ -413,6 +420,33 @@
     return c.toDataURL('image/png');
   }
 
+  /* duration raster (overlay contract §2): solid layer colour per cell, the
+     consecutive-DAY run rides the ALPHA — bins mirror the front page
+     (mergedmap heatRunBin/freezeRunBin): heat 3 / 4 / 5-6 / 7-13 / 14+ with
+     nothing under 3 painted (the site-wide minimum-3-day heat rule), freeze
+     1 / 2 / 3 / 4-6 / 7+. Alpha steps 115..215 carry the classes here since
+     the detail map has a single tier colour per layer. */
+  function durAlpha(r, heat) {
+    if (heat) return r >= 14 ? 215 : r >= 7 ? 190 : r >= 5 ? 165 : r >= 4 ? 140 : r >= 3 ? 115 : 0;
+    return r >= 7 ? 215 : r >= 4 ? 190 : r === 3 ? 165 : r === 2 ? 140 : r === 1 ? 115 : 0;
+  }
+  function durRasterURL(run, ny, nx, rgb, heat) {
+    const S = 8;
+    const c = document.createElement('canvas'); c.width = nx * S; c.height = ny * S;
+    const g = c.getContext('2d');
+    for (let r = 0; r < ny; r++) {
+      const row = run[ny - 1 - r];   // canvas row 0 = north edge
+      if (!row) continue;
+      for (let i = 0; i < nx; i++) {
+        const a = durAlpha(row[i] || 0, heat);
+        if (!a) continue;
+        g.fillStyle = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + (a / 255).toFixed(3) + ')';
+        g.fillRect(i * S, r * S, S, S);
+      }
+    }
+    return c.toDataURL('image/png');
+  }
+
   /* ---- marching-squares 0/1 mask boundary segments (lat/lon pairs) ---- */
   function maskContour(mask, lat, lon) {
     const ny = mask.length, nx = mask[0].length, segs = [];
@@ -493,7 +527,6 @@
       ? Math.round(viz.quantile * 100) : (viz.event_type === 'freeze' ? 15 : 85);
     const tierCSS = isAR ? '' : css(viz.event_type === 'freeze' ? '--tier-freeze' : '--tier-heat',
       viz.event_type === 'freeze' ? '#2171b5' : '#d9663c');
-    const tierRGB = isAR ? null : parseColor(tierCSS, viz.event_type === 'freeze' ? [33, 113, 181] : [217, 102, 60]);
     const tierLabel = 'P' + tierQ;
     const tierLegend = isAR ? null : {
       color: tierCSS, label: tierLabel,
@@ -505,7 +538,10 @@
     const cell = grid.cell_deg || Math.abs(grid.lat[1] - grid.lat[0]) || 1;
     const fieldBounds = (function () {
       const s = Math.min(grid.lat[0], grid.lat[ny - 1]), n = Math.max(grid.lat[0], grid.lat[ny - 1]);
-      const w = Math.min(grid.lon[0], grid.lon[nx - 1]), e = Math.max(grid.lon[0], grid.lon[nx - 1]);
+      // lon is EAST-ORDERED: a wrapped array (last < first, e.g. 350E→20E) is
+      // one continuous eastward window — never min/max (that spans nearly the
+      // whole globe and stitches a seam at the wrap meridian, the Oct-3 bug)
+      const w = grid.lon[0], e = grid.lon[nx - 1] >= w ? grid.lon[nx - 1] : grid.lon[nx - 1] + 360;
       return [[s - cell / 2, w - cell / 2], [n + cell / 2, e + cell / 2]];
     })();
 
@@ -517,23 +553,72 @@
     })();
     const allModels = Object.keys(viz.models);
     const baselineName = (opts && opts.baseline) || 'ifs_hres';
-    /* model selection: host-provided list (picker mode) or everything (old default) */
-    const pickerMode = !!(opts && Array.isArray(opts.models));
-    let sel = allModels.slice();
-    if (pickerMode) {
-      sel = opts.models.filter(function (m) { return allModels.indexOf(m) >= 0; });
-      if (allModels.indexOf(baselineName) >= 0 && sel.indexOf(baselineName) < 0) sel.unshift(baselineName);
-      sel = sel.slice(0, 4);
+    function hasDataAt(m, lead) {
+      const e = viz.models[m];
+      const entry = (e && typeof e === 'object' && !e.status) ? e[lead] : null;
+      return !!(entry && entry.status === 'ok');
     }
-    const ui = { lead: pickLead(leads),
-      // B: valid-time stepper starts on the event's anchor day (the frame the
-      // reference shows); AR has no daily stepping.
-      day: (function () {
-        if (isAR || !viz.obs || !viz.window || !Array.isArray(viz.window.days) || !viz.window.days.length) return null;
-        const i = viz.window.days.indexOf(viz.obs.anchor_day);
-        return i >= 0 ? i : viz.window.days.length - 1;
-      })(),
-      fill: false, sel: sel };
+    /* ---- initial view state (overlay contract §1 + §4, event-view channel)
+       visible by default: the baseline plus the next two roster models that
+       have data at the initial lead; observed is always a layer. opts.models
+       is a scorecard hint and does NOT change visibility here. The anchor day
+       (event peak) seeds the time slider; opts.day (host #day=) overrides. ---- */
+    const initialLead = pickLead(leads);
+    const initialSel = (function () {
+      const out = [];
+      if (hasDataAt(baselineName, initialLead)) out.push(baselineName);
+      allModels.forEach(function (m) {
+        if (out.length < 3 && m !== baselineName && hasDataAt(m, initialLead)) out.push(m);
+      });
+      return out;
+    })();
+    const anchorDay = (function () {
+      const days = (viz.window && viz.window.days) || [];
+      let d = viz.obs ? Math.max(0, days.indexOf(viz.obs.anchor_day)) : 0;
+      const o = opts && opts.day != null ? Math.round(+opts.day) : NaN;
+      if (isFinite(o) && days.length) d = Math.max(0, Math.min(days.length - 1, o));
+      return d;
+    })();
+    /* ---- scaffolding: root, toolbar (lead + time slider), AR colorbar row,
+       the single map card block ---- */
+    const root = document.createElement('div'); root.className = 'ev3-root';
+    host.appendChild(root);
+    const toolbar = document.createElement('div'); toolbar.className = 'ev-toolbar';
+    root.appendChild(toolbar);
+    /* colorbar row (AR only — heat/freeze use the single-swatch tier legend +
+       ramp note in the map's bottom bar; owner 2026-11-07 reference) */
+    const cbRow = document.createElement('div'); cbRow.className = 'ev3-cbrow';
+    if (isAR) {
+      const cb = { vmin: AR_FLOOR, vmax: AR_CAP, units: 'kg m\u207b\u00b9 s\u207b\u00b9' };
+      const lb = document.createElement('span'); lb.className = 'ev3-cb-label';
+      lb.textContent = 'scale';
+      const bar = document.createElement('div'); bar.className = 'ev3-cb';
+      const cv = document.createElement('canvas'); bar.appendChild(cv);
+      drawColorbar(cv, ramp);
+      // Owner 2026-11-08: AR ticks fixed at 250/400/600/800/1000 with the
+      // 400 detector threshold marked 'AR mask ≥400'.
+      [250, 400, 600, 800, 1000].forEach(function (v) {
+        const pct = 100 * (v - cb.vmin) / (cb.vmax - cb.vmin);
+        const s = document.createElement('span'); s.className = 'tick';
+        s.style.left = pct + '%';
+        if (Math.abs(v - arThr) < 1) {
+          s.classList.add('key');
+          s.textContent = v + '·mask';
+          s.title = 'AR mask threshold: IVT \u2265 ' + v + ' kg m\u207b\u00b9 s\u207b\u00b9';
+        } else s.textContent = tickLabel(v);
+        bar.appendChild(s);
+      });
+      const u = document.createElement('span'); u.className = 'ev3-cb-units';
+      u.textContent = cb.units;
+      cbRow.appendChild(lb); cbRow.appendChild(bar); cbRow.appendChild(u);
+    }
+    const obsBlock = document.createElement('div'); obsBlock.className = 'ev3-obsblock';
+    const ui = { lead: initialLead, day: isAR ? null : anchorDay, sel: initialSel.slice() };
+    const dur = document.createElement('div'); dur.className = 'ev-dur';
+    root.appendChild(cbRow);
+    if (!isAR) cbRow.style.display = 'none';   // B: single-swatch tier legend replaces the ramp scale
+    root.appendChild(obsBlock);
+    if (!isAR) root.appendChild(dur);   // §6 KEEP: cross-model duration bars
 
     /* view box: event box (bbox if available) padded ×1.9 */
     const box = (function () {
@@ -608,119 +693,11 @@
       return { label: name + ' #' + String(ev.id).slice(0, 6), at: nw || [lat / k, lon / k] };
     })();
 
-    /* ---- scaffolding ---- */
-    const root = document.createElement('div'); root.className = 'ev3-root';
-    host.appendChild(root);
-
-    const toolbar = document.createElement('div'); toolbar.className = 'ev-toolbar';
-    root.appendChild(toolbar);
-
-    /* colorbar row (AR only — heat/freeze use the single-swatch tier legend in
-       each panel's bottom bar; owner 2026-11-07 reference) */
-    const cb = { vmin: 200, vmax: 1100, units: 'kg m⁻¹ s⁻¹' };
-    if (isAR) { cb.vmin = AR_FLOOR; cb.vmax = AR_CAP; }
-    if (!isAR) {
-      cb.vmin = 1;
-      cb.vmax = Math.max(3, (viz.obs && viz.obs.max_consec) || 1);
-      for (const m of allModels) for (const l in viz.models[m]) {
-        const e = viz.models[m][l];
-        if (e && typeof e === 'object' && e.status === 'ok') cb.vmax = Math.max(cb.vmax, e.max_consec || 0);
-      }
-      cb.units = 'days';
-    }
-    const cbRow = document.createElement('div'); cbRow.className = 'ev3-cbrow';
-    (function () {
-      const lb = document.createElement('span'); lb.className = 'ev3-cb-label';
-      lb.textContent = 'scale';
-      const bar = document.createElement('div'); bar.className = 'ev3-cb';
-      const cv = document.createElement('canvas'); bar.appendChild(cv);
-      drawColorbar(cv, ramp);
-      // Owner 2026-11-08: AR ticks fixed at 250/400/600/800/1000 with the
-      // 400 detector threshold marked 'AR mask ≥400'.
-      const tks = isAR ? [250, 400, 600, 800, 1000] : niceTicks(cb.vmin, cb.vmax);
-      let lastPct = -99;   // thin colliding tick labels (QA 2026-11-06)
-      tks.forEach(function (v) {
-        const pct = 100 * (v - cb.vmin) / (cb.vmax - cb.vmin);
-        if (!isAR && pct - lastPct < 12 && pct !== 100) return;
-        lastPct = pct;
-        const s = document.createElement('span'); s.className = 'tick';
-        s.style.left = pct + '%';
-        const key = isAR && Math.abs(v - arThr) < 1;
-        if (key) {
-          s.classList.add('key');
-          s.textContent = v + '·mask';
-          s.title = 'AR mask threshold: IVT \u2265 ' + v + ' kg m\u207b\u00b9 s\u207b\u00b9';
-        } else s.textContent = tickLabel(v);
-        bar.appendChild(s);
-      });
-      const u = document.createElement('span'); u.className = 'ev3-cb-units';
-      u.textContent = cb.units;
-      cbRow.appendChild(lb); cbRow.appendChild(bar); cbRow.appendChild(u);
-      if (!isAR && viz.threshold_note) {
-        const n = document.createElement('span'); n.className = 'ev3-cb-note';
-        n.textContent = viz.threshold_note;
-        cbRow.appendChild(n);
-      }
-    })();
-
-    const gridEl = document.createElement('div'); gridEl.className = 'ev3-grid';
-    const obsBlock = document.createElement('div'); obsBlock.className = 'ev3-obsblock';
-    const nodata = document.createElement('div'); nodata.className = 'ev3-nodata';
-    const dur = document.createElement('div'); dur.className = 'ev-dur';
-    /* chip picker row (picker mode only): one chip per model that has data at
-       the current lead; baseline chip is locked. */
-    let picker = null;
-    if (pickerMode) {
-      picker = document.createElement('div'); picker.className = 'ev3-picker';
-      picker.appendChild((function () {
-        const l = document.createElement('span'); l.className = 'ev-tool-label';
-        l.textContent = 'models'; return l;
-      })());
-      allModels.forEach(function (m) {
-        const b = document.createElement('button');
-        b.type = 'button'; b.className = 'mini'; b.dataset.model = m;
-        b.textContent = m;
-        b.onclick = function () {
-          const i = ui.sel.indexOf(m);
-          if (i >= 0) { if (m === baselineName) return; ui.sel.splice(i, 1); }
-          else { if (ui.sel.length >= 4 || !hasDataAt(m, ui.lead)) return; ui.sel.push(m); }
-          notifyModelsHook(ui.sel);
-          refreshPicker(); buildModelPanels();
-        };
-        picker.appendChild(b);
-      });
-    }
-    function hasDataAt(m, lead) {
-      const e = viz.models[m];
-      const entry = (e && typeof e === 'object' && !e.status) ? e[lead] : null;
-      return !!(entry && entry.status === 'ok');
-    }
-    function refreshPicker() {
-      if (!picker) return;
-      picker.querySelectorAll('button').forEach(function (b) {
-        const m = b.dataset.model, on = ui.sel.indexOf(m) >= 0, locked = m === baselineName;
-        b.classList.toggle('on', on);
-        b.classList.toggle('locked', locked);
-        b.classList.toggle('dis', !on && !locked && !hasDataAt(m, ui.lead));
-        b.title = locked ? 'baseline — always shown'
-          : on ? 'remove map'
-          : hasDataAt(m, ui.lead) ? (ui.sel.length >= 4 ? 'max 4 maps' : 'add map')
-          : 'no data at this lead';
-      });
-    }
-    root.appendChild(cbRow);
-    if (!isAR) cbRow.style.display = 'none';   // B: single-swatch tier legend replaces the ramp scale
-    if (picker) root.appendChild(picker);
-    root.appendChild(obsBlock);
-    root.appendChild(gridEl); root.appendChild(nodata);
-    if (!isAR) root.appendChild(dur);
 
     /* ---- instance bookkeeping ---- */
     const maps = [];                 // live Leaflet maps (teardown + sync)
     let syncBusy = false, fsPanel = null, attrUsed = false;
     const gratColor = css('--text-dim', dark ? '#8a93a6' : '#5b6478');
-    const accent = css('--accent', '#5b8ef7');
-    const fillObs = [236, 240, 250], fillModel = parseColor(accent, [110, 140, 246]);
 
     function onEsc(e) { if (e.key === 'Escape' && fsPanel) setFs(null); }
     document.addEventListener('keydown', onEsc);
@@ -728,6 +705,8 @@
     active = {
       maps: maps,
       teardown: function () {
+        const stop = active && active.stopFn;   // play interval must die with the detail
+        if (stop) stop();
         document.removeEventListener('keydown', onEsc);
         while (maps.length) { const m = maps.pop(); try { m.remove(); } catch (err) { /* detached */ } }
       },
@@ -798,21 +777,18 @@
     function makePanel(opts) {
       const el = document.createElement('div');
       el.className = 'ev3-panel' + (opts.obs ? ' ev3-obs' : '');
-      const chips = (opts.chips || []).map(function (c) {
-        return '<span class="ev3-chip">' + esc(c) + '</span>'; }).join('');
-      el.innerHTML = '<div class="ev3-head"><b>' + esc(opts.title) + '</b>' + chips +
+      el.innerHTML = '<div class="ev3-head"><b>' + esc(opts.title) + '</b>' +
         '<button class="ev3-fsbtn" type="button" title="zoom to fullscreen">⤢</button></div>';
       const mapEl = document.createElement('div'); mapEl.className = 'ev3-map';
-      const foot = document.createElement('div'); foot.className = 'ev3-foot';
-      if (opts.foot) foot.textContent = opts.foot;
+      const layersEl = document.createElement('div'); layersEl.className = 'ev3-layers';
       /* B: bottom bar — 'Valid time: …' left, single-swatch tier legend right
          (hidden until setBar; AR panels keep the continuous colorbar instead). */
       const bar = document.createElement('div'); bar.className = 'ev3-bbar'; bar.style.display = 'none';
       const barL = document.createElement('span'); barL.className = 'bbar-l';
       const barR = document.createElement('span'); barR.className = 'bbar-r';
       bar.appendChild(barL); bar.appendChild(barR);
-      el.appendChild(mapEl); el.appendChild(bar); el.appendChild(foot);
-      (opts.block ? obsBlock : gridEl).appendChild(el);
+      el.appendChild(layersEl); el.appendChild(mapEl); el.appendChild(bar);
+      obsBlock.appendChild(el);
 
       const map = L.map(mapEl, {
         worldCopyJump: true, zoomControl: true, scrollWheelZoom: true,
@@ -856,20 +832,11 @@
       });
       el.querySelector('.ev3-fsbtn').onclick = function () { setFs(fsPanel === panel ? null : panel); };
 
-      const panel = { el: el, map: map, foot: foot, overlays: [] };
+      const panel = { el: el, map: map, layersEl: layersEl, overlays: [] };
       maps.push(map);
       panel.clearOverlays = function () {
         panel.overlays.forEach(function (o) { map.removeLayer(o); });
         panel.overlays = [];
-      };
-      panel.addField = function (dataURL) {
-        const ov = L.imageOverlay(dataURL, fieldBounds, { opacity: 0.72, interactive: false });
-        ov.addTo(map); panel.overlays.push(ov);
-      };
-      panel.addFieldCrisp = function (dataURL) {
-        const ov = L.imageOverlay(dataURL, fieldBounds,
-          { opacity: 0.9, interactive: false, className: 'ev3-crisp' });
-        ov.addTo(map); panel.overlays.push(ov);
       };
       panel.setBar = function (left, legend, tip) {
         if (!left && !legend) { bar.style.display = 'none'; return; }
@@ -885,15 +852,6 @@
         }
         barR.title = (legend && legend.tip) || '';
       };
-      panel.addContours = function (mask, style) {
-        maskContour(mask, grid.lat, grid.lon).forEach(function (s) {
-          panel.overlays.push(L.polyline(s, style).addTo(map));
-        });
-      };
-      panel.copyView = function () {
-        const src = maps[0];
-        if (src && src !== map) map.setView(src.getCenter(), src.getZoom(), { animate: false });
-      };
       return panel;
     }
 
@@ -902,148 +860,238 @@
                dashArray: dash || null, lineJoin: 'round' };
     }
 
-    /* ---- observed panel ---- */
+    /* ---- overlay layers (briefs/event_view_overlay.md): the one map. The
+       observed field is the base; every model with data at the selected lead
+       stacks as its own overlay pane with a visibility toggle, colour and
+       opacity. Layer state serializes through EventViz.onLayers (host → URL
+       #lyr=) so a pasted link reproduces the same view. ---- */
     let arObsMask = isAR && viz.obs ? unpackMask(viz.obs.mask, ny) : null;
     let obsPanel = null;
+    const savedLayers = parseLayerState((opts && opts.layers) || '');
+    const layers = {};                   // 'obs' | model -> layer; insertion order = stack order
+    const tuned = {};   // user layer edits survive lead changes (ponytail 17:45)
 
-    function refreshObs() {
-      if (!obsPanel) return;
-      obsPanel.clearOverlays();
+    function parseLayerState(s) {
+      const out = {};
+      String(s || '').split(',').forEach(function (row) {
+        const p = String(row).split('|');
+        if (p.length !== 4) return;
+        const st = { on: p[3] === '1' };
+        if (/^[0-9a-f]{6}$/i.test(p[1])) st.color = '#' + p[1].toLowerCase();
+        const op = +p[2];
+        if (isFinite(op)) st.op = Math.max(0, Math.min(100, Math.round(op)));
+        if (st.color || st.op !== undefined) out[decodeURIComponent(p[0])] = st;
+      });
+      return out;
+    }
+    // AR obs contour follows theme text: white-on-white was invisible on the light basemap
+    function defColor(k) { return k === 'obs' ? (isAR ? css('--text', '#111') : tierCSS) : modelBarColor(k); }
+    function mkLayer(k) {
+      const s = Object.assign({}, savedLayers[k], tuned[k]);   // live edits beat URL/defaults
+      const pane = 'ev3l-' + k.replace(/[^a-z0-9_-]/gi, '-');
+      obsPanel.map.createPane(pane);
+      obsPanel.map.getPane(pane).style.zIndex = k === 'obs' ? '410' : '420';
+      return { key: k, pane: pane,
+        label: k === 'obs' ? (isAR ? 'Observed IVT' : 'Observed') : k,
+        color: s.color || defColor(k),
+        on: s.on !== undefined ? s.on : (k === 'obs' ? true : initialSel.indexOf(k) >= 0),
+        op: s.op !== undefined ? s.op : (k === 'obs' ? 85 : 50),
+        ovs: [] };
+    }
+    function serializeLayers() {
+      return Object.keys(layers).map(function (k) {
+        const L = layers[k];
+        return k + '|' + String(L.color).replace('#', '') + '|' + L.op + '|' + (L.on ? 1 : 0);
+      }).join(',');
+    }
+    let customized = Object.keys(savedLayers).length > 0;   // a restored #lyr= view is already custom (ponytail 00:10)
+    function saveState() {
+      Object.keys(layers).forEach(function (k) {
+        const L = layers[k]; tuned[k] = { on: L.on, color: L.color, op: L.op };
+      });
+      notifyModelsHook(ui.sel);
+      try {
+        if (window.EventViz && window.EventViz.onLayers) window.EventViz.onLayers(customized ? serializeLayers() : '');
+        if (window.EventViz && window.EventViz.onDay) window.EventViz.onDay(
+          (!isAR && ui.day !== anchorDay) ? ui.day : '');
+      } catch (err) { /* host hooks must never break the viz */ }
+    }
+    function modelEntry(k) {
+      const e = viz.models[k];
+      return (e && typeof e === 'object' && !e.status) ? e[ui.lead] : null;
+    }
+    function grp(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+    function noDataReason(k) {
+      const e = viz.models[k];
+      return reasonOf((typeof e === 'string' ? e : (e && e.status)) || 'no data at this lead');
+    }
+    function layerSummary(L) {
       if (isAR) {
-        obsPanel.addField(fieldDataURL(viz.obs.ivt, ny, nx, RAMPS.ivt, AR_FLOOR, AR_CAP, 'ramp'));
-        obsPanel.addContours(arObsMask, contourStyle('#ffffff', null));
-        obsPanel.foot.textContent = 'mask ' + viz.obs.area_cells + ' cells ≥ ' +
-          viz.ivt_threshold_kg_m_s + ' kg m⁻¹ s⁻¹ · ' + (viz.obs.anchor_time || '');
+        if (L.key === 'obs') return viz.obs ? 'covers ' + grp(viz.obs.area_cells) + ' cells' : 'no observations (post-cutoff)';
+        const e = modelEntry(L.key); if (!e) return noDataReason(L.key);
+        return 'covers ' + grp(e.area_cells || 0) + ' cells' +
+          (viz.obs ? ' (obs ' + grp(viz.obs.area_cells) + ')' : '');
+      }
+      if (L.key === 'obs') return viz.obs ? 'covers ' + grp(viz.obs.footprint_cells) +
+        ' cells \u00b7 runs ' + viz.obs.max_consec + ' d' : '';
+      const e = modelEntry(L.key); if (!e) return noDataReason(L.key);
+      return 'covers ' + grp(e.footprint_cells) + ' cells (obs ' + grp(viz.obs.footprint_cells) +
+        ') \u00b7 runs ' + e.max_consec + ' d (obs ' + viz.obs.max_consec + ' d)';
+    }
+    function layerRows() {
+      const hostEl = obsPanel && obsPanel.layersEl;
+      if (!hostEl) return;
+      hostEl.innerHTML = '';
+      ['obs'].concat(allModels).forEach(function (k) {
+        const L = layers[k];   // absent when the model has no data at this lead
+        const name = L ? L.label : (k === 'obs' ? (isAR ? 'Observed IVT' : 'Observed') : k);
+        const row = document.createElement('div');
+        row.className = 'ev3-layer' + (L && L.on ? '' : ' off') + (L ? '' : ' dis');
+        const lbl = document.createElement('label');
+        lbl.className = 'ev3-lsw';
+        lbl.innerHTML = '<input type="checkbox" class="ev3-lvis"' + (L && L.on ? ' checked' : '') +
+          ' aria-label="show layer ' + esc(name) + '"' + (L ? '' : ' disabled') + '>' +
+          '<input type="color" class="ev3-lcol" value="' + (L ? L.color : '#808080') +
+          '" aria-label="colour of layer ' + esc(name) + '"' + (L ? '' : ' disabled') + '>' +
+          '<b class="ev3-lname">' + esc(name) + '</b>';
+        row.appendChild(lbl);
+        const rng = document.createElement('input');
+        rng.type = 'range'; rng.className = 'ev3-lop'; rng.min = '0'; rng.max = '100'; rng.step = '5';
+        rng.value = String(L ? L.op : 50);
+        rng.setAttribute('aria-label', 'opacity of layer ' + name + ', percent');
+        if (!L) rng.disabled = true;
+        const pct = document.createElement('output'); pct.className = 'ev3-lopv';
+        pct.textContent = (L ? L.op : 0) + '%';
+        const sum = document.createElement('span'); sum.className = 'ev3-lsum';
+        sum.textContent = L ? layerSummary(L)
+          : (k === 'obs' ? 'no observations (post-cutoff)' : noDataReason(k));
+        row.appendChild(rng); row.appendChild(pct); row.appendChild(sum);
+        if (L) {
+          lbl.querySelector('.ev3-lvis').addEventListener('change', function (ev2) {
+            L.on = ev2.target.checked; customized = true;
+            row.classList.toggle('off', !L.on);
+            ui.sel = Object.keys(layers).filter(function (x) { return x !== 'obs' && layers[x].on; });
+            paintAll(); saveState();
+          });
+          lbl.querySelector('.ev3-lcol').addEventListener('input', function (ev2) {
+            L.color = ev2.target.value; customized = true;
+            paintLayer(L); paintBar(); saveState();
+          });
+          rng.addEventListener('input', function () {
+            L.op = +rng.value; pct.textContent = L.op + '%'; customized = true;
+            // raster PNG is opacity-independent: nudge overlays, don't re-encode (ponytail 17:45)
+            L.ovs.forEach(function (o) { if (o.setOpacity) o.setOpacity(L.op / 100); });
+            paintBar(); saveState();
+          });
+        }
+        hostEl.appendChild(row);
+      });
+    }
+    /* per-cell trailing run R(k) = R(k-1)+1 while the day-k bit is on, else 0
+       (contract §2: the same rule as the front page; runs truncate at
+       window.days[0] — accepted cut, same as mergedmap). */
+    function layerRuns(lay) {
+      if (lay._runsLead === ui.lead && 'cache' in lay) return lay.cache;
+      const days = lay.key === 'obs' ? (viz.obs && viz.obs.daily) : (modelEntry(lay.key) || {}).daily;
+      lay._runsLead = ui.lead;
+      let out = null;
+      if (days && days.length) {
+        out = [];
+        let prev = null;
+        for (let d = 0; d < days.length; d++) {
+          const bit = unpackMask(days[d], ny);
+          const run = bit.map(function (row, j) {
+            const pr = prev ? prev[j] : null;
+            return row.map(function (b, i) { return b ? 1 + (pr ? pr[i] : 0) : 0; });
+          });
+          out.push(run); prev = run;
+        }
+      }
+      lay.cache = out;
+      return out;
+    }
+    function addImg(lay, url, alpha, cls) {
+      return L.imageOverlay(url, fieldBounds,
+        { opacity: alpha, interactive: false, className: cls, pane: lay.pane }).addTo(obsPanel.map);
+    }
+    function paintLayer(lay) {
+      if (!obsPanel) return;
+      lay.ovs.forEach(function (o) { obsPanel.map.removeLayer(o); });
+      lay.ovs = [];
+      if (!lay.on || lay.op <= 0) return;
+      const alpha = lay.op / 100;
+      const rgb = parseColor(lay.color, [127, 127, 127]);
+      if (isAR) {
+        if (lay.key === 'obs') {
+          if (!viz.obs || !viz.obs.ivt) return;
+          lay.ovs.push(addImg(lay, fieldDataURL(viz.obs.ivt, ny, nx, RAMPS.ivt, AR_FLOOR, AR_CAP, 'ramp'), alpha, 'ev3-field'));
+          if (arObsMask) maskContour(arObsMask, grid.lat, grid.lon).forEach(function (s) {
+            const st = contourStyle(lay.color); st.pane = lay.pane;
+            lay.ovs.push(L.polyline(s, st).addTo(obsPanel.map));
+          });
+        } else {
+          const e = modelEntry(lay.key); if (!e || !e.mask) return;
+          const st = contourStyle(lay.color); st.weight = 2; st.opacity = alpha; st.pane = lay.pane;
+          maskContour(unpackMask(e.mask, ny), grid.lat, grid.lon).forEach(function (s) {
+            lay.ovs.push(L.polyline(s, st).addTo(obsPanel.map));
+          });
+        }
       } else {
-        /* B: one categorical frame — cells at/above the percentile in a single
-           tier color, everything transparent; bottom bar = valid time + legend */
-        const dm = unpackMask(viz.obs.daily[ui.day], ny);
-        obsPanel.addFieldCrisp(tierDataURL(dm, ny, nx, tierRGB));
-        const day = viz.window.days[ui.day];
-        obsPanel.setBar('Valid time: ' + fmtDay(day) + ', 00:00 UTC', tierLegend,
-          'daily exceedance rule — every 6-hourly step of this UTC day is evaluated ' +
-          'against the local climatology');
-        obsPanel.foot.textContent = (viz.threshold_note ? viz.threshold_note + ' · ' : '') +
-          'max ' + viz.obs.max_consec + ' consecutive days · anchor ' +
-          viz.obs.anchor_day + ' (' + viz.obs.footprint_cells + ' cells)';
+        const runs = layerRuns(lay); if (!runs) return;
+        const run = runs[Math.max(0, Math.min(ui.day == null ? runs.length - 1 : ui.day, runs.length - 1))];
+        lay.ovs.push(addImg(lay, durRasterURL(run, ny, nx, rgb, viz.event_type === 'heat_wave'), alpha, 'ev3-crisp'));
       }
     }
-
-    /* ---- model panels (rebuilt on lead change / fill toggle) ---- */
-    let modelPanels = [];
-    function destroyModelPanels() {
-      modelPanels.forEach(function (p) {
-        const i = maps.indexOf(p.map); if (i >= 0) maps.splice(i, 1);
-        try { p.map.remove(); } catch (err) { /* detached */ }
-        p.el.remove();
-      });
-      modelPanels = [];
+    function paintBar() {
+      if (!obsPanel) return;
+      if (isAR) { obsPanel.setBar(null, null); return; }
+      const legend = { color: layers.obs ? layers.obs.color : tierLegend.color,
+                       label: tierLegend.label, tip: tierLegend.tip };
+      const heat = viz.event_type === 'heat_wave';
+      obsPanel.setBar((heat ? 'Heat \u2014 days > ' : 'Freeze \u2014 days < ') + 'P' + tierQ, legend,
+        'Consecutive UTC days the cell has exceeded the P' + tierQ + ' climatology at all four ' +
+        '6-hourly steps; darkest = ' + (heat ? '14+ days (runs under 3 days are not painted)' : '7+ days') + '.');
     }
-
-    function buildModelPanels() {
-      destroyModelPanels();
-      const missing = [], bad = [];
-      ui.sel.slice().forEach(function (m) {
-        const e = viz.models[m];
-        const entry = (e && typeof e === 'object' && !e.status) ? e[ui.lead] : null;
-        if (!entry || entry.status !== 'ok') {
-          const st = (typeof e === 'string' ? e : (e && e.status)) || (entry && entry.status);
-          if (st) bad.push(m + ' — ' + reasonOf(st));
-          else missing.push(m + ' — not built yet');
-          return;
-        }
-        let chips, foot;
-        if (isAR) {
-          chips = ['T+' + (+ui.lead) + ' h', (entry.area_cells || 0) + ' cells'];
-          foot = 'mask ' + entry.area_cells + ' cells';
-        } else {
-          chips = ['T+' + (+ui.lead) + ' h', 'max ' + entry.max_consec + 'd'];
-          const dErr = entry.max_consec - viz.obs.max_consec;
-          foot = 'max ' + entry.max_consec + 'd · Δ ' + (dErr >= 0 ? '+' : '') + dErr +
-            ' d vs obs · footprint ' + entry.footprint_cells + ' (obs ' + viz.obs.footprint_cells + ')';
-        }
-        const p = makePanel({ title: m, chips: chips, foot: foot });
-        modelPanels.push(p);
-        p.copyView();
-        if (isAR) {
-          p.addField(fieldDataURL(entry.ivt, ny, nx, RAMPS.ivt, AR_FLOOR, AR_CAP, 'ramp'));
-          const mm = unpackMask(entry.mask, ny);
-          if (ui.fill) {
-            if (arObsMask) p.addField(fieldDataURL(arObsMask.map(function (r) { return r.map(function (b) { return b ? 1 : 0; }); }),
-              ny, nx, RAMPS.ivt, 0, 1, 'fill', fillObs));
-            p.addField(fieldDataURL(mm.map(function (r) { return r.map(function (b) { return b ? 1 : 0; }); }),
-              ny, nx, RAMPS.ivt, 0, 1, 'fill', fillModel));
-          } else {
-            if (arObsMask) p.addContours(arObsMask, contourStyle('#ffffff', null));
-            p.addContours(mm, contourStyle(accent, '5 4'));
-          }
-          if (arObsMask) {
-            let hit = 0, miss = 0, fa = 0;
-            for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-              if (mm[j][i] && arObsMask[j][i]) hit++;
-              else if (mm[j][i]) fa++;
-              else if (arObsMask[j][i]) miss++;
-            }
-            p.foot.textContent = 'hit ' + hit + ' · miss ' + miss + ' · false alarm ' + fa;
-          }
-        } else {
-          /* B: the same categorical component at forecast lead. Preferred
-             frame is the model's own daily tier field (entry.daily[day],
-             requested from design for schema v3); until the asset carries
-             it, fall back to the window footprint — cells the forecast
-             flags on at least one event day at this lead. */
-          let mm = null, valid = '', tip = '';
-          if (entry.daily && entry.daily[ui.day] != null) {
-            mm = unpackMask(entry.daily[ui.day], ny);
-            valid = 'Valid time: ' + fmtDay(viz.window.days[ui.day]) + ', 00:00 UTC';
-          } else if (entry.consec) {
-            mm = unpackU8(entry.consec).map(function (r) {
-              return r.map(function (v) { return v > 0; }); });
-            const dA = viz.window.days[0], dB = viz.window.days[viz.window.days.length - 1];
-            valid = 'Valid time: ' + fmtDay(dA) + ' – ' + fmtDay(dB) + ' · any event day';
-            tip = 'window footprint: cells at/above the percentile on at least one day of the event window at this lead';
-          }
-          if (mm) p.addFieldCrisp(tierDataURL(mm, ny, nx, tierRGB));
-          p.setBar(valid, tierLegend, tip);
-        }
-      });
-      /* A5 (owner 2026-11-07): the info line covers EVERY model without data
-         at this lead (not just selected ones), with reasons; chips for those
-         models are hidden from the picker. */
-      const unavail = bad.concat(missing);
-      allModels.forEach(function (m) {
-        if (ui.sel.indexOf(m) >= 0 || hasDataAt(m, ui.lead)) return;
-        const e = viz.models[m];
-        unavail.push(m + ' — ' + reasonOf((typeof e === 'string' ? e : (e && e.status)) || 'no data at this lead'));
-      });
-      nodata.textContent = unavail.length
-        ? 'no data at T+' + (+ui.lead) + ' h: ' + unavail.slice(0, 4).join(', ') +
-          (unavail.length > 4 ? ' (+' + (unavail.length - 4) + ' more)' : '')
-        : '';
-      nodata.title = unavail.join(', ');
-      if (!isAR) drawDur();
+    function paintAll() {
+      Object.keys(layers).forEach(function (k) { paintLayer(layers[k]); });
+      paintBar();
+      if (!isAR && viz.obs) drawDur();
     }
-
+    /* duration-vs-observed bars (kept per contract §6): the currently VISIBLE
+       model set — same roster the layer list shows as checked */
     function drawDur() {
-      let html = '<div class="ev-dur-title">duration vs observed · lead ' + ui.lead + 'h</div>';
+      let html = '<div class="ev-dur-title">duration vs observed \u00b7 lead ' + ui.lead + 'h</div>';
       const obsN = viz.obs.max_consec;
       const vals = [{ label: 'observed', n: obsN, c: css('--text-dim', '#5b6478') }];
-      ui.sel.slice().forEach(function (m) {
-        const e = viz.models[m]; const entry = e && typeof e === 'object' && e[ui.lead];
-        if (entry && entry.status === 'ok') vals.push({ label: m, n: entry.max_consec, c: modelBarColor(m) });
+      Object.keys(layers).forEach(function (k) {
+        if (k === 'obs' || !layers[k].on) return;
+        const entry = modelEntry(k);
+        if (entry && entry.status === 'ok') vals.push({ label: k, n: entry.max_consec, c: layers[k].color });
       });
-      // M6 (DR2): fixed scale — bars comparable across models and leads
       const maxN = Math.max(7, obsN + 2);
       vals.forEach(function (v, i) {
-        const d = i === 0 ? '' : ' <b class="ev-bar-d">Δ ' + (v.n - obsN >= 0 ? '+' : '') + (v.n - obsN) + ' d vs obs</b>';
+        const d = i === 0 ? '' : ' <b class="ev-bar-d">\u0394 ' + (v.n - obsN >= 0 ? '+' : '') + (v.n - obsN) + ' d vs obs</b>';
         html += bar(v.label, v.n, maxN, v.c, d, true, obsN);
       });
       dur.innerHTML = html + (() => {
-        // DR2-M6: numeric day ruler under the tracks (same grid columns)
         let r = '<div class="ev-bar-ruler"><span></span><span class="rtrack">';
         for (let t = 0; t <= maxN; t++) r += '<b class="rtick" style="left:' + (100 * t / maxN) + '%">' + t + '</b>';
         return r + '</span><span></span></div>';
       })();
+      dur.style.display = '';
+    }
+    function rebuildLayers() {
+      Object.keys(layers).forEach(function (k) {
+        if (k !== 'obs' && !hasDataAt(k, ui.lead)) {
+          layers[k].ovs.forEach(function (o) { obsPanel.map.removeLayer(o); });
+          obsPanel.map.getPane(layers[k].pane).remove();
+          delete layers[k];
+        }
+      });
+      if (viz.obs && !layers.obs) layers.obs = mkLayer('obs');
+      allModels.forEach(function (m) { if (hasDataAt(m, ui.lead) && !layers[m]) layers[m] = mkLayer(m); });
+      ui.sel = Object.keys(layers).filter(function (k) { return k !== 'obs' && layers[k].on; });
+      layerRows();
     }
 
     /* ---- toolbar ---- */
@@ -1059,71 +1107,83 @@
         toolbar.appendChild(b);
       });
     }
-    if (isAR) {
-      const fb = document.createElement('button');
-      fb.type = 'button';
-      fb.className = 'mini ev3-fill' + (ui.fill ? ' on' : '');
-      fb.textContent = 'show overlap fill';
-      fb.onclick = function () {
-        ui.fill = !ui.fill;
-        fb.classList.toggle('on', ui.fill);
-        buildModelPanels();
+    /* time slider (contract §4, mimics the front-page raw slider): play/pause,
+       step, range over window.days, readout — ONE day index drives every layer
+       (obs and model streams are valid-time indexed at the same day k). */
+    let sliderSync = function () {};
+    if (!isAR && viz.obs && viz.window && viz.window.days.length) {
+      const sl = document.createElement('div'); sl.className = 'ev3-slider'; toolbar.appendChild(sl);
+      const play = document.createElement('button');
+      play.type = 'button'; play.className = 'mini ev3-play'; play.textContent = '\u25b6';
+      play.setAttribute('aria-label', 'play valid-time animation');
+      const prevB = document.createElement('button');
+      prevB.type = 'button'; prevB.className = 'mini ev3-prev'; prevB.textContent = '\u2039';
+      prevB.setAttribute('aria-label', 'step to previous day');
+      const nextB = document.createElement('button');
+      nextB.type = 'button'; nextB.className = 'mini ev3-next'; nextB.textContent = '\u203a';
+      nextB.setAttribute('aria-label', 'step to next day');
+      const rng = document.createElement('input');
+      rng.type = 'range'; rng.className = 'ev3-srange';
+      rng.min = '0'; rng.max = String(viz.window.days.length - 1); rng.step = '1';
+      rng.value = String(ui.day); rng.setAttribute('aria-label', 'valid time');
+      const ro = document.createElement('span'); ro.className = 'ev3-readout';
+      let timer = null;
+      function readout() {
+        ro.textContent = 'Valid time ' + fmtDay(viz.window.days[ui.day]) +
+          ' \u00b7 models T+' + (+ui.lead) + ' h';
+      }
+      function stopPlay() {
+        if (!timer) return;
+        clearInterval(timer); timer = null;
+        play.textContent = '\u25b6'; play.setAttribute('aria-label', 'play valid-time animation');
+      }
+      function stepDay(d2) {
+        const n = viz.window.days.length;
+        ui.day = (ui.day + d2 + n) % n;   // wraps at the end (rawmap lesson: repaint synchronously)
+        readout(); paintAll(); saveState();
+      }
+      play.onclick = function () {
+        if (timer) { stopPlay(); return; }
+        play.textContent = '\u23f8'; play.setAttribute('aria-label', 'pause valid-time animation');
+        timer = setInterval(function () { stepDay(1); }, 500);   // ~2 days/s
       };
-      toolbar.appendChild(fb);
-    } else {
-      const vlab = document.createElement('span'); vlab.className = 'ev-tool-label';
-      vlab.textContent = 'valid time'; toolbar.appendChild(vlab);
-      const days = document.createElement('div'); days.className = 'ev-days'; toolbar.appendChild(days);
-      viz.window.days.forEach(function (d, i) {
-        const n = viz.obs.daily[i].split('/').join('').split('').filter(function (c) { return c === '1'; }).length;
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'mini ev-day' + (ui.day === i ? ' on' : '');
-        b.textContent = d.slice(5); b.title = n + ' cells above threshold';
-        b.onclick = function () {
-          ui.day = i;   // B: the stepper always has a selected valid time
-          notifyLeadHook(ui.lead);
-          days.querySelectorAll('.ev-day').forEach(function (x, k) { x.classList.toggle('on', ui.day === k); });
-          refreshObs();
-        };
-        days.appendChild(b);
+      prevB.onclick = function () { stopPlay(); stepDay(-1); };
+      nextB.onclick = function () { stopPlay(); stepDay(1); };
+      rng.addEventListener('input', function () {
+        stopPlay(); ui.day = +rng.value; readout(); paintAll(); saveState();
       });
+      [play, prevB, nextB, rng, ro].forEach(function (x) { sl.appendChild(x); });
+      readout();
+      sliderSync = readout;   // lead text changes with the lead
+      active.stopFn = stopPlay;   // teardown must kill the play interval (ponytail 00:10)
     }
 
     function refreshLead() {
       toolbar.querySelectorAll('.ev-lead').forEach(function (b) {
         b.classList.toggle('on', b.textContent === ui.lead + 'h'); });
-      refreshPicker();
-      buildModelPanels();
+      rebuildLayers();
+      paintAll();
+      sliderSync();
+      saveState();   // layer set can change with lead -> URL follows
     }
 
     /* ---- build ---- */
-    if (isAR && !viz.obs) {
-      nodata.textContent = 'no observations (post-cutoff) — model leads only';
-    } else {
-      obsPanel = makePanel({
-        obs: true, block: true,
-        title: isAR ? 'Observed IVT' : 'Observed · ' + (viz.truth_source === 'era5_mirror' ? 'ERA5' : 'IFS analysis'),
-        chips: isAR ? [] : [viz.quantile ? (viz.quantile * 100 | 0) + 'th-pct climatology' : '',
-                            'max ' + viz.obs.max_consec + 'd'].filter(Boolean),
-        chip: chip ? chip.label : null, chipAt: chip ? chip.at : null,
-      });
-      refreshObs();
-    }
-    refreshPicker();
-    buildModelPanels();
+    obsPanel = makePanel({ obs: true, title: 'Observed + model overlays',
+      chip: chip ? chip.label : null, chipAt: chip ? chip.at : null });
+    rebuildLayers();
+    paintAll();
     notifyLeadHook(ui.lead);   // sync host (deep link + re-render state) with the lead we picked
 
     /* post-layout refit (QA 2026-11-06): maps created while the freshly
        mounted container had zero layout size fit to a degenerate view —
-       refit the observed map once real sizes exist and resync the rest */
+       refit the map once real sizes exist */
     requestAnimationFrame(function () { requestAnimationFrame(function () {
       maps.forEach(function (m) { m.invalidateSize({ animate: false }); });
       if (maps[0]) {
         const raw = box.rects ? box.rects[0] : box.rect;
         maps[0].fitBounds(occFit(viz, raw), { animate: false, maxZoom: 7, padding: [16, 16] });
       }
-      window.__ev3 = { maps: maps, boxRect: box.rect };   // QA/test handle
+      window.__ev3 = { maps: maps, boxRect: box.rect, layers: serializeLayers };   // QA/test handle
     }); });
   }
 

@@ -83,9 +83,14 @@ def with_retries(fn, tries: int = 6, base_delay: float = 1.0):
             # definitive 404/403 burns the whole backoff ladder (ponytail 22:21).
             if isinstance(exc, urllib.error.HTTPError):
                 throttled = exc.code in (429, 500, 502, 503, 504)
+            elif isinstance(exc, (FileNotFoundError, PermissionError)):
+                # s3fs surfaces a definitive 404/403 as these OSError
+                # subclasses — same class as the HTTPError-404 fix, on the
+                # s3 path (ponytail 2026-11-08 23:42)
+                raise
             else:
-                throttled = isinstance(exc, (OSError, IOError)) or \
-                    isinstance(exc, http.client.HTTPException)
+                throttled = (isinstance(exc, OSError)
+                             or isinstance(exc, http.client.HTTPException))
             last = exc
             if not throttled or attempt == tries - 1:
                 raise
@@ -142,9 +147,14 @@ def open_remote_nc(s3_path: str, region: str = "us-east-1"):
     """Open a remote NetCDF4 file for lazy (range-request) access."""
     import fsspec
 
+    # config via config_kwargs, NOT client_kwargs: with s3fs 2026.9.0 /
+    # aiobotocore 3.10.0 passing both region and config inside
+    # client_kwargs raises "create_client() got multiple values for
+    # keyword argument 'config'" (ponytail MUST 2026-11-08 23:42; same
+    # D1 collision as the s3() fix)
     return fsspec.open(s3_path, mode="rb", anon=True,
-                       client_kwargs={"region_name": region,
-                                      "config": _botocore_config()}).open()
+                       client_kwargs={"region_name": region},
+                       config_kwargs=_botocore_config()).open()
 
 
 def cache_path(*parts: str) -> str:

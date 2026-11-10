@@ -821,3 +821,24 @@ def test_detail_heading_is_type_and_region(pg, base):
     pg.wait_for_timeout(800)
     h = pg.inner_text("#detail-title")
     assert " · " in h and not re.search(r"\d{4}-\d{2}-\d{2}", h), h
+
+
+# --------------------------------------------------------------------------
+# AR presence on live frames (owner 2026-11-09 outage: ramp-edit regression
+# silently removed every AR pixel while mounting clean with layers ON)
+# --------------------------------------------------------------------------
+def test_ar_layer_visible_on_live_frames(pg, base):
+    _boot(pg, base, "/#map=2026100312&layers=h,f,a", wait=2000)
+    wait_js(pg, "window.MergedMap && MergedMap._dbg().mounted === true")
+    pg.wait_for_timeout(800)   # let the frame fetch + paint land
+    ar_boxes = pg.locator("#gm-boxes .gm-ev path.gm-bbox.t-ar").count()
+    assert ar_boxes >= 1, "no AR event boxes on the Oct-3 12Z frame"
+    ar_px = pg.evaluate("""() => {
+        const cv = document.querySelector('#raw-canvas'); if (!cv) return -1;
+        const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        let n = 0;   // AR green over any base: g dominant (theme-independent)
+        for (let i = 0; i < d.length; i += 4)
+            if (d[i+1] > d[i] + 22 && d[i+1] > d[i+2] + 22) n++;
+        return n;
+    }""")
+    assert ar_px > 500, f"AR pixels missing on a 15k-cell frame (got {ar_px})"

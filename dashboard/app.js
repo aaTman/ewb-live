@@ -90,6 +90,8 @@ const state = {
   scMore: false,                   // scorecard: show all metrics (hero shows headline only)
   detailLead: null,                // lead currently shown by the detail viz
   detailModels: null,              // model-map selection for the detail viz
+  detailLayers: null,              // serialized layer state (#lyr=) for the detail viz
+  detailDay: null,                 // valid-time index (#day=) for the detail viz
   detailChartsPending: null,       // deferred Plotly build until <details> opens
   skillDirty: false,               // skill charts skipped while fold collapsed
 };
@@ -1358,6 +1360,8 @@ function syncUrl(push) {
   const params = {};
   if (state.selectedEvent) params.event = state.selectedEvent;
   if (state.detailLead) params.lead = `${state.detailLead}h`;
+  if (state.detailLayers) params.lyr = state.detailLayers;
+  if (state.detailDay != null) params.day = state.detailDay;
   // the merged global map's #map/#layers/#sel ride along so Back from a
   // detail restores the slider/selection state (URL is the source of truth)
   if (window.MergedMap) Object.assign(params, MergedMap.urlParams());
@@ -1758,7 +1762,7 @@ function selectEvent(id, fromMap, nav) {
   nav = nav || { push: true };
   const wasOpen = !!state.selectedEvent && state.selectedEvent !== id;
   const openingFromList = !state.selectedEvent;
-  if (wasOpen) { state.detailModels = null; state.detailLead = null; state.detailChartsPending = null; }
+  if (wasOpen) { state.detailModels = null; state.detailLead = null; state.detailLayers = null; state.detailDay = null; state.detailChartsPending = null; }
   if (openingFromList) {
     /* A1: remember the list view (page + table scroll) so close/Back lands
        the owner exactly where they left it; filters live in state + the
@@ -1775,6 +1779,11 @@ function selectEvent(id, fromMap, nav) {
   if (state.detailLead == null) {
     const h = parseInt(hashParams().lead, 10);
     state.detailLead = Number.isFinite(h) ? h : null;
+  }
+  if (state.detailLayers == null) state.detailLayers = hashParams().lyr || null;
+  if (state.detailDay == null) {
+    const dd = parseInt(hashParams().day, 10);
+    state.detailDay = Number.isFinite(dd) ? dd : null;
   }
   syncUrl(nav.push && openingFromList);
   const sec = $('#detail-sec');
@@ -1858,8 +1867,11 @@ function selectEvent(id, fromMap, nav) {
       EventViz.initialLead = state.detailLead;
       EventViz.onLead = (lead) => { state.detailLead = lead; syncUrl(false); };
       EventViz.onModels = (ms) => { state.detailModels = ms; };
+      EventViz.onLayers = (s) => { state.detailLayers = s || null; syncUrl(false); };
+      EventViz.onDay = (d) => { state.detailDay = d === '' || d == null ? null : d; syncUrl(false); };
       if (!state.detailModels || !state.detailModels.length) state.detailModels = pickDetailModels(ev, viz);
-      EventViz.render(vizHost, viz, ev, { models: state.detailModels, baseline: state.baseline });
+      EventViz.render(vizHost, viz, ev, { models: state.detailModels, baseline: state.baseline,
+        layers: state.detailLayers, day: state.detailDay });
     }).catch((err) => {
       if (state.selectedEvent !== id) return;
       console.warn('viz asset failed for event ' + id + ': ' + err);
@@ -1946,8 +1958,10 @@ function closeDetail(nav) {
   state.selectedEvent = null;
   state.detailLead = null;
   state.detailModels = null;
+  state.detailLayers = null;
+  state.detailDay = null;
   state.detailChartsPending = null;
-  if (window.EventViz) { EventViz.onLead = null; EventViz.onModels = null; EventViz.initialLead = null; EventViz.teardown(); }
+  if (window.EventViz) { EventViz.onLead = null; EventViz.onModels = null; EventViz.onLayers = null; EventViz.onDay = null; EventViz.initialLead = null; EventViz.teardown(); }
   syncUrl(!!nav.push);
   $('#detail-sec').classList.add('hidden');
   $('#scorecard-sec').classList.remove('hidden');
