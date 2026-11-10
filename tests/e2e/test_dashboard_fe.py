@@ -523,63 +523,89 @@ def test_freeze_detail_reference_component(freeze_server, page_ctx):
 # and the ponytail MUST (deep-link to a NON-FIRST lead must be honored).
 # ---------------------------------------------------------------------------
 
-def _pick_visible_box(page):
-    """Largest catalog box whose center is inside the map viewport."""
-    page.evaluate("document.querySelector('#map').scrollIntoView({block:'center'})")
-    page.wait_for_timeout(400)
-    return page.evaluate("""() => {
-        const mapR = document.querySelector('#map').getBoundingClientRect();
-        let best = null;
-        for (const p of document.querySelectorAll('#map path[data-ev]')) {
-            const r = p.getBoundingClientRect();
-            const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-            if (cx < mapR.left + 8 || cx > mapR.right - 8 || cy < mapR.top + 8 || cy > mapR.bottom - 8) continue;
-            if (r.width * r.height > (best ? best.a : 0)) {
-                // the point click actually resolves to — an overlapping
-                // smaller box painted on top (byAreaDesc) would steal it
-                const el = document.elementFromPoint(cx, cy);
-                const top = el && el.closest('[data-ev]');
-                if (top) best = { id: top.getAttribute('data-ev'), x: cx, y: cy, a: r.width * r.height };
-            }
-        }
-        return best;
-    }""")
+# 2026-11-10 redesign: the Leaflet catalog map is gone — the Equal Earth map
+# and the event list sit side by side and talk to each other; every control
+# sits on the thing it changes.
 
-
-def _map_view(page):
-    return page.evaluate("""() => { const m = window.__catalogMap; const c = m.getCenter();
-        return { lat: c.lat, lng: c.lng, zoom: m.getZoom() }; }""")
-
-
-def test_map_box_click_opens_detail_and_back_restores_map(live_url, page_ctx):
-    page = page_ctx
+def _home(page, live_url):
     page.goto(live_url + "/")
-    page.wait_for_selector("#event-table tbody tr", timeout=25000)
-    page.wait_for_selector("#map path[data-ev]", timeout=15000)
-    page.wait_for_timeout(1500)   # let the initial fit settle
-    view0 = _map_view(page)
-    box = _pick_visible_box(page)
-    assert box, "no catalog box inside the map viewport"
-    page.mouse.click(box["x"], box["y"])
+    page.wait_for_selector("#event-table tbody tr[data-id]", timeout=25000)
+    page.wait_for_function("MergedMap._dbg().mounted === true", timeout=20000)
+    page.wait_for_timeout(600)
+
+
+def test_controls_live_in_the_section_they_change(live_url, page_ctx):
+    page = page_ctx
+    _home(page, live_url)
+    where = page.evaluate("""() => {
+        const sec = (s) => { const n = document.querySelector(s); return n && (n.closest('section') || {}).id; };
+        return { models: sec('#model-pills'), leads: sec('#lead-chips'), metrics: sec('#metrics-more'),
+                 search: sec('#event-search'), layers: sec('#raw-layers'), play: sec('#raw-play'),
+                 tabs: !!document.querySelector('.explore #type-tabs'),
+                 maps: document.querySelectorAll('#map, .events-grid').length,
+                 navOutside: document.querySelectorAll('body > nav.controls').length }; }""")
+    assert where["models"] == where["leads"] == where["metrics"] == "scorecard-sec", where
+    assert where["search"] == "events-sec" and where["layers"] == where["play"] == "global-sec", where
+    assert where["tabs"] and where["maps"] == 0 and where["navOutside"] == 0, where
+    # map and list share the first screen on a desktop viewport
+    tops = page.evaluate("""() => ['#raw-map-wrap', '#events-sec', '#raw-slider'].map(
+        (s) => Math.round(document.querySelector(s).getBoundingClientRect().bottom))""")
+    assert max(tops) <= 900, tops
+    assert page.errors == [], page.errors
+
+
+def test_type_filter_narrows_map_list_and_scorecard_together(live_url, page_ctx):
+    page = page_ctx
+    _home(page, live_url)
+    n_all = page.locator("#event-table tbody tr[data-id]").count()
+    page.click("#type-tabs button:nth-child(4)")           # atmospheric rivers
+    page.wait_for_timeout(600)
+    st = page.evaluate("""() => ({ on: MergedMap._dbg().on, hash: location.hash,
+        rows: [...document.querySelectorAll('#event-table tbody tr[data-id]')].map((r) => r.dataset.id),
+        blocks: document.querySelectorAll('#scorecard-tables .sc-block').length,
+        scope: document.querySelector('#sc-scope').textContent,
+        types: state.events.reduce((m, e) => (m[e.id] = e.event_type, m), {}) })""")
+    assert st["on"] == {"h": False, "f": False, "a": True} and "layers=a" in st["hash"], st
+    assert st["rows"] and all(st["types"][i] == "atmospheric_river" for i in st["rows"]), st["rows"]
+    assert st["blocks"] == 1 and "Atmospheric rivers only" in st["scope"], st
+    page.click("#sc-scope button")                           # the scorecard's own way back
+    page.wait_for_timeout(600)
+    st = page.evaluate("() => ({ on: MergedMap._dbg().on, hash: location.hash, tab: state.tab })")
+    assert st["tab"] == "all" and all(st["on"].values()) and "layers=" not in st["hash"], st
+    assert page.locator("#event-table tbody tr[data-id]").count() == n_all
+    assert page.errors == [], page.errors
+
+
+def test_list_row_previews_event_on_map_and_box_marks_its_row(live_url, page_ctx):
+    page = page_ctx
+    _home(page, live_url)
+    ids = page.evaluate("""() => { const act = new Set([...document.querySelectorAll('#gm-boxes .gm-ev')]
+            .map((n) => n.dataset.id));
+        const rows = [...document.querySelectorAll('#event-table tbody tr[data-id]')].map((r) => r.dataset.id);
+        return { off: rows.find((i) => !act.has(i)), on: rows.find((i) => act.has(i)),
+                 live: [...document.querySelectorAll('#event-table tr.live')].map((r) => r.dataset.id).sort(),
+                 act: [...act].sort() }; }""")
+    assert ids["act"] and ids["live"] == ids["act"], ids       # rows mirror what the map shows now
+    if ids["off"]:
+        page.hover(f'#event-table tr[data-id="{ids["off"]}"]')
+        page.wait_for_timeout(250)
+        assert page.locator("#gm-boxes .gm-ghost").count() == 1
+        bar = page.locator(f'#gm-gantt .gm-bar[data-id="{ids["off"]}"]')
+        assert bar.count() == 0 or bar.first.get_attribute("opacity") == "1"
+        page.mouse.move(5, 5)
+        page.wait_for_timeout(250)
+        assert page.locator("#gm-boxes .gm-ghost").count() == 0
+    page.locator(f'#gm-boxes .gm-ev[data-id="{ids["on"]}"] .gm-hit').click(force=True)
+    page.wait_for_timeout(300)
+    assert page.locator(f'#event-table tr.picked[data-id="{ids["on"]}"]').count() == 1
+    # a row still opens the event; Back returns to map + list
+    page.click(f'#event-table tr[data-id="{ids["on"]}"]')
     page.wait_for_selector("#detail-sec:not(.hidden)", timeout=6000)
-    page.wait_for_timeout(800)
-    st = page.evaluate("""() => ({ hash: location.hash, sel: state.selectedEvent,
-        title: document.querySelector('#detail-title').textContent })""")
-    assert st["sel"] == box["id"], f"opened {st['sel']}, clicked box {box['id']}"
-    assert box["id"] in st["hash"] and "#event=" in st["hash"]
-    page.go_back()
-    # `.hidden` = display:none, so match on attachment, never visibility
+    assert not page.is_visible("#type-tabs") and not page.is_visible("#raw-canvas")
+    page.click("#detail-close")
     page.wait_for_selector("#detail-sec.hidden", state="attached", timeout=6000)
-    page.wait_for_timeout(800)
-    view1 = _map_view(page)
-    assert abs(view1["lat"] - view0["lat"]) < 0.6 and abs(view1["lng"] - view0["lng"]) < 0.6, (view0, view1)
-    assert view1["zoom"] == view0["zoom"]
-    # last-viewed box keeps its 3px highlight stroke on return to the list
-    w = page.evaluate(
-        "(id) => document.querySelector('#map path[data-ev=\"' + id + '\"]')?.getAttribute('stroke-width')",
-        box["id"])
-    assert w == "3", f"selected-on-return stroke missing (stroke-width={w})"
-    assert page.errors == [], f"console errors: {page.errors}"
+    assert page.is_visible("#type-tabs") and page.is_visible("#raw-canvas") and page.is_visible("#event-table")
+    assert page.errors == [], page.errors
 
 
 def test_viz_404_shows_graceful_state(live_url, heat_event, page_ctx):

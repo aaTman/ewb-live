@@ -50,6 +50,7 @@
   let idx = 0;                             // current frame index
   let on = { h: true, f: true, a: true };  // layer toggles
   const sel = new Set();                   // selected event ids (multi-highlight)
+  let previewId = null;                    // event pointed at in the page's event list (outline only)
   let mounted = false;
   let playing = null, speedI = 1;
   let land = null, graticule = null, proj = null, path = null;
@@ -432,9 +433,19 @@
     active.sort((a, b) => (a.bbox[1] - a.bbox[0]) * spanLon(a.bbox)
       - (b.bbox[1] - b.bbox[0]) * spanLon(b.bbox));      // big footprints under small
     const anySel = sel.size > 0;
+    // list preview of an event that is not on screen at this time step: a
+    // non-interactive outline, so pointing at a row always shows WHERE it is
+    const ghost = previewId && !active.some((e) => e.id === previewId)
+      ? tl.events.find((e) => e.id === previewId) : null;
+    if (ghost) {
+      const gd = bboxPaths(ghost), gt = TYPES[ghost.type] || { css: 'heat' };
+      if (gd) mk('path', { class: 'gm-ghost', d: gd, 'aria-hidden': 'true',
+                           style: `stroke: var(--series-${gt.css}); fill: var(--series-${gt.css})` }, g);
+    }
     for (const ev of active) {
       const t = TYPES[ev.type] || { css: 'heat' };
-      const cls = 'gm-ev' + (sel.has(ev.id) ? ' sel' : '') + (anySel && !sel.has(ev.id) ? ' dim' : '');
+      const cls = 'gm-ev' + (sel.has(ev.id) ? ' sel' : '') + (anySel && !sel.has(ev.id) ? ' dim' : '')
+        + (previewId === ev.id ? ' hov' : '');
       const node = mk('g', {
         class: cls, 'data-id': ev.id, role: 'button', tabindex: 0,
         'aria-pressed': sel.has(ev.id) ? 'true' : 'false',
@@ -488,13 +499,14 @@
           if (sel.has(ev.id)) openEvent(ev.id); else toggleSel(ev.id);
         }
       });
-      node.addEventListener('pointerenter', () => node.classList.add('hov'));
-      node.addEventListener('pointerleave', () => node.classList.remove('hov'));
+      node.addEventListener('pointerenter', () => { node.classList.add('hov'); hoverRow(ev.id, true); });
+      node.addEventListener('pointerleave', () => { node.classList.remove('hov'); hoverRow(ev.id, false); });
     }
     if (keepFocus) {
       const t = g.querySelector(`[data-id="${CSS.escape(keepFocus)}"]`);
       if (t) t.focus({ preventScroll: true });
     }
+    if (typeof window.onMapEvents === 'function') window.onMapEvents(active.map((e) => e.id), Array.from(sel));
     const nHeat = active.filter((e) => e.type === 'heat_wave').length;
     const nFrz = active.filter((e) => e.type === 'freeze').length;
     const nAr = active.filter((e) => e.type === 'atmospheric_river').length;
@@ -508,6 +520,19 @@
       + (parts.length ? ` (${parts.join(', ')})` : ''));
   }
   const spanLon = (b) => (b[2] <= b[3] ? b[3] - b[2] : 360);
+  function hoverRow(id, on) {                  // map box → its row in the event list
+    const tr = document.querySelector(`#event-table tr[data-id="${CSS.escape(id)}"]`);
+    if (tr) tr.classList.toggle('hov', on);
+  }
+  function preview(id) {                       // event list → outline on map + timeline (no canvas repaint)
+    if (!mounted || !raw || previewId === id) return;
+    previewId = id;
+    renderBoxes(); renderGantt();
+  }
+  function layersForTab(tab) {                 // the page's type filter narrows the raw layers too
+    const key = { heat_wave: 'h', freeze: 'f', atmospheric_river: 'a' }[tab];
+    for (const L of LAYERS) on[L.key] = !key || L.key === key;
+  }
 
   /* ---------------- Gantt strip (qualified → end, shared time scale) ---------------- */
   function renderGantt() {
@@ -536,7 +561,7 @@
         if (q > raw.frames[raw.frames.length - 1] || e < raw.frames[0]) continue;   // clamped out
         const bx = x(tsToDate(q).getTime()), be = x(tsToDate(e).getTime());
         const bw = Math.max(2, be - bx);
-        const isSel = sel.has(ev.id);
+        const isSel = sel.has(ev.id) || previewId === ev.id;
         const bar = mk('rect', {
           class: 'gm-bar', 'data-id': ev.id, x: bx, y, width: bw, height: LANE_H, rx: 2,
           style: `fill: var(--series-${TYPES[type].css})`,
@@ -823,6 +848,7 @@
     $('#raw-skel').hidden = true;
     $('#raw-canvas').hidden = false;
     $('#gm-boxes').removeAttribute('hidden');   // SVGElement has no .hidden IDL — attribute only
+    if (!('layers' in boot) && pageTab() !== 'all') { layersForTab(pageTab()); renderLayerButtons(); }
     applyUrl(boot);                           // renders if anything changed
     if (boot.raw || boot.global || boot.date) writeUrl(false);   // old keys never survive (redirect shim)
     // same-document hash nav (no reload) must strip old keys too
@@ -841,7 +867,12 @@
   }
 
   window.MergedMap = { mount, urlParams, applyUrl,
-    onTabChange: () => { if (mounted) render(); },
+    preview,
+    onTabChange: (tab) => {
+      if (!mounted) return;
+      if (tab) { layersForTab(tab); renderLayerButtons(); writeUrl(false); }
+      render();
+    },
     // project/ramp/dpr/grid: the e2e bin-probe reads painted pixels at known cells
     _dbg: () => ({ idx, frames: raw && raw.frames, on, sel: Array.from(sel), mounted, tl: !!tl,
       dpr: window.devicePixelRatio || 1, grid: raw && raw.grid,

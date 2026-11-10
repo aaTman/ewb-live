@@ -493,20 +493,27 @@ function saveState() {
   } catch (e) { /* preference just won't persist */ }
 }
 
+/* The event-type filter is the one page-wide control: it narrows the map
+   (layers + boxes), the timeline, the event list and the scorecard together. */
+function setTab(id) {
+  state.tab = id; saveState(); renderControls(); renderAll();
+  if (window.MergedMap) MergedMap.onTabChange(id);
+}
+
 function renderControls() {
   const tabs = $('#type-tabs');
   tabs.innerHTML = '';
   const mkTab = (id, label) => {
     const b = el('button', state.tab === id ? 'on' : '', label);
     b.setAttribute('role', 'tab');
-    b.onclick = () => { state.tab = id; saveState(); renderControls(); renderAll();
-      if (window.MergedMap) MergedMap.onTabChange(); };   // lane dim ⇄ tab parity
+    b.setAttribute('aria-selected', String(state.tab === id));
+    b.onclick = () => setTab(id);
     tabs.appendChild(b);
   };
-  mkTab('all', 'All');
+  mkTab('all', `All <span class="n">${state.events.length}</span>`);
   for (const t of TYPE_ORDER) {
     const n = state.events.filter((e) => e.event_type === t).length;
-    mkTab(t, `${TYPE_META[t].label} (${n})`);
+    mkTab(t, `<i class="type-dot" style="background:${TYPE_META[t].color}"></i>${TYPE_META[t].label} <span class="n">${n}</span>`);
   }
 
   const pills = $('#model-pills');
@@ -516,7 +523,7 @@ function renderControls() {
   pills.innerHTML = '';
   const dd = document.createElement('details'); dd.className = 'dd'; dd.open = ddWasOpen;
   const sum = document.createElement('summary');
-  sum.innerHTML = `<span class="ctl-label">Models</span>&nbsp;${state.models.size}/${state.allModels.length}`;
+  sum.innerHTML = `<span class="ctl-label">Models</span>&nbsp;${state.models.size} of ${state.allModels.length} <span class="caret" aria-hidden="true">▾</span>`;
   dd.appendChild(sum);
   const body = el('div', 'dd-body');
   state.allModels.forEach((m, i) => {
@@ -558,7 +565,7 @@ function renderControls() {
     chips.appendChild(b);
   });
   const more = $('#lead-more');
-  more.textContent = state.leadsMore ? 'less' : 'more';
+  more.textContent = state.leadsMore ? 'fewer leads' : 'more leads';
   more.setAttribute('aria-expanded', String(state.leadsMore));
   more.onclick = () => { state.leadsMore = !state.leadsMore; renderControls(); };
   /* A2 regression (owner 2026-11-07): the 'more metrics' button used to be
@@ -651,6 +658,17 @@ function renderScorecard() {
     badge.textContent = complete ? ''
       : `partial results — ${scored.size} of ${declared.length} models scored`;
     badge.classList.toggle('hidden', complete);
+  }
+  const scope = $('#sc-scope');
+  if (scope) {
+    scope.innerHTML = '';
+    if (state.tab !== 'all') {
+      scope.appendChild(el('span', '', `${esc(TYPE_META[state.tab].label)} only \u00b7 `));
+      const all = el('button', 'linkbtn', 'show all types');
+      all.type = 'button';
+      all.onclick = () => setTab('all');
+      scope.appendChild(all);
+    }
   }
   const idx = scIndex();
   tooltipIdx = idx;
@@ -1372,168 +1390,37 @@ function syncUrl(push) {
   } catch (e) { /* file:// or sandboxed */ }
 }
 
-let map = null;
-let mapFitted = false;
-const mapRects = new Map();   // id -> L.layerGroup (1-2 rectangles; split at antimeridian)
-let mapHalo = null;           // canvas-color halo layer under the last-viewed box
-
-/* M3 (DR2): catalog map uses the same theme-matched Esri gray base as the
-   detail maps — dark mode gets World Dark Gray, replacing the OSM tiles that
-   were faked dark with a CSS invert filter (land read near-white). */
-let homeTileLayer = null;
-function homeTiles() {
-  if (!map) return;
-  if (homeTileLayer) { map.removeLayer(homeTileLayer); homeTileLayer = null; }
-  const dark = document.documentElement.dataset.theme === 'dark';
-  homeTileLayer = L.tileLayer(
-    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_' +
-    (dark ? 'Dark' : 'Light') + '_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-    { maxZoom: 10, minZoom: 1,
-      attribution: 'Powered by Esri | Sources: Esri, Garmin, GEBCO, NOAA, USGS, and the GIS User Community' },
-  ).addTo(map);
-}
-
-function eventRectLayers(ev) {
-  const [lmin, lmax, lonmin, lonmax] = ev.bbox;
-  const color = typeColor(ev.event_type);
-  // design spec 2026-11-08: base stroke 2 px, fill tint .12 (hover 3 px/.22)
-  const style = { color, weight: 2, fillColor: color, fillOpacity: 0.12 };
-  if (isFullBandBox(ev.bbox)) return [];   // degenerate world-wide band (no footprint to recover from): draw nothing
-  const boxes = lonmin <= lonmax
-    ? [[[lmin, lonmin], [lmax, lonmax]]]
-    : [[[lmin, lonmin], [lmax, 180]], [[lmin, -180], [lmax, lonmax]]]; // wrapped arc across the antipode
-  return boxes.map((b) => L.rectangle(b, { ...style, keyboard: false }));
-}
-
-/* globalmap.js recovered a wrapped bbox for a degenerate full-band event: patch the catalog's
-   copy and redraw its box (see mergedmap.js repairBboxes) */
+/* The merged map recovered a wrapped bbox for a degenerate full-band event:
+   patch the catalog's copy (see mergedmap.js repairBboxes) */
 const bboxFixes = {};   // the merged map self-starts, so it can resolve BEFORE state.events is loaded
 window.applyBboxFix = function (id, bbox) {
   bboxFixes[id] = bbox;
   const ev = state.events.find((e) => e.id === id);
   if (!ev) return;
   ev.bbox = bbox;
-  const grp = mapRects.get(id);
-  if (grp && map) { map.removeLayer(grp); mapRects.delete(id); }
-  if (map) renderMap();
+  delete ev._region;
+  renderEventTable();
 };
-function isFullBandBox(b) { return Array.isArray(b) && b[3] >= b[2] && (b[3] - b[2]) >= 300; }
-function bboxAreaDeg(ev) {
-  const [lmin, lmax, lonmin, lonmax] = ev.bbox;
-  const w = lonmax >= lonmin ? lonmax - lonmin : (180 - lonmin) + (lonmax + 180);
-  return (lmax - lmin) * w;
-}
 
-/* Design spec 2026-11-08: hover = stroke 2→3 px, fill .12→.22; the box of
-   the event you last viewed keeps a 3 px stroke + 1.5 px canvas-color halo
-   on return to the list (drawn underneath, box stroke re-raised on top). */
-function applyBoxStyle(ev, hover) {
-  const group = mapRects.get(ev.id);
-  if (!group) return;
-  const c = typeColor(ev.event_type);
-  let w = 2, fill = 0.12;
-  if (state.selectedEvent === ev.id) { w = 3; fill = 0.45; }
-  else if (state.lastViewedEvent === ev.id) { w = 3; fill = 0.22; }
-  if (hover) { w = 3; fill = Math.max(fill, 0.22); }
-  group.eachLayer((r) => r.setStyle({ color: c, weight: w, fillColor: c, fillOpacity: fill }));
-}
-
-function renderMap() {
-  if (typeof L === 'undefined') return;
-  if (!map) {
-    /* Esri tiles end at ~85°N and the world is ~2:1 in this frame: bound the view
-       so no empty strip shows above the tile cutoff (G-22) */
-    map = L.map('map', { worldCopyJump: true, scrollWheelZoom: true,
-      maxBounds: [[-60, -540], [85, 540]], maxBoundsViscosity: 1 }).setView([28, 5], 2);
-    homeTiles();
-    window.__catalogMap = map;   // debug/e2e hook (same pattern as __debug)
-  }
-  for (const [id, group] of mapRects) { if (!state.events.some((e) => e.id === id)) { map.removeLayer(group); mapRects.delete(id); } }
-  // create groups once; smallest-area box is created LAST so it paints
-  // topmost and wins the click on overlap (design spec 2026-11-08)
-  const byAreaDesc = [...state.events].sort((a, b) => bboxAreaDeg(b) - bboxAreaDeg(a));
-  for (const ev of byAreaDesc) {
-    if (mapRects.has(ev.id)) continue;
-    // featureGroup (NOT layerGroup): only FeatureGroup propagates child
-    // rectangle click/mouseover/mouseout to the group handlers below.
-    const group = L.featureGroup(eventRectLayers(ev));
-    // tooltip per RECTANGLE — a LayerGroup has no anchorable latlng in this
-    // Leaflet build ("Unable to get source layer LatLng" throws mid-dispatch
-    // and kills the click handler that fires after it)
-    const tip = `${ev.title} · ${fmtDate(ev.start)} – ${fmtDate(eventLastDay(ev))}`;
-    group.eachLayer((r) => r.bindTooltip(tip, { direction: 'top', sticky: true }));
-    group.on('click', () => selectEvent(ev.id, false));  // same history/save semantics as a list-row click (owner 2026-11-08)
-    group.on('mouseover', () => applyBoxStyle(ev, true));
-    group.on('mouseout', () => applyBoxStyle(ev));
-    mapRects.set(ev.id, group);
-  }
-  const visible = byAreaDesc.filter((ev) =>
-    (state.tab === 'all' || state.tab === ev.event_type) && matchesSearch(ev));
-  const visIds = new Set(visible.map((e) => e.id));
-  for (const ev of state.events) {          // hide what the lane filtered out
-    const group = mapRects.get(ev.id);
-    if (group && !visIds.has(ev.id) && map.hasLayer(group)) map.removeLayer(group);
-  }
-  for (const ev of visible) {                // (re-)add in paint order
-    const group = mapRects.get(ev.id);
-    if (!map.hasLayer(group)) group.addTo(map);
-    applyBoxStyle(ev);
-    group.eachLayer((r) => {                 // e2e + a11y: tag paths with the event id
-      const p = r.getElement && r.getElement();
-      if (p) { p.setAttribute('data-ev', ev.id); p.setAttribute('aria-hidden', 'true'); }
-    });
-  }
-  // canvas-color halo under the last-viewed box (1.5 px ring around the 3 px stroke)
-  if (mapHalo) { map.removeLayer(mapHalo); mapHalo = null; }
-  const lv = visible.find((e) => e.id === state.lastViewedEvent && state.selectedEvent !== e.id);
-  if (lv) {
-    const canvas = cssVar('--bg-inset', '#fff');
-    const [, , lonmin, lonmax] = lv.bbox;
-    const rects = lonmin <= lonmax ? [lv.bbox]
-      : [[lv.bbox[0], lv.bbox[1], lv.bbox[2], 180], [lv.bbox[0], lv.bbox[1], -180, lv.bbox[3]]];
-    mapHalo = L.layerGroup(rects.map((b) => L.rectangle(
-      [[b[0], b[2]], [b[1], b[3]]], { color: canvas, weight: 6, fill: false, interactive: false, keyboard: false })));
-    mapHalo.addTo(map);
-    for (const id of visIds) {
-      const g = mapRects.get(id);
-      if (g && lv.id !== id) g.eachLayer((r) => r.bringToFront && r.bringToFront());
+/* Human name for a list row / detail title: "Heat wave · Iran". Region comes
+   from the bbox vote once the country table is loaded (vague band before). */
+function eventName(ev, viz) {
+  const t = (TYPE_META[ev.event_type] || {}).short || ev.event_type;
+  let region;
+  if (viz) region = eventRegion(ev, viz);
+  else {
+    if (!ev._region || ev._regionRough !== !COUNTRIES) {
+      ev._region = eventRegion(ev, null); ev._regionRough = !COUNTRIES;
     }
-    const g = mapRects.get(lv.id);
-    if (g) g.eachLayer((r) => r.bringToFront && r.bringToFront());
+    region = ev._region;
   }
-  if (!mapFitted && state.events.length) {
-    mapFitted = true;
-    const lats = state.events.flatMap((e) => [e.bbox[0], e.bbox[1]]);
-    const lons = state.events.flatMap((e) => e.bbox[2] <= e.bbox[3] ? [e.bbox[2], e.bbox[3]] : [e.bbox[2], 180, -180, e.bbox[3]]);
-    map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]],
-                  { padding: [16, 16], maxZoom: 3 });
-  }
-  /* Empty-lane note over the map (owner 2026-11-07): same quiet line as the
-     table, so an empty freeze lane reads as "nothing here", not "broken". */
-  const shownN = state.events.filter((e) =>
-    (state.tab === 'all' || state.tab === e.event_type) && matchesSearch(e)).length;
-  let overlay = document.getElementById('map-lane-empty');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'map-lane-empty';
-    overlay.className = 'lane-empty';
-    overlay.setAttribute('role', 'status');
-    document.getElementById('map').appendChild(overlay);
-  }
-  if (shownN === 0) {
-    const searching = !!(state.search && state.search.trim());
-    overlay.textContent = searching ? 'No events match your search' : emptyLaneLine(state.tab);
-    overlay.title = searching ? '' : (TYPE_CRITERIA[state.tab] || '');
-    overlay.classList.remove('hidden');
-  } else {
-    overlay.classList.add('hidden');
-  }
+  return `${t} \u00b7 ${String(region).split(',')[0]}`;
 }
 
 function matchesSearch(ev) {
   if (!state.search) return true;
   const q = state.search.toLowerCase();
-  return (ev.title + ' ' + ev.id + ' ' + (ev.details?.synoptic || '') + ' ' + ev.event_type).toLowerCase().includes(q);
+  return (ev.title + ' ' + eventName(ev) + ' ' + ev.id + ' ' + (ev.details?.synoptic || '') + ' ' + ev.event_type).toLowerCase().includes(q);
 }
 
 const EVENT_TABLE_MAX_ROWS = 400;   // real runs detect 1000+ events; don't build 1500 DOM rows
@@ -1570,7 +1457,8 @@ function renderEventTable() {
     // DR2 minor: column-abbreviated unit so Peak isn't clipped at 1440; full unit in title
     const units = peakUnitFull;
     const peak = typeof ev.peak_value === 'number' && Number.isFinite(ev.peak_value)
-      ? (Math.abs(ev.peak_value) >= 100 ? Math.round(ev.peak_value) : ev.peak_value.toFixed(1)) + (units ? ' ' + units : '')
+      ? (Math.abs(ev.peak_value) >= 100 ? Math.round(ev.peak_value) : ev.peak_value.toFixed(1))
+        + (units ? ` <span class="ev-unit">${esc(units)}</span>` : '')
       : '—';
     const tr = el('tr', state.selectedEvent === ev.id ? 'sel' : '');
     /* DR3: documented-exclusion events get the pair_status reason as a row
@@ -1589,17 +1477,25 @@ function renderEventTable() {
     tr.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectEvent(ev.id, false); }
     });
+    const short = (iso) => fmtDate(iso).replace(/, \d{4}$/, '');
+    const days = eventDurationDays(ev);
     tr.innerHTML =
       `<td><span class="type-dot" style="background:${tm.color}" title="${esc(ev.event_type.replace('_', ' '))}"></span></td>` +
-      `<td>${esc(ev.title)}</td>` +
-      `<td>${fmtDate(ev.start)}</td><td>${fmtDate(eventLastDay(ev))}</td>` +
-      `<td class="num">${eventDurationDays(ev) ?? '—'}</td><td class="num" title="${esc(peakUnitFull)}">${peak}</td>`;
+      `<td><span class="ev-name">${esc(eventName(ev))}</span>` +
+      `<span class="ev-sub">${short(ev.start)} \u2013 ${short(eventLastDay(ev))}${days ? ` \u00b7 ${days} day${days === 1 ? '' : 's'}` : ''}` +
+      `<span class="ev-live" hidden> \u00b7 on map now</span></span></td>` +
+      `<td class="num" title="${esc(peakUnitFull)}">${peak}</td>`;
+    // list ⇄ map: pointing at a row outlines the event on the map and timeline
+    tr.addEventListener('pointerenter', () => { if (window.MergedMap) MergedMap.preview(ev.id); });
+    tr.addEventListener('pointerleave', () => { if (window.MergedMap) MergedMap.preview(null); });
+    tr.addEventListener('focus', () => { if (window.MergedMap) MergedMap.preview(ev.id); });
+    tr.addEventListener('blur', () => { if (window.MergedMap) MergedMap.preview(null); });
     tr.onclick = () => selectEvent(ev.id, false);
     tbody.appendChild(tr);
   }
   if (n > drawn) {
     const tr = el('tr', 'more-rows');
-    tr.innerHTML = `<td></td><td colspan="5">… ${n - drawn} more — refine with the filter</td>`;
+    tr.innerHTML = `<td></td><td colspan="2">… ${n - drawn} more — refine with the filter</td>`;
     tbody.appendChild(tr);
   } else if (n === 0) {
     // Owner 2026-11-07: empty lane = legitimate outcome; note + criteria tooltip.
@@ -1608,10 +1504,11 @@ function renderEventTable() {
     const note = searching ? 'No events match your search' : emptyLaneLine(state.tab);
     const crit = searching ? ''
       : state.tab === 'all' ? 'Events must clear the detection criteria for their type in the 90-day window.' : TYPE_CRITERIA[state.tab];
-    tr.innerHTML = `<td></td><td colspan="5"><span class="lane-empty"${crit ? ` title="${esc(crit)}"` : ''}>${esc(note)}${crit ? ' <span class="crit-mark" aria-hidden="true">ⓘ</span>' : ''}</span></td>`;
+    tr.innerHTML = `<td></td><td colspan="2"><span class="lane-empty"${crit ? ` title="${esc(crit)}"` : ''}>${esc(note)}${crit ? ' <span class="crit-mark" aria-hidden="true">ⓘ</span>' : ''}</span></td>`;
     tbody.appendChild(tr);
   }
   $('#event-count').textContent = `${n} event${n === 1 ? '' : 's'}`;
+  markMapRows();
   /* M7 (DR2): same horizontal-scroll affordance as the scorecard tables */
   const evWrap = tbody.closest('.table-wrap');
   if (evWrap) {
@@ -1645,6 +1542,31 @@ function renderEventTable() {
             { passive: true, once: true }));
       }
     }
+  }
+}
+
+/* list ⇄ map: the merged map reports which events are on screen at the
+   current time step and which are selected; rows mirror that. */
+let mapRowState = { active: [], sel: [] };
+window.onMapEvents = (active, sel) => {
+  const scroll = sel.length && sel.join() !== mapRowState.sel.join();
+  mapRowState = { active, sel };
+  markMapRows(scroll);
+};
+function markMapRows(scroll) {
+  const act = new Set(mapRowState.active), sel = new Set(mapRowState.sel);
+  let first = null;
+  document.querySelectorAll('#event-table tbody tr[data-id]').forEach((tr) => {
+    const id = tr.dataset.id, live = tr.querySelector('.ev-live');
+    tr.classList.toggle('live', act.has(id));
+    if (live) live.hidden = !act.has(id);
+    tr.classList.toggle('picked', sel.has(id));
+    if (sel.has(id) && !first) first = tr;
+  });
+  if (scroll && first) {                    // bring the picked row into the list's own viewport
+    const wrap = first.closest('.table-wrap');
+    const r = first.getBoundingClientRect(), w = wrap.getBoundingClientRect();
+    if (r.top < w.top + 30 || r.bottom > w.bottom) wrap.scrollTop += r.top - w.top - w.height / 3;
   }
 }
 
@@ -1792,16 +1714,13 @@ function selectEvent(id, fromMap, nav) {
   $('#scorecard-sec').classList.add('hidden');
   $('#events-sec').classList.add('hidden');
   $('#global-sec').classList.add('hidden');   // one primary view at a time (QA 2026-11-06)
+  document.body.classList.add('detail-open');
   const ev = state.events.find((e) => e.id === id);
   if (!ev) return;
   /* G-12: "Heat wave · S. Sudan" (type · region) — the dated data title stays in the data, the
      dates are in the story line. Region upgrades once the country table is loaded. */
   const h2 = $('#detail-title');
-  const humanTitle = () => {
-    const t = (TYPE_META[ev.event_type] || {}).short || ev.event_type;
-    const pn = eventRegion(ev, state._vizFor === id ? state._viz : null);
-    return `${t} \u00b7 ${String(pn).split(',')[0]}`;
-  };
+  const humanTitle = () => eventName(ev, state._vizFor === id ? state._viz : null);
   h2.textContent = humanTitle();
   h2.title = ev.title;
   const chips = $('#detail-chips');
@@ -1949,7 +1868,7 @@ function selectEvent(id, fromMap, nav) {
   };
   state.detailChartsPending = buildCharts;
 
-  if (!fromMap) renderEventTable(), renderMap();
+  if (!fromMap) renderEventTable();
   sec.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
 }
 
@@ -1964,6 +1883,7 @@ function closeDetail(nav) {
   if (window.EventViz) { EventViz.onLead = null; EventViz.onModels = null; EventViz.onLayers = null; EventViz.onDay = null; EventViz.initialLead = null; EventViz.teardown(); }
   syncUrl(!!nav.push);
   $('#detail-sec').classList.add('hidden');
+  document.body.classList.remove('detail-open');
   $('#scorecard-sec').classList.remove('hidden');
   $('#events-sec').classList.remove('hidden');
   syncWindowSections();   // week-aware re-show (ponytail 2026-11-08 16:15)
@@ -1972,7 +1892,7 @@ function closeDetail(nav) {
   const mini = $('#detail-mini'); if (mini) mini.innerHTML = '';
   const charts = $('#detail-charts'); if (charts) charts.innerHTML = '';
   const fold = $('#detail-scores'); if (fold) fold.open = false;
-  renderEventTable(); renderMap();
+  renderEventTable();
   /* A1: restore the list scroll position (page + event table) once the home
      layout is back. Two passes: rAF catches the un-hidden layout, a second
      pass after the map/table re-layout finishes (single rAF clamps short).
@@ -1983,7 +1903,6 @@ function closeDetail(nav) {
     // a11y: hand focus back to the row the user came from (Esc/close/Back)
     const row = retId && document.querySelector(`#event-table tr[data-id="${retId}"]`);
     if (row) row.focus({ preventScroll: true });
-    if (map) map.invalidateSize();
     window.scrollTo(0, back ? back.y : 0);
     const wrap = document.querySelector('#events-sec .table-wrap.tall');
     if (wrap && back) { wrap.scrollLeft = back.x; wrap.scrollTop = back.ty; }
@@ -2018,14 +1937,13 @@ function applyTheme() {
     ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
     : state.themePref;
   document.documentElement.dataset.theme = eff;
-  homeTiles();   // M3: swap catalog basemap with the theme
   $('#theme-toggle').textContent =
     { auto: '◐ auto', light: '☀ light', dark: '☾ dark' }[state.themePref];
 }
 function cycleTheme() {
   state.themePref = { auto: 'light', light: 'dark', dark: 'auto' }[state.themePref];
   saveState(); applyTheme(); renderSkillCharts();
-  renderEventTable(); renderMap();   // type tokens are theme-paired — re-paint dots/boxes
+  renderEventTable();   // type tokens are theme-paired — re-paint dots
   if (state.selectedEvent) selectEvent(state.selectedEvent, true);
 }
 
@@ -2035,7 +1953,6 @@ function cycleTheme() {
 function renderAll() {
   renderScorecard();
   renderSkillCharts();
-  renderMap();
   renderEventTable();
   syncWindowSections();
 }
@@ -2063,11 +1980,15 @@ async function boot() {
     // boxes/table dots/minis read theme-paired CSS tokens at render time;
     // 09:18: and an open detail resolved its palette at build time — re-select
     if (state.themePref === 'auto') {
-      applyTheme(); renderSkillCharts(); renderEventTable(); renderMap();
+      applyTheme(); renderSkillCharts(); renderEventTable();
       if (state.selectedEvent) selectEvent(state.selectedEvent, true);
     }
   });
   $('#detail-close').onclick = () => closeDetail();
+  document.querySelectorAll('[data-jump]').forEach((b) => {   // buttons, not #anchors: the hash carries app state
+    b.onclick = () => document.getElementById(b.dataset.jump).scrollIntoView({
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  });
   /* A1: Esc returns from the event detail to the list (owner bug A1). The
      About dialog and the fullscreen map panel own Esc while they are open. */
   document.addEventListener('keydown', (e) => {
@@ -2096,7 +2017,7 @@ async function boot() {
   });
   $('#event-search').addEventListener('input', (e) => {
     state.search = e.target.value.trim();
-    renderEventTable(); renderMap();
+    renderEventTable();
   });
   let pendingNote = null;
   try {
@@ -2139,6 +2060,7 @@ async function boot() {
     if (ev) ev.bbox = bboxFixes[id];
   }
   renderAll();
+  loadCountries().then(() => { if (!state.selectedEvent) renderEventTable(); });   // vague bands → country names
   if (pendingNote) routeNote(pendingNote);
   if (window.MergedMap) MergedMap.mount();   // one global map (briefs/merged_global_map.md); self-reports failure
   if (state.selectedEvent) selectEvent(state.selectedEvent, true, { push: false });
@@ -2162,9 +2084,6 @@ async function boot() {
   };
   window.addEventListener('popstate', syncFromLocation);
   window.addEventListener('hashchange', syncFromLocation);
-  window.addEventListener('resize', () => { /* Plotly responsive handles charts; Leaflet: */
-    if (map) map.invalidateSize();
-  });
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

@@ -340,11 +340,6 @@ def test_catalog_peak_column_uses_full_units(pg, base):
     assert "kg/m/s" not in pg.inner_text("#event-table")
 
 
-def test_catalog_map_is_bounded_to_the_tile_extent(pg, base):
-    _boot(pg, base)
-    assert pg.evaluate("window.__catalogMap.options.maxBounds.getNorth()") <= 85.1
-
-
 # --------------------------------------------------------------------------
 # accessibility: axe-core must report ZERO violations
 # --------------------------------------------------------------------------
@@ -644,14 +639,11 @@ def _span(b):
 
 
 DATELINE_PROBE = """(id) => {
-  const ev = state.events.find(e => e.id === id), m = window.__catalogMap;
-  const widths = [];
-  m.eachLayer(l => { if (l.getBounds && l.options && l.options.fillColor) {
-    const b = l.getBounds(); widths.push(b.getEast() - b.getWest()); } });
+  const ev = state.events.find(e => e.id === id);
   const node = document.querySelector('#gm-boxes [data-id="' + id + '"]');
   const W = document.querySelector('#raw-canvas').getBoundingClientRect().width;
   const bb = node && node.querySelector('.gm-bbox');
-  return { bbox: ev.bbox, widths, W,
+  return { bbox: ev.bbox, W,
            node: !!node,
            bboxD: bb ? bb.getAttribute('d') : null };
 }"""
@@ -705,7 +697,6 @@ def test_dateline_event_renders_sanely_on_every_surface(engine, base):
     true_w = _span(ev["bbox"])
     ctx, page = _dateline_page(engine, base, ev)
     r = page.evaluate(DATELINE_PROBE, ev["id"])
-    assert max(r["widths"]) < 90 and len(r["widths"]) >= 32, r     # two half-boxes, never a world-wide rectangle
     assert r["node"] and r["bboxD"], r                             # box drawn at the qualification step
     assert r["bboxD"].count("M") == 2, r                           # wrapped bbox -> split at the seam, not a full-band bar
     # the two halves sit at opposite map edges, so the group bbox is wide: check the path itself
@@ -727,7 +718,6 @@ def test_degenerate_full_band_bbox_is_recovered_from_footprint(engine, base):
     r = page.evaluate(DATELINE_PROBE, ev["id"])
     assert r["bbox"][2] > r["bbox"][3], r                           # wrapped again (lon_min > lon_max)
     assert _span(r["bbox"]) < 2 * _span(ev["bbox"]), r
-    assert max(r["widths"]) < 90, r
     assert r["node"] and r["bboxD"].count("M") == 2, r              # recovered box renders, split at the seam
     ctx.close()
 
@@ -738,7 +728,6 @@ def test_unrecoverable_full_band_bbox_draws_no_band(engine, base):
         pytest.skip("no dateline-crossing event in the current set")
     ctx, page = _dateline_page(engine, base, ev, patch=lambda b: [b[0], b[1], -180.0, 180.0], strip_footprint=True)
     r = page.evaluate(DATELINE_PROBE, ev["id"])
-    assert max(r["widths"]) < 90, r                                  # no world-wide catalog rectangle
     assert not r["node"] and not r["bboxD"], r                       # none on the merged map either
     w = _detail_width(page, base, ev["id"])
     assert w < 2 * _span(ev["bbox"]) + 10, w                         # detail still frames the field, not the world
