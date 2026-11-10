@@ -1,5 +1,12 @@
 # Rollback: footprint-assignment + small-sample cue (2026-11-10, ~11:05Z)
 
+> **Do not use this recipe as-is after 13:01Z.** It restores `dashboard/app.js`,
+> `dashboard/mergedmap.js` and `dashboard/index.html` from 11:05Z, which predates
+> term_720dbed3's paint-gate deploy (heat 3 / freeze 1, live 13:01:28Z) — running
+> it would silently revert that lane's fix. If you must undo only the regions
+> work now, diff the current live files against these and remove the region code
+> by hand, or ask the regions lane (`notes/channel_regions.md`).
+
 These 8 files are the live bytes **immediately before** the two owner follow-ups
 (>25 % footprint-overlap assignment, small-sample cue). They already contain the
 regional-breakdowns feature as deployed at 04:32Z — this is a rollback of the
