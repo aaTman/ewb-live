@@ -26,8 +26,8 @@ const TYPE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river'];
    Criteria wording mirrors ewb_live/events/temperature.py + ar.py thresholds —
    keep in sync if detection parameters change. */
 const TYPE_CRITERIA = {
-  heat_wave: 'Every 6-hourly step of a UTC day has 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². The map shades consecutive COMPLETED days meeting this daily rule (dithered = today so far).',
-  freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². The map shades consecutive COMPLETED days meeting this daily rule (dithered = today so far).',
+  heat_wave: 'Every 6-hourly step of a UTC day has 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². The map shades only cells that reach that same 3-consecutive-day minimum (consecutive COMPLETED days; cells below it are blank because they can never become an event), dithered = today so far on an already-qualifying cell.',
+  freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². The map shades only cells that reach that same 3-consecutive-day minimum (consecutive COMPLETED days; cells below it are blank because they can never become an event), dithered = today so far on an already-qualifying cell.',
   atmospheric_river: 'Integrated water-vapour transport peaking at ≥400 kg m⁻¹ s⁻¹ and reaching land.',
 };
 const emptyLaneLine = (t) => t === 'all'

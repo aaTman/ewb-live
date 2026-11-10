@@ -188,9 +188,11 @@
       400&nbsp;kg&nbsp;m⁻¹&nbsp;s⁻¹ with a ridge criterion. The river must start over the ocean and
       reach land; objects entirely over land are excluded, and tropical cyclones are screened out using IBTrACS best tracks.</li>
       <li>The raw detector map shades each cell by its consecutive <b>completed</b> UTC days
-      meeting the daily rule (solid; heat ramp 1–7+, freeze ramp 1–3+), with today’s in-progress
-      day dithered as provisional; the same unfiltered heat/freeze daily criterion is the one the
-      detector applies within its AND-chain. The AR layer is EWB detection minus tropical objects
+      meeting the daily rule, and only once that streak reaches the detector’s <b>3-day</b>
+      minimum (solid; heat ramp 3–7+, freeze 3+; cells with 1–2 days are blank — they can never
+      become an event), with today’s in-progress day dithered as provisional on a cell that
+      already qualifies; the same unfiltered heat/freeze daily criterion is the one the detector
+      applies within its AND-chain. The AR layer is EWB detection minus tropical objects
       (any cell within 15&nbsp;deg of the equator) and tropical cyclones.</li>
       <li>Parts of one system are merged, no two events overlap in time and space, and each type
       is capped at 15 events.</li>

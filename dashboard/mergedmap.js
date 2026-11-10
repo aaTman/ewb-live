@@ -15,7 +15,10 @@
    bit-packed rows heat/freeze/ar, row0=lat0, MSB-first), duration sidecars
    <ts>.run (zlib, two raw u8 planes heat/freeze; dur rev v2: low 7 bits =
    consecutive COMPLETED UTC days meeting the daily rule — constant across
-   all four frames of a day — bit 7 = today so far, paint provisional) and
+   all four frames of a day — bit 7 = today so far, dithered on qualifying
+   cells only. Qualification gate: a cell paints only when its completed
+   streak reaches the lane minimum (detector MIN_CONSECUTIVE_DAYS = 3;
+   index.dur.min overrides the built-in LAYERS[].min)) and
    data/results/global_timeline.json (events[]: id,type,title,start,end,bbox,
    grid,day,days,masks[,qualified_at]).
    Reduced motion: playback is frame-stepping only; nothing auto-plays.
@@ -26,16 +29,23 @@
   const PAD = 12;
   const HIT_MIN = 44;                      // min touch target (px)
   const LAYERS = [                         // draw order bottom→top
-    { key: 'h', name: 'heat',   label: 'Heat — days > P85', ramp: true, bins: 7,
-      tip: 'Solid = consecutive COMPLETED UTC days the cell exceeded the P85 climatology at all four 6-hourly steps (constant within a day); dithered = today so far (provisional). Darkest = 7+ days.' },
-    { key: 'f', name: 'freeze', label: 'Freeze — days < P15', ramp: true, bins: 3,
-      tip: 'Solid = consecutive COMPLETED UTC days the cell fell below the P15 climatology at all four 6-hourly steps (constant within a day); dithered = today so far (provisional). Darkest = 3+ days.' },
+    // min = qualification gate: the detector's MIN_CONSECUTIVE_DAYS
+    // (ewb_live/events/temperature.py, = 3 for heat and freeze). A cell paints
+    // only once its consecutive COMPLETED-day streak reaches it; index.dur.min
+    // (published by the exceedance build) overrides this built-in default.
+    { key: 'h', name: 'heat',   label: 'Heat — days > P85', ramp: true, bins: 7, min: 3,
+      tip: 'Blank below 3 consecutive completed days — the detector minimum, so such a cell can never become a heat wave. Solid = consecutive COMPLETED UTC days the cell exceeded the P85 climatology at all four 6-hourly steps (constant within a day; 3–7+); dithered = today so far, only on a cell that already qualifies. Darkest = 7+ days.' },
+    { key: 'f', name: 'freeze', label: 'Freeze — days < P15', ramp: true, bins: 3, min: 3,
+      tip: 'Blank below 3 consecutive completed days — the detector minimum, so such a cell can never become a freeze. Solid = consecutive COMPLETED UTC days the cell fell below the P15 climatology at all four 6-hourly steps (constant within a day; 3+); dithered = today so far, only on a cell that already qualifies. Darkest = 3+ days.' },
     { key: 'a', name: 'ar',     label: 'AR mask', tip: 'AR mask: EWB detection minus tropical objects (any cell within 15 deg of the equator) and tropical cyclones.' },
   ];
   const RUN_ALPHA = { heat: [110, 125, 140, 155, 170, 190, 215], freeze: [140, 175, 215] };  // bin opacities
-  // run value -> painted day count: v2 = completed days + provisional day;
-  // v1 sidecars (dur.rev != v2) carry the old provisional per-step run
-  const runCount = (r, v2) => (v2 ? (r & 127) + ((r & 128) ? 1 : 0) : r);
+  // qualification gate: the detector's MIN_CONSECUTIVE_DAYS per lane. index.dur.min
+  // (published with the v2 sidecars) wins; otherwise the built-in LAYERS[].min (3/3).
+  // raw is still null when renderLayerButtons first runs, so every branch must
+  // tolerate that and fall back to L.min.
+  const minDays = (L) => (raw && raw.dur && raw.dur.min && raw.dur.min[L.name] != null)
+    ? raw.dur.min[L.name] : (L.min || 0);
   const runBin = (count, bins) => Math.min(count - 1, bins - 1);   // bins: 1..bins
   const TYPES = {
     heat_wave:          { css: 'heat',   short: 'Heat' },
@@ -303,7 +313,7 @@
         : null));
     }
     const packed = packedCache, ramp = rampCache;
-    const durV2 = !!(raw.dur && raw.dur.rev === 'v2');
+    const durV2 = !!(raw.dur && String(raw.dur.rev || '').indexOf('v2') === 0);
     const act = LAYERS.map((L, li) => (on[L.key] ? li : -1)).filter((li) => li >= 0);
     const n = cw * ch;
     for (let p = 0; p < n; p++) {
@@ -313,17 +323,16 @@
       for (let a = 0; a < act.length; a++) {                  // later layers paint over earlier
         const li = act[a];
         if (run && ramp[li]) {
+          const L = LAYERS[li];
           const r = run[li * cells + cellIdx[p]];             // heat plane 0, freeze plane 1; 0 = unpainted
-          const cnt = runCount(r, durV2);
-          if (cnt <= 0) continue;
-          // provisional day (bit 7): 2px checkerboard between the completed
-          // bin and completed+1 — today's day rides visibly unfinished
-          if (durV2 && (r & 128) && ((((p % cw) >> 1) + ((p / cw) | 0) >> 1) & 1)) {
-            const done = r & 127;
-            if (done > 0) px[p] = ramp[li][runBin(done, LAYERS[li].bins)];
-            continue;
-          }
-          px[p] = ramp[li][runBin(cnt, LAYERS[li].bins)];
+          const done = durV2 ? (r & 127) : r;        // v1 sidecars: whole byte is the run
+          if (done < minDays(L)) continue;           // sub-threshold: blank, every hour
+          // today so far (bit 7) = texture only, never a new point: 2px
+          // checkerboard to the next ramp shade on an already-painted cell
+          const prov = durV2 && (r & 128)
+            && ((((p % cw) >> 1) + ((p / cw) | 0) >> 1) & 1);
+          px[p] = ramp[li][runBin(done + (prov ? 1 : 0), L.bins)];
+          continue;
         } else if (u8[li * plane + bi] & m) px[p] = packed[li];
       }
     }
@@ -666,8 +675,14 @@
       b.dataset.layer = L.key;
       if (L.tip) b.title = L.tip;
       b.setAttribute('aria-pressed', on[L.key] ? 'true' : 'false');
+      // legend gradient shows only the bins that can be painted: ramp tokens
+      // min..bins (cells below the lane minimum are blank). minDays(L) picks up
+      // index.dur.min once raw has loaded (this is re-called from the boot path).
+      // clamp to [1, bins]: dur.min arrives from the index, so a min of 0 or a
+      // min above the lane's bin count must not build an empty/undefined gradient
+      const rampFrom = L.ramp ? Math.min(Math.max(minDays(L), 1), L.bins) : 1;
       b.innerHTML = `<i style="${L.ramp
-        ? `background: linear-gradient(90deg, ${Array.from({ length: L.bins }, (_, bi) => `var(--dur-${L.name}-${bi + 1})`).join(', ')})`
+        ? `background: linear-gradient(90deg, ${Array.from({ length: L.bins - rampFrom + 1 }, (_, bi) => `var(--dur-${L.name}-${rampFrom + bi})`).join(', ')})`
         : `background: var(--series-${L.name})`}"></i>${L.label}`;
       b.onclick = () => {
         on[L.key] = !on[L.key];

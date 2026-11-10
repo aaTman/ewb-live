@@ -25,8 +25,16 @@ Counts saturate at 127. Seeded from the earliest mirror step. v1 sidecars
 index.json (frontend contract, channel 13:40/14:05):
 {schema, generated, grid{res_deg,ny,nx,lat0,lon0,step_lat,step_lon},
 frames:["YYYYMMDDHH",... asc], cutoff:"YYYYMMDDHH", window:{start,end},
-dur:{rev,seed}}. Incremental: existing frames skip (a frame is done only with
-its .run/.trk sidecars on disk). Run on the box:
+dur:{rev,seed,min{heat,freeze}}}. `dur.min` is the detector's per-lane
+MIN_CONSECUTIVE_DAYS (read from upstream temperature_events, never a
+literal), published so the frontend can stop shading cells that can never
+become an event. Paint rule (frontend contract): a cell is painted only
+when its COMPLETED run (low 7 bits) >= dur.min[layer]; the colour bin comes
+from the completed count alone (constant within a UTC day); bit 7 (today so
+far) is a dither texture on already-qualifying cells only, never a new
+point. Absent dur.min: built-in LAYERS[].min; no dur / v1 sidecars: the raw
+per-step run gated by the same minimum. Incremental: existing frames skip
+(a frame is done only with its .run/.trk sidecars on disk). Run on the box:
 python -m ewb_live.viz.exceedance [--days N] [--force]; also the weekly tail.
 """
 from __future__ import annotations
@@ -164,6 +172,20 @@ def run_from_bytes(raw: bytes, shape: tuple[int, int]
         raise ValueError(f".run payload {len(b)} B != {2 * n} B")
     a = np.frombuffer(b, np.uint8)
     return a[:n].reshape(shape), a[n:].reshape(shape)
+
+
+def dur_block(seed_tag: str | None) -> dict:
+    """index.json "dur" block (frontend contract, dur rev v2).
+
+    `min` is the detector's minimum consecutive-day run per lane, read from
+    upstream temperature_events().MIN_CONSECUTIVE_DAYS so the published
+    qualification gate can never drift from the detector. Both temperature
+    lanes share the constant (scan_temperature_events applies the same
+    minimum). See the module docstring for the paint rule."""
+    from ewb_live.events._upstream import temperature_events
+    m = int(temperature_events().MIN_CONSECUTIVE_DAYS)
+    return {"rev": DUR_REV, "seed": seed_tag,
+            "min": {"heat": m, "freeze": m}}
 
 
 def _to_display(a: np.ndarray) -> np.ndarray:
@@ -640,8 +662,7 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
     index["cutoff"] = fmt(mirror_end)
     # duration feature-detect (contract §4): consumer paints runs only when
     # this key exists; seed = earliest mirror step the recurrence saw
-    index["dur"] = {"rev": DUR_REV,
-                    "seed": fmt(times_all[0]) if times_all else None}
+    index["dur"] = dur_block(fmt(times_all[0]) if times_all else None)
     index["generated"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     tmp = _index_path(out).with_name(  # sweep matches *.tmp.*
         _index_path(out).name + f".tmp.{os.getpid()}")

@@ -732,11 +732,18 @@ def _gd_server(root):
 RAW_TS = ["2025110600", "2025110606", "2025110612"]  # 6-hourly, ts2 is past cutoff
 
 
-def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None):
+def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None,
+                       run_planes=None, dur=None):
     """raw_exceedance asset per the contract in channel_design_frontend.md:
     zlib'd layer-major bitpacked rows (heat,freeze,ar; ny x ceil(nx/8),
     row 0 = lat0 lowest, MSB-first). 5-deg grid; heat blob mid-pacifica,
-    freeze blob south, AR band north — distinct so pixel checks can differ."""
+    freeze blob south, AR band north — distinct so pixel checks can differ.
+
+    run_planes: optional [(heat_u8, freeze_u8), ...] one pair per frame, each
+    ny*nx raw bytes (NO bit packing) -> writes the <ts>.run duration sidecar
+    (zlib(heat ++ freeze)); dur: optional dict written as index.json "dur"
+    (the frontend feature-detect + the published qualification gate).
+    """
     import zlib
     frames = frames or RAW_TS
     cutoff = cutoff or RAW_TS[1]
@@ -746,10 +753,12 @@ def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None):
     stride = (nx + 7) // 8
     rd = os.path.join(data_dir, "raw_exceedance")
     os.makedirs(rd, exist_ok=True)
-    json.dump({"schema": 1, "generated": "2025-11-06T12:00:00Z", "grid": g,
-               "frames": frames, "cutoff": cutoff,
-               "window": {"start": frames[0][:8], "end": frames[-1][:8]}},
-              open(os.path.join(rd, "index.json"), "w"))
+    index = {"schema": 1, "generated": "2025-11-06T12:00:00Z", "grid": g,
+             "frames": frames, "cutoff": cutoff,
+             "window": {"start": frames[0][:8], "end": frames[-1][:8]}}
+    if dur is not None:
+        index["dur"] = dur
+    json.dump(index, open(os.path.join(rd, "index.json"), "w"))
     for k, ts in enumerate(frames):
         layers = [bytearray(ny * stride) for _ in range(3)]
         blobs = [(18 + k % 12, 30), (6 + k % 6, 10), (28, 40 + (k % 5) * 6)]
@@ -764,6 +773,11 @@ def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None):
             continue
         with open(os.path.join(rd, ts + ".bin"), "wb") as f:
             f.write(zlib.compress(b"".join(bytes(x) for x in layers)))
+        if run_planes is not None:
+            heat, freeze = run_planes[k]
+            assert len(heat) == ny * nx and len(freeze) == ny * nx, ts
+            with open(os.path.join(rd, ts + ".run"), "wb") as f:
+                f.write(zlib.compress(bytes(heat) + bytes(freeze)))
 
 
 @pytest.fixture(scope="module")
@@ -1115,3 +1129,101 @@ def test_raw_section_honest_without_data(live_url, page_ctx):
     errs = [e for e in page.errors
             if "Failed to load resource" not in e and "raw exceedance" not in e.lower()]
     assert errs == [], f"unexpected page errors: {errs}"
+
+
+# ------------------------------------------------ duration-gate (owner 2026-11-10) ----
+# The heat wave bug, twice now: cells that can never become an event were painted as
+# if they had, and the "today so far" provisional bit made points flash VALID at 00Z
+# (one 6-hourly step of four is enough to set it). Paint rule
+# (notes/spec_min_gate.md): a cell paints only when its COMPLETED-day streak reaches
+# the lane minimum published in index.dur.min; the provisional bit is texture only.
+GATE_TS = ["2025110600", "2025110606", "2025110612", "2025110618"]
+GATE_NY, GATE_NX = 36, 72
+GATE_ROW = 18                       # lat 2.5 in the fixture's 5-deg grid
+GATE_SUB = (GATE_ROW, 20)           # 2 completed days: below the published minimum
+GATE_QUAL = (GATE_ROW, 40)          # 3 completed days: qualifies
+GATE_PROV = (GATE_ROW, 60)          # 0 completed + provisional bit at 00Z only
+GATE_MIN = 3
+
+
+def _gate_planes():
+    """One UTC day, four 6-hourly frames (v2 sidecar encoding: low 7 bits =
+    COMPLETED days, bit 7 = today so far)."""
+    planes = []
+    for k, _ts in enumerate(GATE_TS):
+        heat = bytearray(GATE_NY * GATE_NX)
+        heat[GATE_SUB[0] * GATE_NX + GATE_SUB[1]] = (0x80 | 2) if k == 0 else 2
+        heat[GATE_QUAL[0] * GATE_NX + GATE_QUAL[1]] = (0x80 | 3) if k == 0 else 3
+        heat[GATE_PROV[0] * GATE_NX + GATE_PROV[1]] = 0x80 if k == 0 else 0
+        planes.append((heat, bytearray(GATE_NY * GATE_NX)))
+    return planes
+
+
+def _gate_cell_lonlat(cell):
+    _r, _c = cell  # fixture grid: lat0 -90 / lon0 -180, 5 deg steps, cell CENTRES
+    return [-180.0 + (cell[1] + 0.5) * 5.0, -90.0 + (cell[0] + 0.5) * 5.0]
+
+
+_GATE_READ_JS = """({subLL, qualLL, provLL}) => {
+    const cv = document.querySelector('#raw-canvas');
+    const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    const red = (i) => d[i] > d[i + 1] + 15 && d[i] > d[i + 2] + 15;
+    let painted = 0;
+    for (let i = 0; i < d.length; i += 4) if (red(i)) painted++;
+    const dpr = MergedMap._dbg().dpr;
+    // heat-red pixel count in a box around the cell's projected CENTRE: one cell
+    // is ~12 px wide here and the LUT rounds lon→cell, so the centre pixel itself
+    // can land on the neighbour — probe the block, never a single pixel
+    const at = (ll) => { const p = MergedMap._dbg().project(ll);
+        if (!p) return null;
+        const cx = Math.round(p[0] * dpr), cy = Math.round(p[1] * dpr);
+        let n = 0;
+        for (let y = cy - 5; y <= cy + 5; y++)
+            for (let x = cx - 5; x <= cx + 5; x++) {
+                if (x < 0 || y < 0 || x >= cv.width || y >= cv.height) continue;
+                if (red(4 * (y * cv.width + x))) n++;
+            }
+        return n; };
+    return {painted, sub: at(subLL), qual: at(qualLL), prov: at(provLL)};
+}"""
+
+
+@pytest.fixture(scope="module")
+def gate_server(tmp_path_factory):
+    root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-gate")),
+                             with_timeline=False, raw_frames=GATE_TS,
+                             raw_cutoff=GATE_TS[-1])
+    _build_raw_fixture(os.path.join(root, "data", "results"), frames=GATE_TS,
+                       cutoff=GATE_TS[-1], run_planes=_gate_planes(),
+                       dur={"rev": "v2", "seed": GATE_TS[0],
+                            "min": {"heat": GATE_MIN, "freeze": GATE_MIN}})
+    srv, url = _gd_server(root)
+    yield url
+    srv.shutdown()
+
+
+def test_duration_gate_blanks_sub_threshold_and_never_flashes_00z(gate_server, page_ctx):
+    page = page_ctx
+    _mm_goto(page, gate_server)
+    assert page.evaluate("!!MergedMap._dbg().grid"), "raw index did not load"
+    counts = {}
+    for ts in GATE_TS:
+        _mm_frame(page, ts)
+        assert f"{ts[8:10]}:00 UTC" in page.inner_text("#raw-readout"), ts
+        page.wait_for_timeout(300)               # let the async frame paint land
+        got = page.evaluate(_GATE_READ_JS, {
+            "subLL": _gate_cell_lonlat(GATE_SUB),
+            "qualLL": _gate_cell_lonlat(GATE_QUAL),
+            "provLL": _gate_cell_lonlat(GATE_PROV)})
+        counts[ts] = got["painted"]
+        # the qualifying cell paints in EVERY frame of the day (prov bit included);
+        # a 2-day cell stays blank all day; and a provisional-only cell must never
+        # light up — that 00Z flash IS the bug (one step of four is not a day)
+        assert got["qual"] > 0, (ts, "qualifying cell never painted", got)
+        assert got["sub"] == 0, (ts, "sub-threshold cell painted", got)
+        assert got["prov"] == 0, (ts, "provisional-only cell painted", got)
+    # the painted set is frame-invariant across the day: no 00Z abundance
+    assert counts[GATE_TS[0]] == counts[GATE_TS[1]] == counts[GATE_TS[2]] == counts[GATE_TS[3]], counts
+    assert counts[GATE_TS[0]] > 0, "the qualifying cell never painted"
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], errs

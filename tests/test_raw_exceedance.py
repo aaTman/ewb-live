@@ -1,4 +1,6 @@
 """Offline tests for the raw_exceedance frame codec + incremental build."""
+import json
+
 import numpy as np
 
 from ewb_live import serve
@@ -124,3 +126,46 @@ def test_run_sidecar_v2_in_incremental_build(tmp_path, monkeypatch):
     assert rx.build_frames(tmp_path, times, layer_fn, True, [], seed) == 4
     h2, _ = rx.run_from_bytes((tmp_path / "2026081100.run").read_bytes(), (8, 8))
     assert (h2[2:4, 2:4] == 0x81).all()   # 1 completed day + today provisional
+
+
+# ---- published qualification gate (contract notes/spec_min_gate.md §B):
+# index.dur.min is the detector's per-lane MIN_CONSECUTIVE_DAYS, read from
+# upstream -- never a hardcoded 3 -- and must survive an incremental rewrite.
+
+def test_dur_block_min_from_detector_constant(monkeypatch):
+    from ewb_live.events import _upstream
+    real = _upstream.temperature_events().MIN_CONSECUTIVE_DAYS
+    assert rx.dur_block("2026072500") == {
+        "rev": "v2", "seed": "2026072500",
+        "min": {"heat": real, "freeze": real}}
+
+    # a non-3 upstream value flows through unchanged: proves the wiring is
+    # the constant and not a literal duplicated in the viz layer
+    class FakeTE:
+        MIN_CONSECUTIVE_DAYS = real + 2
+    monkeypatch.setattr(_upstream, "temperature_events", lambda: FakeTE)
+    assert rx.dur_block("2026072500")["min"] == {
+        "heat": real + 2, "freeze": real + 2}
+
+
+def test_dur_min_survives_incremental_index_rewrite(tmp_path):
+    """Incremental builds keep existing frames and refresh the dur block;
+    dur.min must still be published after the index round-trip."""
+    from ewb_live.events import _upstream
+    real = _upstream.temperature_events().MIN_CONSECUTIVE_DAYS
+    out = tmp_path / rx.OUT_DIRNAME
+    out.mkdir(parents=True)
+
+    first = rx._load_index(out)
+    first["frames"] = ["2026081000", "2026081006"]   # already-done frames
+    first["dur"] = rx.dur_block("2026072500")
+    (out / "index.json").write_text(json.dumps(first))
+
+    # second (incremental) pass: load, keep frames, rewrite dur
+    again = rx._load_index(out)
+    assert again["frames"] == ["2026081000", "2026081006"]
+    again["dur"] = rx.dur_block("2026072500")
+    (out / "index.json").write_text(json.dumps(again))
+
+    final = rx._load_index(out)
+    assert final["dur"]["min"] == {"heat": real, "freeze": real}
