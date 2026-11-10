@@ -17,8 +17,8 @@
    consecutive COMPLETED UTC days meeting the daily rule — constant across
    all four frames of a day — bit 7 = today so far, dithered on qualifying
    cells only. Qualification gate: a cell paints only when its completed
-   streak reaches the lane minimum (detector MIN_CONSECUTIVE_DAYS = 3;
-   index.dur.min overrides the built-in LAYERS[].min)) and
+   streak reaches the lane minimum (heat = detector MIN_CONSECUTIVE_DAYS = 3,
+   freeze = 1; index.dur.min overrides the built-in LAYERS[].min)) and
    data/results/global_timeline.json (events[]: id,type,title,start,end,bbox,
    grid,day,days,masks[,qualified_at]).
    Reduced motion: playback is frame-stepping only; nothing auto-plays.
@@ -29,19 +29,22 @@
   const PAD = 12;
   const HIT_MIN = 44;                      // min touch target (px)
   const LAYERS = [                         // draw order bottom→top
-    // min = qualification gate: the detector's MIN_CONSECUTIVE_DAYS
-    // (ewb_live/events/temperature.py, = 3 for heat and freeze). A cell paints
-    // only once its consecutive COMPLETED-day streak reaches it; index.dur.min
-    // (published by the exceedance build) overrides this built-in default.
+    // min = qualification gate: heat is the detector's MIN_CONSECUTIVE_DAYS
+    // (ewb_live/events/temperature.py, 3) — index.dur.min (published by the
+    // exceedance build) overrides these built-in defaults. Freeze paints from
+    // its first completed day (owner 2026-11-10): freeze EVENTS still need the
+    // detector minimum, but cold runs are shorter/rarer, so a 3-day paint floor
+    // would leave the lane nearly blank and the 1-2 day ramp shades unusable.
     { key: 'h', name: 'heat',   label: 'Heat — days > P85', ramp: true, bins: 7, min: 3,
       tip: 'Blank below 3 consecutive completed days — the detector minimum, so such a cell can never become a heat wave. Solid = consecutive COMPLETED UTC days the cell exceeded the P85 climatology at all four 6-hourly steps (constant within a day; 3–7+); dithered = today so far, only on a cell that already qualifies. Darkest = 7+ days.' },
-    { key: 'f', name: 'freeze', label: 'Freeze — days < P15', ramp: true, bins: 3, min: 3,
-      tip: 'Blank below 3 consecutive completed days — the detector minimum, so such a cell can never become a freeze. Solid = consecutive COMPLETED UTC days the cell fell below the P15 climatology at all four 6-hourly steps (constant within a day; 3+); dithered = today so far, only on a cell that already qualifies. Darkest = 3+ days.' },
+    { key: 'f', name: 'freeze', label: 'Freeze — days < P15', ramp: true, bins: 3, min: 1,
+      tip: 'Shaded from its first consecutive completed day: cold runs are short, so sub-3-day cells stay visible for context (a freeze EVENT still needs 3+ days). Solid = consecutive COMPLETED UTC days the cell fell below the P15 climatology at all four 6-hourly steps (constant within a day; 1–3+); dithered = today so far, only on a cell that already shows at least one completed day. Darkest = 3+ days.' },
     { key: 'a', name: 'ar',     label: 'AR mask', tip: 'AR mask: EWB detection minus tropical objects (any cell within 15 deg of the equator) and tropical cyclones.' },
   ];
   const RUN_ALPHA = { heat: [110, 125, 140, 155, 170, 190, 215], freeze: [140, 175, 215] };  // bin opacities
-  // qualification gate: the detector's MIN_CONSECUTIVE_DAYS per lane. index.dur.min
-  // (published with the v2 sidecars) wins; otherwise the built-in LAYERS[].min (3/3).
+  // qualification gate per lane: heat = the detector's MIN_CONSECUTIVE_DAYS,
+  // freeze = 1 completed day (context; events still need 3). index.dur.min
+  // (published with the v2 sidecars) wins; otherwise the built-in LAYERS[].min.
   // raw is still null when renderLayerButtons first runs, so every branch must
   // tolerate that and fall back to L.min.
   const minDays = (L) => (raw && raw.dur && raw.dur.min && raw.dur.min[L.name] != null)

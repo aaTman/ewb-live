@@ -1136,14 +1136,21 @@ def test_raw_section_honest_without_data(live_url, page_ctx):
 # if they had, and the "today so far" provisional bit made points flash VALID at 00Z
 # (one 6-hourly step of four is enough to set it). Paint rule
 # (notes/spec_min_gate.md): a cell paints only when its COMPLETED-day streak reaches
-# the lane minimum published in index.dur.min; the provisional bit is texture only.
+# the lane minimum published in index.dur.min (heat = the detector's 3, freeze = 1 by
+# owner decision — a freeze still needs 3 days, but cold runs are short, so 1-2 day
+# cells stay visible for context); the provisional bit is texture only and can never
+# make a cell valid.
 GATE_TS = ["2025110600", "2025110606", "2025110612", "2025110618"]
 GATE_NY, GATE_NX = 36, 72
 GATE_ROW = 18                       # lat 2.5 in the fixture's 5-deg grid
-GATE_SUB = (GATE_ROW, 20)           # 2 completed days: below the published minimum
-GATE_QUAL = (GATE_ROW, 40)          # 3 completed days: qualifies
-GATE_PROV = (GATE_ROW, 60)          # 0 completed + provisional bit at 00Z only
-GATE_MIN = 3
+GATE_SUB = (GATE_ROW, 20)           # heat: 2 completed days — below the 3-day gate
+GATE_QUAL = (GATE_ROW, 40)          # heat: 3 completed days — qualifies
+GATE_PROV = (GATE_ROW, 60)          # heat: 0 completed + provisional bit at 00Z only
+GATE_F_ONE = (GATE_ROW, 28)         # freeze: 1 completed day — paints (gate is 1)
+GATE_F_REF_A = (GATE_ROW, 30)       # freeze: blank reference, same ocean row
+GATE_F_PROV = (GATE_ROW, 32)        # freeze: 0 completed + provisional bit at 00Z only
+GATE_F_REF_B = (GATE_ROW, 34)       # freeze: blank reference, same ocean row
+GATE_MIN = {"heat": 3, "freeze": 1}
 
 
 def _gate_planes():
@@ -1155,37 +1162,53 @@ def _gate_planes():
         heat[GATE_SUB[0] * GATE_NX + GATE_SUB[1]] = (0x80 | 2) if k == 0 else 2
         heat[GATE_QUAL[0] * GATE_NX + GATE_QUAL[1]] = (0x80 | 3) if k == 0 else 3
         heat[GATE_PROV[0] * GATE_NX + GATE_PROV[1]] = 0x80 if k == 0 else 0
-        planes.append((heat, bytearray(GATE_NY * GATE_NX)))
+        freeze = bytearray(GATE_NY * GATE_NX)
+        freeze[GATE_F_ONE[0] * GATE_NX + GATE_F_ONE[1]] = 1
+        freeze[GATE_F_PROV[0] * GATE_NX + GATE_F_PROV[1]] = 0x80 if k == 0 else 0
+        planes.append((heat, freeze))
     return planes
 
 
 def _gate_cell_lonlat(cell):
-    _r, _c = cell  # fixture grid: lat0 -90 / lon0 -180, 5 deg steps, cell CENTRES
+    # fixture grid: lat0 -90 / lon0 -180, 5 deg steps -> cell CENTRE
     return [-180.0 + (cell[1] + 0.5) * 5.0, -90.0 + (cell[0] + 0.5) * 5.0]
 
 
-_GATE_READ_JS = """({subLL, qualLL, provLL}) => {
+_GATE_CELLS = {"sub": GATE_SUB, "qual": GATE_QUAL, "prov": GATE_PROV,
+               "fOne": GATE_F_ONE, "fRefA": GATE_F_REF_A,
+               "fProv": GATE_F_PROV, "fRefB": GATE_F_REF_B}
+
+_GATE_READ_JS = """({cells}) => {
     const cv = document.querySelector('#raw-canvas');
     const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
     const red = (i) => d[i] > d[i + 1] + 15 && d[i] > d[i + 2] + 15;
     let painted = 0;
     for (let i = 0; i < d.length; i += 4) if (red(i)) painted++;
     const dpr = MergedMap._dbg().dpr;
-    // heat-red pixel count in a box around the cell's projected CENTRE: one cell
-    // is ~12 px wide here and the LUT rounds lon→cell, so the centre pixel itself
-    // can land on the neighbour — probe the block, never a single pixel
-    const at = (ll) => { const p = MergedMap._dbg().project(ll);
+    // probe the 11x11 block around the cell's projected CENTRE: one cell is only
+    // ~12 px wide here and the LUT rounds lon->cell, so the centre pixel itself
+    // can land on the neighbour — never read a single pixel
+    const block = (ll) => { const p = MergedMap._dbg().project(ll);
         if (!p) return null;
         const cx = Math.round(p[0] * dpr), cy = Math.round(p[1] * dpr);
-        let n = 0;
+        let n = 0, r = 0, g = 0, b = 0, reds = 0;
         for (let y = cy - 5; y <= cy + 5; y++)
             for (let x = cx - 5; x <= cx + 5; x++) {
                 if (x < 0 || y < 0 || x >= cv.width || y >= cv.height) continue;
-                if (red(4 * (y * cv.width + x))) n++;
+                const i = 4 * (y * cv.width + x);
+                n++; r += d[i]; g += d[i + 1]; b += d[i + 2];
+                if (red(i)) reds++;
             }
-        return n; };
-    return {painted, sub: at(subLL), qual: at(qualLL), prov: at(provLL)};
+        return {reds, rgb: [r / n, g / n, b / n]}; };
+    const out = {painted};
+    for (const [k, ll] of Object.entries(cells)) out[k] = block(ll);
+    return out;
 }"""
+
+
+def _gate_lum(rgb):
+    r, g, b = rgb
+    return 0.299 * r + 0.587 * g + 0.114 * b
 
 
 @pytest.fixture(scope="module")
@@ -1195,8 +1218,7 @@ def gate_server(tmp_path_factory):
                              raw_cutoff=GATE_TS[-1])
     _build_raw_fixture(os.path.join(root, "data", "results"), frames=GATE_TS,
                        cutoff=GATE_TS[-1], run_planes=_gate_planes(),
-                       dur={"rev": "v2", "seed": GATE_TS[0],
-                            "min": {"heat": GATE_MIN, "freeze": GATE_MIN}})
+                       dur={"rev": "v2", "seed": GATE_TS[0], "min": dict(GATE_MIN)})
     srv, url = _gd_server(root)
     yield url
     srv.shutdown()
@@ -1211,17 +1233,26 @@ def test_duration_gate_blanks_sub_threshold_and_never_flashes_00z(gate_server, p
         _mm_frame(page, ts)
         assert f"{ts[8:10]}:00 UTC" in page.inner_text("#raw-readout"), ts
         page.wait_for_timeout(300)               # let the async frame paint land
-        got = page.evaluate(_GATE_READ_JS, {
-            "subLL": _gate_cell_lonlat(GATE_SUB),
-            "qualLL": _gate_cell_lonlat(GATE_QUAL),
-            "provLL": _gate_cell_lonlat(GATE_PROV)})
+        got = page.evaluate(_GATE_READ_JS, {"cells": {
+            k: _gate_cell_lonlat(c) for k, c in _GATE_CELLS.items()}})
         counts[ts] = got["painted"]
-        # the qualifying cell paints in EVERY frame of the day (prov bit included);
-        # a 2-day cell stays blank all day; and a provisional-only cell must never
-        # light up — that 00Z flash IS the bug (one step of four is not a day)
-        assert got["qual"] > 0, (ts, "qualifying cell never painted", got)
-        assert got["sub"] == 0, (ts, "sub-threshold cell painted", got)
-        assert got["prov"] == 0, (ts, "provisional-only cell painted", got)
+        # HEAT (gate 3): the qualifying cell paints in EVERY frame of the day,
+        # prov bit included; a 2-day cell stays blank all day; and a
+        # provisional-only cell must never light up — that 00Z flash IS the bug
+        # (one step of four exceeded is not a completed day).
+        assert got["qual"]["reds"] > 0, (ts, "qualifying cell never painted", got["qual"])
+        assert got["sub"]["reds"] == 0, (ts, "sub-threshold heat cell painted", got["sub"])
+        assert got["prov"]["reds"] == 0, (ts, "provisional-only heat cell painted", got["prov"])
+        # FREEZE (gate 1, owner 2026-11-10): a 1-day cell paints. The base map is
+        # already blue-family, so compare the cell against its blank neighbour on
+        # the same ocean row instead of classifying the colour.
+        painted = _gate_lum(got["fOne"]["rgb"]) - _gate_lum(got["fRefA"]["rgb"])
+        assert painted < -12, (ts, "1-day freeze cell not painted",
+                               got["fOne"], got["fRefA"], painted)
+        # ...while a provisional-only freeze cell is indistinguishable from blank
+        ghost = _gate_lum(got["fProv"]["rgb"]) - _gate_lum(got["fRefB"]["rgb"])
+        assert abs(ghost) < 6, (ts, "provisional-only freeze cell painted",
+                                got["fProv"], got["fRefB"], ghost)
     # the painted set is frame-invariant across the day: no 00Z abundance
     assert counts[GATE_TS[0]] == counts[GATE_TS[1]] == counts[GATE_TS[2]] == counts[GATE_TS[3]], counts
     assert counts[GATE_TS[0]] > 0, "the qualifying cell never painted"

@@ -117,6 +117,9 @@ def _frame_name(t: np.datetime64) -> str:
 
 RUN_NAME = ".run"   # <frame>.run sidecar: zlib(u8 heat_run ++ u8 freeze_run)
 DUR_REV = "v2"      # duration semantics version (index.json "dur.rev")
+FREEZE_PAINT_MIN = 1  # freeze paint gate (owner 2026-11-10): day 1, not the
+# detector's 3-day floor — cold runs are shorter and rarer; see dur_block().
+# The heat gate is the detector constant itself, never a second literal.
 RUN_CAP = 127       # completed-day count saturates here; bit 7 = provisional
 
 
@@ -177,15 +180,22 @@ def run_from_bytes(raw: bytes, shape: tuple[int, int]
 def dur_block(seed_tag: str | None) -> dict:
     """index.json "dur" block (frontend contract, dur rev v2).
 
-    `min` is the detector's minimum consecutive-day run per lane, read from
-    upstream temperature_events().MIN_CONSECUTIVE_DAYS so the published
-    qualification gate can never drift from the detector. Both temperature
-    lanes share the constant (scan_temperature_events applies the same
-    minimum). See the module docstring for the paint rule."""
+    `min` is the painted qualification gate per lane:
+      * heat = the detector's minimum consecutive-day run, read from upstream
+        temperature_events().MIN_CONSECUTIVE_DAYS (3) so the gate can never
+        drift from the detector and the map never shades a cell that can't be
+        part of a heat wave;
+      * freeze = 1 (owner 2026-11-10): short cold runs paint from their first
+        COMPLETED day. Freeze events still require the detector minimum —
+        detection is untouched — but cold runs decay twice as fast as hot ones
+        (17.6% vs 31.6% reach 3+ days, notes/channel_diurnal.md round 4), so a
+        3-day paint floor would leave the lane nearly blank (~220 cells vs
+        ~3,085 on 2026-11-01) and the 1-2 day ramp shades unusable.
+    See the module docstring for the paint rule."""
     from ewb_live.events._upstream import temperature_events
-    m = int(temperature_events().MIN_CONSECUTIVE_DAYS)
     return {"rev": DUR_REV, "seed": seed_tag,
-            "min": {"heat": m, "freeze": m}}
+            "min": {"heat": int(temperature_events().MIN_CONSECUTIVE_DAYS),
+                    "freeze": FREEZE_PAINT_MIN}}
 
 
 def _to_display(a: np.ndarray) -> np.ndarray:

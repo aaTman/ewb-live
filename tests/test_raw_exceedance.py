@@ -129,23 +129,25 @@ def test_run_sidecar_v2_in_incremental_build(tmp_path, monkeypatch):
 
 
 # ---- published qualification gate (contract notes/spec_min_gate.md §B):
-# index.dur.min is the detector's per-lane MIN_CONSECUTIVE_DAYS, read from
-# upstream -- never a hardcoded 3 -- and must survive an incremental rewrite.
+# index.dur.min is the per-lane PAINT minimum -- heat follows the detector's
+# MIN_CONSECUTIVE_DAYS (read from upstream, never a hardcoded 3), freeze is the
+# owner's 1-day paint floor (2026-11-10) -- and must survive an index rewrite.
 
-def test_dur_block_min_from_detector_constant(monkeypatch):
+def test_dur_block_min_per_lane(monkeypatch):
     from ewb_live.events import _upstream
     real = _upstream.temperature_events().MIN_CONSECUTIVE_DAYS
     assert rx.dur_block("2026072500") == {
         "rev": "v2", "seed": "2026072500",
-        "min": {"heat": real, "freeze": real}}
+        "min": {"heat": real, "freeze": rx.FREEZE_PAINT_MIN}}
+    assert rx.FREEZE_PAINT_MIN == 1          # owner 2026-11-10: freeze from day 1
 
-    # a non-3 upstream value flows through unchanged: proves the wiring is
-    # the constant and not a literal duplicated in the viz layer
+    # a non-3 upstream value flows through unchanged: proves the heat gate is
+    # wired to the detector constant and not a duplicated literal
     class FakeTE:
         MIN_CONSECUTIVE_DAYS = real + 2
     monkeypatch.setattr(_upstream, "temperature_events", lambda: FakeTE)
     assert rx.dur_block("2026072500")["min"] == {
-        "heat": real + 2, "freeze": real + 2}
+        "heat": real + 2, "freeze": rx.FREEZE_PAINT_MIN}
 
 
 def test_dur_min_survives_incremental_index_rewrite(tmp_path):
@@ -168,4 +170,4 @@ def test_dur_min_survives_incremental_index_rewrite(tmp_path):
     (out / "index.json").write_text(json.dumps(again))
 
     final = rx._load_index(out)
-    assert final["dur"]["min"] == {"heat": real, "freeze": real}
+    assert final["dur"]["min"] == {"heat": real, "freeze": 1}

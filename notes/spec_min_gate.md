@@ -33,8 +33,14 @@ The criteria text already promises the minimum (`app.js` TYPE_CRITERIA, `index.h
 freeze in `scan_temperature_events`). Exposed to the frontend as **`index.dur.min`**:
 
 ```json
-"dur": {"rev": "v2", "seed": "2026072500", "min": {"heat": 3, "freeze": 3}}
+"dur": {"rev": "v2", "seed": "2026072500", "min": {"heat": 3, "freeze": 1}}
 ```
+
+Lane minima (owner decision 2026-11-10): **heat 3** = the detector's `MIN_CONSECUTIVE_DAYS`
+(read from upstream, never a second literal); **freeze 1** = a paint floor only. A freeze EVENT
+still requires 3 consecutive days (detection untouched); cold runs decay twice as fast as hot
+ones (17.6% vs 31.6% reach 3+ days, `notes/channel_diurnal.md` round 4), so a 3-day *paint* floor
+would blank the lane (~220 cells vs ~3,085 on 2026-11-01) and strand the 1-2 day ramp shades.
 
 Paint rule (per cell, per layer):
 
@@ -89,7 +95,8 @@ index-provided minimum take effect for the legend too.
 ### A — frontend (dashboard/)
 
 * `dashboard/mergedmap.js`
-  * `LAYERS`: add `min: 3` to heat and freeze with a comment naming `MIN_CONSECUTIVE_DAYS`;
+  * `LAYERS`: add `min: 3` (heat) / `min: 1` (freeze) with a comment naming
+  `MIN_CONSECUTIVE_DAYS` + the owner decision;
     rewrite both `tip` strings: sub-threshold cells are blank (they can never become an event),
     solid = consecutive completed days at/above the minimum, dithered = today so far on an
     already-qualifying cell.
@@ -170,7 +177,10 @@ fixed one). Full local run: 185 passed (`-m "not network and not e2e"`), e2e 28 
 fail identically on the unmodified baseline — they need `data/results/events/*` assets this
 worktree does not carry.
 
-Known consequence to sign off: the freeze lane shares the 3-day minimum, so its map layer drops
-from ~3,085 to ~220 painted cells (2026-11-01) and the 1–2 day ramp shades go unused. To keep
-sub-threshold freeze context, set `LAYERS[].min` for freeze (and `dur.min.freeze` if published)
-to 1 — one constant per lane.
+Freeze lane: published and defaulted to a 1-day paint floor (owner 2026-11-10), so cold context
+survives — 2026-11-01 painted freeze cells 13,541/8,357/6,935/6,314 (old, 00Z-heavy) → 3,085 at
+every frame. Per-lane tuning is one constant each: `exceedance.FREEZE_PAINT_MIN` / the detector
+constant for heat, mirrored by `LAYERS[].min` in the JS.
+
+Verified end to end: publishing `dur.min.freeze = 2` in the index makes the 1-day freeze probe
+cell go blank again, so the published value — not the JS default — is what drives the gate.
