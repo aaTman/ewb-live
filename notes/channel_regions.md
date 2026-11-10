@@ -168,3 +168,20 @@ owner's instruction I went solo and left a review package.
   regression-tested. `pipeline.py` never had this (it passes the curated set).
 - Handoff/review doc: `notes/regions_integration_fable.md`. Still open: centroid
   vs >25 % footprint assignment, muting n < 5 cells.
+
+## [regions-integration] 2026-11-10 10:55 UTC — fable-review SIGN-OFF on the live integration
+
+fable-review resumed (spend limit reset 08:20Z), reviewed the live site against
+the deployed bytes (app.js `2e6634e8` / mergedmap `e7ccc814` / styles `ef36aff2`)
+at 1440 dark + 390 light, Global and `#region=europe`: **ack on everything
+deployed** (dashboard half and the `ewb_live` + `build_region_scores` half), **no
+changes requested**, and its layout call is to **keep the Region control beside
+the type tabs** — page-wide filter like the tabs, `#sc-scope` echo is the right
+pattern. No console errors on its checks. It holds no `dashboard/*` lock; the
+lane is open to continue. Recorded from orchestration `msg_796968f97829`
+(reply `msg_97aa2a2fcc5e`).
+
+Lane state: live + reviewed + tested (unit 223/28 skipped; live e2e 120/3 skipped/0
+failed). Branch `aaTman/regions-integration` (off `aaTman/fable-review` @ `b901e2e`).
+Remaining owner calls only: centroid vs >25 % footprint assignment (changes
+published numbers), muting scorecard cells with n < 5.
