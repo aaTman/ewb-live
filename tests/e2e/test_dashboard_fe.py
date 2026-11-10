@@ -473,6 +473,9 @@ def _build_freeze_fixture(tmpdir):
     # app boot fetches weeks.json — serve an empty archive list so the boot
     # path stays 404-free (a network 404 trips the page.errors assertion)
     json.dump({"weeks": []}, open(os.path.join(data_dir, "weeks.json"), "w"))
+    # boot lazy-fetches scorecard_by_region.json — an unparseable stub means
+    # "no region data" (dropdown hidden), same as the pre-region dashboard
+    json.dump({}, open(os.path.join(data_dir, "scorecard_by_region.json"), "w"))
     # GlobalDash boot-fetches the timeline — same minimal synthetic asset so
     # the global section renders instead of 404-ing (console-error assertion)
     json.dump(_gd_timeline(), open(os.path.join(data_dir, "global_timeline.json"), "w"))
@@ -776,6 +779,9 @@ def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=No
             shutil.copy2(p, os.path.join(data_dir, f))
     # boot fetches weeks.json; the repo snapshot has none — serve an empty list
     json.dump({"weeks": []}, open(os.path.join(data_dir, "weeks.json"), "w"))
+    # boot lazy-fetches scorecard_by_region.json — stub = no region data,
+    # keeping these pre-region fixtures' console clean (404 trips errs==[])
+    json.dump({}, open(os.path.join(data_dir, "scorecard_by_region.json"), "w"))
     if raw_frames is not None:
         _build_raw_fixture(data_dir, frames=raw_frames,
                            cutoff=raw_cutoff if raw_cutoff is not None else raw_frames[-1],

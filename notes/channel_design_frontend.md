@@ -841,3 +841,68 @@ Orchestrator's polish item from merged_past_cutoff.png is live on the box + publ
   merged_past_cutoff.png (scrubbed to max), merged_mobile_390.png.
 Deployed: styles 42c2b78c, mergedmap 14422601 (md5 public==local). Full e2e
 running; subset (merged/raw/axe) 9 passed. Design QA please.
+
+## [2026-11-10 ~04:45 UTC] regions-integration (pi, worktree `regional-breakdowns`) -> fable-review (dashboard/* owner) + ALL: regional breakdowns ported onto your redesign and LIVE
+
+Congrats on the redesign landing. You were the owner of `dashboard/*`, so I asked
+before touching it (orchestration msg 03:50Z) — your session answered
+"monthly spend limit … resets 8:20am UTC", so per the owner's instruction I
+proceeded solo and left you the whole diff for review. Nothing was deployed
+before your `REDESIGN LANDED` (04:25Z) and the base I built on is exactly your
+deployed bytes (`aaTman/fable-review` @ `b901e2e`: app.js `77791cfb`,
+mergedmap `6d8b21c8`, styles `de3bbd18`, index `0ad31534`).
+
+**What landed (branch `aaTman/regions-integration`, worktree `regional-breakdowns`)**
+- Region control in the **explore filter row, beside the type tabs** — deliberately
+  your pattern, not OWB's header bar: it is a page-wide filter like the type
+  filter, so it sits on what it changes (map + list + scorecard) and the
+  scorecard echoes it: `#sc-scope` reads "in Europe · all regions"
+  (the "all regions" button is a `linkbtn` that resets to Global).
+- Scorecard rows come pre-sliced server-side from `scorecard_by_region.json`
+  (contract in `notes/channel_regions.md`); Global = `scorecard.json` itself, so
+  the common path is byte-identical to before.
+- Merged map: fits the region's corner bbox, **veil outside the region rect**
+  (`--map-dim`, dual-theme), count reads `Europe · 6 events · layers every 6 h`
+  ("1 event" singular), `#global-sec` aria-label names the region.
+- **Your Leaflet catalog map is gone, so my catalog-extent code was dropped** —
+  that is the only piece of the old lane this port removed.
+- `#region=` URL persistence (Back/Forward, deep link, unknown key dropped),
+  lazy background load (~2 MB; first paint never waits), the control hides
+  itself on archived weeks that predate the file (serve answers 204).
+- Data side: `ewb_live/regions.py` (bbox-centroid assignment), `pipeline.py`
+  writes `scorecard_by_region.json` beside `scorecard.json` (scorecard.json is
+  byte-unchanged), `scripts/build_region_scores.py` regenerates it from a
+  published results dir without rescoring.
+
+**Deployed live** (single-file scp, no tree sync; rollback copies in
+`/opt/ewb-live/rollback_pre_regions_20261110/` and `notes/rollback_pre_regions/`):
+app.js `2e6634e8`, mergedmap.js `e7ccc814`, index.html `9002884d`, styles.css
+`ef36aff2`, `dashboard/regions.json` (new), `ewb_live/{regions.py,pipeline.py,serve.py}`,
+`scripts/build_region_scores.py`; region file generated on the box (live
+`scorecard.json` md5 checked unchanged before/after). Live counts agree in every
+surface (header EVENTS, map count, list) — Global 28 = tropics 9 + NH 14 + SH 5;
+NA 1, Europe 6.
+
+**Tests**: `uv run pytest -q` 223 passed / 28 skipped; `pytest -m e2e` against the deployed
+box with `EWB_E2E_BROWSERS=chromium`: **120 passed / 3 skipped / 0 failed**
+(includes your redesign tests with the Region control visible on real data, and
+the two stale-deployment reds from `notes/review_regions.md` item 4 are gone).
+7 new tests in `tests/e2e/test_dashboard_regions_fe.py`.
+
+**One bug worth knowing about (caught on live, fixed + regression-tested):**
+`scripts/build_region_scores.py` read only `events.json`. The scored universe is
+`events_selected.json` and it is **not a subset** — 4 of the box's 28 scored
+events exist only there, so the first published region file said 24 and
+disagreed with `scorecard.json` for the same week. The script now unions both
+files and warns if a scored event has no record
+(`tests/test_regions.py::test_build_region_scores_script_sees_every_scored_event`).
+`pipeline.py` was never affected (it passes the in-memory curated set).
+
+**If you want to review/reverse it:** diff `aaTman/fable-review..aaTman/regions-integration`
+in `regional-breakdowns`; the dashboard half is ~250 lines across
+`app.js`/`mergedmap.js`/`index.html`/`styles.css`. Full write-up:
+`notes/regions_integration_fable.md`. Rollback recipe: `notes/rollback_pre_regions/README.md`
+(restore the six files + delete the two region JSONs + `systemctl restart ewb-live-web`).
+
+**Still open, owner calls** (`notes/review_regions.md`): centroid assignment vs
+>25 % footprint overlap for thin ARs; muting scorecard cells with n < 5.

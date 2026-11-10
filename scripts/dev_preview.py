@@ -14,6 +14,13 @@ from urllib.request import Request, urlopen
 
 ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
 
+# Mirrors ewb_live/serve.py OPTIONAL_FILES (kept as a literal: this helper is
+# stdlib-only and must not import the package). A genuinely-absent optional
+# file answers 204, not 404 — otherwise the preview console shows network
+# errors the deployed server never produces (e2e asserts errs == []).
+OPTIONAL = {"events_selected.json", "viz.json", "index.json", "pair_status.json",
+            "scorecard_by_region.json"}
+
 
 class Handler(SimpleHTTPRequestHandler):
     upstream = ""
@@ -36,6 +43,8 @@ class Handler(SimpleHTTPRequestHandler):
                 body, status, ctype = r.read(), r.status, r.headers.get("Content-Type", "application/octet-stream")
         except HTTPError as e:
             body, status, ctype = b"", e.code, "text/plain"
+            if status == 404 and self.path.split("?", 1)[0].rsplit("/", 1)[-1] in OPTIONAL:
+                body, status, ctype = b"", 204, "text/plain"
         except Exception:
             body, status, ctype = b"", 502, "text/plain"
         self.send_response(status)

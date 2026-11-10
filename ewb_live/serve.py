@@ -40,7 +40,8 @@ WEEKS_ROUTE = "/data/results/weeks.json"
 # absent we answer 204 No Content instead of 404 so the browser's console
 # stays clean for a deliberately error-gated dashboard. viz.json / index.json
 # apply to nested paths under data/results/events/ (per-event viz assets).
-OPTIONAL_FILES = {"events_selected.json", "viz.json", "index.json", "pair_status.json"}
+OPTIONAL_FILES = {"events_selected.json", "viz.json", "index.json", "pair_status.json",
+                  "scorecard_by_region.json"}
 
 # Segment whitelist for nested results paths (event ids are hex-ish; keep it
 # boring anyway). normpath() has already collapsed "." / ".." by validation

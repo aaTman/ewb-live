@@ -74,6 +74,9 @@ const BINARY_METRICS = new Set(['csi', 'CriticalSuccessIndex', 'Accuracy', 'Earl
 const state = {
   meta: null, events: [], scores: [], scorecard: [], pairStatus: {},
   tab: 'all',                      // 'all' | event_type
+  region: 'global',                // regions.json key (OWB-style Region dropdown)
+  regionData: null,                // parsed data/results/scorecard_by_region.json (null = no region data)
+  regionHit: null,                 // in-flight lazy load promise of that file (boot/week-switch guard)
   models: new Set(),               // visible models
   leads: new Set(),                // selected leads (scorecard)
   allModels: [], allLeads: [],
@@ -287,6 +290,33 @@ async function loadWeeks() {
   state.weeks = weeks.map((w) => w.week).filter(Boolean).sort().reverse();
 }
 
+/* Region definitions: dashboard/regions.json — the single source shared with
+   Python (ewb_live/regions.py). JS uses key/label/extents only; the event→region
+   assignment and the scorecard slices are the data lane's (scorecard_by_region.json). */
+let REGIONS = [];
+const regionDef = (key) => REGIONS.find((r) => r.key === key) || null;
+async function loadRegions() {
+  const hit = await fetchJSON('regions.json');
+  const rs = hit && hit.json && Array.isArray(hit.json.regions) ? hit.json.regions : [];
+  REGIONS = rs.filter((r) => r && r.key && Array.isArray(r.lat) && Array.isArray(r.lon));
+}
+
+/* Parse the region contract: {regions:[{key,label,n_events,by_type}],
+   by_region:{key:{rows}}}. Rows share scorecard.json's shape, so the same
+   normalise+bin path applies. Global is deliberately absent from by_region
+   (scorecard.json IS the global slice — regions-data contract). */
+function parseRegionJson(hit) {
+  const rj = hit && hit.json;
+  if (!rj || !Array.isArray(rj.regions) || !rj.regions.some((r) => r && r.key)
+      || !rj.by_region || typeof rj.by_region !== 'object') return null;
+  const rows = {};
+  for (const [k, v] of Object.entries(rj.by_region)) {
+    rows[k] = mergeBinned(asRows(v && v.rows).map(normScRow),
+      ['mean_value', 'ci_lo', 'ci_hi'], 'n_events', 'event_type');
+  }
+  return { regions: rj.regions.filter((r) => r && r.key), rows };
+}
+
 async function loadData(week) {
   const [meta, eventsSel, eventsAll, scores, scorecard, pairStatus] = await Promise.all([
     loadJSON('meta.json', week),
@@ -303,6 +333,23 @@ async function loadData(week) {
   const scJson = scorecard && scorecard.json;
   // bin leads to standard slots and merge, so 6 h-step data lines up in columns
   state.scorecard = mergeBinned(asRows(scJson).map(normScRow), ['mean_value', 'ci_lo', 'ci_hi'], 'n_events', 'event_type');
+  /* Region slices (scorecard_by_region.json, regions-data contract): ~2.1 MB on
+     real data, so it loads in the BACKGROUND — the dropdown and region view
+     appear when it lands (never delay first paint). Archived weeks pre-dating
+     the lane 404 -> regionData stays null -> the dropdown hides itself
+     (honest: no region data for this week). */
+  state.regionData = null;
+  {
+    const p = loadJSON('scorecard_by_region.json', week);
+    state.regionHit = p;
+    p.then((hit) => {
+      if (state.regionHit !== p) return;   // superseded by a newer week's load
+      state.regionHit = null;
+      state.regionData = parseRegionJson(hit);
+      renderControls();                    // reveals the dropdown, re-validates state.region
+      if (state.region !== 'global') renderAll();   // deep link that waited on this file
+    }).catch(() => {});
+  }
   state.events = asRows(events && events.json);
   if (typeof window !== 'undefined') window.__debug = { get state() { return state; } };
   state.scores = mergeBinned(asRows(scores && scores.json), ['value'], null, 'event_id');
@@ -413,12 +460,15 @@ function renderHeader() {
   const rosterN = Math.max(state.allModels.length,
     Array.isArray(m.models) ? m.models.length : 0);
   const truthShort = truth.text.split(' \u00b7 ')[0];
+  const reg = regionEntry();
   const kv = (k, v, title) =>
     `<span class="kv"><span class="k">${k}</span>` +
     `<span class="v"${title ? ` title="${esc(title)}"` : ''}>${v}</span></span>`;
   $('#kv-line').innerHTML = [
-    kv('events', String(state.events.length),
-      state.week ? `archived week ${state.week}` : 'events in the latest run window'),
+    kv('events', String(reg ? reg.n_events : state.events.length),
+      state.week ? `archived week ${state.week}` : (reg
+        ? `scored events in ${reg.label} (bbox-centroid rule)`
+        : 'events in the latest run window')),
     kv('models', `${nModels} scored · ${rosterN} in roster`,
       'models with score rows vs models declared for this run'),
     kv('window', days ? `${days} d` : '\u2014',
@@ -475,6 +525,9 @@ async function switchWeek(week) {
   }
   closeDetail({ push: false });
   renderHeader(); renderControls(); renderAll();
+  // region resets on week switch (older weeks have no region file) — the hash
+  // must not keep claiming a region the scorecard no longer shows (review 2026-11-09)
+  if (hashParams().region) setHashParam('region', null);
 }
 
 function restoreState() {
@@ -510,9 +563,10 @@ function renderControls() {
     b.onclick = () => setTab(id);
     tabs.appendChild(b);
   };
-  mkTab('all', `All <span class="n">${state.events.length}</span>`);
+  const inReg = (e) => state.region === 'global' || inRegion(e);
+  mkTab('all', `All <span class="n">${state.events.filter(inReg).length}</span>`);
   for (const t of TYPE_ORDER) {
-    const n = state.events.filter((e) => e.event_type === t).length;
+    const n = state.events.filter((e) => e.event_type === t && inReg(e)).length;
     mkTab(t, `<i class="type-dot" style="background:${TYPE_META[t].color}"></i>${TYPE_META[t].label} <span class="n">${n}</span>`);
   }
 
@@ -583,6 +637,50 @@ function renderControls() {
     b.classList.toggle('on', b.dataset.mode === state.chartMode);
     b.onclick = () => { state.chartMode = b.dataset.mode; saveState(); renderControls(); renderSkillCharts(); };
   });
+
+  /* Region dropdown (OWB-style), in the explore filter row beside the type tabs:
+     like the type filter it narrows the map, the list and the scorecard, and the
+     scorecard echoes it. Options come from scorecard_by_region.json's ordered
+     `regions` (labels + honest counts live there); map extents live in
+     dashboard/regions.json. No region data (e.g. an archived week predating the
+     lane) -> the control hides itself rather than offering a broken filter. */
+  const rsel = $('#region-select');
+  if (rsel) {
+    const usable = !!(state.regionData && state.regionData.regions.length > 1 && REGIONS.length > 1);
+    if (state.region !== 'global'
+        && !(usable && state.regionData.regions.some((r) => r.key === state.region))) {
+      state.region = 'global';   // region vanished under us (week switch / data refresh)
+    }
+    const rgrp = rsel.closest('.ctl-group');   // labeled group hides with the control
+    if (rgrp) rgrp.classList.toggle('hidden', !usable);
+    rsel.classList.toggle('hidden', !usable);
+    if (usable) {
+      const sig = state.regionData.regions.map((r) => r.key).join(',');
+      if (rsel.dataset.sig !== sig) {
+        rsel.dataset.sig = sig;
+        rsel.innerHTML = '';
+        for (const r of state.regionData.regions) {
+          const o = document.createElement('option');
+          o.value = r.key; o.textContent = r.label;
+          rsel.appendChild(o);
+        }
+      }
+      rsel.value = state.region;
+      rsel.onchange = () => setRegion(rsel.value, true);
+    }
+  }
+}
+
+/* Region switch (dropdown or URL sync): re-render the scorecard, move the
+   map, persist to the hash (#region=, Global = no param). */
+function setRegion(key, push) {
+  if (key === state.region) return;
+  state.region = key;
+  renderHeader();      // the EVENTS stat is region-scoped
+  renderControls();    // type-tab counts follow the region
+  renderAll();
+  if (window.MergedMap) MergedMap.setRegion(regionDef(key));
+  syncUrl(push);
 }
 
 /* ------------------------------------------------------------------ */
@@ -592,11 +690,48 @@ function activeTypes() {
   return state.tab === 'all' ? TYPE_ORDER : [state.tab];
 }
 
+/* Scorecard rows of the active region: rows come pre-sliced server-side
+   (scorecard_by_region.json, regions-data contract); Global reuses scorecard.json
+   itself (identical by construction — the contract omits the global blob). The
+   model/lead rosters in loadData keep reading the global state.scorecard, so a
+   region never shrinks the model list or the lead pills. */
+function scRows() {
+  if (state.region === 'global' || !state.regionData) return state.scorecard;
+  return state.regionData.rows[state.region] || [];
+}
+// the selected region's entry ({key,label,n_events,by_type}) from the contract, or null for Global
+const regionEntry = () => (state.region !== 'global' && state.regionData
+  ? state.regionData.regions.find((r) => r.key === state.region) || null
+  : null);
+
+/* JS port of ewb_live/regions.py assign_regions (keep in sync): the bbox
+   centroid — lon follows the EASTWARD arc so antimeridian-wrapped boxes
+   (lon_min > lon_max, EWB convention) land right — must sit inside the
+   region's lat/lon box, inclusive on all edges. NH/SH boxes start at ±20°,
+   so subtropical centroids belong to Tropics only; multi-membership is
+   expected (a centroid in Europe is also Northern Hemisphere). */
+function eventRegions(bbox) {
+  if (!Array.isArray(bbox) || bbox.length !== 4) return [];
+  const [latmin, latmax, lonmin, lonmax] = bbox;
+  const lat = (latmin + latmax) / 2;
+  const dlon = ((lonmax - lonmin) % 360 + 360) % 360;
+  const lon = (((lonmin + dlon / 2 + 180) % 360) + 360) % 360 - 180;
+  const keys = [];
+  for (const r of REGIONS) {
+    if (r.key === 'global') { keys.push('global'); continue; }
+    const lonIn = ((lon - r.lon[0]) % 360 + 360) % 360 <= (r.lon[1] - r.lon[0]);
+    if (r.lat[0] <= lat && lat <= r.lat[1] && lonIn) keys.push(r.key);
+  }
+  return keys;
+}
+const inRegion = (e) => state.region === 'global' || eventRegions(e.bbox).includes(state.region);
+window.EwbRegions = { eventRegions };   // merged-map region view + e2e parity check
+
 function scIndex() {
   // (etype,metric,lead) -> {model: {mean, rel, n}}; lead may be null (event-level metrics)
   const idx = new Map();
   const B = state.baseline;
-  for (const r of state.scorecard) {
+  for (const r of scRows()) {
     if (!state.models.has(r.model)) continue;
     const key = `${r.event_type}|${r.metric}|${r.lead_time_hours}`;
     let g = idx.get(key);
@@ -620,7 +755,7 @@ function metricsFor(etype) {
   const fromMeta = state.meta.metrics
     ? Object.keys(state.meta.metrics).filter((k) => (state.meta.metrics[k].event_types || []).includes(etype))
     : [];
-  const fromData = [...new Set(state.scorecard.filter((r) => r.event_type === etype).map((r) => r.metric))];
+  const fromData = [...new Set(scRows().filter((r) => r.event_type === etype).map((r) => r.metric))];
   const seen = new Set();
   const all = [...fromMeta, ...fromData].filter((m) => (seen.has(m) ? false : (seen.add(m), fromData.includes(m))));
   // compact hero: one headline metric per event type unless 'more metrics' is on
@@ -727,6 +862,14 @@ function renderScorecard() {
   const scope = $('#sc-scope');
   if (scope) {
     scope.innerHTML = '';
+    const re = regionEntry();
+    if (re) {
+      scope.appendChild(el('span', '', `in ${esc(re.label)} \u00b7 `));
+      const g = el('button', 'linkbtn', 'all regions');
+      g.type = 'button';
+      g.onclick = () => setRegion('global', true);
+      scope.appendChild(g);
+    }
     if (state.tab !== 'all') {
       scope.appendChild(el('span', '', `${esc(TYPE_META[state.tab].label)} only \u00b7 `));
       const all = el('button', 'linkbtn', 'show all types');
@@ -777,7 +920,12 @@ function renderScorecard() {
     });
   for (const etype of activeTypes()) {
     const cols = etypeCols.get(etype);
-    const nEv = state.events.filter((e) => e.event_type === etype).length;
+    // honest event counts: regions report the scored-event split from the data
+    // contract (n_events/by_type, centroid rule owned by ewb_live/regions.py);
+    // Global counts the curated catalog (same universe as before this feature).
+    const re = regionEntry();
+    const nEv = re ? (re.by_type || {})[etype] || 0
+      : state.events.filter((e) => e.event_type === etype).length;
 
     const block = el('div', 'sc-block');
     block.appendChild(el('h3', '',
@@ -788,8 +936,12 @@ function renderScorecard() {
        calm one-line note + criteria tooltip instead of a table of dashes. */
     if (!nEv) {
       const note = el('p', 'lane-empty');
-      note.textContent = emptyLaneLine(etype);
-      note.title = TYPE_CRITERIA[etype];
+      const re2 = regionEntry();
+      note.textContent = re2
+        ? `No ${TYPE_META[etype].label.toLowerCase()} in ${re2.label} this window`
+        : emptyLaneLine(etype);
+      note.title = re2 ? 'Events are assigned to regions by the centroid of their bounding box'
+        : TYPE_CRITERIA[etype];
       block.appendChild(note);
       host.appendChild(block);
       continue;
@@ -1107,6 +1259,7 @@ function renderSkillCharts() {
   if (typeof Plotly === 'undefined') { ensurePlotly().then(() => renderSkillCharts()).catch(() => {}); return; }
   const mode = state.chartMode;
   const pending = [];
+  const rows = scRows();   // region-aware rows (same accessor as the tables)
 
   for (const etype of activeTypes()) {
     const metrics = metricsFor(etype);
@@ -1124,13 +1277,13 @@ function renderSkillCharts() {
       const traces = [];
       state.allModels.forEach((model, mIdx) => {
         if (!state.models.has(model)) return;
-        const pts = state.scorecard
+        const pts = rows
           .filter((r) => r.event_type === etype && r.metric === met && r.model === model
             && r.lead_time_hours !== null && Number.isFinite(r.mean_value))
           .sort((a, b) => a.lead_time_hours - b.lead_time_hours);
         if (!pts.length) return;
         const refByLead = {};
-        if (mode === 'rel') for (const r of state.scorecard)
+        if (mode === 'rel') for (const r of rows)
           if (r.event_type === etype && r.metric === met && r.model === state.baseline) refByLead[r.lead_time_hours] = r.mean_value;
         const ys = pts.map((p) => mode === 'rel'
           ? relSkill(p.mean_value, refByLead[p.lead_time_hours], met)   // null when no reference → line gap
@@ -1446,6 +1599,7 @@ function syncUrl(push) {
   if (state.detailLead) params.lead = `${state.detailLead}h`;
   if (state.detailLayers) params.lyr = state.detailLayers;
   if (state.detailDay != null) params.day = state.detailDay;
+  if (state.region && state.region !== 'global') params.region = state.region;
   // the merged global map's #map/#layers/#sel ride along so Back from a
   // detail restores the slider/selection state (URL is the source of truth)
   if (window.MergedMap) Object.assign(params, MergedMap.urlParams());
@@ -1513,6 +1667,7 @@ function renderEventTable() {
   let n = 0, drawn = 0;
   for (const ev of state.events) {
     if (state.tab !== 'all' && ev.event_type !== state.tab) continue;
+    if (!inRegion(ev)) continue;   // Region dropdown: list follows the region
     if (!matchesSearch(ev)) continue;
     n += 1;
     if (drawn >= EVENT_TABLE_MAX_ROWS) continue;   // count all, render a bounded prefix
@@ -1567,8 +1722,13 @@ function renderEventTable() {
     // Owner 2026-11-07: empty lane = legitimate outcome; note + criteria tooltip.
     const tr = el('tr', 'lane-empty-row');
     const searching = !!(state.search && state.search.trim());
-    const note = searching ? 'No events match your search' : emptyLaneLine(state.tab);
+    const re = regionEntry();
+    const note = searching ? 'No events match your search'
+      : re && state.tab === 'all' ? `No events in ${re.label} this window`
+      : re ? `No ${TYPE_META[state.tab] ? TYPE_META[state.tab].label.toLowerCase() : ''} in ${re.label} this window`
+      : emptyLaneLine(state.tab);
     const crit = searching ? ''
+      : re ? 'Events are assigned to regions by the centroid of their bounding box'
       : state.tab === 'all' ? 'Events must clear the detection criteria for their type in the 90-day window.' : TYPE_CRITERIA[state.tab];
     tr.innerHTML = `<td></td><td colspan="2"><span class="lane-empty"${crit ? ` title="${esc(crit)}"` : ''}>${esc(note)}${crit ? ' <span class="crit-mark" aria-hidden="true">ⓘ</span>' : ''}</span></td>`;
     tbody.appendChild(tr);
@@ -2095,6 +2255,7 @@ async function boot() {
     // with the results instead of in front of them (saves a round trip before first paint)
     const dataP = params.get('week') ? null : loadData(null);
     if (dataP) dataP.catch(() => {});   // rejection is surfaced by the await below; no stray unhandledrejection meanwhile
+    const regionsP = loadRegions().catch(() => {});   // region defs for the dropdown/map, in parallel
     await loadWeeks();
     if (params.get('week') && !state.weeks.includes(params.get('week'))) {
       // unknown/expired snapshot: show the current week and drop the stale param
@@ -2107,11 +2268,26 @@ async function boot() {
       pendingNote = 'That weekly snapshot is not available — showing the current week.';
     }
     await (dataP || loadData(state.week));
+    await regionsP;
     if (urlEvent && state.events.some((e) => e.id === urlEvent)) state.selectedEvent = urlEvent;
     else if (urlEvent) {
       setHashParam('event', null);
       setHashParam('lead', null);
       pendingNote = 'That event is not in the current 90-day window (events roll over weekly) — showing the catalog.';
+    }
+    /* Region from the URL (#region=), validated against the data contract: a deep
+       link restores the region view; an unknown key is dropped from the URL and
+       never silently kept (URL/state must agree after boot). The region file is
+       lazy — a region deep link waits for it (a plain Global load never does). */
+    {
+      const urlRegion = hashParams().region;
+      if (urlRegion && urlRegion !== 'global') {
+        if (state.regionHit) await state.regionHit.catch(() => {});
+        const ok = state.regionData && regionDef(urlRegion)
+          && state.regionData.regions.some((r) => r.key === urlRegion);
+        if (ok) state.region = urlRegion;
+        else setHashParam('region', null);
+      }
     }
   } catch (err) {
     console.error(err);
@@ -2128,13 +2304,32 @@ async function boot() {
   renderAll();
   loadCountries().then(() => { if (!state.selectedEvent) renderEventTable(); });   // vague bands → country names
   if (pendingNote) routeNote(pendingNote);
-  if (window.MergedMap) MergedMap.mount();   // one global map (briefs/merged_global_map.md); self-reports failure
+  if (window.MergedMap) {
+    MergedMap.mount();   // one global map (briefs/merged_global_map.md); self-reports failure
+    if (state.region !== 'global') MergedMap.setRegion(regionDef(state.region));   // deep-linked region view
+  }
   if (state.selectedEvent) selectEvent(state.selectedEvent, true, { push: false });
   document.documentElement.classList.remove('deeplink');
   /* A1: one sync path for every way the URL can change under us — Back/Forward
      (popstate) and a pasted/edited #event=… link (hashchange). App-initiated
      pushState/replaceState fire neither, so this never echoes. */
   const syncFromLocation = () => {
+    /* Region follows the URL on Back/Forward (and pasted #region= links) without
+       writing back; an unknown or dropped key falls back to Global. */
+    const reg = hashParams().region || 'global';
+    const wantReg = reg !== 'global' && state.regionData
+      && regionDef(reg) && state.regionData.regions.some((r) => r.key === reg) ? reg : 'global';
+    if (wantReg !== state.region) {
+      state.region = wantReg;
+      renderControls();   // sync the dropdown selection + tab counts
+      renderHeader();     // EVENTS stat follows the region
+      renderAll();
+      if (window.MergedMap) MergedMap.setRegion(regionDef(wantReg));
+    }
+    // a key that is truly unknown (not just a lazy file still in flight) never survives
+    if (reg !== 'global' && wantReg === 'global' && state.regionData && !regionDef(reg)) {
+      setHashParam('region', null);
+    }
     if (window.MergedMap) MergedMap.applyUrl(hashParams());
     const id = hashParams().event;
     if (id && state.events.some((e) => e.id === id)) {

@@ -57,6 +57,7 @@
   let playing = null, speedI = 1;
   let land = null, graticule = null, proj = null, path = null;
   let fit = null;                          // {W,H}
+  let region = null;                       // Region dropdown view {key,label,lat,lon}; null = world
   const frameCache = new Map();            // ts -> Uint8Array | null
   const inflight = new Map();              // ts -> Promise (one fetch per frame; prefetch+paint share it)
   const CACHE_MAX = 7;
@@ -123,11 +124,18 @@
   function activeEvents() {                // visible at the current frame
     if (!tl) return [];
     const ts = raw.frames[idx], tab = pageTab();
-    return tl.events.filter((e) => qualTs(e) <= ts && ts < endTs(e)
+    return tlEvents().filter((e) => qualTs(e) <= ts && ts < endTs(e)
       && (tab === 'all' || e.type === tab));
   }
   // type tabs of the page (state is a top-level const in app.js — bare identifier)
   const pageTab = () => (typeof state !== 'undefined' && state.tab) || 'all';
+  /* Region view (app.js Region dropdown): boxes, gantt bars and the count all
+     follow the region's centroid rule (window.EwbRegions, JS port of
+     ewb_live/regions.py). If the helper isn't loaded yet, show everything —
+     honest fallback, never a wrong filter. */
+  const inRegionView = (e) => !region || !(window.EwbRegions && window.EwbRegions.eventRegions)
+    || window.EwbRegions.eventRegions(e.bbox).includes(region.key);
+  const tlEvents = () => (tl ? tl.events.filter(inRegionView) : []);
   function jumpTo(tsStr) {                 // first frame >= ts (clamped)
     let i = raw.frames.findIndex((f) => f >= tsStr);
     if (i < 0) i = raw.frames.length - 1;
@@ -192,7 +200,15 @@
     const [[x0, y0], [x1, y1]] = path.bounds({ type: 'Sphere' });
     const dw = x1 - x0, dh = y1 - y0;
     const H = Math.round(Math.min((dh / dw) * (W - 2 * PAD) + 2 * PAD, W * 0.75));
-    proj.fitExtent([[PAD, PAD], [W - PAD, H - PAD]], { type: 'Sphere' });
+    /* Region view (Region dropdown, briefs/regional_breakdowns.md): fit to the
+       region's corner bbox — MultiPoint, because Equal Earth is monotone in
+       both axes so the corners' bounds ARE the region's bounds. Canvas size
+       stays sphere-based: switching regions never reflows the page. */
+    proj.fitExtent([[PAD, PAD], [W - PAD, H - PAD]], region ? {
+      type: 'MultiPoint',
+      coordinates: [[region.lon[0], region.lat[0]], [region.lon[1], region.lat[0]],
+                    [region.lon[0], region.lat[1]], [region.lon[1], region.lat[1]]],
+    } : { type: 'Sphere' });
     path = d3.geoPath(proj);
     fit = { W, H };
     lut = null;                                    // rebuilt lazily (buildLut)
@@ -263,7 +279,8 @@
       if (!(kx > 0)) continue;
       const rowOff = j * stride, cellRow = j * nx, o = y * cw;
       for (let x = 0; x < cw; x++) {
-        const lon = ((x + 0.5) / dpr - cx) / kx;
+        // ll[0] = longitude under the centre column (0 in a world fit, region centre otherwise)
+        const lon = ll[0] + ((x + 0.5) / dpr - cx) / kx;
         if (lon < -180 || lon > 180) continue;
         let i = Math.round((lon - g.lon0) / g.step_lon);
         i = ((i % nx) + nx) % nx;                             // +180 wraps onto -180
@@ -286,7 +303,7 @@
     const ctx = cv.getContext('2d');
     drawBase(ctx);
     curIvt = null;                                    // no frame → nothing for hover to read
-    if (!frame || !raw || !fit) return;
+    if (!frame || !raw || !fit) { dimOutside(ctx); return; }
     const u8 = frame.bin;                        // binary exceedance bits (3 planes)
     const run = (raw.dur && frame.run) ? frame.run : null;   // null → binary paint (fallback)
     if (!lut || lut.cw !== cv.width || lut.ch !== cv.height) buildLut();
@@ -352,6 +369,30 @@
     ctx.save();
     ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
     ctx.drawImage(rasterCv, 0, 0, fit.W, fit.H);
+    ctx.restore();
+    dimOutside(ctx);
+  }
+
+  /* Region view: veil everything outside the Region rect (Equal Earth is
+     monotone in both axes, so the region projects to an exact rectangle).
+     Painted above the raster so out-of-region exceedance never reads at full
+     strength (owner review 2026-11-09: Tropics/hemispheres looked unchanged
+     vs Global). Global = no veil. */
+  function dimOutside(ctx) {
+    if (!region || !fit) return;
+    const pts = [[region.lon[0], region.lat[0]], [region.lon[1], region.lat[0]],
+                 [region.lon[0], region.lat[1]], [region.lon[1], region.lat[1]]].map(proj);
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const x0 = Math.max(0, Math.min(...xs)), x1 = Math.min(fit.W, Math.max(...xs));
+    const y0 = Math.max(0, Math.min(...ys)), y1 = Math.max(0, Math.min(fit.H, Math.max(...ys)));
+    ctx.save();
+    ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+    ctx.fillStyle = getComputedStyle(document.documentElement)
+      .getPropertyValue('--map-dim').trim() || 'rgba(250,250,248,0.62)';
+    ctx.fillRect(0, 0, fit.W, y0);
+    ctx.fillRect(0, y1, fit.W, fit.H - y1);
+    ctx.fillRect(0, y0, x0, y1 - y0);
+    ctx.fillRect(x1, y0, fit.W - x1, y1 - y0);
     ctx.restore();
   }
 
@@ -567,7 +608,7 @@
       const lab = mk('text', { x: 0, y: y + LANE_H - 3, class: 'gm-lane-lab' }, svg);
       lab.textContent = TYPES[type].short;
       mk('rect', { class: 'gm-lane', x: LAB, y, width: W - LAB - 12, height: LANE_H, rx: 2, opacity: .35 }, svg);
-      for (const ev of tl.events) {
+      for (const ev of tlEvents()) {
         if (ev.type !== type) continue;
         const q = qualTs(ev), e = endTs(ev);
         if (q > raw.frames[raw.frames.length - 1] || e < raw.frames[0]) continue;   // clamped out
@@ -836,7 +877,7 @@
       let bestN = -1;
       for (let i = raw.frames.length - 1; i >= 0; i--) {
         const ts = raw.frames[i];
-        const n = tl.events.filter((e) => qualTs(e) <= ts && ts < endTs(e)).length;
+        const n = tlEvents().filter((e) => qualTs(e) <= ts && ts < endTs(e)).length;
         if (n > bestN) { bestN = n; idx = i; }
       }
     }
@@ -855,8 +896,8 @@
     renderLayerButtons();
     // URL restore (deep link) before first paint; redirects fold in here
     const boot = hashParams();
-    $('#gm-count').textContent = tl ? `${tl.events.length} events · layers every 6 h`
-                                    : 'layers every 6 h';
+    updateCount();   // region may have been parked by a deep link pre-mount
+    applyRegionLabel();
     $('#raw-skel').hidden = true;
     $('#raw-canvas').hidden = false;
     $('#gm-boxes').removeAttribute('hidden');   // SVGElement has no .hidden IDL — attribute only
@@ -878,8 +919,34 @@
     }
   }
 
+  function updateCount() {   // region-aware section count (setRegion + mount)
+    const c = $('#gm-count');
+    if (!c) return;
+    if (!tl) { c.textContent = 'layers every 6 h'; return; }
+    const n = tlEvents().length;
+    c.textContent = `${region ? `${region.label} \u00b7 ` : ''}${n} event${n === 1 ? '' : 's'} \u00b7 layers every 6 h`;
+  }
+  // the section is labelled with what it now shows (review 2026-11-09)
+  function applyRegionLabel() {
+    const sec = $('#global-sec');
+    if (sec) sec.setAttribute('aria-label',
+      `${region ? region.label : 'Global'} events and raw detector output \u2014 last 90 days`);
+  }
+
   window.MergedMap = { mount, urlParams, applyUrl,
     preview,
+    /* Region view (app.js Region dropdown): null/`global` = whole world.
+       Refits the projection + repaints; before mount it just parks the view
+       (mount's fitProjection picks it up). */
+    setRegion: (r) => {
+      region = r && r.key && r.key !== 'global'
+        ? { key: r.key, label: r.label || r.key, lat: r.lat, lon: r.lon } : null;
+      if (mounted) {
+        applyRegionLabel();
+        updateCount();
+        fitProjection(); render();
+      }
+    },
     onTabChange: (tab) => {
       if (!mounted) return;
       if (tab) { layersForTab(tab); renderLayerButtons(); writeUrl(false); }
@@ -887,6 +954,7 @@
     },
     // project/ramp/dpr/grid: the e2e bin-probe reads painted pixels at known cells
     _dbg: () => ({ idx, frames: raw && raw.frames, on, sel: Array.from(sel), mounted, tl: !!tl,
+      region: region ? region.key : null,
       dpr: window.devicePixelRatio || 1, grid: raw && raw.grid,
       project: (ll) => (proj ? proj(ll) : null),
       ramp: (li, b) => (rampCache && rampCache[li] ? [rampCache[li][b] & 255,
