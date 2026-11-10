@@ -17,15 +17,17 @@ must sit on what they change); take over / pause dashboard-worktree agents.
 - [x] 7. Detail view: "← All events", home-only chrome hidden.
 - [x] 8. Rebased on deployed dur-rev-v2 bytes; ported opencode's verdict strip +
       legend scale.
-- [ ] 9. Full e2e green on local preview (scripts/dev_preview.py, :8061;
+- [x] 9. Full e2e green on local preview (scripts/dev_preview.py, :8061;
       EWB_LIVE_URL=http://127.0.0.1:8061 EWB_E2E_BROWSERS=chromium pytest -m e2e tests/e2e).
-- [ ] 10. Copy dashboard/{index.html,app.js,styles.css,mergedmap.js} + tests/e2e/*.py
+- [x] 10. Copy dashboard/{index.html,app.js,styles.css,mergedmap.js} + tests/e2e/*.py
       into dogfish (check dogfish files still == my merge base first:
       app.js 138ba2ba, styles 1fed06f7, mergedmap 832d38fe).
-- [ ] 11. Deploy: single-file scp to root@192.168.0.121:/opt/ewb-live/dashboard/
+- [x] 11. Deploy: single-file scp to root@192.168.0.121:/opt/ewb-live/dashboard/
       (keep rollback copies), verify live + guardian AR test.
-- [ ] 12. Post REDESIGN LANDED in dogfish notes/channel_design_frontend.md; report to owner.
+- [x] 12. Post REDESIGN LANDED in dogfish notes/channel_design_frontend.md; report to owner.
 
 ## Leftover lane items (not part of the redesign; from handoffs)
 getFrame .run/.ivt byteLength check; bridged-AR lighter fill; IVT_BINS from
 index.ivt.bins; AR hover swallowed inside event boxes; dE of --dur-ar-4/5.
+
+REDESIGN LANDED 2026-11-10 04:25Z; owner informed in the session.
