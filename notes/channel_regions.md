@@ -237,3 +237,27 @@ Live is re-deployed and md5-verified against this worktree (10 files), service
 restarted, region file regenerated (scorecard.json/scores.json md5s unchanged).
 Rollback of this round: `/opt/ewb-live/rollback_pre_regions_v2_20261110/` +
 `notes/rollback_pre_regions_v2/` (8 files, pre-footprint-rule bytes).
+
+## 2026-11-10 13:10Z — another lane deployed over us (cleanly this time), and fable-review was a reverter
+
+term_720dbed3 shipped the heat-3/freeze-1 paint gate at 13:01:28Z by scp'ing
+`dashboard/{app,mergedmap}.js`, `dashboard/index.html` and
+`ewb_live/viz/exceedance.py` from the **dogfish** working copy — which has carried
+the regions code since 11:40Z, so their edit landed *on top of* mine and both
+features are live together (verified: `forEvent` ×3 and `.small-n` ×14 on the
+public bytes; live-mode e2e 122/3/0 incl. the 9 region tests). I adopted their
+four files byte-for-byte from the box (commit `65dbb8c`) so this branch stays in
+parity with live — unit 230/28, fixture e2e 51 passed.
+
+The hazard runs both ways: dogfish matches live, but `fable-review/` still held
+pre-gate bytes for those three files plus `viz/exceedance.py`, so one
+`remote.sh run|bg|sync` from that lane would have reverted *their* fix exactly as
+one from a pre-regions tree reverted mine. `fable-review/` is now synced to the
+live bytes; the three trees agree on all 11 shared files. Still open, and stated
+to that lane: their `dur.min` frontend contract is running on its `LAYERS[].min`
+fallback in production (live `raw_exceedance/index.json` has `dur:{rev:'v2',
+seed:'2026072500'}`, no `min`), and `test_raw_exceedance.py` exists only in
+`diurnal-cycle-check/tests/`, so neither dogfish nor this branch covers the gate.
+
+My v2 rollback dir now carries a warning README (box + tree, `927dc0e`): restoring
+those 11:05Z dashboard files would revert their gate.
