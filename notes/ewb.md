@@ -964,3 +964,17 @@ Conventions/limits (tests/test_periodic_index.py):
   legacy _lon_idx path in build.py.
 Design-lane adoption done: build.py open_truth_window / climatology
 thresholds / _ar_inputs_window now crop via attach_periodic+sel.
+
+## Heat/freeze detection: the 2026-11-10 area rule (owner instruction)
+
+Full review + before/after measurements in **`notes/temperature_area_rule.md`**;
+contract text in `SPEC.md` §2. One-line summary: heat/freeze tracking left the
+upstream blob tracker (1°-per-edge unbounded expansion, "blob vanished or <50%
+of own peak" ending, no seed suppression) for
+`ewb_live/events/temperature_detect.py` — seed on >=200k km2 of 3 consecutive
+exceedance days, box = seed bbox +250 km per edge, end when the in-box area
+drops below 100k km2, seeds inside a live box absorbed, 31-day cap
+(`EWB_LIVE_TEMP_MAX_DAYS`) for belts that never drop under the floor.
+Measured on the live window (08-11..11-03): curated 15 heat + 1 freeze ->
+15 heat + 4 freeze raw / 3 curated, curated box median 4.58 -> 1.91 M km2, raw
+duration median 3 -> 7 d, 0 publish-gate rejections. AR untouched.

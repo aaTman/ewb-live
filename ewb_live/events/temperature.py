@@ -1,12 +1,27 @@
-"""Heat-wave / freeze detection: thin wrapper over EWB data_prep scripts.
+"""Heat-wave / freeze detection: EWB thresholds + area-tracked events.
 
-All thresholds, masks, blob tracking, bound expansion, and filtering are the
-upstream functions in ``third_party/ExtremeWeatherBench/data_prep/
-temperature_events.py`` (loaded unmodified via ``_upstream``). This module
-mirrors the upstream ``global`` subcommand's non-plotting flow
-(``_run_global``) and maps its output to the SPEC ``Event`` schema.
+The exceedance mask (climatology bounds, 6-hourly anchors, daily-pass = min
+over the 4 steps, land mask, grid-cell areas) is the upstream code in
+``third_party/ExtremeWeatherBench/data_prep/temperature_events.py`` (loaded
+unmodified via ``_upstream``). Tracking is NOT: since 2026-11-10 the
+heat/freeze events come from ``ewb_live/events/temperature_detect.py``, the
+owner's area rule —
 
-Deviations from upstream ``_run_global`` (documented in notes/ewb.md):
+  * TRIGGER: a contiguous set of cells exceeding the daily rule for >=200k km2
+    on 3 consecutive days.
+  * BOX: that seed's bbox padded by 250 km on every edge, fixed for the life
+    of the event (upstream's ``expand_event_bounds`` grew 1 deg per edge per
+    iteration while the edge stayed 50% active and produced 7M km2 boxes).
+  * END: the first day the in-box exceedance area falls below 100k km2 closes
+    the event (upstream ended events relative to their own peak area, or the
+    day the tracked blob went missing, so live spells ended at 1.5M km2 or
+    survived a 500k km2 day only by luck).
+
+Seeds that sit mostly inside a live event's box are absorbed, which removes
+the upstream failure mode of tracking one object as 2-3 overlapping events
+(live 2026-09-12 had three heat waves on the same start date).
+
+Other deviations from upstream ``_run_global`` (documented in notes/ewb.md):
   * Dask uses the in-process *threads* scheduler instead of a
     ``LocalCluster`` (scheduling only; the computed graphs are identical).
   * No plotting (consecutive-map / event PNGs skipped).
@@ -161,13 +176,15 @@ def scan_temperature_events(
     lat_max: float = 90.0,
     min_area_km2: float | None = None,
 ) -> list[Event]:
-    """Run the upstream EWB global scan for heat_wave or freeze events.
+    """Scan [start, end] (inclusive) for heat_wave or freeze events.
 
-    [start, end] are inclusive dates (same semantics as the upstream CLI).
+    Builds the upstream daily exceedance mask over the window, then tracks
+    events with the area rule of ``temperature_detect`` (200k km2 x 3-day
+    seed, seed bbox + 250 km, end below 100k km2). ``min_area_km2`` overrides
+    the seed floor (default: upstream ``MIN_AREA_KM2`` = 200,000 km2).
     Returns Events overlapping the window, sorted by start.
     """
     import dask
-    import joblib
     import xarray as xr
 
     from ._upstream import temperature_events as _te_module
@@ -198,7 +215,6 @@ def scan_temperature_events(
         clip["q_upper"], clip["op_upper"], lat_min, lat_max,
     )
     land_mask = te.build_land_mask(t2m.longitude, t2m.latitude)
-    land_mask_np = land_mask.values.astype(bool)
     area_grid = te.compute_grid_cell_area(t2m.latitude.values, t2m.longitude.values)
     tdim = te.detect_time_dim(t2m)
 
@@ -247,64 +263,60 @@ def scan_temperature_events(
         t2m_daily_np = (t2m_daily_da.values - 273.15).astype(np.float32)
         del t2m_daily_da
 
-        exc_filt = te._consecutive_filter_np(exc_np, te.MIN_CONSECUTIVE_DAYS, 1)
-        logger.info(
-            "  consecutive filter: %d -> %d cells", int(exc_np.sum()), int(exc_filt.sum())
-        )
-        del exc_np
+        daily_mask = exc_np
 
-        events = te.detect_events(
-            exc_filt, dates, lats, lons, event_type,
-            area_grid=area_grid, min_seed_area_km2=min_area_km2,
-        )
-        logger.info("  raw events: %d", len(events))
+    # ------------------------------------------------------------ detection --
+    # Owner rule 2026-11-10 (replaces upstream blob tracking, see module
+    # docstring): seed on >=200k km2 held for 3 consecutive days, box =
+    # seed bbox + 250 km per edge, end when the in-box area drops below
+    # 100k km2.
+    from .temperature_detect import (
+        BOX_PAD_KM,
+        END_AREA_KM2,
+        detect_area_tracked_events,
+    )
 
-        events = joblib.Parallel(n_jobs=-1, prefer="threads")(
-            joblib.delayed(te.expand_event_bounds)(
-                ev, exc_filt, dates, lats, lons, land_mask_np
-            )
-            for ev in events
-        )
-        events = te.include_temps_with_events(
-            events, t2m_daily_np, exc_filt, dates, lats, lons
-        )
-        df = te.events_to_dataframe(events, min_area_km2=min_area_km2)
+    # duration cap keeps a spell that never drops under the in-box floor
+    # (permanent p85 exceedance over the Amazon / Sahara / Gulf belts) inside
+    # the publish gate's limit instead of being refused at it. 0 disables.
+    cap_days = float(os.environ.get("EWB_LIVE_TEMP_MAX_DAYS", "31")) or None
 
-    # keep only events surviving the upstream filter, mapped to Event schema
-    kept = {(r.start_date, r.latitude_min, r.longitude_min) for r in df.itertuples()}
-    # owner 2026-11-09 (HIGH): naive upstream labeling splits one object at
-    # the 0-meridian array seam into two pieces — stitch them back before
-    # bbox/peak attribution (shared seam module; also fixes wrap-bbox slices)
-    from .seam import merge_seam_objects, seam_columns
+    raw = detect_area_tracked_events(
+        daily_mask, dates, lats, lons, area_grid, event_type,
+        t2m_daily=t2m_daily_np,
+        seed_area_km2=min_area_km2,
+        end_area_km2=END_AREA_KM2,
+        pad_km=BOX_PAD_KM,
+        min_days=te.MIN_CONSECUTIVE_DAYS,
+        max_duration_days=cap_days,
+    )
+    logger.info(
+        "  area-tracked events: %d (seed >= %.0f km2 for %d days, box +%.0f km, "
+        "end < %.0f km2, cap %s days)",
+        len(raw), min_area_km2, te.MIN_CONSECUTIVE_DAYS, BOX_PAD_KM, END_AREA_KM2,
+        f"{cap_days:.0f}" if cap_days else "off",
+    )
+    capped = [ev for ev in raw if ev.get("duration_capped")]
+    if capped:
+        logger.warning(
+            "  %d %s event(s) hit the %s-day duration cap without ever falling "
+            "below %.0f km2 in the box (persistent exceedance; raise "
+            "EWB_LIVE_TEMP_MAX_DAYS or a stricter seed to change this): %s",
+            len(capped), event_type, f"{cap_days:.0f}" if cap_days else "off",
+            END_AREA_KM2,
+            ", ".join(f"{str(ev['start'])[:10]}({ev['lat_min']:.0f}N)"
+                      for ev in capped),
+        )
 
-    events = [e for e in merge_seam_objects(events, lons)
-              if (str(e["start"]), e["lat_min"], e["lon_min"]) in kept
-              or any(k in kept for k in e.get("seam_merged_from", ()))]
+    # --------------------------------------------------------- Event mapping --
     out: list[Event] = []
-    for ev in events:
+    for ev in raw:
         if np.datetime64(ev["end"]) < np.datetime64(start):
             continue  # active only in the 14-day lookback, outside the window
         start_d = np.datetime64(ev["start"]).astype("datetime64[D]")
         end_d = np.datetime64(ev["end"]).astype("datetime64[D]")
         start_dt = dt.datetime.combine(start_d.astype(dt.date), dt.time())
         end_dt = dt.datetime.combine(end_d.astype(dt.date), dt.time()) + dt.timedelta(days=1)
-
-        # peak active daily-mean temp in the expanded box (see docstring)
-        ti = np.where(
-            (dates >= np.datetime64(ev["start"])) & (dates <= np.datetime64(ev["end"]))
-        )[0]
-        i_s = te._nearest_1d_index(lats, ev["lat_min"])
-        i_n = te._nearest_1d_index(lats, ev["lat_max"])
-        ilon = seam_columns(lons, float(ev["lon_min"]), float(ev["lon_max"]))
-        ic = np.flatnonzero(ilon)
-        sub_t = t2m_daily_np[ti][:, i_s : i_n + 1][:, :, ic]
-        sub_x = exc_filt[ti][:, i_s : i_n + 1][:, :, ic]
-        n = min(sub_t.shape[0], sub_x.shape[0])
-        active = sub_t[:n][sub_x[:n]]
-        if active.size:
-            peak_c = float(active.max()) if event_type == "heat_wave" else float(active.min())
-        else:
-            peak_c = float("nan")
 
         bbox = (
             float(ev["lat_min"]),
@@ -313,6 +325,7 @@ def scan_temperature_events(
             normalize_lon_180(float(ev["lon_max"])),
         )
         eid = make_event_id(event_type, start_dt, bbox)
+        peak_c = ev.get("peak_temp_c", float("nan"))
         details: dict[str, Any] = {
             "quantile": clip["q_lower"] if event_type == "heat_wave" else clip["q_upper"],
             "clim_source": used_mode,
@@ -320,11 +333,24 @@ def scan_temperature_events(
             "max_consecutive_days": int(ev.get("max_consecutive_days", 0)),
             "mean_consecutive_days": float(ev.get("mean_consecutive_days", 0.0)),
             "peak_area_km2": round(float(ev.get("peak_area_km2", 0.0)), 1),
-            "peak_gridpoints": int(ev["peak"]),
+            "peak_gridpoints": int(ev.get("peak_cells", 0)),
             "mean_temp_c": ev.get("mean_temp_c"),
             "min_temp_c": ev.get("min_temp_c"),
             "antimeridian_wrap": bbox[2] > bbox[3],
-            "detection": "EWB data_prep/temperature_events.py global scan",
+            # area-tracking provenance (owner rule 2026-11-10)
+            "seed_area_km2": round(float(ev.get("seed_area_km2", 0.0)), 1),
+            "seed_gridpoints": int(ev.get("seed_cells", 0)),
+            "trigger_date": str(np.datetime64(ev["trigger"]).astype("datetime64[D]")),
+            "box_pad_km": float(ev.get("pad_km", BOX_PAD_KM)),
+            "end_area_km2": END_AREA_KM2,
+            "area_in_box_km2": ev.get("area_in_box_km2", []),
+            "ongoing": bool(ev.get("ongoing", False)),
+            "duration_capped": bool(ev.get("duration_capped", False)),
+            "detection": (
+                f"area-tracked: >= {min_area_km2:.0f} km2 for "
+                f"{te.MIN_CONSECUTIVE_DAYS} consecutive days, seed bbox +"
+                f"{BOX_PAD_KM:.0f} km, ends below {END_AREA_KM2:.0f} km2"
+            ),
         }
         out.append(
             Event(
