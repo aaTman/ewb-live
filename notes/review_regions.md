@@ -116,3 +116,14 @@ for. Mobile 390px: control visible, in-viewport, focusable, both themes ✓.
 - `tests/e2e/test_dashboard_regions_fe.py` alone: 8 passed.
 - Review fixes are UI/one-liners verified live via Playwright DOM + canvas pixels;
   no new unit tests added.
+
+## Post-review status (2026-11-10, regions-integration)
+
+Item 4 (the two live-URL e2e failures) is **closed**: the integration deploy
+carried current code to the box and `pytest -m e2e` against
+`http://192.168.0.121:8050` now runs 120 passed / 3 skipped / 0 failed.
+The deploy question in the frontend lane's "known gaps" is closed too —
+`scorecard_by_region.json` is published on the box and served (archived weeks
+answer 204, control hides itself). Items 1 (centroid vs footprint overlap) and
+2 (muting n < 5 cells) remain open owner calls. Port + deploy detail:
+`notes/regions_integration_fable.md`.
