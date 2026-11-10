@@ -226,9 +226,12 @@
       reach land — making landfall on at least one day; objects entirely over land are excluded,
       and tropical cyclones are screened out using IBTrACS best tracks.</li>
       <li>The raw detector map shades each cell by its consecutive <b>completed</b> UTC days
-      meeting the daily rule (solid; heat ramp 1–7+, freeze ramp 1–3+), with today’s in-progress
-      day dithered as provisional; the same unfiltered heat/freeze daily criterion is the one the
-      detector applies within its AND-chain. The AR layer is EWB detection minus tropical objects
+      meeting the daily rule. Heat shades only cells reaching the detector’s 3-day minimum
+      (heat ramp 3–7+) — below that a cell can never become a heat wave, so it stays blank —
+      while freeze shades from its first completed day (freeze ramp 1–3+) so short cold runs
+      remain visible for context. Today’s in-progress day is dithered as provisional on cells
+      that already qualify; the same daily criterion is the one the detector applies within its
+      AND-chain. The AR layer is EWB detection minus tropical objects
       (any cell within 15&nbsp;deg of the equator) and tropical cyclones, dropped whole at the
       level of the tracked river (no frame-to-frame flicker). A river that briefly dips below
       threshold for one 6-hour step keeps its id; that step shows its previous footprint with a
