@@ -557,6 +557,17 @@ footer a:hover { color: var(--matte-black); }
 #about-dialog p { max-width: 68ch; font-size: var(--text-base); line-height: 1.55; margin: 0 0 12px; }
 #about-dialog .chip { display: inline-flex; margin: 0 4px 6px 0; }
 #about-dialog .dlg-note { font-size: var(--text-xs); color: var(--ink-muted); }
+/* "How a spell becomes an event" + the Python listing (About dialog) */
+#about-dialog .method-steps { margin: 0 0 12px; padding-left: 20px; max-width: 72ch; }
+#about-dialog .method-steps li { font-size: var(--text-base); line-height: 1.55; margin: 0 0 7px; }
+#about-dialog .method-steps li::marker { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+#about-dialog .repro { margin: 0 0 16px; max-width: 78ch; }
+#about-dialog .repro > summary { cursor: pointer; font-size: var(--text-sm); color: var(--accent-link); }
+#about-dialog .repro > summary:hover { color: var(--matte-black); }
+#about-dialog .repro pre { margin: 10px 0 0; padding: 12px 14px; max-height: 46vh; overflow: auto;
+  background: var(--bg-inset); border: 1px solid var(--border); border-radius: 6px;
+  font: 400 var(--text-2xs)/1.55 var(--font-mono); color: var(--text); white-space: pre;
+  user-select: text; -webkit-user-select: text; }
 .linkbtn { border: none; background: none; padding: 0; font: inherit; cursor: pointer;
   color: var(--accent-ui); text-decoration: underline; text-underline-offset: 2px; }
 .linkbtn:hover { color: var(--matte-black); background: none; }
