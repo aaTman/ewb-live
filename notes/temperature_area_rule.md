@@ -1,5 +1,10 @@
 # Heat/freeze detection — the 2026-11-10 area rule
 
+> **SUPERSEDED the same day** by the owner's footprint/core methodology — see
+> `notes/footprint_tracker.md`. `ewb_live/events/temperature_detect.py` and
+> `tests/test_temperature_detect.py` no longer exist; the pad rule is kept here
+> as the record of why a fixed box and an in-box area floor were not enough.
+
 Owner instruction (2026-11-10): *"trigger a heatwave or freeze when at least
 200k km2 of 3+ consecutive days are reached, add 250 km to each edge, and end
 the event once it goes below 100k km2 in that box. same applies to freezes."*

@@ -42,7 +42,13 @@ _PEAK_RANGE = {
     "freeze": (-90.0, 45.0),         # degC (percentile-relative, see above)
     "atmospheric_river": (0.0, 10000.0),  # IVT kg m-1 s-1
 }
-MAX_DURATION_DAYS = 31
+# Duration ceiling for a published event. The footprint/core tracker (SPEC §2)
+# closes events on their own core, so long spells are physical rather than an
+# artefact of the tracker: the live 2026-08-11..11-02 window tops out at 33 days
+# (central Africa). 31 days (the old upstream-tracker-era value) refused the
+# single most extreme heat wave of the window, so the cap sits above the
+# longest real spell while still tripping on nonsense (a whole-window "event").
+MAX_DURATION_DAYS = 45
 
 
 def validate_event(e: Event) -> list[str]:

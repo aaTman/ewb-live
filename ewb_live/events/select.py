@@ -215,7 +215,7 @@ MERGE_CAP_DAYS = {
 }
 CAP_LAT_SPAN = 40.0       # merged-union bbox caps; beyond -> refuse absorb
 CAP_LON_SPAN = 60.0
-MAX_MERGED_DAYS = 31.0    # validator hard cap (validate.MAX_DURATION_DAYS)
+MAX_MERGED_DAYS = 45.0    # validator hard cap (validate.MAX_DURATION_DAYS)
 
 LAST_DECISIONS: list[dict] = []  # merge/drop log of the last rank_and_cap()
 
