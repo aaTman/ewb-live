@@ -44,6 +44,18 @@ SCHEMA = 3
 ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = ROOT / "data" / "results" / "events"
 CELL = {"heat_wave": 0.25, "freeze": 0.25, "atmospheric_river": 0.5}
+# AR input window = event bbox grown by this MUCH before the mask is computed.
+# Two independent reasons, both live bugs (2026-11-10, Europe AR
+# 6b4dec9dc8db "sliced at the prime meridian"):
+#   * the AR mask is computed ON THIS WINDOW, so its edges are array edges —
+#     a 2 deg margin put the detector's non-wrapping stencil/labeling wall
+#     inside the picture (the 500-cell component floor was applied to the
+#     truncated piece: 691 cells survived a crop that cut half the plume);
+#   * the stencil itself reaches ~8 deg of true neighbours (events/ar_mask).
+# The mask/IVT are regridded back onto the display grid afterwards, so a wide
+# window costs compute, never pixels.
+AR_COMPUTE_PAD_LON_DEG = 25.0
+AR_COMPUTE_PAD_LAT_DEG = 10.0
 HEAT_LEADS_DEFAULT = (24, 72, 120, 240)
 AR_LEADS_DEFAULT = (24, 120)
 FETCH_BUDGET_S = 600.0
@@ -465,8 +477,36 @@ def build_ar(ev: dict, cutoff: dt.datetime, ar_leads) -> dict:
     return out
 
 
+def _ar_compute_bbox(bbox, lon_native):
+    """(lmin, lmax, onmin, onmax) for the AR compute window (AR_COMPUTE_PAD_*).
+
+    onmin=None means DO NOT crop longitude. That is the fallback when the
+    padded arc crosses the native grid's own origin (lon 0 on ERA5's 0..360):
+    PeriodicBoundaryIndex would then return the two sides CONCATENATED, so the
+    longitude axis jumps 56 -> 335 in the middle of the array — invalid for the
+    mask stencils, and it is precisely the case where the seam has to be
+    stitched. Computing globally is the honest answer (ar_mask sees a global
+    axis and wraps it for real); it costs compute, never correctness.
+    """
+    from ewb_live.events.seam import pad_bbox_180
+
+    lmin, lmax, onmin, onmax = pad_bbox_180(bbox, AR_COMPUTE_PAD_LAT_DEG,
+                                            AR_COMPUTE_PAD_LON_DEG)
+    if onmin == -180.0 and onmax == 180.0:      # padded past a revolution
+        return lmin, lmax, None, None
+    sl = _lon_slice(lon_native, onmin, onmax)
+    if sl.stop > float(np.nanmax(lon_native)) + 1e-6:
+        logger.warning("AR compute window (lon %.1f..%.1f) crosses the grid's "
+                       "lon origin; computing the mask globally", onmin, onmax)
+        return lmin, lmax, None, None
+    return lmin, lmax, onmin, onmax
+
+
 def _ar_inputs_window(t0, t1, bbox):
-    """EWB-named u/v/q on levels>=300 over bbox, 6-hourly (lazy)."""
+    """EWB-named u/v/q on levels>=300 over the AR compute window, 6-hourly
+    (lazy). Wider than the event bbox — see AR_COMPUTE_PAD_* and
+    _ar_compute_bbox: the mask is computed ON THIS WINDOW, so its edges are
+    array edges and a tight crop cuts the plume it is supposed to show."""
     from ewb_live.scoring import truth_mirror
     from extremeweatherbench import inputs as ewb_inputs
     ds = truth_mirror.open_mirror()
@@ -476,19 +516,24 @@ def _ar_inputs_window(t0, t1, bbox):
     ds = ds[list(needed)].rename(needed)
     ds = ds.sel(level=ds.level >= 300)
     ds = ds.rename({"time": "valid_time"})
-    lmin, lmax, onmin, onmax = bbox
-    lat_native = np.asarray(ds.latitude.values, float)
     lon_native = np.asarray(ds.longitude.values, float)
-    lat_idx = np.where((lat_native >= lmin - 2) & (lat_native <= lmax + 2))[0]
-    ds, _ = _crop_lon(ds, lon_native, onmin - 2, onmax + 2)
+    lmin, lmax, onmin, onmax = _ar_compute_bbox(bbox, lon_native)
+    lat_native = np.asarray(ds.latitude.values, float)
+    lat_idx = np.where((lat_native >= lmin) & (lat_native <= lmax))[0]
+    if onmin is not None:
+        ds, _ = _crop_lon(ds, lon_native, onmin, onmax)
     return (ds.sel(valid_time=slice(t0, t1 - dt.timedelta(hours=6)))
             .isel(latitude=lat_idx)
             .chunk({"valid_time": 1, "level": -1, "latitude": -1, "longitude": -1}))
 
 
 def _ivt_and_mask(ds_step):
-    from extremeweatherbench.events import atmospheric_river as ar
-    out = ar.build_atmospheric_river_mask_and_land_intersection(
+    """(IVT, AR mask) for one step, from the seam-periodic EWB detector
+    (ewb_live/events/ar_mask.py — same thresholds; upstream's non-wrapping
+    stencil/labeling would cut the plume at the crop edge AND at the prime
+    meridian, and the crop edge IS an array edge here)."""
+    from ewb_live.events import ar_mask
+    out = ar_mask.build_atmospheric_river_mask_and_land_intersection(
         ds_step, output_variables=["integrated_vapor_transport", "atmospheric_river_mask"])
     ivt = out["integrated_vapor_transport"]
     mask = out["atmospheric_river_mask"]
@@ -505,8 +550,17 @@ def _ivt_and_mask(ds_step):
 
 
 def _ar_truth_at_anchor(start, end, bbox, lats, lons):
+    """AR truth for the event window: the peak-area step (anchor) plus ONE
+    mask per valid day (the day's largest step).
+
+    The per-day masks (obs.daily_bits / obs.day_times) exist because the
+    anchor-only shortcut froze the home-page AR footprint on every active day
+    — global_timeline repeats obs.daily_bits per day, so an AR that steps 900
+    km a day used to be drawn in the SAME place for three days and then pop
+    out of existence. The anchor stays what the detail view draws."""
     times = truth_times(start, end)
     best = None
+    per_day: dict = {}
     ds_all = _ar_inputs_window(times[0], times[-1] + dt.timedelta(hours=6), bbox)
     for t in times:
         try:
@@ -521,14 +575,24 @@ def _ar_truth_at_anchor(start, end, bbox, lats, lons):
         area = int(mk_r.sum())
         if best is None or area > best["area"]:
             best = {"time": t, "area": area, "ivt": iv_r, "mask": mk_r}
+        d = t.date()
+        if d not in per_day or area > per_day[d]["area"]:
+            per_day[d] = {"time": t, "area": area, "mask": mk_r}
     if best is None:
         return None, None
-    return {
+    days = sorted(per_day)
+    out = {
         "anchor_time": best["time"].strftime("%Y-%m-%dT%H:%M"),
         "area_cells": best["area"],
         "ivt": pack_u8(np.minimum(best["ivt"], 1100), 0, 1100),
         "mask": pack_mask(best["mask"]),
-    }, best["time"]
+    }
+    if days:
+        stack = np.stack([per_day[d]["mask"] for d in days])
+        out["daily_bits"] = pack_bits(stack)
+        out["day_times"] = [per_day[d]["time"].strftime("%Y-%m-%dT%H:%M")
+                            for d in days]
+    return out, best["time"]
 
 
 # DR2 B2: user-facing reason vocabulary — never render exception class names.

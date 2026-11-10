@@ -39,11 +39,18 @@ def test_frame_codec_roundtrip():
     h = rng.random((37, 61)) > 0.8
     f = rng.random((37, 61)) > 0.9
     a = rng.random((37, 61)) > 0.7
-    raw = rx.frame_bytes(h, f, a)
-    h2, f2, a2 = rx.frame_layers(raw, h.shape)
+    b = rng.random((37, 61)) > 0.95
+    raw = rx.frame_bytes(h, f, a, b)
+    h2, f2, a2, b2 = rx.frame_layers(raw, h.shape)
     assert (h == h2).all() and (f == f2).all() and (a == a2).all()
+    assert (b == b2).all()          # gap-bridge flag survives the wire
+    # ALWAYS 4 planes: an old writer's payload is plane 3 = empty, never a
+    # shorter payload (the JS decoder offsets planes 0-2 by it)
+    h3, f3, a3, b3 = rx.frame_layers(rx.frame_bytes(h, f, a), h.shape)
+    assert (h == h3).all() and (f == f3).all() and (a == a3).all()
+    assert not b3.any()
     # sparse frames must compress hard
-    assert len(raw) < (3 * 37 * 61 + 7) // 8
+    assert len(raw) < (4 * 37 * 61 + 7) // 8
 
 
 def test_build_frames_incremental(tmp_path, monkeypatch):
@@ -58,16 +65,20 @@ def test_build_frames_incremental(tmp_path, monkeypatch):
         n = len(day_times)
         m = np.zeros((n, 8, 8), bool)
         m[:, 2:4, 2:4] = True
-        return m, np.zeros_like(m), np.zeros_like(m), \
-            np.zeros((n, 8, 8), np.uint16), np.zeros((n, 8, 8), np.float32)      # labels -> .trk (done-rule)
+        bridged = np.zeros((n, 8, 8), bool)
+        bridged[:, 3, 3] = True     # one AR cell is only a carried footprint
+        return m, np.zeros_like(m), m, \
+            np.zeros((n, 8, 8), np.uint16), np.zeros((n, 8, 8), np.float32), \
+            bridged      # labels -> .trk (done-rule), bridged -> plane 3
 
     frames: list[str] = []
     assert rx.build_frames(tmp_path, times, layer_fn, False, frames) == 4
     assert calls == [2, 2]                       # one call per day, not per frame
     assert sorted(frames) == ["2026081000", "2026081006",
                               "2026081100", "2026081106"]
-    h, f, a = rx.frame_layers((tmp_path / "2026081000.bin").read_bytes(), (8, 8))
+    h, f, a, b = rx.frame_layers((tmp_path / "2026081000.bin").read_bytes(), (8, 8))
     assert h[2:4, 2:4].all() and not h[:2].any() and not f.any()
+    assert a[2:4, 2:4].all() and b[3, 3] and int(b.sum()) == 1
     n_before = len(calls)
     assert rx.build_frames(tmp_path, times, layer_fn, False, frames) == 0
     assert len(calls) == n_before                # incremental: nothing recomputed
@@ -228,8 +239,9 @@ def test_run_sidecar_backfill_and_prune(tmp_path, monkeypatch):
 
 def test_ivt_sidecar_orientation(tmp_path, monkeypatch):
     """Real _make_layer_fn seam: ivt6/keep6 arrive mirror-native; the .ivt
-    sidecar must be display-oriented AND classes must sit on the AR mask
-    cells (ponytail 23:59Z: native IVT x display mask -> garbage classes)."""
+    sidecar must be display-oriented (ponytail 23:59Z: native IVT x display
+    mask -> garbage classes). Classes now come from the FIELD, so the low 3
+    bits hold the class and bit 7 marks IVT >= 400."""
     import xarray as xr
     monkeypatch.setattr(rx, "LAT_N", 8)
     monkeypatch.setattr(rx, "LON_N", 8)
@@ -260,10 +272,35 @@ def test_ivt_sidecar_orientation(tmp_path, monkeypatch):
     frames: list[str] = []
     assert rx.build_frames(tmp_path, t, layer_fn, False, frames) == 1
     cls = rx.ivt_class_from_bytes((tmp_path / f"{frames[0]}.ivt").read_bytes(), (8, 8))
+    cls = cls & rx.IVT_CLASS_MASK          # bit 7 is the >=400 flag, not a class
     assert cls.sum() == 3 and int(cls.max()) == 3
     # the one classed cell sits at the DISPLAY cell of native (0,0):
     # rows flipped, cols rolled by LON_N//2
     assert cls[8 - 1 - 0, (0 - 4) % 8] == 3
+
+
+def test_ivt_class_plane_is_the_field_not_the_paint():
+    """Owner report 2026-11-10 ("IVT values just disappear", north Atlantic
+    08-12 18Z -> 08-13 00Z): the class plane used to be masked by the AR paint,
+    so every screen and every marginal-Laplacian dropout deleted the IVT field
+    too (5 515 cells at IVT >= 400 in that basin, 85 painted). The plane is the
+    IVT field now: bins everywhere, plus bit 7 at the detector threshold."""
+    ivt = np.array([[0.0, 249.9, 250.0, 400.0, 500.0, 760.0, 1000.0,
+                     1250.0, np.nan, -3.0]])
+    cls = rx.ivt_class_plane(ivt)
+    assert cls[0, 0] == 0                      # below the first edge
+    assert cls[0, 1] == 0                      # < 250
+    assert cls[0, 2] == 1                      # 250-500, below AR threshold
+    assert cls[0, 3] == 1 | rx.IVT_ABOVE_BIT   # 400 exactly: the AR threshold
+    assert cls[0, 4] == 2 | rx.IVT_ABOVE_BIT
+    assert cls[0, 5] == 3 | rx.IVT_ABOVE_BIT
+    assert cls[0, 6] == 4 | rx.IVT_ABOVE_BIT
+    assert cls[0, 7] == 5 | rx.IVT_ABOVE_BIT
+    assert cls[0, 8] == 0                      # NaN never gets a class
+    assert cls[0, 9] == 0
+    # and the contract the frontend reads
+    assert rx.IVT_CLASS_EDGES == [250, 500, 750, 1000, 1250]
+    assert rx.IVT_AR_MIN == 400.0
 # ---- duration sidecar v2 (sawtooth fix, diurnal investigation 2026-11-09):
 # low 7 bits = consecutive COMPLETED days (constant within a UTC day),
 # bit 7 = today so far (provisional) ----

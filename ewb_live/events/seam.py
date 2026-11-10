@@ -15,7 +15,10 @@ Shared entry points (design's raw frames use these too):
   label_periodic  — seam-connected component labeling (mask, structure)
   minimal_arc     — (west, east) minimal arc from lon intervals; west > east
                     means the arc crosses the array's 0-deg seam
+  mask_arc        — minimal arc of a (lat, lon) bool mask (per-row runs)
+  mask_lat_span   — (lat_min, lat_max) of a (lat, lon) bool mask
   arc_bbox_180    — SPEC sec 2 (lon_min, lon_max) from an arc, optional pad
+  pad_bbox_180    — grow a SPEC sec 2 bbox arc-safe (ends, not min/max)
   seam_columns    — boolean column mask for an arc bbox (wrap-aware)
   merge_seam_objects — stitch seam-split pieces of one object back together
 """
@@ -29,11 +32,15 @@ _STRUCT = np.ones((3, 3), int)
 
 
 def label_periodic(mask2d: np.ndarray,
-                   structure: np.ndarray | None = None) -> tuple[np.ndarray, int]:
+                   structure: np.ndarray | None = None,
+                   *, seam_rows: int = 1) -> tuple[np.ndarray, int]:
     """ndimage.label with PERIODIC longitude: col nx-1 is adjacent to col 0.
 
     Labels normally, then UNIONs labels whose pixels touch across the seam
     in the same or a neighboring row (8-connectivity) and relabels densely.
+    `seam_rows` = how many rows either side of a seam pixel also count as
+    touching: 1 for 8-connectivity (default), 0 for a 4-connected structure
+    (no diagonal neighbour across the seam; events/ar_mask.py).
     (Padding columns does NOT work: a copy adjacent to one piece never joins
     the other real piece, and creates phantom labels in the pad columns.)
     Returns (labels int, n) exactly like ndimage.label.
@@ -41,7 +48,9 @@ def label_periodic(mask2d: np.ndarray,
     from scipy import ndimage
 
     m = np.asarray(mask2d)
-    res = ndimage.label(m, structure=structure or _STRUCT)
+    # `structure or _STRUCT` would raise on a multi-element array (ambiguous
+    # truth value) — the sentinel has to be an identity check.
+    res = ndimage.label(m, structure=_STRUCT if structure is None else structure)
     assert isinstance(res, tuple)  # scipy stub union
     lab, n = res
     if n < 2 or m.shape[1] < 2:
@@ -57,7 +66,7 @@ def label_periodic(mask2d: np.ndarray,
     left = np.flatnonzero(lab[:, 0])
     right = np.flatnonzero(lab[:, -1])
     for r in left:
-        for r2 in right[np.abs(right.astype(int) - int(r)) <= 1]:
+        for r2 in right[np.abs(right.astype(int) - int(r)) <= seam_rows]:
             a, b = int(lab[r, 0]), int(lab[r, -1])
             ra, rb = find(a), find(b)
             if ra != rb:
@@ -120,6 +129,69 @@ def seam_columns(lons: np.ndarray, lon_min: float,
     if lon_min <= lon_max:
         return (l >= lon_min) & (l <= lon_max)
     return (l >= lon_min) | (l <= lon_max)
+
+
+def _row_runs(row: np.ndarray) -> list[tuple[int, int]]:
+    """Contiguous True stretches of a 1-D bool row as (start, end) INCLUSIVE
+    index pairs — the pieces an arc bbox is built from."""
+    d = np.diff(np.concatenate(([0], np.asarray(row, np.int8), [0])))
+    return list(zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1) - 1))
+
+
+def mask_arc(mask2d: np.ndarray,
+             lons: np.ndarray) -> tuple[float, float] | None:
+    """Minimal eastward arc (west, east) covering every True cell of a mask,
+    in the longitude ARRAY's own convention (west > east = it straddles the
+    array seam). Built from per-row contiguous runs, so a mask that occupies
+    both ends of the array collapses onto the short arc across the seam
+    instead of the ~340 deg nonsense a naive min/max gives.
+
+    None for an empty mask. Assumes the mask does not cover the whole globe
+    (minimal_arc's own precondition).
+    """
+    m = np.asarray(mask2d, bool)
+    l = np.asarray(lons, float)
+    iv: list[tuple[float, float]] = []
+    for j in range(m.shape[0]):
+        row = m[j]
+        if not row.any():
+            continue
+        for a, b in _row_runs(row):
+            iv.append((float(l[a]), float(l[b])))
+    if not iv:
+        return None
+    return minimal_arc(iv)
+
+
+def mask_lat_span(mask2d: np.ndarray,
+                  lats: np.ndarray) -> tuple[float, float] | None:
+    """(lat_min, lat_max) of the True cells of a (lat, lon) mask, or None."""
+    rows = np.flatnonzero(np.asarray(mask2d, bool).any(axis=1))
+    if rows.size == 0:
+        return None
+    l = np.asarray(lats, float)
+    return float(l[rows[0]]), float(l[rows[-1]])
+
+
+def pad_bbox_180(bbox: tuple[float, float, float, float], dlat: float,
+                 dlon: float) -> tuple[float, float, float, float]:
+    """Grow a SPEC sec 2 bbox by dlat/dlon, arc-safe.
+
+    Padding must push the arc's WEST end westward and its EAST end eastward,
+    which for a wrap arc (lon_min > lon_max) is the opposite of min/max
+    arithmetic; a box padded past a full revolution clamps to the whole
+    globe instead of inverting into a narrow arc.
+    """
+    from .types import normalize_lon_180
+
+    lat_min, lat_max, lon_min, lon_max = (float(b) for b in bbox)
+    span = lon_max - lon_min if lon_max >= lon_min else lon_max + 360.0 - lon_min
+    if span + 2.0 * dlon >= 360.0:
+        return (max(-90.0, lat_min - dlat), min(90.0, lat_max + dlat),
+                -180.0, 180.0)
+    return (max(-90.0, lat_min - dlat), min(90.0, lat_max + dlat),
+            normalize_lon_180(lon_min - dlon),
+            normalize_lon_180(lon_max + dlon))
 
 
 def _edge_tol(lons: np.ndarray) -> float:

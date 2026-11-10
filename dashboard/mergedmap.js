@@ -12,7 +12,8 @@
    qualified_at is added by the ewb lane; until it lands, boxes fall back
    to the event `start` day at 00Z and one console.warn says so.
    Data: data/results/raw_exceedance/{index.json,<ts>.bin} (zlib, layer-major
-   bit-packed rows heat/freeze/ar, row0=lat0, MSB-first), duration sidecars
+   bit-packed rows heat/freeze/ar/bridged — plane 3 flags AR cells that are
+   only a gap-bridge footprint; row0=lat0, MSB-first), duration sidecars
    <ts>.run (zlib, two raw u8 planes heat/freeze; dur rev v2: low 7 bits =
    consecutive COMPLETED UTC days meeting the daily rule — constant across
    all four frames of a day — bit 7 = today so far, dithered on qualifying
@@ -40,7 +41,9 @@
     { key: 'f', name: 'freeze', label: 'Freeze — days < P15', ramp: true, bins: 3, min: 1,
       tip: 'Shaded from its first consecutive completed day: cold runs are short, so sub-3-day cells stay visible for context (a freeze EVENT still needs 3+ days). Solid = consecutive COMPLETED UTC days the cell fell below the P15 climatology at all four 6-hourly steps (constant within a day; 1–3+); dithered = today so far (provisional), only on a cell that already shows at least one completed day. Darkest = 3+ days.' },
     { key: 'a', name: 'ar',     label: 'AR — IVT magnitude', ramp: true, bins: 5,
-      tip: 'AR mask with IVT magnitude bins (kg m-1 s-1): 250-500, 500-750, 750-1000, 1000-1250, >=1250' },
+      tip: 'Detected atmospheric rivers, shaded by IVT magnitude (kg m-1 s-1): 250-500, 500-750, 750-1000, 1000-1250, >=1250.'
+        + ' Faint tint = IVT >= 400 that is NOT painted as an AR (screened as tropical/cyclone, or a marginal detection)'
+        + ' — the moisture flux is real, the AR call is not. Pale green = a track\'s gap-bridge footprint (display only).' },
   ];
   const RUN_ALPHA = { heat: [110, 125, 140, 155, 170, 190, 215], freeze: [140, 175, 215],
                       ar: [255, 255, 255, 255, 255] };  // bin opacities; AR paints opaque (its colour IS the class)
@@ -268,8 +271,10 @@
      Earth is pseudocylindrical: one screen row = one latitude, longitude
      linear in x). One pixel → one cell: no strip overlaps, no scanline
      stripes, clean date-line wrap, pole rows blank. */
-  let lut = null, rasterCv = null, packedCache = null, rampCache = null;   // packed colours: one cache per theme
-  let curIvt = null;                                   // AR class plane of the painted frame (hover)
+  let lut = null, rasterCv = null, packedCache = null, rampCache = null,
+      ghostCache = null, ivtFltCache = null;   // packed colours: one cache per theme
+  let curIvt = null;                                   // AR IVT class plane of the painted frame (hover)
+  let curPaint = null;   // {u8, plane, ghostPlane, ivtS2, ivtAbove} of the painted frame (hover reads the AR bit)
   const IVT_BINS = [250, 500, 750, 1000, 1250];        // kg m-1 s-1 class edges (index.ivt.bins)
   function buildLut() {
     const g = raw.grid, nx = g.nx, ny = g.ny, stride = Math.ceil(nx / 8);
@@ -317,11 +322,22 @@
     const ctx = cv.getContext('2d');
     drawBase(ctx);
     curIvt = null;                                    // no frame → nothing for hover to read
+    curPaint = null;
     if (!frame || !raw || !fit) { dimOutside(ctx); return; }
-    const u8 = frame.bin;                        // binary exceedance bits (3 planes)
+    const u8 = frame.bin;                        // binary exceedance bits (4 planes)
     const run = (raw.dur && frame.run) ? frame.run : null;   // null → binary paint (fallback)
     if (!lut || lut.cw !== cv.width || lut.ch !== cv.height) buildLut();
     const g = raw.grid, plane = g.ny * Math.ceil(g.nx / 8), cells = g.ny * g.nx;
+    // plane 3 'bridged' (v8 assets): AR cells that are only a carried-over
+    // footprint across a 1-step mask dropout. Feature-detected on the payload
+    // length, so pre-v8 3-plane assets still paint exactly as before.
+    const ghostPlane = u8.length >= 4 * plane ? 3 * plane : -1;
+    // .ivt schema 2: class in the low 3 bits, bit 7 = IVT >= index.ivt.ar_min
+    // (the AR threshold). Schema 1 sidecars were class-only AND were zeroed
+    // wherever the AR layer did not paint — which is how "IVT values just
+    // disappear" happened, so the two schemas are read differently.
+    const ivtS2 = !!(raw.ivt && raw.ivt.schema >= 2);
+    const ivtAbove = (raw.ivt && raw.ivt.above_bit) || 128;
     const { cw, ch, byteIdx, bitMask, cellIdx } = lut;
     if (!rasterCv || rasterCv.width !== cw || rasterCv.height !== ch) {
       rasterCv = document.createElement('canvas');
@@ -341,14 +357,22 @@
       // AR paints opaque (255): its colour IS the class, and pixel tests
       // match CSS RGBs exactly; heat/freeze keep RUN_ALPHA (blend-calibrated)
       packedCache = LAYERS.map((L) => pack(rgbOf(cs.getPropertyValue(`--series-${L.name}`)), L.key === 'a' ? 255 : 215));
+      // the gap-bridge footprint stays visibly weaker than a physical AR cell:
+      // it is a tracking decision, not a cell that met the IVT rule
+      ghostCache = pack(rgbOf(cs.getPropertyValue('--series-ar')), 90);
+      // IVT >= 400 where the AR layer does not paint: the moisture flux is
+      // real, the AR call is not (screened or a marginal-Laplacian dropout),
+      // so it gets a faint tint and a hover value, never AR colour
+      ivtFltCache = pack(rgbOf(cs.getPropertyValue('--series-ar')), 55);
       rampCache = LAYERS.map((L) => (L.ramp
         ? RUN_ALPHA[L.name].map((al, b) => pack(rgbOf(cs.getPropertyValue(`--dur-${L.name}-${b + 1}`)), al))
         : null));
     }
-    const packed = packedCache, ramp = rampCache;
+    const packed = packedCache, ramp = rampCache, ghostCol = ghostCache, ivtFlt = ivtFltCache;
     const durV2 = !!(raw.dur && String(raw.dur.rev || '').indexOf('v2') === 0);
     const act = LAYERS.map((L, li) => (on[L.key] ? li : -1)).filter((li) => li >= 0);
-    const ivt = curIvt = (raw.ivt && frame.ivt) ? frame.ivt : null;   // AR IVT class plane (u8, per-cell; hover reads curIvt)
+    const ivt = curIvt = (raw.ivt && frame.ivt) ? frame.ivt : null;   // IVT class plane (u8, per-cell; hover reads curIvt)
+    curPaint = { u8, plane, ghostPlane, ivtS2, ivtAbove };
     const n = cw * ch;
     for (let p = 0; p < n; p++) {
       const bi = byteIdx[p];
@@ -357,13 +381,19 @@
       for (let a = 0; a < act.length; a++) {                  // later layers paint over earlier
         const li = act[a];
         if (li === 2) {
-          // AR: IVT-class ramp ONLY where the class plane says so; otherwise
-          // the binary bit. Never index run[] for AR — .run has 2 planes
-          // (heat, freeze); reading plane 2 is undefined = the AR-outage bug
-          // class of 2026-11-09 (twice).
-          const cls = (ivt && ramp[li]) ? ivt[cellIdx[p]] : 0; // u8: 0=none, 1-5=bins
-          if (cls > 0 && cls <= 5) px[p] = ramp[li][cls - 1];  // ramp bins are 0-indexed
-          else if (u8[li * plane + bi] & m) px[p] = packed[li];
+          // AR: the binary bit says PAINT, the class plane says how strong.
+          // Never index run[] for AR — .run has 2 planes (heat, freeze);
+          // reading plane 2 is undefined = the AR-outage bug class of
+          // 2026-11-09 (twice). The class plane never decides whether a cell
+          // paints: it is the IVT field (schema 2), not the AR mask.
+          const gh = ghostPlane >= 0 && (u8[ghostPlane + bi] & m);
+          const v = ivt ? ivt[cellIdx[p]] : 0;
+          const cls = (!gh && ivt && ramp[li]) ? (ivtS2 ? (v & 7) : v) : 0;
+          if (gh) px[p] = ghostCol;                        // faint: display-only footprint
+          else if (u8[li * plane + bi] & m) {
+            if (cls > 0 && cls <= 5) px[p] = ramp[li][cls - 1];  // bins are 0-indexed
+            else px[p] = packed[li];                       // mask w/o class: flat green
+          } else if (ivtS2 && (v & ivtAbove) && ivtFlt) px[p] = ivtFlt;
         } else if (run && ramp[li]) {
           const L = LAYERS[li];
           const r = run[li * cells + cellIdx[p]];             // heat plane 0, freeze plane 1; 0 = unpainted
@@ -683,11 +713,13 @@
         note.classList.remove('hidden');
         note.textContent = `Frame ${fmtReadout(ts)} is not available yet — `
           + 'the raw exceedance build has not produced it.';
-        paintFrame(null);
+        legStats = null; paintFrame(null);
       } else {
         note.classList.add('hidden');
+        legStats = censusFrame(frame);        // legend describes THIS painted frame
         paintFrame(frame);
       }
+      renderLegend();
       prefetch(idx);
     });
   }
@@ -787,20 +819,171 @@
     renderLegend();
   }
 
+  /* ---------------- adaptive colour legend ----------------
+     The lanes' colours mean different things (heat/freeze = consecutive
+     COMPLETED days, AR = IVT magnitude in kg m⁻¹ s⁻¹), a lane's ramp can
+     shrink at runtime (index.dur.min raises the paint floor; a missing .run /
+     .ivt sidecar falls back to one flat colour), and the Region dropdown
+     veils everything outside its rect. So the legend is generated from the
+     state the map is in right now: one group per layer that is ON, listing
+     only the stops that lane can paint, with the stops this frame does not
+     paint dimmed and a lane with no cells at all marked. A colour that is not
+     on screen never reads as live. */
+  const LEGEND = {
+    heat:   { name: 'Heat wave', unit: 'consecutive days > P85',
+      flat: 'exceeds P85', flatTip: 'Exceeds P85 — the duration sidecar is unavailable, so one flat colour paints every exceeded cell' },
+    freeze: { name: 'Freeze', unit: 'consecutive days < P15',
+      flat: 'below P15', flatTip: 'Below P15 — the duration sidecar is unavailable, so one flat colour paints every exceeded cell' },
+    ar:     { name: 'AR IVT', unit: 'kg m⁻¹ s⁻¹',
+      flat: 'AR mask', flatTip: 'AR mask — the IVT class sidecar is unavailable, so one flat green paints every masked cell' },
+  };
+  let legStats = null;                         // lane census of the painted frame
+  let legHtml = '';                            // last rendered markup (playback: no reflow churn)
+
+  const legStop = (bg, label, title, out, extraCls) =>
+    `<span class="lg-bin${out ? ' out' : ''}">`
+    + `<i class="swatch${extraCls || ''}" style="background:${bg}" title="${title}"></i>`
+    + `<span class="lg-t">${label}</span></span>`;
+  const dayLbl = (b, bins) => (b >= bins ? b + '+' : String(b));
+  const dayTip = (L, b) => `${dayLbl(b, L.bins)} consecutive completed day`
+    + `${b > 1 ? 's' : ''} ${L.name === 'heat' ? 'above P85' : 'below P15'}`;
+
+  /* Cell census of one frame: which legend stops the frame ACTUALLY paints,
+     under the same rules paintFrame applies (dur gate, the v2 provisional bit,
+     the IVT class plane, the binary fallbacks), scoped to the Region view —
+     outside the veil nothing is legible. Presence, not counts: the legend only
+     asks "is this colour on screen", so a lane leaves the scan as soon as every
+     stop it can reach has been found once and the whole scan stops when all
+     three are satisfied — at 0.25° that keeps it well under the repaint cost.
+     Layer toggles never enter it (it describes the frame, the legend decides
+     what to show), and it is cached on the frame object, recomputed when the
+     Region changes. */
+  function censusFrame(frame) {
+    if (!raw || !frame || !frame.bin) return null;
+    const key = region ? region.key : 'global';
+    if (frame.legKey === key) return frame.leg;
+    const g = raw.grid, nx = g.nx, ny = g.ny, cells = nx * ny;
+    const durV2 = !!(raw.dur && String(raw.dur.rev || '').indexOf('v2') === 0);
+    const run = (raw.dur && frame.run) ? frame.run : null;
+    const ivt = (raw.ivt && frame.ivt) ? frame.ivt : null;
+    const s = { key, durV2, ramp: { heat: !!run, freeze: !!run, ar: !!ivt },
+                n: LAYERS.map((L) => new Uint8Array(L.bins)), prov: [0, 0, 0] };
+    const clampGate = (li) => (li === 2 ? 1
+      : Math.min(Math.max(minDays(LAYERS[li]), 1), LAYERS[li].bins));
+    const reach = (li) => (li === 2 ? (ivt ? LAYERS[2].bins : 1)
+      : !run ? 1 : LAYERS[li].bins - clampGate(li) + 1 + (durV2 ? 1 : 0));
+    const need = [reach(0), reach(1), reach(2)];    // stops still missing per lane
+    const hit = (li, b) => { if (!s.n[li][b]) { s.n[li][b] = 1; need[li]--; } };
+    const bin = frame.bin, stride = Math.ceil(nx / 8), planeB = ny * stride;
+    const stride4 = bin.length >= 4 * planeB;         // v8+ carries the bridged plane
+    const ivtS2c = !!(raw.ivt && raw.ivt.schema >= 2);
+    let j0 = 0, j1 = ny - 1, i0 = 0, i1 = nx - 1;
+    if (region) {
+      j0 = Math.max(0, Math.round((region.lat[0] - g.lat0) / g.step_lat));
+      j1 = Math.max(j0, Math.min(ny - 1, Math.round((region.lat[1] - g.lat0) / g.step_lat)));
+      if (region.lon[1] - region.lon[0] < 360) {   // whole-width regions stay global in lon
+        const wi = (v) => ((Math.round((v - g.lon0) / g.step_lon) % nx) + nx) % nx;
+        i0 = wi(region.lon[0]); i1 = wi(region.lon[1]);
+      }
+    }
+    const span = (j, a, b) => {
+      const crow = j * stride;
+      for (let i = a; i <= b; i++) {
+        const c = j * nx + i, byte = crow + (i >> 3), m = 1 << (7 - (i & 7));
+        for (let li = 0; li < 2; li++) {                   // heat plane 0, freeze plane 1
+          if (!need[li]) continue;
+          const L = LAYERS[li];
+          if (run) {
+            const r = run[li * cells + c];
+            const done = durV2 ? (r & 127) : r;
+            if (done < minDays(L)) continue;               // sub-gate: never painted
+            hit(li, Math.min(done - 1, L.bins - 1));
+            // the provisional bit dithers toward the NEXT shade, so that shade is on
+            // screen too — and the 'today' stop itself rides as a third outcome
+            if (durV2 && (r & 128)) {
+              hit(li, Math.min(done, L.bins - 1));
+              if (!s.prov[li]) { s.prov[li] = 1; need[li]--; }
+            }
+          } else if (bin[li * planeB + byte] & m) hit(li, 0);
+        }
+        if (need[2]) {                                     // AR: class plane, never run[]
+          if (ivt) {
+            // the legend counts what is PAINTED: schema 2 classes cover the
+            // whole IVT field, so a class without the AR bit is a tint, not a
+            // stop on the AR ramp
+            const painted = !!(bin[2 * planeB + byte] & m);
+            const ghost = stride4 && (bin[3 * planeB + byte] & m);
+            const v = ivt[c], cls = ivtS2c ? (v & 7) : v;
+            if (painted && !ghost && cls > 0 && cls <= LAYERS[2].bins) hit(2, cls - 1);
+            else if (painted && !ghost) hit(2, 0);      // mask without a class: flat green
+          }
+          // cls === 0 with the bit set paints the flat series green (a non-finite
+          // IVT under the mask — the class edges start at 250, the mask at 400).
+          // Not a legend stop: it is a data gap, and its colour is the top class
+          // in the light ramp anyway.
+          else if (bin[2 * planeB + byte] & m) hit(2, 0);
+        }
+      }
+    };
+    for (let j = j0; j <= j1 && need[0] + need[1] + need[2] > 0; j++) {
+      if (i0 <= i1) span(j, i0, i1);
+      else { span(j, i0, nx - 1); span(j, 0, i1); }         // dateline-crossing region
+    }
+    frame.leg = s; frame.legKey = key;
+    return s;
+  }
+
   function renderLegend() {
     const leg = $('#gm-legend');
     if (!leg) return;
-    // Only show AR legend when AR layer is on and has ramp (IVT classes)
-    if (!on.a || !LAYERS[2].ramp || !raw || !raw.ivt) {
-      leg.innerHTML = '';
-      leg.classList.add('hidden');
-      return;
+    const groups = [];
+    if (raw) {
+      const cen = legStats;
+      LAYERS.forEach((L, li) => {
+        if (!on[L.key]) return;                            // off the map → off the legend
+        const M = LEGEND[L.name];
+        const n = cen ? cen.n[li] : null;                  // null = nothing painted yet
+        const ramp = !cen || cen.ramp[L.name];
+        const live = n ? n.reduce((a, b) => a + b, 0) : -1;  // stops present in this frame
+        const from = L.name === 'ar' ? 1 : Math.min(Math.max(minDays(L), 1), L.bins);
+        const stops = [];
+        if (ramp) {
+          // only stops the lane can paint: days below the gate never reach the canvas
+          for (let b = from; b <= L.bins; b++) {
+            const lo = IVT_BINS[b - 1];
+            stops.push(legStop(
+              `var(--dur-${L.name}-${b})`,
+              L.name === 'ar' ? (b < L.bins ? String(lo) : `\u2265${lo}`) : dayLbl(b, L.bins),
+              L.name === 'ar'
+                ? (b < L.bins ? `${lo}\u2013${IVT_BINS[b]} kg m\u207b\u00b9 s\u207b\u00b9` : `\u2265${lo} kg m\u207b\u00b9 s\u207b\u00b9`)
+                : dayTip(L, b),
+              !!n && n[b - 1] === 0));
+          }
+          // 'today so far' rides as a dithered shade, never a new colour (dur rev v2)
+          if (L.name !== 'ar' && cen && cen.durV2 && cen.prov[li] > 0) {
+            stops.push(legStop(
+              `repeating-conic-gradient(var(--dur-${L.name}-${from}) 0% 25%, var(--series-${L.name}) 0% 50%) 0 0 / 4px 4px`,
+              'today',
+              'Today so far (provisional): dithered one shade up on a cell that already qualifies — it never adds a new point',
+              false, ' prov'));
+          }
+        } else {
+          stops.push(legStop(`var(--series-${L.name})`, M.flat, M.flatTip, !!n && live === 0));
+        }
+        const none = !!n && live === 0;
+        groups.push(`<span class="lg-group${none ? ' none' : ''}" data-layer="${L.key}"`
+          + ` title="${L.tip || M.name}">`
+          + `<span class="lg-head"><span class="lg-name">${M.name}</span>`
+          + `<span class="lg-unit">${M.unit}</span>`
+          + (none ? '<span class="lg-none">none in view</span>' : '') + '</span>'
+          + `<span class="lg-stops">${stops.join('')}</span></span>`);
+      });
     }
-    leg.classList.remove('hidden');
-    const bins = IVT_BINS;   // single source: hover + legend share the class edges
-    leg.innerHTML = '<span class="label">AR IVT:</span>' +
-      bins.map((b, i) => `<span class="swatch" style="background: var(--dur-ar-${i + 1})" title="${b} kg m⁻¹ s⁻¹"></span>`).join('') +
-      '<span class="label">+</span>';
+    const html = groups.join('');
+    if (html === legHtml) return;              // same legend: no reflow per frame
+    legHtml = html;
+    leg.innerHTML = html;
+    leg.classList.toggle('hidden', !groups.length);
   }
 
   /* ---------------- boot ---------------- */
@@ -824,7 +1007,7 @@
     slider.addEventListener('input', () => { stopPlay(); idx = +slider.value; writeUrl(false); render(); });
     // theme flip: the canvas bakes ocean/land/series colours at paint time, so repaint
     new MutationObserver(() => {
-      packedCache = null; rampCache = null;                 // theme flip: repack colours
+      packedCache = null; rampCache = null; ghostCache = null; ivtFltCache = null;   // theme flip: repack colours
       if (raw && fit) paintFrame(frameCache.get(raw.frames[idx]) || null);
     })
       .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
@@ -836,19 +1019,32 @@
     let tipRaf = 0, tipEv = null;
     const tipShow = () => {
       tipRaf = 0;
-      let cls = 0;
+      let cls = 0, painted = false;
       if (on.a && curIvt && lut) {
         const r = tipCv.getBoundingClientRect();
         const x = Math.round((tipEv.clientX - r.left) * (tipCv.width / r.width));
         const y = Math.round((tipEv.clientY - r.top) * (tipCv.height / r.height));
         if (x >= 0 && y >= 0 && x < lut.cw && y < lut.ch) {
           const cell = lut.cellIdx[y * lut.cw + x];
-          if (cell >= 0) cls = curIvt[cell];
+          if (cell >= 0) {
+            const v = curIvt[cell];
+            cls = curPaint && curPaint.ivtS2 ? (v & 7) : v;
+            // is this cell painted as an AR, or is it only the IVT field?
+            if (curPaint && cls > 0) {
+              const nx = raw.grid.nx, stride = Math.ceil(nx / 8);
+              const j = Math.floor(cell / nx), i = cell - j * nx;
+              painted = !!(curPaint.u8[2 * curPaint.plane + j * stride + (i >> 3)]
+                           & (1 << (7 - (i & 7))));
+            }
+          }
         }
       }
       if (cls > 0 && cls <= 5) {
         const lo = IVT_BINS[cls - 1];
-        tipEl.innerHTML = `<div class="t-title">AR IVT ${cls < 5 ? `${lo}–${IVT_BINS[cls]}` : `≥${lo}`} kg m⁻¹ s⁻¹</div>`;
+        const rng = cls < 5 ? `${lo}–${IVT_BINS[cls]}` : `≥${lo}`;
+        tipEl.innerHTML = `<div class="t-title">IVT ${rng} kg m⁻¹ s⁻¹</div>`
+          + (painted ? '' : '<div class="t-sub">moisture flux above the AR threshold'
+             + ' — not classified as an AR (screened or marginal detection)</div>');
         tipEl.classList.remove('hidden');
         if (window.moveTip) window.moveTip(tipEv);
       } else tipEl.classList.add('hidden');
@@ -980,5 +1176,12 @@
         (rampCache[li][b] >> 8) & 255, (rampCache[li][b] >> 16) & 255, rampCache[li][b] >>> 24] : null),
       packed: (li) => (packedCache ? [packedCache[li] & 255, (packedCache[li] >> 8) & 255,
         (packedCache[li] >> 16) & 255, packedCache[li] >>> 24] : null),
-      ivtAt: (j, i) => (curIvt && raw ? curIvt[j * raw.grid.nx + i] : 0) }) };
+      ivtAt: (j, i) => { const v = (curIvt && raw) ? curIvt[j * raw.grid.nx + i] : 0;
+        return curPaint && curPaint.ivtS2 ? (v & 7) : v; },
+      // the AR paint bit at a cell (1 = the AR layer paints it): schema 2
+      // classes exist outside the mask by design, so tests must ask separately
+      arAt: (j, i) => { if (!raw || !curPaint) return 0;
+        const nx = raw.grid.nx, stride = Math.ceil(nx / 8);
+        return (curPaint.u8[2 * curPaint.plane + j * stride + (i >> 3)]
+                >> (7 - (i & 7))) & 1; } }) };
 })();

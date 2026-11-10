@@ -35,7 +35,7 @@ def test_ar_spanning_350E_to_20E_is_one_component_one_track_360_grid():
     lab, n = label_periodic(m[0])
     assert n == 1                                    # ONE component
     assert lab.shape[1] == lons.size                 # no seam column added
-    _labels, tracks = track_ar_components(m, T)
+    _labels, tracks = track_ar_components(m, T, LATS, lons)
     assert len(tracks) == 1 and tracks[0]["steps"] == [0, 1, 2]
     keep, dropped, _lab2, _t = ar_filter_tracks(m, LATS, lons, T, None)
     assert keep.any() and not dropped                # kept at ALL steps
@@ -63,7 +63,7 @@ def test_ar_spanning_170E_to_170W_one_component_pm180_grid():
         _blob(m, i, 25, 35, np.array(span), lons)
     _lab, n = label_periodic(m[0])
     assert n == 1
-    _labels, tracks = track_ar_components(m, T)
+    _labels, tracks = track_ar_components(m, T, LATS, lons)
     assert len(tracks) == 1
     pieces = [{"lat_min": 25.0, "lat_max": 35.0, "lon_min": -180.0,
                "lon_max": -171.0, "start": "2026-10-03", "end": "2026-10-05"},

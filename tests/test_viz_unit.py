@@ -142,3 +142,23 @@ def test_regrid_wrapped_window_samples_true_cells():
     row = int(np.argmin(abs(dst_lat - 64.0)))
     for j, lon in enumerate(dst_lon):
         assert abs(got[row, j] - (lon % 360.0)) <= 1.0 + 1e-3, (lon, got[row, j])
+
+
+def test_ar_compute_window_pads_and_refuses_a_wrapping_crop():
+    """The AR mask is computed ON THE CROP, so the crop's edges are array
+    edges: a tight bbox crop cut the plume it was meant to show (Europe AR
+    6b4dec9dc8db, "sliced at the prime meridian"), and a crop that crosses the
+    grid's own lon origin would come back with a NON-MONOTONIC longitude axis.
+    Both are decided here, once."""
+    lon_native = np.arange(0.0, 360.0, 0.25)
+    # bbox away from lon 0: padded crop, longitude still contiguous
+    lmin, lmax, onmin, onmax = build._ar_compute_bbox(
+        (30.0, 50.0, 60.0, 90.0), lon_native)
+    assert onmin is not None and onmin < 60.0 and onmax > 90.0
+    assert lmin < 30.0 and lmax > 50.0
+    assert build.AR_COMPUTE_PAD_LON_DEG >= 10.0   # stencil reach (ar_mask)
+    # bbox whose padded arc reaches lon 0 on a 0..360 grid: NO crop at all
+    assert build._ar_compute_bbox((36.25, 62.5, 0.25, 30.5), lon_native)[2:] == (None, None)
+    # antimeridian-crossing bbox keeps its crossing encoding (lon_min > lon_max)
+    res = build._ar_compute_bbox((-5.0, 5.0, 170.0, -170.0), lon_native)
+    assert res[2] is not None and res[2] > res[3]
