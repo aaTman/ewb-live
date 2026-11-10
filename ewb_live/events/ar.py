@@ -455,7 +455,11 @@ def scan_ar_events(
             bbox_source = "ar_object"
             if extent is not None:
                 o_lat_min, o_lat_max, o_west, o_east = extent
-                _, _, lon_lo, lon_hi = arc_bbox_180(o_west, o_east, AR_PAD_DEG)
+                # arc_bbox_180 returns the LONGITUDE PAIR only (west padded
+                # west, east padded east, normalised to [-180, 180]; a wrap arc
+                # comes back lon_min > lon_max, which the bbox encoding
+                # understands). The latitudes come from the extent itself.
+                lon_lo, lon_hi = arc_bbox_180(o_west, o_east, AR_PAD_DEG)
                 lat_lo, lat_hi = o_lat_min, o_lat_max
             else:
                 bbox_source = "land_blob"

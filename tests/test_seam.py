@@ -8,7 +8,7 @@ import pandas as pd
 
 from ewb_live.events.ar_filter import ar_filter_tracks, track_ar_components
 from ewb_live.events.seam import (arc_bbox_180, label_periodic,
-                                  merge_seam_objects, minimal_arc,
+                                  merge_seam_objects, minimal_arc, pad_bbox_180,
                                   seam_columns)
 
 T = np.array([np.datetime64("2026-10-03T00", "h")
@@ -95,3 +95,18 @@ def test_merge_requires_lat_overlap_and_date_overlap():
     old = {"lat_min": 25.0, "lat_max": 35.0, "lon_min": 350.0,
            "lon_max": 359.0, "start": "2026-09-01", "end": "2026-09-02"}
     assert len(merge_seam_objects([a, old], lons)) == 2   # dates disjoint
+
+
+def test_arc_bbox_180_returns_a_lon_pair_pad_bbox_180_a_full_bbox():
+    """Arity contract between seam and ar.py's published-bbox path.
+
+    `ar.scan_ar_events` unpacks both helpers inline, and a migration from
+    pad_bbox_180 (4 values: lat_lo, lat_hi, lon_lo, lon_hi) to arc_bbox_180
+    (2 values: the longitude pair) left a 4-target unpack in place, which
+    raised `ValueError: not enough values to unpack (expected 4, got 2)` in the
+    live weekly lane on 2026-11-10T23:09Z — detection died before any event was
+    written. Nothing else exercises that call site offline, so pin the shapes.
+    """
+    assert arc_bbox_180(-10.0, 10.0, 5.0) == (-15.0, 15.0)
+    assert arc_bbox_180(175.0, -175.0, 5.0) == (170.0, -170.0)   # wrap arc
+    assert len(pad_bbox_180((-10.0, 10.0, -20.0, 20.0), 5.0, 5.0)) == 4
