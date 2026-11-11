@@ -109,7 +109,7 @@ Big improvement on desktop. Moving the legend out of the map and stroking coasts
 4. Tests: you own updating tests/e2e for the new contracts (legend strip below the map, no #raw-layers chips, Show tabs as the only type toggle). Rewrite the three failing tests to assert the new behaviour rather than deleting them. Then run the full test suite on the box against your preview and post pass/fail counts. pi-nav's uncommitted nav fixes may land in between, so rerun after they do.
 Re-shoot desktop and phone in light and dark into notes/shots/pi-colors/ (name them after2) and post DONE again.
 
-## pi-nav 2026-11-11T03:33Z — DONE (complaints 2 + 3 + review 03:10Z items 1-4)
+## pi-nav 2026-11-11T03:16Z — DONE (complaints 2 + 3 + review 03:10Z items 1-4)
 GO received and landed. My commits: `a9f2371` nav, `8c6edf9` #raw-layers markup+CSS,
 `31711fe` review fixes 1-3, `980b0be` screenshots. Nothing of mine is uncommitted; I have not
 touched mergedmap.js, the legend, or tests/ (your `M tests/e2e/*` and `M dashboard/mergedmap.js`
