@@ -168,7 +168,7 @@ def test_storage_blocked_does_not_break_theme_toggle(engine, base):
     errs = []
     page.on("pageerror", lambda e: errs.append(str(e)))
     _boot(page, base)
-    page.click("#theme-toggle")
+    page.click("#theme-ctl button[data-pref='dark']")
     page.click("#type-tabs button:nth-child(2)")
     page.wait_for_timeout(300)
     assert page.locator("#event-table tbody tr").count() >= 0
@@ -197,10 +197,11 @@ def test_focus_moves_to_detail_heading_and_returns_to_row(pg, base):
 def test_theme_flip_inside_detail_does_not_steal_focus(pg, base):
     _boot(pg, base, f"/#event={_first_event_id(base)}")
     pg.wait_for_selector("#detail-sec:not(.hidden)")
-    pg.focus("#theme-toggle")
+    pg.focus("#theme-ctl button[data-pref='dark']")
     pg.keyboard.press("Enter")
     pg.wait_for_timeout(400)
-    assert pg.evaluate("document.activeElement.id") == "theme-toggle"
+    assert pg.evaluate("document.activeElement.dataset.pref") == "dark"
+    assert pg.evaluate("document.activeElement.closest('#theme-ctl') !== null")
 
 
 def _first_event_id(base):
@@ -562,8 +563,10 @@ def test_raw_map_cells_tile_seamlessly_and_poles_are_clean(engine, full_heat_ser
       const cv = document.querySelector('#raw-canvas'), g = cv.getContext('2d');
       const W = cv.width, H = cv.height, d = window.devicePixelRatio || 1;
       const px = (x, y) => Array.from(g.getImageData(Math.round(x), Math.round(y), 1, 1).data);
-      // vertical run through open Pacific around the equator (no land outline there)
-      const x = W / 2 - W * 0.22, run = [];
+      // vertical run through open Pacific at ~108W (no land within +-15 deg of
+      // the equator there: the coastline OVERSTROKE above the fills is by
+      // design since 2026-11-11, so the seam scan must not cross a coast)
+      const x = W / 2 - W * 0.30, run = [];
       for (let y = H / 2 - 60 * d; y < H / 2 + 60 * d; y++) run.push(px(x, y)[1]);   // green channel
       const bandRows = [];                         // rows below the south pole / above the north pole
       for (let k = 2; k < 10; k++) bandRows.push(px(W / 2, H - k * d)[3], px(W / 2, k * d)[3]);
@@ -817,7 +820,24 @@ def test_detail_heading_is_type_and_region(pg, base):
 # silently removed every AR pixel while mounting clean with layers ON)
 # --------------------------------------------------------------------------
 def test_ar_layer_visible_on_live_frames(pg, base):
-    _boot(pg, base, "/#map=2026100312&layers=h,f,a", wait=2000)
+    """The AR layer and its boxes must paint on a frame where the CURRENT run
+    has a qualified AR — the frame is read from the data, so the weekly
+    rotation can never stale this test (the old hard-coded Oct-3 12Z frame
+    went stale when that river's qualified_at moved to Oct-4 06Z)."""
+    import json
+    import urllib.request
+
+    def _get(path):
+        return json.load(urllib.request.urlopen(urllib.request.Request(
+            base + path, headers={"User-Agent": "Mozilla/5.0 (e2e)"})))
+    frames = _get("/data/results/raw_exceedance/index.json")["frames"]
+    qual = [(e.get("qualified_at") or e["start"][:10].replace("-", "") + "00")
+            for e in _get("/data/results/global_timeline.json")["events"]
+            if e["type"] == "atmospheric_river"]
+    ts = next((q for q in qual if q in frames), None)
+    if ts is None:
+        pytest.skip("no AR qualifies within the published raw frames this run")
+    _boot(pg, base, f"/#map={ts}&layers=h,f,a", wait=2000)
     wait_js(pg, "window.MergedMap && MergedMap._dbg().mounted === true")
     pg.wait_for_timeout(800)   # let the frame fetch + paint land
     ar_boxes = pg.locator("#gm-boxes .gm-ev path.gm-bbox.t-ar").count()

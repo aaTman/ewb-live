@@ -45,13 +45,15 @@
         + ' Faint tint = IVT >= 400 that is NOT painted as an AR (screened as tropical/cyclone, or a marginal detection)'
         + ' — the moisture flux is real, the AR call is not. Pale green = a track\'s gap-bridge footprint (display only).' },
   ];
-  // bin opacities: constant per lane — the ramp's lightness (even L* steps,
-  // darker = more days / higher IVT) carries the scale; one alpha per lane
-  // keeps that ordering intact after blending and lets the basemap read
-  // through. AR paints opaque (its colour IS the class); coastlines are
-  // re-stroked above every fill in paintFrame, so the basemap still reads.
+  // bin opacities: ONE constant alpha per lane (all lanes 200) — the ramps'
+  // lightness (even L* steps, darker = more days / higher IVT) carries the
+  // scale, and one alpha per lane keeps that ordering intact after blending.
+  // Constant < 255 also lets the graticule and coasts read through every
+  // fill; coastlines are additionally re-stroked above the raster in
+  // paintFrame (owner review 2026-11-11, complaint 1: opaque AR sheets hid
+  // the oceans' grid).
   const RUN_ALPHA = { heat: [200, 200, 200, 200, 200, 200, 200], freeze: [200, 200, 200],
-                      ar: [255, 255, 255, 255, 255] };
+                      ar: [200, 200, 200, 200, 200] };
   // qualification gate per lane: heat = the detector's MIN_CONSECUTIVE_DAYS,
   // freeze = 1 completed day (context; events still need 3). index.dur.min
   // (published with the v2 sidecars) wins; otherwise the built-in LAYERS[].min.
@@ -359,9 +361,9 @@
     if (!packedCache) {
       const cs = getComputedStyle(document.documentElement);
       const pack = (c, al) => ((al << 24) | (c[2] << 16) | (c[1] << 8) | c[0]) >>> 0;
-      // AR paints opaque (255): its colour IS the class, and pixel tests
-      // match CSS RGBs exactly; heat/freeze keep RUN_ALPHA (blend-calibrated)
-      packedCache = LAYERS.map((L) => pack(rgbOf(cs.getPropertyValue(`--series-${L.name}`)), L.key === 'a' ? 255 : 215));
+      // every lane's flat binary-fallback paint rides one alpha (215): the
+      // colour is the lane token, the alpha keeps the basemap readable
+      packedCache = LAYERS.map((L) => pack(rgbOf(cs.getPropertyValue(`--series-${L.name}`)), 215));
       // the gap-bridge footprint stays visibly weaker than a physical AR cell:
       // it is a tracking decision, not a cell that met the IVT rule
       ghostCache = pack(rgbOf(cs.getPropertyValue('--series-ar')), 90);

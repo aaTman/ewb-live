@@ -80,17 +80,20 @@ def test_ar_ramp_paints_green_pixels(ar_ramp_server, page_ctx_with_logs):
 
 
 def test_ar_ramp_legend_hidden_when_ar_off(ar_ramp_server, browser):
-    """Test that the AR ramp legend is hidden when AR layer is off."""
+    """The AR ramp leaves the legend when the AR layer is off.
+    (The strip itself never goes display:none — its height is a CLS
+    reservation and the surviving lanes still need a key; per 2026-11-11
+    redesign the AR GROUP disappearing is the contract.)"""
     page = browser.new_page()
     page.goto(ar_ramp_server + "/#map=2025110612&layers=h")
     page.wait_for_selector("#raw-canvas:not([hidden])", timeout=20000)
     page.wait_for_function("MergedMap._dbg().mounted === true", timeout=20000)
     page.wait_for_timeout(2000)
-    
-    # Check that the legend is hidden
-    legend = page.locator("#gm-legend:not(.hidden)")
-    expect(legend).not_to_be_visible()
-    
+
+    assert page.locator("#gm-legend .lg-group").count() == 1        # heat only
+    assert page.locator("#gm-legend .lg-group[data-layer=a]").count() == 0
+    assert page.locator("#gm-legend .lg-group[data-layer=h]").count() == 1
+
     page.close()
 
 
