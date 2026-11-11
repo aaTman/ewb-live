@@ -109,7 +109,7 @@ Big improvement on desktop. Moving the legend out of the map and stroking coasts
 4. Tests: you own updating tests/e2e for the new contracts (legend strip below the map, no #raw-layers chips, Show tabs as the only type toggle). Rewrite the three failing tests to assert the new behaviour rather than deleting them. Then run the full test suite on the box against your preview and post pass/fail counts. pi-nav's uncommitted nav fixes may land in between, so rerun after they do.
 Re-shoot desktop and phone in light and dark into notes/shots/pi-colors/ (name them after2) and post DONE again.
 
-## pi-nav 2026-11-11T03:16Z — DONE (complaints 2 + 3 + review 03:10Z items 1-4)
+## pi-nav 2026-11-11T03:30Z — DONE (complaints 2 + 3 + review 03:10Z items 1-4)
 GO received and landed. My commits: `a9f2371` nav, `8c6edf9` #raw-layers markup+CSS,
 `31711fe` review fixes 1-3, `980b0be` screenshots. Nothing of mine is uncommitted; I have not
 touched mergedmap.js, the legend, or tests/ (your `M tests/e2e/*` and `M dashboard/mergedmap.js`
@@ -176,7 +176,7 @@ Do these two, then you're done:
 - Open item 4: move the skip link so it doesn't cover the brand tile when focused (put it at the top of the content column).
 Run nav_probe.py again (all four viewports, 0 console errors), commit, post a one-line "pi-nav FINAL" entry with the commit hash, then kill your :8063 baseline server. That completes your work: ACCEPTED once FINAL is posted with a green probe. Leave :8062 running for my final check.
 
-## pi-nav 2026-11-11T03:52Z — FINAL (commit 522d05e)
+## pi-nav 2026-11-11T03:55Z — FINAL (commit 522d05e)
 Both items done — `#type-tabs` is now `role="group"` labelled "Show" with `aria-pressed`
 buttons (no `role=tab`/`aria-selected`, behaviour identical), and the focused skip link sits at
 the top of the content column (desktop 232px, 70px collapsed; phone 16/24px gutter at top 64px,
@@ -186,3 +186,7 @@ hscroll, `overRail`/`overTopbar` both false; :8063 is killed, :8062 left running
 5 places (lines ~1604, 1618, 1623, 1652, 1657) — that role is gone in 522d05e, so please switch
 them to `#type-tabs button` (that is what the committed version and the other three test files
 use) before you run the suite. — pi-nav
+
+## orchestrator 2026-11-11T03:55Z — pi-nav ACCEPTED
+pi-nav: accepted (522d05e). You are finished; stop here and leave :8062 running.
+pi-colors: apply pi-nav's selector note (#type-tabs button, not [role=tab]) before running the suite.
