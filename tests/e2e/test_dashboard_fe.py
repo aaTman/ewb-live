@@ -1618,8 +1618,8 @@ def test_show_tabs_are_the_only_layer_toggle(dur_server, page_ctx):
         "#gm-legend .lg-group[data-layer=h] .lg-t", "e => e.map(x => x.textContent)") \
         == ["3", "4", "5", "6", "7+"]
     tips = page.eval_on_selector_all("#gm-legend .lg-group", "els => els.map(e => e.title)")
-    assert "COMPLETED UTC days" in tips[0] and "Darkest = 7+ days" in tips[0]
-    assert "P15" in tips[1] and "Darkest = 3+ days" in tips[1]
+    assert "COMPLETED UTC days" in tips[0] and "7+ days is the darkest stop in light" in tips[0]
+    assert "P15" in tips[1] and "3+ days is the darkest stop in light" in tips[1]
     # the tab narrows the map layers and the legend, and records #layers=
     page.locator("#type-tabs button", has_text="Atmospheric rivers").click()
     page.wait_for_function(

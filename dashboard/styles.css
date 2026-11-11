@@ -36,7 +36,8 @@
      paint by consecutive COMPLETED-day bins — heat 1..7+ / freeze 1..3+;
      perceptually even sequential ramps (ColorBrewer YlOrRd / Blues / Greens
      sampled at equal lightness steps, monotonic L*, darker = more days/
-     higher IVT in BOTH themes; colourblind-safe single-hue-per-lane).
+     higher IVT in LIGHT; the dark block mirrors the direction (see below);
+     colourblind-safe single-hue-per-lane).
      The per-bin alpha is constant in mergedmap.js RUN_ALPHA — lightness
      alone carries the ramp. ---- */
   --dur-heat-1: #feca66;  --dur-heat-2: #fea747;  --dur-heat-3: #fd8038;  --dur-heat-4: #f94828;  --dur-heat-5: #e2191c;  --dur-heat-6: #c00225;  --dur-heat-7: #8a0026;
@@ -112,14 +113,16 @@ html[data-theme="dark"] {
   --stone-grey:           #acab9c;
   --medal-gold: #d9a92c;  --medal-silver: #a7b0b8;  --medal-bronze: #c98a52;
 
-  /* Duration ramp, dark: same ramps, sampled a little higher on the same
-     cmap and lifted toward white, so every stop reads on the near-black
-     ground; lightness stays monotonic in the SAME direction as light
-     (darker = more days / higher IVT). */
-  --dur-heat-1: #fed68f;  --dur-heat-2: #fec17e;  --dur-heat-3: #feaa75;  --dur-heat-4: #fd886b;  --dur-heat-5: #f26b64;  --dur-heat-6: #e05763;  --dur-heat-7: #c84c67;
-  --dur-freeze-1: #cadfef;  --dur-freeze-2: #7fb6d9;  --dur-freeze-3: #4c83b9;
+  /* Duration ramp, dark: the lightness direction REVERSES (owner review
+     2026-11-11: dark mode's most extreme bins must be the BRIGHTEST, not
+     the darkest — dark extremes recede into the dark map). Same ColorBrewer
+     families sampled in the opposite direction: low bins dim and close to
+     the background, high bins brightest and most saturated, equal L* steps
+     (heat L* 31→88 / freeze 26→84 / AR 30→87). Light theme keeps darker = more. */
+  --dur-heat-1: #970026;  --dur-heat-2: #c90823;  --dur-heat-3: #e92720;  --dur-heat-4: #fc5b2e;  --dur-heat-5: #fd923e;  --dur-heat-6: #feb54f;  --dur-heat-7: #fed976;
+  --dur-freeze-1: #083c7d;  --dur-freeze-2: #4191c6;  --dur-freeze-3: #b7d4ea;
   /* AR IVT ramp, dark */
-  --dur-ar-1: #ccebc8;  --dur-ar-2: #a8daa7;  --dur-ar-3: #7dc68e;  --dur-ar-4: #60ab78;  --dur-ar-5: #478f64;
+  --dur-ar-1: #005321;  --dur-ar-2: #19833e;  --dur-ar-3: #45ad5f;  --dur-ar-4: #87cd86;  --dur-ar-5: #bee5b8;
 
   --bg: var(--canvas);
   --bg-panel: var(--paper);
@@ -915,7 +918,7 @@ nav.controls .dd .dd-body {
   border-radius: 999px; padding: 0 5px; line-height: 1.4; white-space: nowrap; }
 .lg-stops { display: flex; align-items: flex-start; gap: 3px; }
 /* equal-width columns per ramp (widest label of that lane), label centred */
-.lg-bin { display: grid; justify-items: center; gap: 2px; width: 24px; }
+.lg-bin { display: grid; justify-items: center; gap: 2px; width: 22px; }
 .lg-group[data-layer="a"] .lg-bin { width: 34px; }   /* '1250+' sets the IVT column */
 .lg-bin.prov { width: 22px; margin-left: 8px; }   /* a texture, not the next step of the ramp */
 .lg-t { font-size: var(--text-2xs); color: var(--ink-muted); font-family: var(--font-mono);
@@ -924,10 +927,15 @@ nav.controls .dd .dd-body {
 .lg-bin.out .swatch { border-style: dashed; }
 .lg-group.none { opacity: .6; }
 @container (min-width: 680px) {   /* one row when the map column can hold all three lanes */
-  #gm-legend { flex-direction: row; align-items: center; gap: 14px;
+  #gm-legend { flex-direction: row; align-items: center; gap: 20px;
     min-height: 48px; padding: 6px 8px 4px; }
   .lg-bin.prov { width: auto; }
   .lg-bin.prov .lg-t { display: none; }   /* the dither texture + its title carry it in one row */
+  /* one row has no vertical air between the lanes: a hairline divider keeps
+     '…7+ today | FREEZE…' from reading as one string; each unit caption
+     belongs to its own title and never touches the previous group */
+  .lg-group + .lg-group::before { content: ""; position: absolute; left: -11px;
+    top: 3px; bottom: 3px; width: 1px; background: var(--border); }
 }
 
 /* base map primitives live in the canvas paint — see mergedmap.js drawBase */

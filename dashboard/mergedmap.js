@@ -37,21 +37,22 @@
     // detector minimum, but cold runs are shorter/rarer, so a 3-day paint floor
     // would leave the lane nearly blank and the 1-2 day ramp shades unusable.
     { key: 'h', name: 'heat',   label: 'Heat — days > P85', ramp: true, bins: 7, min: 3,
-      tip: 'Blank below 3 consecutive completed days — the detector minimum, so such a cell can never become a heat wave. Solid = consecutive COMPLETED UTC days the cell exceeded the P85 climatology at all four 6-hourly steps (constant within a day; 3–7+); dithered = today so far (provisional), only on a cell that already qualifies. Darkest = 7+ days.' },
+      tip: 'Blank below 3 consecutive completed days — the detector minimum, so such a cell can never become a heat wave. Solid = consecutive COMPLETED UTC days the cell exceeded the P85 climatology at all four 6-hourly steps (constant within a day; 3–7+); dithered = today so far (provisional), only on a cell that already qualifies. 7+ days is the darkest stop in light, the brightest in dark.' },
     { key: 'f', name: 'freeze', label: 'Freeze — days < P15', ramp: true, bins: 3, min: 1,
-      tip: 'Shaded from its first consecutive completed day: cold runs are short, so sub-3-day cells stay visible for context (a freeze EVENT still needs 3+ days). Solid = consecutive COMPLETED UTC days the cell fell below the P15 climatology at all four 6-hourly steps (constant within a day; 1–3+); dithered = today so far (provisional), only on a cell that already shows at least one completed day. Darkest = 3+ days.' },
+      tip: 'Shaded from its first consecutive completed day: cold runs are short, so sub-3-day cells stay visible for context (a freeze EVENT still needs 3+ days). Solid = consecutive COMPLETED UTC days the cell fell below the P15 climatology at all four 6-hourly steps (constant within a day; 1–3+); dithered = today so far (provisional), only on a cell that already shows at least one completed day. 3+ days is the darkest stop in light, the brightest in dark.' },
     { key: 'a', name: 'ar',     label: 'AR — IVT magnitude', ramp: true, bins: 5,
       tip: 'Detected atmospheric rivers, shaded by IVT magnitude (kg m-1 s-1): 250-500, 500-750, 750-1000, 1000-1250, >=1250.'
         + ' Faint tint = IVT >= 400 that is NOT painted as an AR (screened as tropical/cyclone, or a marginal detection)'
         + ' — the moisture flux is real, the AR call is not. Pale green = a track\'s gap-bridge footprint (display only).' },
   ];
   // bin opacities: ONE constant alpha per lane (all lanes 200) — the ramps'
-  // lightness (even L* steps, darker = more days / higher IVT) carries the
-  // scale, and one alpha per lane keeps that ordering intact after blending.
-  // Constant < 255 also lets the graticule and coasts read through every
-  // fill; coastlines are additionally re-stroked above the raster in
-  // paintFrame (owner review 2026-11-11, complaint 1: opaque AR sheets hid
-  // the oceans' grid).
+  // lightness carries the scale (light theme: even L* steps, darker = more
+  // days / higher IVT; dark theme: the same steps REVERSED, brightest = most
+  // extreme, so extremes never recede into the dark map), and one alpha per
+  // lane keeps that ordering intact after blending. Constant < 255 also lets
+  // the graticule and coasts read through every fill; coastlines are
+  // additionally re-stroked above the raster in paintFrame (owner review
+  // 2026-11-11, complaint 1: opaque AR sheets hid the oceans' grid).
   const RUN_ALPHA = { heat: [200, 200, 200, 200, 200, 200, 200], freeze: [200, 200, 200],
                       ar: [200, 200, 200, 200, 200] };
   // qualification gate per lane: heat = the detector's MIN_CONSECUTIVE_DAYS,
