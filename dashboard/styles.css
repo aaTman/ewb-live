@@ -314,16 +314,25 @@ html.rail-collapsed .rail-label { position: absolute; width: 1px; height: 1px; m
   body.nav-open::before { animation: rail-scrim-in .18s ease-out; }
 }
 
-/* ---- skip link (WCAG 2.4.1): off-canvas until focused, then pinned top-left.
-   Fixed, not absolute: the rail is sticky, so an absolute link can be focused
-   while the document top is a thousand pixels away. app.js intercepts the click
-   so the hash (which carries app state) is never touched. ---- */
-.skip-link { position: fixed; top: -60px; left: 12px; z-index: 1300;
+/* ---- skip link (WCAG 2.4.1): off-canvas until focused, then pinned to the top
+   of the CONTENT column — at the viewport's top-left it sat on the rail's brand
+   tile. Desktop: just past the 220 px rail (70 px past the collapsed 58 px one);
+   below the drawer breakpoint: the content gutter, and under the 52 px topbar
+   instead of on it. Fixed, not in flow: a display:none link is not focusable at
+   all, and an in-flow one would shove the page down while focused. app.js
+   intercepts the click so the hash (app state) is never touched. ---- */
+.skip-link { position: fixed; top: -60px; left: 232px; z-index: 1300;
   display: inline-flex; align-items: center; height: 38px; padding: 0 14px;
   background: var(--bg-panel); color: var(--matte-black); border: 1px solid var(--border-strong);
   border-radius: 6px; box-shadow: var(--shadow); text-decoration: none;
   font: 500 var(--text-sm)/1 var(--font-sans); }
 .skip-link:focus { top: 12px; outline: 2px solid var(--accent-focus); outline-offset: 2px; }
+html.rail-collapsed .skip-link { left: 70px; }
+@media (max-width: 1099px) {
+  .skip-link { left: 24px; top: -120px; }
+  .skip-link:focus { top: 64px; }        /* below the sticky topbar, not on it */
+}
+@media (max-width: 620px) { .skip-link { left: 16px; } }
 #main-content:focus { outline: none; }
 
 /* brand mark — the EWB mark on its tile: the same drawing as favicon.svg, so the tab and the rail

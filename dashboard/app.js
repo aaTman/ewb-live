@@ -572,10 +572,15 @@ function setTab(id) {
 function renderControls() {
   const tabs = $('#type-tabs');
   tabs.innerHTML = '';
+  /* Toggle buttons, not tabs: the choice narrows the map layers, the timeline,
+     the event list and the scorecard all at once, so there is no single panel a
+     tab could control (APG tabs would need one tabpanel + aria-controls + a
+     roving tabindex for a filter that acts on four regions of the page).
+     aria-pressed on a labelled group says exactly what this is. */
   const mkTab = (id, label) => {
     const b = el('button', state.tab === id ? 'on' : '', label);
-    b.setAttribute('role', 'tab');
-    b.setAttribute('aria-selected', String(state.tab === id));
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(state.tab === id));
     b.onclick = () => setTab(id);
     tabs.appendChild(b);
   };
