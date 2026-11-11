@@ -190,3 +190,51 @@ use) before you run the suite. — pi-nav
 ## orchestrator 2026-11-11T03:55Z — pi-nav ACCEPTED
 pi-nav: accepted (522d05e). You are finished; stop here and leave :8062 running.
 pi-colors: apply pi-nav's selector note (#type-tabs button, not [role=tab]) before running the suite.
+
+## pi-colors 2026-11-11T03:50Z — complaint 1 round 2 DONE (review 03:25Z items 1-4)
+1. PHONE LEGEND: the strip stacks one lane per row on narrow map columns (container query on
+   `#global-sec`, so it follows the MAP column, not the viewport). Measured at viewports
+   320/390/768/1100/1440: `scrollWidth == clientWidth` everywhere — no horizontal scroll at
+   any width from 320 up, all three lanes always fully inside the strip. Height is fixed per
+   layout: 48px single-row, 116px stacked, reserved while empty; the Region "none in view"
+   badge became a floating pill over its (dimmed) ramp so it can no longer grow the strip
+   (verified 48→48 / 116→116 with a lane empty).
+2. EVEN LABELS: swatches are all 20px wide; each ramp's bins share one fixed column width
+   (24px heat/freeze, 34px AR — set by the widest label, `1250+`), label centred under its
+   swatch, constant gaps. The 'today' dither keeps its swatch + title; its caption hides only
+   in the single-row layout (the dither texture is the point, the tooltip explains).
+3. AR ALPHA: `RUN_ALPHA.ar` 255 → 200 — one constant alpha for all three lanes; graticule and
+   coasts read through AR sheets now (see region shot). AR stays a distinct green ramp vs warm
+   heat / cool freeze. The binary flat-pack lost its `a ? 255 : 215` special case. e2e pixel
+   assertions updated to compare the BLEND (token × the alpha the pack actually paints with,
+   over --map-ocean or --paper) instead of the bare token.
+4. TESTS (rewritten to the new contracts, none deleted):
+   - `test_legend_lives_in_the_map_and_never_moves_the_page` → `test_legend_sits_below_the_map_and_never_moves_the_page`
+     (outside #raw-map-wrap, under it, fixed height, map/slider/gantt never move);
+   - `test_legend_lives_in_the_map_and_moves_nothing` → `test_legend_never_hides_a_lane_behind_a_scroll`
+     (no h-scroll, lanes fully inside, at 320/390/768/1100/1440; stacked ⇒ one lane per row);
+   - `test_dur_chip_labels_gradient_and_tips` → `test_show_tabs_are_the_only_layer_toggle`
+     (chips gone, tabs are the widget, `#layers=` recorded, legend carries stops + long tips);
+   - `test_raw_layer_toggles_and_url` rewritten tab-driven (same `#layers=` deep-link contract);
+   - `test_controls_live_in_the_section_they_change` asserts the chip row is ABSENT;
+   - `test_legend_adapts_to_layers_frame_and_region`: chip clicks → Show-tab clicks;
+   - theme tests → `#theme-ctl button[data-pref]` (pi-nav's segmented control), type-tab
+     selectors → `#type-tabs button` per pi-nav 03:52Z;
+   - guardian seam-tiling scan moved to open ~108°W — the coastline overstroke above fills is
+     now the design, the scan must measure tiling, not coasts;
+   - `test_ar_layer_visible_on_live_frames` is data-driven now (picks a qualifying AR frame
+     from the run's own data; the hard-coded Oct-3 12Z went stale this run — that AR qualifies
+     Oct-4 06Z);
+   - `test_ar_ramp_paints_green_pixels` drove a frame PAST the fixture cutoff (nothing paints
+     there) — fails on baseline ecb4421 too; now drives 2025110606.
+   SUITE ON THE BOX vs :8061 — e2e: **130 passed, 3 skipped, 0 failed**
+   (`EWB_LIVE_URL=http://127.0.0.1:8061 pytest -m e2e`). Unit/default: 243 passed, 4 skipped,
+   14 failed — all 14 are pipeline tests (ar_filter/events_unit/raw_exceedance/seam) and fail
+   IDENTICALLY on baseline ecb4421 in the same venv (upstream env issue; this branch never
+   touched ewb_live/).
+Commits this round: 6873e35 (AR alpha + e2e contracts), 87e2440 (none-pill + green-pixel test)
++ this shots/channel commit. NB: my styles.css legend edits went into the tree while pi-nav's
+522d05e committed dashboard/styles.css wholesale, so 522d05e's diff includes them (content is
+as reviewed; `git log -p dashboard/styles.css` shows my block authored across ca5bc93/6873e35/
+87e2440-adjacent edits). Shots: notes/shots/pi-colors/shot-*-{after2}.png + shot-region-pill-after2.png.
+Preview :8061 is current. Waiting for review. — pi-colors
