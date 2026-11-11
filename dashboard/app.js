@@ -2011,6 +2011,7 @@ function selectEvent(id, fromMap, nav) {
   $('#events-sec').classList.add('hidden');
   $('#global-sec').classList.add('hidden');   // one primary view at a time (QA 2026-11-06)
   document.body.classList.add('detail-open');
+  syncRailActive();   // the section links are hidden here — nothing may stay marked
   const ev = state.events.find((e) => e.id === id);
   if (!ev) return;
   /* G-12: "Heat wave · S. Sudan" (type · region) — the dated data title stays in the data, the
@@ -2245,6 +2246,61 @@ function cycleTheme() {
 }
 
 /* ------------------------------------------------------------------ */
+/* rail: which section am I looking at                                 */
+/* ------------------------------------------------------------------ */
+/* The rail's section links mark the section under the top of the viewport, not
+   the link you last clicked. Two sections and one probe line — a quarter of the
+   viewport down (below the sticky phone topbar) — and the answer is the last
+   section whose top has crossed it, so a section taller than the screen stays
+   marked while you read it. rAF-throttled on scroll, and the marker is frozen
+   during a click-jump (otherwise the smooth scroll walks the marker through
+   every section on the way down and lands back where you started). */
+const RAIL_SECTIONS = ['explore', 'scorecard-sec'];
+let railRaf = 0, railJumpLock = false, railJumpTimer = 0;
+
+function railVisible(id) {
+  const s = document.getElementById(id);
+  return s && !s.classList.contains('hidden') && s.offsetParent !== null ? s : null;
+}
+function currentRailSection() {
+  if (state.selectedEvent) return null;      // detail view: the section links are hidden
+  const bar = document.querySelector('.mobile-topbar');
+  const barH = (bar && getComputedStyle(bar).display !== 'none')
+    ? bar.getBoundingClientRect().height : 0;
+  const line = barH + Math.min(160, window.innerHeight * 0.28);
+  let cur = null, first = null;
+  for (const id of RAIL_SECTIONS) {
+    const s = railVisible(id);
+    if (!s) continue;
+    if (!first) first = id;
+    if (s.getBoundingClientRect().top <= line) cur = id;
+  }
+  return cur || first;    // above the first section (the page title) = the first one
+}
+function paintRail(cur) {
+  document.querySelectorAll('#rail [data-jump]').forEach((b) => {
+    const on = b.dataset.jump === cur;
+    b.classList.toggle('is-active', on);
+    if (on) b.setAttribute('aria-current', 'true');
+    else b.removeAttribute('aria-current');
+  });
+}
+function syncRailActive() { paintRail(currentRailSection()); }
+function syncRailSoon() {
+  if (railJumpLock || railRaf) return;
+  railRaf = requestAnimationFrame(() => { railRaf = 0; syncRailActive(); });
+}
+/* A jump owns the marker until the scroll settles: mark the target now, hand
+   back to the scroll listener when the motion stops (or after 800 ms, whichever
+   comes first — a reduced-motion jump never fires a second scroll event). */
+function markRailJump(id) {
+  railJumpLock = true;
+  clearTimeout(railJumpTimer);
+  railJumpTimer = setTimeout(() => { railJumpLock = false; syncRailActive(); }, 800);
+  paintRail(id);
+}
+
+/* ------------------------------------------------------------------ */
 /* boot                                                                */
 /* ------------------------------------------------------------------ */
 function renderAll() {
@@ -2252,6 +2308,7 @@ function renderAll() {
   renderSkillCharts();
   renderEventTable();
   syncWindowSections();
+  syncRailSoon();   // the scorecard changes the page height under the probe line
 }
 
 // The merged global 90-day view hardcodes current-window data (no history
@@ -2260,6 +2317,7 @@ function renderAll() {
 function syncWindowSections() {
   const hide = !!state.week || !!state.selectedEvent;
   $('#global-sec').classList.toggle('hidden', hide);
+  syncRailSoon();   // the marked section can change when a section appears/vanishes
 }
 
 async function boot() {
@@ -2284,16 +2342,28 @@ async function boot() {
   $('#detail-close').onclick = () => closeDetail();
   document.querySelectorAll('[data-jump]').forEach((b) => {   // buttons, not #anchors: the hash carries app state
     b.onclick = () => {
-      document.querySelectorAll('.rail-link.is-active').forEach((x) => x.classList.remove('is-active'));
-      b.classList.add('is-active');   // OWB: the rail marks the section you are looking at
+      markRailJump(b.dataset.jump);   // hold the marker still while the page glides down
       document.getElementById(b.dataset.jump).scrollIntoView({
         behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
     };
   });
+  /* Skip link (WCAG 2.4.1). Intercepted rather than a plain #anchor: the hash is
+     app state (#event=, #region=, #map=, #layers=), so pointing a real anchor at
+     #main-content would wipe the current view's URL. */
+  $('#skip-link').onclick = (e) => {
+    e.preventDefault();
+    const m = document.getElementById('main-content');
+    m.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start' });
+    m.focus({ preventScroll: true });
+  };
+  window.addEventListener('scroll', syncRailSoon, { passive: true });
+  window.addEventListener('resize', syncRailSoon);
+  syncRailSoon();
   /* RAIL (after owb.brightband.com): one toggle button, two jobs — it collapses the
      220 px column to a 58 px glyph rail on desktop and closes the drawer below 1100px,
      which is the width where the column becomes a drawer (a CSS breakpoint). */
-  const railToggle = $('#rail-toggle'), navBtn = $('#nav-btn');
+  const rail = $('#rail'), railToggle = $('#rail-toggle'), navBtn = $('#nav-btn');
   const narrow = () => matchMedia('(max-width: 1099px)').matches;
   const syncToggle = () => {   // one button, two meanings — say which one it has right now
     if (!railToggle) return;
@@ -2304,11 +2374,34 @@ async function boot() {
   const setCollapsed = (on) => {
     document.documentElement.classList.toggle('rail-collapsed', on);
     if (railToggle) railToggle.setAttribute('aria-expanded', String(!on));
+    /* Collapsed, a section link is an icon with a clip-hidden label: screen
+       readers still get the name, sighted users only get it as a tooltip. */
+    document.querySelectorAll('#rail [data-jump]').forEach((b) => {
+      b.title = on ? (b.querySelector('.rail-label') || b).textContent.trim() : '';
+    });
     syncToggle();
   };
+  /* Drawer focus: opening moves focus into the panel, closing hands it back to the
+     hamburger (a link inside the drawer is display:none the moment it closes, so
+     leaving focus there drops it to <body> and the next Tab restarts at the top). */
+  let navReturn = null;
+  const focusables = () => [...rail.querySelectorAll('button, [href], select, [tabindex]:not([tabindex="-1"])')]
+    .filter((n) => n.offsetParent !== null && !n.disabled);
   const closeNav = () => {
+    if (!document.body.classList.contains('nav-open')) return;
+    const hadFocus = rail.contains(document.activeElement);
     document.body.classList.remove('nav-open');
     if (navBtn) navBtn.setAttribute('aria-expanded', 'false');
+    if (hadFocus && navReturn && navReturn.isConnected) navReturn.focus({ preventScroll: true });
+    navReturn = null;
+    syncToggle();
+  };
+  const openNav = () => {
+    document.body.classList.add('nav-open');
+    if (navBtn) navBtn.setAttribute('aria-expanded', 'true');
+    navReturn = document.activeElement;
+    const f = focusables();
+    if (f.length) f[0].focus();
     syncToggle();
   };
   setCollapsed(!narrow() && !!state.railCollapsed);
@@ -2318,9 +2411,7 @@ async function boot() {
     saveState(); setCollapsed(state.railCollapsed);
   };
   if (navBtn) navBtn.onclick = () => {
-    const open = document.body.classList.toggle('nav-open');
-    navBtn.setAttribute('aria-expanded', String(open));
-    syncToggle();
+    if (document.body.classList.contains('nav-open')) closeNav(); else openNav();
   };
   matchMedia('(max-width: 1099px)').addEventListener('change', () => {
     if (!narrow()) closeNav();
@@ -2329,8 +2420,26 @@ async function boot() {
   document.addEventListener('click', (e) => {   // scrim is a ::before — its clicks land on <body>
     if (e.target === document.body) closeNav();
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNav(); });
-  document.querySelectorAll('.rail-link').forEach((b) => b.addEventListener('click', closeNav));
+  /* Drawer keyboard contract: Esc closes, Tab stays inside the panel (the scrim
+     blocks the page behind it, so focus must not leak out of it). */
+  document.addEventListener('keydown', (e) => {
+    if (!document.body.classList.contains('nav-open')) return;
+    if (e.key === 'Escape') { closeNav(); return; }
+    if (e.key !== 'Tab') return;
+    const f = focusables();
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1], cur = document.activeElement;
+    if (!rail.contains(cur)) { e.preventDefault(); first.focus(); return; }
+    if (e.shiftKey && cur === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && cur === last) { e.preventDefault(); first.focus(); }
+  });
+  /* A rail link navigates, so the drawer closes on its way. The theme button is a
+     setting, not a destination: closing it on every press turned a theme try-in
+     into a two-tap loop (open, press, open, press). */
+  document.querySelectorAll('.rail-link').forEach((b) => {
+    if (b.id === 'theme-toggle') return;
+    b.addEventListener('click', closeNav);
+  });
   /* A1: Esc returns from the event detail to the list (owner bug A1). The
      About dialog and the fullscreen map panel own Esc while they are open. */
   document.addEventListener('keydown', (e) => {
