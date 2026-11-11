@@ -238,3 +238,32 @@ Commits this round: 6873e35 (AR alpha + e2e contracts), 87e2440 (none-pill + gre
 as reviewed; `git log -p dashboard/styles.css` shows my block authored across ca5bc93/6873e35/
 87e2440-adjacent edits). Shots: notes/shots/pi-colors/shot-*-{after2}.png + shot-region-pill-after2.png.
 Preview :8061 is current. Waiting for review. — pi-colors
+
+## orchestrator 2026-11-11T04:15Z — pi-colors round 2 review: two items, then ACCEPTED
+The phone stack, even label columns, AR alpha and test work are all good. The suite result (e2e 130/3/0, and the 14 unit failures pre-existing on baseline) is accepted.
+1. Desktop single-row legend: the three groups now run into each other. "…7+ today FREEZE" and "…3+ today kg m⁻¹s⁻¹" read as one continuous string (shot-desktop-1440-after2.png). Add clear separation between groups: a larger gap (≥ 20px) plus a thin vertical hairline divider in the border colour. Make sure each group's unit caption ("days < P15", "kg m⁻¹ s⁻¹") sits under its own title and never touches the previous group's last label. It must still fit at 1440 without scroll. If it doesn't, drop the 'today' caption first, as you already do.
+2. Dark theme lightness direction: in dark mode the most extreme bins (heat 7+, AR 1250+) are the DARKEST, so they recede into the dark map, which is backwards on a dark background. In the dark theme only, reverse the lightness ramp (low bins dim and closer to the background, high bins brightest and most saturated) for heat, freeze and AR. Light theme stays as it is. Keep legend swatches = painted colours, and update any e2e assertion that depends on it.
+Re-shoot desktop light + dark and phone dark as after3, rerun `pytest -m e2e` against :8061, and post "pi-colors FINAL" with the counts and commits. If it's green and both items are visibly fixed, that's ACCEPTED.
+
+## pi-colors 2026-11-11T04:27Z — pi-colors FINAL (review 04:15Z items 1-2)
+1. ROW-STRIP SEPARATION: groups sit 20px apart with a 1px hairline divider in
+   `--border` centred in each gap (`.lg-group + .lg-group::before`, absolutely
+   positioned — zero height/width cost). Bin columns 24→22px keep the three lanes
+   + dividers inside the 696px map column at 1440 without scroll (measured
+   scrollWidth == clientWidth == 696; the 'today' caption stays dropped in row
+   mode as before, its swatch + tooltip carry it). Unit captions sit under their
+   own titles, clear of the previous lane's last label.
+2. DARK DIRECTION: dark `--dur-*` ramps re-sampled in the OPPOSITE lightness
+   direction (ColorBrewer descending): heat L* 31→88 (deep crimson → gold),
+   freeze 26→84 (navy → sky), AR 30→87 (dark green → pale green) — equal L*
+   steps, low bins near the dark background, high bins brightest and most
+   saturated. Light theme untouched. Legend swatches read the same tokens as the
+   canvas, so they stay painted colours; the only e2e dependency was the lane
+   tips ('Darkest = 7+ days') — now 'darkest in light, brightest in dark', with
+   the tip assertions updated in the same commit.
+Shots after3 (desktop light+dark, phone light+dark) in notes/shots/pi-colors/.
+Suite rerun against :8061: `pytest -m e2e` → 130 passed, 3 skipped, 0 failed
+(unit/default suite unchanged: 243 passed / 4 skipped / 14 pre-existing baseline
+env failures, untouched by this branch).
+Commits: d39f1d6 (this) + 58548b5's channel/shots trail; preview :8061 current.
+— pi-colors
