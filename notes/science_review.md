@@ -1015,5 +1015,37 @@ weekly run (Mon 07:00, artifacts ~08:13) and after the ponytail daily round
 (timer 09:15 UTC, full-sweep deadline 110 min ⇒ done ≤ ~11:05; done-marker
 notes/.ponytail_done.txt). Do NOT run rerun/scorecard comparisons ad hoc in
 interactive sessions; the cron lane owns that work. All §R baselines stay
-pinned (events_sha 51f96b150336625a); no gate/scripts changes made this
-resumed session (nothing ran on box).
+pinned (events_sha 51f96b150336625a). Tooling added 2026-11-10 (review lane's
+own scripts, no gate changes): scripts/review/sr18_coverage.py + baseline
+notes/coverage_baseline.json (294 holes @ pinned sha; classes: integrity vs
+coverage-drift) + tests/test_sr18_coverage.py — the cron's coverage check.
+Box runs of sr18 are read-only pandas; verified rc=0 vs baseline.
+Cadence refined same day: job now fires DAILY 12:00Z for sha detection only
+(box watcher 442782 expired ~16:13Z 11-10 and nothing else watched for
+off-schedule regen); full before/after comparison stays Monday-only, per the
+owner's once-a-week directive. Off-day detections are logged + announced on
+the channel, comparison deferred to Monday. Detection pinned as a TRIO
+(2026-11-10 12:45Z, replacing events-only watch): events_selected.json
+51f96b150336625a, scores.parquet 181d987f41b83c65 (e86crescore3 build),
+raw_exceedance/index.json da45f6815259000d — events frozen + scores moved
+= RESCORE class (the e86c incident shape); events-only detection was blind
+to it. Re-pin whichever members change at each adjudicated rerun.
+DETECTION UPGRADED same day ~13:45Z (owner keep-running directive): job fires
+HOURLY, gated by no-LLM monitor ~/.hermes/scripts/ewb_trio_watch_monitor.py
+(stdout = sha16 trio + watch-day rolling 12:00Z; box down => stable
+'UNREACHABLE'). Quiet hours cost zero agent runs; wakes = sha change
+(same-day detection), box unreachable (incident line, once/day), or noon
+rollover (audit slot + Monday no-rerun line, deduped per-day in the prompt).
+Weekly-comparison cadence UNCHANGED — deep comparison stays Monday-only.
+Cron-update pitfall: a combined schedule+prompt+monitor update is silently
+dropped (ok:true, fields unapplied) when monitor uses an absolute path —
+use the bare filename relative to ~/.hermes/scripts/, and verify persistence
+after updates.
+
+## §V — regen-night record (2026-11-10 19:29Z → 2026-11-11 00:25Z), pre-registered before any comparison
+Three full curation+score passes landed off-schedule; monitor caught each (DETECT #1-4, details in notes/score_watch_log.md). Settled trio as of 01:16Z: events 8c2366ee5440478a (n=28, since 23:51Z), scores 460df61eae76b687 (rewritten 01:07:40Z by the on-box ewb_live.weekly --days 90 job, DETECT #5 — curation untouched; viz --all followed 01:10Z), raw_index a2fe176089b217fb. Before-record UNCHANGED: §R/§U baseline @ events_sha 51f96b150336625a — G1 FAIL 4, G2 FAIL 12/19 @bridge0 / PASS @bridge3, G3 FAIL [8002c1ab3ba0], G4 PASS, sr18 294 holes (notes/coverage_baseline.json).
+Monday adjudication must treat: (1) §T swap materialized in pass 2 (06ceb4d8d4fe in, 0df36ee11032+8002c1ab3ba0 out, merge e1bd4ec451c5) => a live-set G3 PASS proves nothing about the lifetime gate; isolation = §V before-record + membership-only explanation of gate diffs. (2) pass 3 moved 6 in / 7 out (verified locally from banked snapshots; the cron DETECT-4 note's '6/6, e86c back IN' was WRONG): e86c13f47bc0 (the §I RESCORE-incident event) is OUT of the live set — its short-lead CSI can only be checked on the pinned 51f9-era before-set, not on live data. (3) set snapshots banked: notes/review_artifacts/events_set_{eebf06f0,8c2366ee}.json for the structural diff. (4) AR lane arfix3 live on box (sentinels 2db5edd2/a2077a5a/33c135d5) — AR code is newer than the before-record. (5) if a 4th pass moves the trio before 12:00Z, adjudicate against then-live SHAs, re-snapshot, and re-verify stability first. (6) the weekly --days 90 rescore may have re-windowed scores.parquet (90d vs the before-record 30d): diff n_rows/n_shipped against notes/coverage_baseline.json BEFORE reading any metric or coverage delta — a window shift masquerades as regression. If scores are now 90d-window, the sr18 hole-count comparison is invalid; report window first, holes second.
+Watch machinery production-proven (hourly bare-ssh monitor; zero box writes; revert hazard closed, flock guard in ops/remote.sh).
+
+### §V addendum 2 — settled raw_index moved (2026-11-11 02:0xZ)
+raw_index a2fe176089b217fb -> b464060245177dac (index.json mtime 01:46:04Z, stable across 2 box reads): the weekly-job viz --all index rewrite landing after §V's 01:16Z snapshot. Events/scores unmoved — still RESCORE-settled, no 4th curation pass. Monday adjudication trio: 8c2366ee5440478a / 460df61eae76b687 / b464060245177dac.

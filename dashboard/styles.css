@@ -176,20 +176,94 @@ button:disabled, select:disabled, input:disabled {
   cursor: not-allowed;
 }
 
-/* ---------- header ---------- */
-header.top {
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  padding: 10px 0; background: var(--bg-panel); border-bottom: 1px solid var(--border);
-  position: static; z-index: 900;   /* static: sticky header caused overlap artifacts (QA 2026-11-06) */
+/* ---------- shell: rail nav + content column (after owb.brightband.com) ------
+   OWB puts navigation in a 220 px sticky column and lets the content keep its own
+   title. The rail is the canvas ground; panels inside the content stay paper. ---- */
+.app-shell { display: flex; align-items: flex-start; min-height: 100vh; }
+.content { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.rail {
+  flex: 0 0 220px; width: 220px; align-self: flex-start;
+  position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 12px 12px 16px; border-right: 1px solid var(--border); background: var(--bg);
 }
-header.top .shell { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding-inline: 24px; }
-.brand { display: flex; align-items: baseline; gap: 8px; }
-.brand h1 { font-size: var(--text-lg); }  /* one rule: 20px */
-.hdr-meta { color: var(--ink-muted); font-size: var(--text-xs); }
+.rail-head { display: flex; align-items: center; gap: 8px; min-height: 28px;
+  margin: 0 -12px; padding: 0 12px 12px; border-bottom: 1px solid var(--border); }
+/* the brand name is a 12.5/500 line under the mark, not a headline — the h1 says it bigger */
+.rail-brand { min-width: 0; flex: 1 1 auto; font-size: var(--text-sm); line-height: 1.1;
+  font-weight: 500; color: var(--ink-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-toggle { flex: none; width: 28px; height: 28px; margin-left: auto; padding: 0;
+  display: grid; place-items: center; border: 0; border-radius: 6px; background: none;
+  color: var(--stone-grey); cursor: pointer; line-height: 0; }
+.rail-toggle:hover { background: var(--tint); color: var(--matte-black); border: 0; }
+.rail-toggle .ic-close { display: none; }   /* the drawer gets an ✕, the desktop rail a collapse glyph */
+.rail-nav { display: flex; flex-direction: column; gap: 2px; }
+.rail-link { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px;
+  border: 0; border-radius: 8px; background: none; color: var(--ink-secondary);
+  font: 500 var(--text-base)/1 var(--font-sans); text-align: left; cursor: pointer; }
+.rail-link:hover { background: var(--tint); border: 0; color: var(--matte-black); }
+.rail-link.is-active { background: var(--tint); color: var(--matte-black); }  /* OWB: current section */
+.rail-link.is-active .rail-icon { color: var(--accent); }
+.rail-icon { flex: none; color: var(--stone-grey); }
+.rail-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-foot { margin-top: auto; display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+  padding-top: 12px; border-top: 1px solid var(--border); }
+.rail-foot #week-picker { width: 100%; max-width: none; }
+
+/* collapsed rail (desktop): 58 px, marks and glyphs only — OWB's is-collapsed */
+html.rail-collapsed .rail { flex-basis: 58px; width: 58px; padding: 12px 10px 16px; align-items: stretch; }
+html.rail-collapsed .rail-brand, html.rail-collapsed .rail-label, html.rail-collapsed .rail-foot { display: none; }
+html.rail-collapsed .rail-head { flex-direction: column; gap: 8px; margin: 0 -10px; padding: 0 10px 12px; }
+html.rail-collapsed .rail-toggle { margin-left: 0; }
+html.rail-collapsed .rail-toggle svg { transform: rotate(180deg); }
+html.rail-collapsed .rail-nav { width: 100%; gap: 4px; }
+html.rail-collapsed .rail-link { justify-content: center; padding: 0; }
+
+/* rail → drawer (<1100px, the shell breakpoint): the column cannot be a column at
+   phone width, so it becomes OWB's mobile-topbar + a drawer over the same markup. */
+.mobile-topbar { display: none; }
+@media (max-width: 1099px) {
+  .app-shell { display: block; }
+  .rail { display: none; }
+  .mobile-topbar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 8px;
+    height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--canvas) 92%, transparent);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  .mobile-topbar .rail-brand { flex: 1 1 auto; color: var(--matte-black); }
+  .rail-toggle { width: 32px; height: 32px; }
+  .rail-toggle .ic-rail { display: none; }
+  .rail-toggle .ic-close { display: block; }
+  nav.controls { top: 52px; }   /* under the sticky topbar, not behind it */
+  .nav-btn { flex: none; width: 36px; height: 36px; margin-right: -8px; padding: 0; border: 0;
+    border-radius: 8px; background: none; color: var(--matte-black); cursor: pointer; line-height: 0;
+    display: grid; place-items: center; }
+  .nav-btn:active { background: var(--tint); }
+  body.nav-open { overflow: hidden; }
+  body.nav-open::before { content: ""; position: fixed; inset: 0; z-index: 999;
+    background: rgba(38, 38, 32, .34); }
+  body.nav-open .rail { display: flex; position: fixed; top: 0; bottom: 0; left: 0; z-index: 1000;
+    width: min(280px, 86vw); height: 100dvh; background: var(--bg-panel);
+    box-shadow: 0 0 40px rgba(38, 38, 32, .18); }
+}
+
+/* brand mark — the EWB mark on its tile: the same drawing as favicon.svg, so the tab and the rail
+   carry one thing. A tile is what makes a small mark read as a logo instead of as the UI's own
+   expand/collapse glyph; on the dark ground the tile is the same near-black as the canvas, so it
+   quietly becomes the plain reversed mark. 20 px = the rail-head line box (the brand line is
+   12.5 px on 1.1, the mark carries no descender). */
+.brand-mark { flex: none; display: block; }
+
+/* ---------- header: a title, not a toolbar ----------
+   Everything that was a control here moved to the rail; the header is the page
+   title + one line of plain language, on the canvas ground (no bar, no rule). */
+header.top { padding: 24px 0 0; }
+header.top .shell { padding-inline: 24px; }
+header.top h1 { font-size: var(--text-xl); }   /* 26 px, -0.02em/1.2 from the base rule */
+header.top h1 .badge { vertical-align: 5px; }
+.tagline { margin: 4px 0 0; color: var(--ink-secondary); font-size: var(--text-sm); max-width: 68ch; }
+.hdr-meta { color: var(--ink-muted); font-size: var(--text-xs); margin: 0; }
 .hdr-meta .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.brand .tagline { margin: 0; color: var(--ink-secondary); font-size: var(--text-sm); }
-.jump { display: flex; gap: 16px; font-size: var(--text-sm); }
-.hdr-tools { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin-left: auto; }
 .sec-title { font-size: var(--text-base); font-weight: 500; letter-spacing: -0.01em; margin: 0; }
 .badge {  /* uppercase micro-label treatment */
   font-size: var(--text-2xs); font-weight: 500; letter-spacing: 0.08em;
@@ -242,6 +316,11 @@ nav.controls {
 .sec-lede { color: var(--ink-secondary); font-size: var(--text-sm); margin: 4px 0 12px; max-width: 86ch; }
 .home-only { }
 .detail-open .home-only, .deeplink .home-only { display: none !important; }
+/* The event page is led by the event's own title: the site line keeps the name and
+   drops the tagline. min-height is a floor, so 48 px (the phone's settled height)
+   still lets the 56 px desktop box measure itself. */
+.detail-open .tagline, .deeplink .tagline { display: none; }
+.detail-open header.top, .deeplink header.top { min-height: 48px; }
 /* Selected = --alabaster + 3px matte-black left bar (inset for pill radius). Never orange fill, never orange text. */
 #type-tabs button.on {
   background: var(--alabaster); border-color: var(--border); color: var(--matte-black);
@@ -436,9 +515,11 @@ td.cell.small-n:focus-visible { outline: 2px solid rgb(var(--small-n)); outline-
   margin: 8px 0 10px; font-size: var(--text-sm); color: var(--ink-secondary); }
 .sc-note[hidden] { display: none; }
 .sc-note b { color: var(--text); font-weight: 600; }
-.sc-note .sn-mark { flex: none; display: inline-block; width: 22px; height: 15px;
+.sc-note .sn-mark { flex: none; display: inline-block; position: relative; width: 22px; height: 15px;
   border: 1px solid var(--border); background: var(--bg-panel); border-radius: 2px;
   box-shadow: inset 0 0 0 1px rgba(var(--small-n), .35), 0 0 7px 0 rgba(var(--small-n), .3); }
+.sc-note .sn-mark::after { content: ""; position: absolute; top: 2px; right: 2px;
+  width: 3px; height: 3px; border-radius: 50%; background: rgb(var(--small-n)); }
 #tooltip .t-row .t-warn { color: rgb(var(--small-n)); font-weight: 600; white-space: nowrap; }
 #tooltip .t-row > span { white-space: nowrap; }
 th.event-col { font-style: italic; }
@@ -509,7 +590,6 @@ tbody tr:hover td.model-col { background: var(--tint); }
   font-variant-numeric: tabular-nums; }
 #event-table .ev-live { color: var(--matte-black); white-space: nowrap; }
 #event-table .ev-unit { display: block; margin-top: 2px; font-size: var(--text-2xs); color: var(--ink-muted); }
-.jump .linkbtn { color: var(--ink-secondary); }
 #event-table .type-dot { margin-top: 4px; }
 .type-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
 td.id-cell { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-secondary);
@@ -630,9 +710,8 @@ footer a:hover { color: var(--matte-black); }
 
 /* ---------- phone (≤620px): 16px gutter below 720 (§4) ---------- */
 @media (max-width: 620px) {
-  header.top { padding: 8px 0; gap: 8px 12px; }
+  header.top { padding: 16px 0 0; }
   header.top .shell { padding-inline: 16px; }
-  .brand .tagline, .jump { display: none; }
   .sc-ticks { display: none; }   /* keep the header light on phones */
   .kv-line { gap: 4px 16px; }
   main { padding: 16px 16px 4px; }
@@ -703,8 +782,9 @@ nav.controls .dd .dd-body {
   align-items: center; gap: 2px 12px; margin-top: 6px; }
 .gm-time-row > span:empty { display: none; }   /* legacy leading spacer */
 .gm-date-readout { font-size: var(--text-base); font-weight: 500; white-space: nowrap; }
-/* legend row belongs to the map; the timeline card below is one widget:
-   transport + current time, the scrubber, and the event lanes on one axis */
+/* layer-chip row (the colour scales live INSIDE the map — see #gm-legend), so
+   this row's height never depends on what is painted; the timeline card below
+   is one widget: transport + current time, the scrubber, the event lanes */
 .map-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
 .timeline { margin-top: 12px; padding: 10px 12px 6px; background: var(--bg-panel);
   border: 1px solid var(--border); border-radius: 6px; }
@@ -715,10 +795,53 @@ nav.controls .dd .dd-body {
 #gm-gantt { width: 100%; display: block; margin-top: 2px; overflow: visible; }
 .gm-note { color: var(--text-dim); font-size: var(--text-sm); margin: 8px 0 0; }
 .gm-note[hidden] { display: none; }
-.gm-legend { display: flex; align-items: center; gap: 8px; }
-.gm-legend .swatch { width: 24px; height: 12px; border: 1px solid var(--border-strong);
-  border-radius: 2px; display: inline-block; }
-.gm-legend .label { font-size: var(--text-2xs); color: var(--ink-muted); }
+/* Adaptive colour scales, painted INSIDE the map (mergedmap.js renderLegend).
+   #raw-map-wrap is position:relative + overflow:hidden, so the panel is
+   clipped to the canvas and its height — which changes with the layers that
+   are on, the frame under the slider and the Region view — can never move the
+   slider, the timeline, the event list or any card below (the layout-shift
+   reservations below, applied to a live control). Groups stack vertically in
+   the bottom-left, the corner an Equal Earth sphere leaves empty. Every stop
+   is labelled in its lane's own units; a stop the CURRENT frame does not
+   paint dims with a dashed edge, and a lane with nothing in view says so. */
+#gm-legend { position: absolute; left: 8px; bottom: 8px; z-index: 2;
+  display: flex; flex-direction: column; gap: 5px;
+  max-width: min(330px, calc(100% - 16px)); padding: 6px 8px 5px;
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 6px; box-shadow: var(--shadow);
+  pointer-events: none; }        /* map underneath stays clickable + hoverable;
+                                    the layer chips below carry the long tips */
+#gm-legend:empty { display: none; }
+.gm-legend .swatch { width: 24px; height: 11px; border: 1px solid var(--border-strong);
+  border-radius: 2px; display: block; }
+/* one line per lane: label column + ramp, so the panel stays a corner strip */
+.lg-group { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 1px 8px; }
+.lg-head { display: grid; gap: 1px; }
+.lg-name { font-size: var(--text-2xs); font-weight: 500; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-dim); white-space: nowrap; }
+.lg-unit { font-size: var(--text-2xs); color: var(--ink-muted); }
+.lg-none { font-size: var(--text-2xs); color: var(--warn-ink); }
+.lg-stops { display: flex; align-items: flex-start; gap: 4px; }
+/* each stop reserves room for its own caption: '1000' / '1250+' are wider than
+   the swatch and would otherwise run into the next label */
+.lg-bin { display: grid; justify-items: center; gap: 2px; min-width: 32px; }
+.lg-bin.prov { margin-left: 8px; }   /* a texture, not the next step of the ramp */
+.lg-t { font-size: var(--text-2xs); color: var(--ink-muted); font-family: var(--font-mono); }
+.lg-bin.out { opacity: .32; }
+.lg-bin.out .swatch { border-style: dashed; }
+.lg-group.none { opacity: .6; }
+@media (max-width: 699px) {   /* small map: a flush key strip along its bottom edge */
+  #gm-legend { left: 0; right: 0; bottom: 0; max-width: none;
+    flex-flow: row wrap; gap: 2px 14px; padding: 3px 6px;
+    border: 0; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; }
+  .lg-group { gap: 0 6px; }
+  .lg-unit { display: none; }   /* the chips under the map name the lanes + thresholds */
+  .gm-legend .swatch { width: 14px; height: 9px; }
+  .lg-bin { min-width: 15px; }
+  .lg-bin.prov { margin-left: 5px; }
+  /* mid-scale digits would collide at 14px swatches: the endpoints carry the range */
+  .lg-stops .lg-bin:not(:first-child):not(:last-child) .lg-t { visibility: hidden; }
+}
 
 /* base map primitives live in the canvas paint — see mergedmap.js drawBase */
 
@@ -830,9 +953,9 @@ nav.controls { min-height: 46px; }
 .raw-map-wrap { min-height: 240px; }
 #gm-gantt { height: 62px; }
 .tl-head { min-height: 30px; }
-header.top { min-height: 48px; }
-@media (max-width: 699px) { header.top { min-height: 44px; } }
-@media (max-width: 519px) { header.top { min-height: 83px; } }
+header.top { min-height: 78px; }        /* measured settled height: 24 pad + 26/1.2 h1 + 4 + 12.5/1.5 */
+@media (max-width: 620px) { header.top { min-height: 70px; } }   /* 16px gutter rule */
+@media (max-width: 459px) { header.top { min-height: 83px; } }   /* tagline wraps */
 
 /* raw-map slider: same quiet control as the global timeline (was browser-default blue) */
 #raw-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 28px; cursor: pointer; accent-color: var(--matte-black); }

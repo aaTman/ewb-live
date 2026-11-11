@@ -1,84 +1,56 @@
-## Latest run — 2026-11-10 09:28 UTC (RUN STAMP 2026-11-10T09:20:13Z)
-- Mode: INCREMENTAL (20 files) with the ponytail-review skill, plus connected code
-  read in full or in the relevant parts: ewb_live/viz/exceedance.py,
-  ewb_live/events/ar_filter.py + tc_screen.load_ibtracs_tracks, events/types.py
-  (bbox convention), viz/build.py (CELL/crop), pipeline._sweep_orphan_temps,
-  ops/memguard.sh, dashboard/vendor/leaflet.js createPane, sibling worktree
-  regional-breakdowns/ewb_live/regions.py (the sr17 import target), e2e fixtures
-  (`base` = EWB_LIVE_URL live box). Static review only: no EWB compute, no git,
-  no code edits, no third_party/ or data/ read.
-- New findings this pass: 8 (3 must, 3 should, 2 nice).
-  - science-review 3: **MUST** sr_gate.py:52 — G4 runs sr17_region_assignment.py,
-    which imports ewb_live.regions, a module that does not exist in this tree
-    (it lives on branch aaTman/regions-integration); g4 is evaluated before the
-    print block, so the acceptance gate exits 2 having thrown away the G1/G2/G3
-    results it had already computed. **MUST** sr15_event_lifecycle.py:26-27
-    (also sr16:37-38, sr13 `_bb`) — bbox lon read with min/max, so an
-    antimeridian event (lon_min > lon_max, documented in events/types.py)
-    becomes its ~322° complement: DARK/dead-at-start frames are structurally
-    invisible and G2/G3 report PASS on the very class they were pre-registered
-    for (shipped wrapped event 255f68102c43, Bering). NICE sr17 dead `hemis` +
-    one-directional `flag` (EXTRA never fires).
-  - frontend 5: **MUST** mergedmap.js:333-345 — gap-bridge ghost pixels paint
-    exactly like real detections; the lane folds them into the display layer
-    (exceedance.py:528-529) and publishes index.tracks[sid].bridged (:719-725),
-    and no consumer in dashboard/ reads either → a one-step AR dropout shows an
-    opaque IVT band (plus a hover class) for pixels ERA5 never detected.
-    SHOULD getFrame:159-169 caches a transiently failed .run/.ivt as null for the
-    session (the .bin path deliberately refuses to) → that step keeps painting
-    the fallback on every repaint until 7 frames of scrubbing evict it.
-    SHOULD paintFrame:338-339 — CORRECTION to the 00:10Z entry: a truncated .run
-    does not "paint binary", the `continue` skips the binary bit too, so the
-    cell paints nothing silently (the Python reader raises on the same bytes).
-    SHOULD eventviz.js:433-445+1042 — durRasterURL draws 8 px/cell and PNG-encodes
-    every visible layer on every 500 ms play tick (a 160×320-cell heat wave =
-    three ~2560×1280 encodes per tick) although .ev3-crisp already upscales with
-    image-rendering: pixelated → ~64× wasted work, play stutters. NICE eventviz.js
-    :424-431 comment claims durAlpha "mirrors the front page" — it does not
-    (front page paints 1–2 day runs, detail paints nothing under 3 days).
-- Channels appended: frontend (5), science-review (3), design (0 new — cross-post
-  of the ghost-pixel fix options + 1 withdrawal + 1 fixed-note).
-- Owners nudged: science-review (term_bd4274e6 live, send ok).
-- Owners offline: frontend term_55602a39, design term_f3c16ead, ewb term_e87b37a0,
-  infra-domain term_987fee64 (11th+ consecutive), guardian-frontend term_3d6c7a6f
-  and guardian-design term_c688767f (stale) — the frontend MUST's owner has no live
-  terminal this cycle. **Orchestrator attention: the two most consequential open
-  lanes (frontend painter, infra scripts) have no live owner; four π-dogfish
-  terminals are live but carry no roster handle, so per brief no nudge was sent.**
-- Findings resolved since the 01:55 baseline (verified by reading the files): 4 —
-  design 2 (SHOULD index["dur"]/index["ivt"] now gated on the newest frame's
-  sidecar existing, exceedance.py:742-754; NICE dot-prefixed-tmp sweep **withdrawn
-  as a false positive** — pathlib.Path.glob DOES match leading dots, verified on
-  this container, so _sweep_orphan_temps reclaims frame tmps after the 1 h guard),
-  frontend 1 (dead tierRGB line removed from eventviz.js), ewb 1 (ghost pixels now
-  invisible to both screens: _storm_pass takes `mask`, band check reads
-  labels[:,band,:][mask[:,band,:]], + test_storm_pass_ignores_ghost_label_pixels).
-- Open totals: 14 — frontend 7 (ghost-pixel MUST, getFrame null-cache, truncated
-  .run, durRaster 8×, layerRuns-vs-.run parity, durAlpha parity comment, and the
-  00:15Z legend item — mergedmap.js:740 re-types index.ivt.bins, counted here
-  because the file is the painter's, so design's open count is 0), science-review 3
-  (2 new MUST + 1 NICE), ewb 1 (publish-gate curation.json key names still have no
-  test — re-verified: no test references curation.json),
-  infra-domain 3 (carried, all re-read STILL OPEN at the cited lines:
-  purge_dropped_events.py:43-44 in-place scores.parquet rewrite,
-  freshness_check.py:101 `pgrep -f "ewb_live.weekly"` unescaped dot,
-  purge_event_parts.py:49 fixed-name .tmp shared by concurrent runs).
-- ewb lane re-read clean this pass: ar_filter (physical-only screens, ghost writes
-  land only on cells where the gap-step mask is False, ids unique, every track has
-  ≥1 step before tr["steps"][0] is read), exceedance build/publish path (empty-AR
-  early return before the sig wipe, gate before any write, --days cannot prune,
-  layer_fn label-select so off-6h mirror steps cannot shift climatology, 3-hourly
-  inflation of ar_times is harmless because every consumer is label/tag-keyed),
-  eventviz overlay rewrite (createPane re-creates a removed pane — verified against
-  vendored Leaflet; #lyr/#day round trip is e2e-covered), app.js Leaflet-catalog
-  removal leaves no dangling renderMap/#map reference and every JS-referenced id
-  exists in index.html (scripted check), dev_preview proxy stays on its upstream.
-- Not checked: the box's deployed tree (whether a stale ewb_live/regions.py makes
-  sr17 work there by accident — data/ and remote host off-limits); live pixel
-  output of the ghost-frame case (no data/ read, no browser run — the finding is
-  read off the writer's fold-in plus a grep proving no consumer); test suites were
-  not executed (static-review rule), so "tests exist" claims are read-off, not run.
-
+## Latest run — 2026-11-11 09:21 UTC (RUN STAMP 2026-11-11T09:17:13Z)
+- Mode: FULL SWEEP (ponytail-audit). Read in full this pass: ewb_live/regions.py,
+  scripts/build_region_scores.py, scripts/review/sr18_coverage.py +
+  tests/test_sr18_coverage.py, scripts/dev_preview.py, dashboard/regions.json,
+  dashboard/mergedmap.js (full), dashboard/app.js region/rail/legend diffs
+  (5c5e096..worktree, both committed regions-integration and uncommitted rail),
+  ewb_live/viz/exceedance.py (uncommitted dur.min/dur_block diff + ivt_class_plane,
+  build/publish paths), eventviz.js dur-raster/layerRuns regions, ops/remote.sh
+  diff, weekly.py step 6c, serve.py OPTIONAL_FILES, pipeline.py regions write +
+  curation/publish-gate block, sr13/sr15/sr16/sr17/sr_gate (arc-form re-check),
+  purge_dropped_events.py, purge_event_parts.py, freshness_check.py,
+  test_regions.py, index.html (rail/legend ids), e2e legend/rail coverage.
+- Not read / thin (honest gaps): styles.css and index.html markup beyond the
+  rail/legend diff; the already-committed +690 app.js regions-integration diff
+  was read via its added lines (innerHTML/fetch/region paths), not line-by-line;
+  one-off scripts/review/sr14*/d2_pixel_audit/ar_diff/rank_cap_replay and
+  tmp/ QA artifacts not re-read; ops units unchanged since the last full review;
+  ewb_live/{events,scoring,sources,stores} internals unchanged since the
+  2026-11-10T00:17Z full-sweep reads (mtimes verified) — those reads stand;
+  tests not executed (static-review rule); third_party/ and data/ off-limits.
+- Load assumption: one weekly producer (systemd on ewb) + a public read-only
+  audience on ewb.espr.ai; judged accordingly.
+- New findings this run: 4 — 0 must, 4 should (frontend 1, ewb 2, science-review 1).
+  - frontend SHOULD: app.js:477/:967/:1801 region copy still says bbox-centroid
+    while the shipped rule is footprint-overlap (regions.py, owner 2026-11-10).
+  - ewb SHOULD: regions.py:69-71 `_lon_in_box` region-width lacks `% 360` ->
+    any antimeridian-crossing REGION silently matches zero cells (latent with
+    shipped regions.json; app.js:731 port shares it). ewb SHOULD:
+    build_region_scores.py:63 rewrites the published scorecard_by_region.json
+    in place (weekly 6c runs it post-publish; kill mid-write -> region UI dead
+    for the week). ewb NICE carried: curation.json key set still untested.
+  - science-review SHOULD: sr18_coverage.py derives the expected-cell set from
+    observed rows only -> a whole (model,metric) lane vanishing from a type
+    (the D1 recurrence) prints "coverage OK".
+  - design/mlwp-store/infra: no new findings with a concrete failure case
+    (adaptive gm-legend + rail redesign read clean; XSS sweep: legend/rail
+    innerHTML is static or numeric; no infra leaks in served dashboard files).
+- Channels appended: frontend (8: 1M/3S/4N), ewb (2 + 1 carried), infra (0 new,
+  3 carried re-verified), science-review (1 + resolved list), design (cross-post only).
+- Owners nudged: NONE — every roster handle is offline this run (ewb
+  term_e87b37a0, frontend term_55602a39, design term_f3c16ead, infra-domain
+  term_987fee64 [12th+ consecutive], science-review term_bd4274e6, guardians,
+  mlwp-store all absent from `orca terminal list`; only 10 π/agent terminals
+  live with no roster handles). **Orchestrator attention: all five lanes with
+  open findings, incl. 2 MUSTs (frontend ghost-pixel painter, infra
+  purge_dropped_events in-place parquet), have had no live owner for 24 h+.**
+- Findings resolved since last run (verified by reading the files): 3 (science-review)
+  — sr_gate G4 / sr17 regions-import MUST (ewb_live/regions.py + regions.json
+  landed with the regions-integration merge), sr15:19-27 / sr16:23-38 / sr13
+  `_bb`+`lon_overlap` antimeridian MUSTs now eastward-arc, sr17 NICE closed
+  (hemis line gone, EXTRA asymmetry stated at :62-63).
+- Open totals: 15 — frontend 8 (1M/3S/4N), ewb 3 (0M/2S/1N), infra 3 (1M/1S/1N),
+  science-review 1 (0M/1S/0N), design 0, mlwp-store 0. Grand total 15 (2M/7S/6N).
 ## 2026-11-10 01:05 UTC (carried to history) (RUN STAMP 2026-11-09T22:15:13Z — second pass)
 - **Mode:** INCREMENTAL (18 files). SECOND pass on this stamp: the 23:59Z run
   covered the same list, so this pass re-verified its two MUSTs against the

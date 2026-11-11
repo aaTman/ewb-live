@@ -19,13 +19,20 @@ notes/channel_consecutive_days.md §4): low 7 bits = CONSECUTIVE COMPLETED UTC
 days the cell met the daily rule (all four 00/06/12/18Z steps exceeded),
 constant across all four frames of a UTC day (no provisional +1, no midnight
 reset — sawtooth fix, diurnal investigation 2026-11-09); bit 7 = today so far
-(in-progress day, all steps known to date exceeded) — render as provisional.
+(in-progress day, all steps known to date exceeded) — render as provisional
+texture on an already-qualifying cell, never as a painted point of its own.
 Counts saturate at 127. Seeded from the earliest mirror step. v1 sidecars
 (pre-v2) hold the old provisional per-step run; JS keys off index dur.rev.
+Qualification gate (fixed the 2026-11-10 "points flash on at 00Z" report): a
+cell paints only once its COMPLETED streak reaches the lane minimum — heat
+MIN_CONSECUTIVE_DAYS (3, read from upstream), freeze 1 — so a cell a few hours
+short of that minimum is blank at every hour of the qualifying day instead of
+appearing only in the 00Z frame and vanishing at 06Z. Published as dur.min
+(see PAINT_MIN). The .run encoding itself is unchanged.
 index.json (frontend contract, channel 13:40/14:05):
 {schema, generated, grid{res_deg,ny,nx,lat0,lon0,step_lat,step_lon},
 frames:["YYYYMMDDHH",... asc], cutoff:"YYYYMMDDHH", window:{start,end},
-dur:{rev,seed}}. Incremental: existing frames skip (a frame is done only with
+dur:{rev,seed,min{heat,freeze}}}. Incremental: existing frames skip (a frame is done only with
 its .run/.trk sidecars on disk). Run on the box:
 python -m ewb_live.viz.exceedance [--days N] [--force]; also the weekly tail.
 """
@@ -114,8 +121,32 @@ def _frame_name(t: np.datetime64) -> str:
 
 RUN_NAME = ".run"   # <frame>.run sidecar: zlib(u8 heat_run ++ u8 freeze_run)
 DUR_REV = "v2"      # duration semantics version (index.json "dur.rev")
+FREEZE_PAINT_MIN = 1  # freeze paint gate (owner 2026-11-10): day 1, not the
+# detector's 3-day floor — cold runs are shorter and rarer; see dur_block().
+# The heat gate is the detector constant itself, never a second literal.
 RUN_CAP = 127       # completed-day count saturates here; bit 7 = provisional
 IVT_CLASS_NAME = ".ivt"  # <frame>.ivt sidecar: zlib(u8 AR IVT class plane)
+
+
+def dur_block(seed_tag: str | None) -> dict:
+    """index.json "dur" block (frontend contract, dur rev v2).
+
+    `min` is the painted qualification gate per lane:
+      * heat = the detector's minimum consecutive-day run, read from upstream
+        temperature_events().MIN_CONSECUTIVE_DAYS (3) so the gate can never
+        drift from the detector and the map never shades a cell that can't be
+        part of a heat wave;
+      * freeze = 1 (owner 2026-11-10): short cold runs paint from their first
+        COMPLETED day. Freeze events still require the detector minimum —
+        detection is untouched — but cold runs decay twice as fast as hot ones
+        (17.6% vs 31.6% reach 3+ days, notes/channel_diurnal.md round 4), so a
+        3-day paint floor would leave the lane nearly blank (~220 cells vs
+        ~3,085 on 2026-11-01) and the 1-2 day ramp shades unusable.
+    See the module docstring for the paint rule."""
+    from ewb_live.events._upstream import temperature_events
+    return {"rev": DUR_REV, "seed": seed_tag,
+            "min": {"heat": int(temperature_events().MIN_CONSECUTIVE_DAYS),
+                    "freeze": FREEZE_PAINT_MIN}}
 
 
 def _run_day(day: list[np.ndarray], c: np.ndarray
@@ -743,8 +774,7 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
     # duration feature-detect (contract §4): consumer paints runs only when
     # this key exists; seed = earliest mirror step the recurrence saw
     if head and (out / f"{head}{RUN_NAME}").exists():
-        index["dur"] = {"rev": DUR_REV,
-                        "seed": fmt(times_all[0]) if times_all else None}
+        index["dur"] = dur_block(fmt(times_all[0]) if times_all else None)
     else:
         index.pop("dur", None)
     # AR IVT class plane feature-detect (v3): consumer paints ramp only when

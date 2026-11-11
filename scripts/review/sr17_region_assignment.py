@@ -59,6 +59,8 @@ for e in ars:
     miss = set(top) - cen; extra = cen - set(top)
     pf_miss = perframe - cen  # regions a frame put >=25% in, centroid misses
     latc, lonc = bbox_centroid((b[0], b[1], b[2], b[3]))
+    # stated rule: EXTRA is non-fatal — centroid-padded bboxes (±5°) drift into
+    # neighbouring regions by design; only mask-side miss/pf_miss trip G4.
     flag = bool(miss or pf_miss)
     print(f"{e['id']} centroid{latc:.1f},{lonc:.1f}->{sorted(cen)} overlap>=25%:{sorted(top)} "
           f"perframe_union:{sorted(perframe)} MISS:{sorted(miss)} PF_MISS:{sorted(pf_miss)} "

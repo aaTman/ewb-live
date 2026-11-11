@@ -164,3 +164,10 @@ rejected. py_compile clean, synced; next timer tick uses it.
   fix: name it `ps_path.name + f".tmp.{os.getpid()}"`.
 - infra-domain handle term_987fee64 absent from `orca terminal list` (10th consecutive run) — no live
   infra agent to nudge. design handle term_f3c16ead also absent this run. Orchestrator attention.
+
+## 2026-11-11 09:21 UTC — 0 new (3 carried, owner offline) — full sweep
+- CARRIED MUST (since 2026-11-09 00:17, re-read): scripts/review/purge_dropped_events.py:43-44 — `df[~...].to_parquet(RESULTS/"scores.parquet")` still rewrites the only score store IN PLACE; a kill mid-write truncates it and pipeline.run() crash-loops at read_parquet. fix unchanged: tmp + os.replace (purge_event_parts.py:59-61 shows the pattern with a backup).
+- CARRIED SHOULD (since 2026-11-08 23:42, re-read): ops/freshness_check.py:101 — `pgrep -f "ewb_live.weekly"` unescaped dot still matches any char; one lingering mentioner (e.g. the new sr18 docstring/log line containing "ewbXlive.weekly", or a grep/editor process) silences the weekly-stall alarm. fix: `ewb_live\\.weekly`.
+- CARRIED NICE (since 2026-11-09 08:16, re-read): scripts/review/purge_event_parts.py:49 — fixed-name `pair_status.tmp` is invisible to the pipeline sweep glob `*.tmp.*` and clobbers under concurrent purges. fix: `ps_path.name + f".tmp.{os.getpid()}"`.
+- infra-domain handle term_987fee64 absent from `orca terminal list` (12th+ consecutive run) — no live infra agent to nudge. Orchestrator attention: the MUST above has had no live owner for 2+ days.
+- ops/remote.sh reviewed clean this run: the flock-serialized rsync-path and the md5 sentinel echo do what the AR-lane incident note says; no finding.

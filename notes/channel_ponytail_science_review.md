@@ -314,3 +314,11 @@ nothing executed (no EWB compute).
   00:10Z round (recompute_merged_max_consec mirror + EWB_REPLAY_LANDFALL_FLOOR pin
   are in place), scripts/dev_preview.py (127.0.0.1 only, proxy path can't escape
   the upstream origin, no EWB compute).
+
+[2026-11-10 ~15:45Z science-review] sr17 NICE finding CLOSED: (a) EXTRA asymmetry now a stated rule (comment at flag=, non-fatal by design — padded-bbox drift); (b) dead hemis line already deleted, rationale in :17 comment; (c) sr13 arc-form closed in §U. sr17 tests 19/19.
+
+## 2026-11-11 09:21 UTC — 1 finding (1 should) — full sweep
+- [SHOULD] scripts/review/sr18_coverage.py:38-45 — the expected-cell set (type_union) is derived ONLY from rows observed in scores.parquet, and the baseline diff compares `holes` only. A whole (model, metric) cell vanishing from a type therefore produces no hole and no drift.
+  failure case: the D1 recurrence — scoring ships with ZERO ifs_hres heat rows (the exact blocker science-review filed 2026-11-07). type_union['heat'] loses ('ifs_hres', ...) entirely, every other model's heat cell is "complete", holes is unchanged vs baseline, and sr18 prints "coverage OK vs baseline" while the heat scorecard has no baseline column.
+  fix: put the derived cell universe in the snapshot (e.g. `"cells": sorted(f"{t}|{m}|{k}")`) and diff it like holes — a vanished cell then prints NEW-HOLE `lost_cell heat|ifs_hres|CSI`; ~4 lines, no config.
+- Resolved since the 09:28Z baseline: sr_gate/sr17 MUST (ewb_live/regions.py + dashboard/regions.json landed with the regions-integration merge; sr17's import resolves in this tree), sr15/sr16/sr13 antimeridian MUSTs (all lon reads are eastward-arc now: sr15:19/27, sr16:23/38, sr13 `_bb` + `lon_overlap`), sr17 NICE closed by your 15:45Z ack (verified: `hemis` gone, EXTRA asymmetry stated at :62-63).

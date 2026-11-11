@@ -1573,3 +1573,38 @@ in `regional-breakdowns`; the dashboard half is ~250 lines across
 
 **Still open, owner calls** (`notes/review_regions.md`): centroid assignment vs
 >25 % footprint overlap for thin ARs; muting scorecard cells with n < 5.
+
+### 2026-11-10 (day 2) 12:20Z — regions lane: footprint rule + small-sample cue LIVE; and read this about `ops/remote.sh`
+
+**Live on ewb.espr.ai** (unit 230 passed/28 skipped; live e2e 122/3/0; branch
+`aaTman/regions-integration` @ e869032, worktree `regional-breakdowns`):
+region membership is now **footprint overlap > 25 %** of the event's detection
+mask (`ewb_live/regions.py` reads `data/results/events/<id>/viz.json`; centroid is
+the declared fallback; the JSON publishes `assignment` + the authoritative
+`events: {id: [regions]}` map, which the dashboard filters with via
+`window.EwbRegions.forEvent`). Counts today are unchanged — 28 = tropics 9 + NH 14
++ SH 5, NA 1, EU 6 — because this week's masks sit well inside their boxes; the
+rule is a correctness fix for thin atmospheric rivers, not a re-labelling.
+Scorecard cells resting on **fewer than 5 events** now carry a soft warning-red
+halo + corner pip, with words in the lane header, under the verdict strip and in
+the tooltip. Live: 60/188 Global cells, all in the 1-event freeze lane; Tropics
+and Europe clean; NA 60/61. Rollback: `/opt/ewb-live/rollback_pre_regions_v2_20261110/`.
+
+**`ops/remote.sh run|bg|sync` rsyncs the CALLER's tree to `/opt/ewb-live` before
+running anything.** So the live site is a projection of whichever lane synced
+last: at 11:14:50Z a run from a tree that predated the regions work silently
+reverted this lane's 11:05 deploy, and the public site ran without the feature for
+~30 min (mtimes come from the source tree — that's how to trace it). Both
+`dogfish/` and `fable-review/` now carry the regions files byte-identical to
+`regional-breakdowns/`, uncommitted, so a sync from either reproduces live state
+instead of undoing it (verified: the 12:03Z dogfish run left 10/10 files
+md5-matching). Please commit them in your tree, or deploy by single-file scp until
+you do. Files: `dashboard/{regions.json,app.js,mergedmap.js,index.html,styles.css}`,
+`ewb_live/{regions,pipeline,weekly,serve}.py`,
+`scripts/{build_region_scores,dev_preview}.py`, `tests/test_regions.py`,
+`tests/e2e/test_dashboard_regions_fe.py`, `tests/e2e/test_dashboard_fe.py`.
+
+Also: `tests/e2e/test_dashboard_fe.py` had 16 `wait_for_function` string
+predicates, which fail against the public endpoint's CSP (no `'unsafe-eval'`) —
+now polled through `evaluate()`, the same reason `test_guardian_fe.py` carries its
+own `wait_js`. Live-mode suite is green again.

@@ -1,6 +1,8 @@
 # Handoff — science-review (successor 3) → pi successor
 Written 2026-11-10 01:2x UTC. Interruption is an owner decision (agent replacement), not a task completion. Read `notes/science_review.md` (the living record, §A–§J) before anything else.
 
+> **SUPERSEDED 2026-11-10 ~13:1Z (same lane, later session) — read this first.** This doc = background + gotchas (§5/§6 still stand); `notes/science_review.md` is the living status and its final **STANDING CADENCE** block is authoritative for lane rules. Changes since this doc was written: §4.3 owner-rule re-verify list is CLOSED (§R); rerun/scorecard comparison (§4.4) is NO LONGER ad-hoc — owner directive: weekly only, run by cron `ewb-score-rerun-watch` (5be6d92a1818, daily 12:00Z detect, Monday deep audit; detection trio pinned in STANDING CADENCE); §J ASKs answered (§L/§T); §T before-record banked pending the landfall-floor regeneration; e86c stale-part incident is the RESCORE-class template (§V).
+
 ## 1) Role and owned files
 Role: independent verification referee for the Extreme Weather Benchmark pipeline (detection → curation → scoring → dashboard). READ-ONLY on production outputs and `ewb_live/` code on the box; all compute on the EWB LXC via `ops/remote.sh` (binding, SPEC.md); your own scripts live under `scripts/review/`. NEVER git commit (orchestrator commits).
 

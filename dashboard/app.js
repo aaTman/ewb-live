@@ -26,8 +26,8 @@ const TYPE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river'];
    Criteria wording mirrors ewb_live/events/temperature.py + ar.py thresholds —
    keep in sync if detection parameters change. */
 const TYPE_CRITERIA = {
-  heat_wave: 'Every 6-hourly step of a UTC day has 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². The map shades consecutive COMPLETED days meeting this daily rule (dithered = today so far).',
-  freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². The map shades consecutive COMPLETED days meeting this daily rule (dithered = today so far).',
+  heat_wave: 'Every 6-hourly step of a UTC day has 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². The map shades only cells that reach that same 3-consecutive-day minimum (consecutive COMPLETED days; cells below it are blank because they can never become an event), dithered = today so far on an already-qualifying cell.',
+  freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), at least 3 consecutive days, over a region ≥200,000 km². On the map the freeze layer shades cells from their first consecutive COMPLETED day (cold runs are short, so 1–2-day cells stay visible for context; a freeze still needs 3+ days), dithered = today so far on a cell with at least one completed day.',
   atmospheric_river: 'Integrated water-vapour transport peaking at ≥400 kg m⁻¹ s⁻¹ and reaching land.',
 };
 const emptyLaneLine = (t) => t === 'all'
@@ -543,12 +543,14 @@ function restoreState() {
     if (s.themePref) state.themePref = s.themePref;
     if (s.tab && (s.tab === 'all' || TYPE_META[s.tab])) state.tab = s.tab;
     if (s.chartMode) state.chartMode = s.chartMode;
+    state.railCollapsed = !!s.railCollapsed;
   } catch (e) { /* ignore */ }
 }
 function saveState() {
   try {   // blocked/full storage (private windows, embeds) must not break the UI
     localStorage.setItem('ewb-live-state', JSON.stringify({
       themePref: state.themePref, tab: state.tab, chartMode: state.chartMode,
+      railCollapsed: !!state.railCollapsed,
     }));
   } catch (e) { /* preference just won't persist */ }
 }
@@ -2231,8 +2233,9 @@ function applyTheme() {
     ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
     : state.themePref;
   document.documentElement.dataset.theme = eff;
-  $('#theme-toggle').textContent =
-    { auto: '◐ auto', light: '☀ light', dark: '☾ dark' }[state.themePref];
+  // the rail keeps a persistent #theme-toggle button; only its word changes (the glyph is static)
+  const lab = $('#theme-toggle-label');
+  if (lab) lab.textContent = { auto: 'Auto', light: 'Light', dark: 'Dark' }[state.themePref];
 }
 function cycleTheme() {
   state.themePref = { auto: 'light', light: 'dark', dark: 'auto' }[state.themePref];
@@ -2280,9 +2283,54 @@ async function boot() {
   });
   $('#detail-close').onclick = () => closeDetail();
   document.querySelectorAll('[data-jump]').forEach((b) => {   // buttons, not #anchors: the hash carries app state
-    b.onclick = () => document.getElementById(b.dataset.jump).scrollIntoView({
-      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    b.onclick = () => {
+      document.querySelectorAll('.rail-link.is-active').forEach((x) => x.classList.remove('is-active'));
+      b.classList.add('is-active');   // OWB: the rail marks the section you are looking at
+      document.getElementById(b.dataset.jump).scrollIntoView({
+        behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    };
   });
+  /* RAIL (after owb.brightband.com): one toggle button, two jobs — it collapses the
+     220 px column to a 58 px glyph rail on desktop and closes the drawer below 1100px,
+     which is the width where the column becomes a drawer (a CSS breakpoint). */
+  const railToggle = $('#rail-toggle'), navBtn = $('#nav-btn');
+  const narrow = () => matchMedia('(max-width: 1099px)').matches;
+  const syncToggle = () => {   // one button, two meanings — say which one it has right now
+    if (!railToggle) return;
+    const t = narrow() ? 'Close navigation'
+      : document.documentElement.classList.contains('rail-collapsed') ? 'Expand navigation' : 'Collapse navigation';
+    railToggle.title = railToggle.ariaLabel = t;
+  };
+  const setCollapsed = (on) => {
+    document.documentElement.classList.toggle('rail-collapsed', on);
+    if (railToggle) railToggle.setAttribute('aria-expanded', String(!on));
+    syncToggle();
+  };
+  const closeNav = () => {
+    document.body.classList.remove('nav-open');
+    if (navBtn) navBtn.setAttribute('aria-expanded', 'false');
+    syncToggle();
+  };
+  setCollapsed(!narrow() && !!state.railCollapsed);
+  if (railToggle) railToggle.onclick = () => {
+    if (narrow()) { closeNav(); return; }
+    state.railCollapsed = !document.documentElement.classList.contains('rail-collapsed');
+    saveState(); setCollapsed(state.railCollapsed);
+  };
+  if (navBtn) navBtn.onclick = () => {
+    const open = document.body.classList.toggle('nav-open');
+    navBtn.setAttribute('aria-expanded', String(open));
+    syncToggle();
+  };
+  matchMedia('(max-width: 1099px)').addEventListener('change', () => {
+    if (!narrow()) closeNav();
+    setCollapsed(!narrow() && !!state.railCollapsed);
+  });
+  document.addEventListener('click', (e) => {   // scrim is a ::before — its clicks land on <body>
+    if (e.target === document.body) closeNav();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNav(); });
+  document.querySelectorAll('.rail-link').forEach((b) => b.addEventListener('click', closeNav));
   /* A1: Esc returns from the event detail to the list (owner bug A1). The
      About dialog and the fullscreen map panel own Esc while they are open. */
   document.addEventListener('keydown', (e) => {

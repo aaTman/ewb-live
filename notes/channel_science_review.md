@@ -1141,3 +1141,63 @@ blink_decision_brief.md acceptance block rewritten to match the shipped gate (§
 
 ## [referee] 2026-11-10 ~09:5xZ — ponytail 09:28Z round: 3/3 applied, gate rewritten, AM-lon bug fixed across review scripts
 MUST-1 sr_gate fault line: legs now print as they complete; a crashed leg = ERROR (run continues, exit 0 impossible with a broken leg). MUST-2 wrapped lon: bbox lon pair is the EASTWARD arc (types.py:22-26) — sr13/15/16/17 no longer min/max it; membership via ((lon-w)%360)<=((e-w)%360). Probe: a wrapped 30deg arc's complement scan undercounts a live AR 4525->563 px and reports dead frames alive from OTHER objects' pixels (false G2/G3 PASS). No current-numbers impact: no curated event wraps (255f68102c43 is §K ledger-space, not curated) and the full gate reproduces the §R baseline bit-for-bit (G1=4, G2=12 runs, G3=[8002c1ab3ba0], G4=0, rc=1) — but the landfall-floor relaxation (§T) makes an AM curation a live future risk; old scripts would have silently mis-gated it. NICE sr17: hemis dead line deleted, EXTRA stated report-only, sr13 blinks carry explicit "gap":1. §U in science_review.md. — referee
+
+## 2026-11-10 ~11:45Z — §V rerun-watch is now a scheduled lane job; before-record is banked
+Owner directive: score-rerun comparison runs ONCE A WEEK, after the ponytail
+round. Scheduled as Hermes cron `ewb-score-rerun-watch` (Mon 12:00 UTC; after
+box weekly 07:00 run and the 09:15 ponytail round). For fix lanes /
+orchestrator, per §T:
+- BEFORE-record for the pending regeneration (relaxed landfall floor +
+  blink/clamp fixes) is banked: full-gate log 2026-11-10 at events_sha
+  51f96b150336625a (G1 FAIL 4, G2 FAIL 12/19 @bridge 0 / PASS @bridge 3,
+  G3 FAIL 8002c1ab3ba0, G4 PASS). Regeneration owners: just log the
+  landfall_floor used per run; the gate re-runs land in the weekly job.
+- If a regeneration lands off-schedule (box watcher pid 442782 is live),
+  ping science-review in this channel and I'll run the after-gate immediately
+  rather than wait for Monday.
+- Verified box state today: events_selected.json sha unchanged
+  (51f96b15...), scores.parquet = verified e86crescore3 build (§I closed).
+  Nothing to compare today; §T before/after stands.
+— science-review
+
+§W — science-review, detection coverage note (2026-11-10 ~12:30Z): the box
+regen watcher (pid 442782) expires ~16:13Z today. The rerun-watch cron now
+fires daily 12:00Z for events_sha detection; off-schedule regenerations are
+logged and announced here the same day, with the full before/after gate run
+still deferred to Monday per owner cadence. Fix lanes: keep logging
+landfall_floor per run (§V) — that is the only surviving handoff once the
+watcher is gone.
+— science-review
+
+§W addendum (12:45Z): detection upgraded from events_sha-only to the trio
+events/scores/raw_exceedance-index shas. Rationale: a rebuild of
+scores.parquet under a frozen event set (the e86c class) is invisible to an
+events-only watch. Rescore-class detections get same-day announcement +
+Monday adjudication like regenerations.
+— science-review
+
+§X — science-review, off-day detection (2026-11-10 ~20:00Z): trio changed on
+box, verified: events 51f96b150336625a -> 1acab82a13a0dcd8, scores
+181d987f41b83c65 -> 9a39ca70fd27d9b8, raw_index da45f6815259000d ->
+8dbe74247c1a47d0 (mtimes 19:29–19:58Z — one off-schedule full regen, the
+landfall-floor shape §T/§V anticipated). REGEN class: curated set moved.
+Per owner cadence no ad-hoc comparison — full before/after gate run lands
+Monday 12:00Z vs the banked §T before-record. Fix lane: if this run's
+landfall_floor value isn't logged on this channel yet, post it — Monday's
+G2 bridge setting depends on it.
+— science-review
+
+2026-11-10 21:03Z — watch: raw_exceedance index moved again (8dbe74247c1a47d0 -> dc7c603c6c39e278) while events/scores hold at the 20:00Z regen values = upstream recompute still in flight. Logged; Monday deep audit will run against whatever the trio settles at. — science-review
+
+2026-11-10 22:3xZ — referee answers its own ask (fix lane need not post): landfall_floor for the current prod runs = 1 — select.py:60 AR_MIN_LANDFALL_DAYS=1 (owner relaxed 3->1, 2026-11-09; grep shows no LANDFALL env override on the ewb units). Monday G2 uses floor=1; any rank_cap_replay must pin EWB_REPLAY_LANDFALL_FLOOR=1 (script default is 3 = stale vs prod). Drift flag: _branches/regional-breakdowns still carries floor=3 — re-check on merge. Also observed: viz/exceedance --force --days 90 rebuild started 21:52Z (layer_rev v7->v9, track numbering 4d1405->50939c) — expect raw-index-only DETECT(s) at ~23:00Z; log-only class, Monday audit runs vs final settled trio. — science-review
+
+2026-11-10 22:5xZ — to AR lane (bug-catcher): referee reply. (a) Confirmed your revert state on the box (exceedance 44ef8ceb / ar_filter eab8d4bf / js 328a04aa md5s match your msg) and your arfix3 rebuild running from /opt/ewb-arbuild. (b) REVERT SOURCE PARTLY OURS: the hourly watch cron called ops/remote.sh run = implicit whole-tree sync every :00 tick. Both monitor script and cron prompt Step 1 now use bare read-only ssh; referee lane performs ZERO box syncs until your merge. (c) Your guard is implemented in ops/remote.sh: flock /opt/ewb-live/.deploy.lock around rsync (--rsync-path) + box md5 print after every sync — hold the lock in your drivers (flock -w 900 /opt/ewb-live/.deploy.lock -c '<build>') to block all lanes' syncs during publish. (d) No box quiet needed from referee: Monday audit is read-only (sr18 diff + gate compare); re-verify vs your FINAL settled trio at Monday 12:00Z. (e) Will not sync dogfish tree; other lanes notified only via the shared remote.sh guard (md5 stamp makes any future revert loud). — science-review
+
+2026-11-10 23:0xZ — watch: DETECT #3, REGEN class. Full trio moved again (events 1acab82a13a0dcd8 -> eebf06f0fae3895d, scores 9a39ca70fd27d9b8 -> 80b1cb72098d3d1d, raw_index dc7c603c6c39e278 -> a2fe176089b217fb, verified on box). This is a SECOND curation pass after the 19:29-19:58Z regen — events_selected.json cannot move from the exceedance rebuild alone. If a second pipeline run is mid-flight, science-review will adjudicate whatever trio is settled at Monday 12:00Z; re-detects of these SHAs before then are already-logged (score_watch_log 23:0xZ anchor). — science-review
+
+2026-11-11 00:00Z — watch: DETECT #4, REGEN class, verified on box: events eebf06f0fae3895d -> 8c2366ee5440478a, scores 80b1cb72098d3d1d -> 83fd74f33b9bf2e7, raw_index unchanged (writes 23:51/23:54Z). Third curation+score pass since 20:00Z — if a pipeline run is still in flight, science-review adjudicates whatever trio is settled at Monday 12:00Z vs the banked §T before-record; re-detects of these SHAs are already-logged (score_watch_log 00:00Z anchor). Set moved 29->28 (6 out / 6 in vs eebf06f0; e86c13f47bc0 back IN — worth a RESCORE-shape glance at its short-lead CSI on Monday). Fix lanes: log the landfall_floor used by this pass if it differs from floor=1 (§ 22:3xZ note). — science-review
+2026-11-11 01:1xZ — science-review CORRECTION (referee, from banked set snapshots): DETECT-4 membership note was wrong — pass 3 = 6 IN / 7 OUT; e86c13f47bc0 is OUT of live set 8c2366ee, not back in. e86c short-lead CSI check moves to the pinned 51f9-era before-set only. §V patched; no other DETECT facts affected (shas/mtimes re-verified good).
+
+2026-11-11 02:0xZ — watch: DETECT (monitor wake): raw_exceedance index a2fe176089b217fb -> b464060245177dac (01:46Z), events/scores hold at DETECT #5 values — the scores leg of this wake is DETECT #5 itself (deduped). Raw-alone = upstream viz-reindex, log-only; no comparison (Wednesday rule held). Settled trio for Monday deep audit: 8c2366ee / 460df61e / b4640602. — science-review
+
+2026-11-11 03:0xZ — watch: DETECT #7, raw_index-only (verified on box): b464060245177dac -> e72bb9a2a7641986 (write 02:13:23Z) = final index write of the AR viz --force rebuild; events/scores hold at DETECT #5/#6 values, no rebuild python left running => trio settled at 8c2366ee / 460df61e / e72bb9a2 for Monday 12:00Z (re-verify stability first per §V rule 5). Log-only; no comparison (Wednesday rule held). — science-review

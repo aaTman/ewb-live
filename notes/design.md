@@ -884,3 +884,29 @@ in three places (index layers.a, About, chip tip).
 - v5->v7 data drift note (channel 02:15Z): Oct-3 UK track no longer
   straddles 0E in the raw mask (nearest north cells from 5.2E); ewb to
   classify; 0df36ee11032 left events_selected (anchor 029719d1e741).
+
+## Session 8 (design pi) — OWB rail: nav + header de-verbosed (2026-11-10 ~20:40Z)
+Owner: "modify the nav and header to better mimic owb.brightband.com — it is a bit
+too verbose". Read the live site (markup + its own CSS): OWB has NO top toolbar — a
+220 px sticky left rail (mark + product name, icon links 32 px/radius 8, active =
+--tint + orange icon, collapsible to 58 px) and the content column keeps its own
+h1 + one line of prose; below its breakpoint the rail becomes a 52 px topbar + drawer.
+
+Landed (dashboard/{index.html,styles.css,app.js}):
+- `.app-shell` = `aside.rail` + `.content`. Rail: brand mark 20 px + "EWB Live"
+  12.5/500 ink-secondary (the name is a rail line, not a headline); Events /
+  Scorecard / About / theme as icon links; week picker + "updated …" in a rail foot
+  pinned to the bottom. Collapse toggle persists in the state blob (railCollapsed).
+- `header.top` is now a title, not a toolbar: 26 px h1 + one tagline line on the
+  canvas ground (the paper bar + hairline is gone). Nothing else in the header.
+- <1100 px (the shell breakpoint): rail → fixed 280 px drawer with scrim (✕ in the
+  same toggle button, Esc, scrim click, link click all close it) under OWB's
+  backdrop-blurred 52 px topbar; `nav.controls` sticks at top:52px so it slides
+  under the topbar, not behind it.
+- Clicking a jump marks it active (orange glyph) — the OWB current-section cue.
+- Detail/deeplink: tagline drops out, h1 stays (the event title leads its own page).
+- Measured CLS floors: header 78 (≥620) / 70 (≤620) / 83 (≤459); detail 48.
+- test_page_width_shell_caps_content updated: the shell is centred in the space the
+  rail leaves, not in the viewport (asserts rail == 220 and equal gutters there).
+  No horizontal overflow 320→1920; 0 console errors; theme/Auto labels now ride on
+  a static glyph + word (the button keeps #theme-toggle so focus tests hold).

@@ -683,3 +683,8 @@ path read in full, plus mergedmap.js getFrame as the consumer). Read-only.
   reclaimed after the 1 h age guard. No change wanted; sorry for the chase.
 - Still open from 00:15Z (unchanged, low priority): mergedmap.js:740 re-types the
   IVT bin list instead of reading index.ivt.bins.
+
+## 2026-11-11 09:21 UTC — 0 new findings; 1 cross-post (copy is JS-owned, your call wanted)
+- Cross-post of channel_ponytail_frontend 09:21Z SHOULD: the Region-assignment tooltip/copy (app.js:477/:967/:1801) still states the OLD bbox-centroid rule while the shipped data is footprint-overlap (>25 %). The proposed wording ("footprint overlap of the event's detected area; centroid only as fallback") is copy work — if you want different wording, use frontend's channel.
+- Ghost-pixel MUST (frontend channel) is still open both sides: exceedance keeps painting gap-bridge cells via the .ivt class plane / flat-green fallback; mergedmap still has no `index.tracks[].bridged` consumer. Either side's fix closes it.
+- New adaptive gm-legend + rail redesign read clean (static XSS check: all legend/rail innerHTML is static or numeric; e2e covers legend state).

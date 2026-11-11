@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import threading
+import time
 from datetime import date, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
@@ -530,10 +531,24 @@ def test_freeze_detail_reference_component(freeze_server, page_ctx):
 # and the event list sit side by side and talk to each other; every control
 # sits on the thing it changes.
 
+def _wait_js(page, expr, timeout=20000):
+    """Poll a JS expression through evaluate(). wait_for_function() compiles the
+    string in the *page* world, which the CSP the public endpoint serves forbids
+    (its script-src has no 'unsafe-eval'); evaluate() is protocol-level and
+    CSP-immune. Same reason tests/e2e/test_guardian_fe.py carries its own
+    wait_js — three live-mode tests here failed on ewb.espr.ai over it, 2026-11-10."""
+    end = time.time() + timeout / 1000
+    while time.time() < end:
+        if page.evaluate("() => !!(" + expr + ")"):
+            return
+        page.wait_for_timeout(100)
+    raise AssertionError(f"timed out waiting for: {expr}")
+
+
 def _home(page, live_url):
     page.goto(live_url + "/")
     page.wait_for_selector("#event-table tbody tr[data-id]", timeout=25000)
-    page.wait_for_function("MergedMap._dbg().mounted === true", timeout=20000)
+    _wait_js(page, "MergedMap._dbg().mounted === true", timeout=20000)
     page.wait_for_timeout(600)
 
 
@@ -653,18 +668,24 @@ def test_lead_deep_link_nonfirst_lead(live_url, heat_event, page_ctx):
 
 def test_page_width_shell_caps_content(live_url, page_ctx):
     """Owner spec: main content constrained to min(75vw, 1280px) on wide
-    screens, centered, no overflow."""
+    screens, centered, no overflow. Since the OWB rail (2026-11-10) the shell is
+    centered in the space the rail leaves, not in the viewport."""
     page = page_ctx
     page.set_viewport_size({"width": 1920, "height": 900})
     page.goto(live_url + "/")
     page.wait_for_selector("#event-table tbody tr, .gm-lrow")
     m = page.evaluate("""(() => { const e = document.querySelector('.shell')
             || document.querySelector('main');
+        const rail = document.querySelector('.rail');
+        const railW = rail && getComputedStyle(rail).display !== 'none'
+            ? rail.getBoundingClientRect().width : 0;
         const r = e.getBoundingClientRect();
-        return {w: r.width, left: r.left, right: innerWidth - r.right}; })()""")
+        return {w: r.width, left: r.left - railW, right: innerWidth - r.right,
+                rail: railW}; })()""")
     assert m["w"] <= 1280.5, f"content wider than 1280 at 1920: {m}"
     assert m["w"] <= 1920 * 0.75 + 1
-    assert abs(m["left"] - m["right"]) <= 2, f"not centered: {m}"
+    assert m["rail"] == 220, f"rail should be 220 px on desktop: {m}"
+    assert abs(m["left"] - m["right"]) <= 2, f"not centered beside the rail: {m}"
 
 
 def test_os_theme_flip_repaints_open_detail(live_url, heat_event, page_ctx):
@@ -759,7 +780,8 @@ GD_RAW_TS = [d.strftime("%Y%m%d%H") for d in
               for i in range(41)]]   # 2026-01-01T00 … 2026-01-11T00, 6-hourly
 
 
-def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=None, raw_run=False, raw_ivt=False):
+def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=None, raw_run=False, raw_ivt=False,
+                      raw_run_v2=False):
     src = os.path.join(ROOT, "data", "results")
     root = os.path.join(tmpdir, "webroot")
     os.makedirs(root)
@@ -785,9 +807,9 @@ def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=No
     if raw_frames is not None:
         _build_raw_fixture(data_dir, frames=raw_frames,
                            cutoff=raw_cutoff if raw_cutoff is not None else raw_frames[-1],
-                           run=raw_run, ivt=raw_ivt)
+                           run=raw_run, ivt=raw_ivt, run_v2=raw_run_v2)
     else:
-        _build_raw_fixture(data_dir, run=raw_run, ivt=raw_ivt)
+        _build_raw_fixture(data_dir, run=raw_run, ivt=raw_ivt, run_v2=raw_run_v2)
     if with_timeline:
         tl = _gd_timeline()
         json.dump(tl, open(os.path.join(data_dir, "global_timeline.json"), "w"))
@@ -844,7 +866,8 @@ def _gd_server(root):
 RAW_TS = ["2025110600", "2025110606", "2025110612"]  # 6-hourly, ts2 is past cutoff
 
 
-def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=False, ivt=False):
+def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=False, ivt=False,
+                       run_v2=False):
     """raw_exceedance asset per the contract in channel_design_frontend.md:
     zlib'd layer-major bitpacked rows (heat,freeze,ar; ny x ceil(nx/8),
     row 0 = lat0 lowest, MSB-first). 5-deg grid; heat blob mid-pacifica,
@@ -854,7 +877,9 @@ def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=Fal
     with runs for heat: 2 (unpainted), 3 (bin0), 14+ (bin4); freeze unchanged
     1/7+; a fourth heat bit cell is added with run=0 (must stay unpainted).
     ivt=True adds AR IVT class plane sidecars (.ivt) with 5 bins (250-500,
-    500-750, 750-1000, 1000-1250, >=1250 kg m-1 s-1) for the AR layer."""
+    500-750, 750-1000, 1000-1250, >=1250 kg m-1 s-1) for the AR layer.
+    run_v2=True publishes the sidecars as dur rev v2 and sets the provisional
+    (today-so-far) bit on the heat run=3 cell."""
     import zlib
     frames = frames or RAW_TS
     cutoff = cutoff or RAW_TS[1]
@@ -868,7 +893,7 @@ def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=Fal
            "frames": frames, "cutoff": cutoff,
            "window": {"start": frames[0][:8], "end": frames[-1][:8]}}
     if run:
-        idx["dur"] = {"rev": "v1", "seed": frames[0]}
+        idx["dur"] = {"rev": "v2" if run_v2 else "v1", "seed": frames[0]}
     if ivt:
         idx["ivt"] = {"schema": 1, "bins": [250, 500, 750, 1000, 1250]}
         idx["schema"] = 3  # v3 with IVT class planes
@@ -898,7 +923,7 @@ def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=Fal
             planes = bytearray(2 * ny * nx)
             # heat plane (li=0): run=2 at (j,i), run=3 at (j,i+1), run=0 at (j,i+20), run=14 at (j,i+40)
             planes[0 * ny * nx + jh * nx + ih] = 2       # unpainted (< 3)
-            planes[0 * ny * nx + jh * nx + ih + 1] = 3   # bin 0
+            planes[0 * ny * nx + jh * nx + ih + 1] = 3 | (0x80 if run_v2 else 0)   # bin 0 (+ today)
             planes[0 * ny * nx + jh * nx + ih + 20] = 0   # unpainted (= 0)
             planes[0 * ny * nx + jh * nx + ih + 40] = 14  # bin 4
             # freeze plane (li=1): unchanged 1/7+
@@ -976,6 +1001,17 @@ def dur_server(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
+def dur2_server(tmp_path_factory):
+    """dur rev v2 lane: the provisional bit rides on the heat run=3 cell, so the
+    legend must show a 'today' stop for heat and none for freeze."""
+    root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-dur2")),
+                             with_timeline=False, raw_run=True, raw_run_v2=True)
+    srv, url = _gd_server(root)
+    yield url
+    srv.shutdown()
+
+
+@pytest.fixture(scope="module")
 def gd_server(tmp_path_factory):
     # raw frames span the timeline window (merged map is one time axis) and
     # the cutoff sits at the last frame so the IFS badge never fires here
@@ -996,7 +1032,7 @@ def gd404_server(tmp_path_factory):
 
 def _mm_goto(page, base, hash_=""):
     page.goto(base + "/" + hash_)
-    page.wait_for_function("MergedMap._dbg().mounted === true", timeout=20000)
+    _wait_js(page, "MergedMap._dbg().mounted === true", timeout=20000)
     page.wait_for_timeout(400)
 
 
@@ -1162,7 +1198,7 @@ def test_merged_dateline_region_label_avoids_russia(gd_server, page_ctx):
     _mm_goto(page, gd_server)
     page.click('#event-table tbody tr[data-id="gm4"]')   # "AR Dateline (e2e)"; rows show place names now
     page.wait_for_selector("#detail-sec:not(.hidden)", timeout=25000)
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#detail-title').textContent.includes('United States')",
         timeout=15000)
     title = page.inner_text("#detail-title")
@@ -1253,7 +1289,7 @@ def test_merged_slider_spans_gantt_axis(gd_server, page_ctx):
 def test_raw_renders_steps_and_badge(raw_server, page_ctx):
     page = page_ctx
     page.goto(raw_server + "/")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('Valid time')",
         timeout=20000)
     assert page.is_visible("#raw-canvas")
@@ -1268,7 +1304,7 @@ def test_raw_renders_steps_and_badge(raw_server, page_ctx):
                          "return c.width > 100; })()")
     # one 6h step back: 06:00 = cutoff frame — ERA5 layers paint, badge clears
     page.click("#raw-prev")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('06:00 UTC')")
     assert not page.is_visible("#raw-badge"), "frame == cutoff is still ERA5"
     # a heat-token pixel is actually painted on the canvas (poll: the frame
@@ -1281,7 +1317,7 @@ def test_raw_renders_steps_and_badge(raw_server, page_ctx):
 def test_raw_layer_toggles_and_url(raw_server, page_ctx):
     page = page_ctx
     page.goto(raw_server + "/")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('Valid time')",
         timeout=20000)
     chips = page.locator("#raw-layers .gm-chip")
@@ -1293,7 +1329,7 @@ def test_raw_layer_toggles_and_url(raw_server, page_ctx):
     assert "layers" not in page.evaluate("location.hash")
     # deep link: frame + only-heat layers survive a load
     page.goto(raw_server + "/#raw=2025110606&layers=h")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('06:00 UTC')",
         timeout=20000)
     chips = page.locator("#raw-layers .gm-chip")
@@ -1320,28 +1356,28 @@ def test_raw_play_and_scrub(raw_server, page_ctx):
     auto-stops at the last frame; slider scrub lands the exact frame."""
     page = page_ctx
     page.goto(raw_server + "/")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('12:00 UTC')",
         timeout=20000)
     # slider scrub: jump to the first frame
     page.evaluate("""(() => { const s = document.querySelector('#raw-slider');
         s.value = '0'; s.dispatchEvent(new Event('input', {bubbles: true})); })()""")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('00:00 UTC')")
     # play from the start: crosses 06:00, then auto-stops back at 12:00
     page.click("#raw-play")
     assert page.inner_text("#raw-play") == "⏸ pause"
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('06:00 UTC')",
         timeout=5000)
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('12:00 UTC')"
         " && document.querySelector('#raw-play').textContent === '▶ play'",
         timeout=5000)
     # play pressed at the END wraps to frame 0 before advancing (checked the
     # readout flips off 12:00 within one 5fps tick)
     page.click("#raw-play")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('00:00 UTC')",
         timeout=3000)
     page.click("#raw-play")   # pause mid-roll, leave it deterministic
@@ -1399,8 +1435,8 @@ _AR_CENSUS_JS = """() => {
 
 def _ar_ramp_wait(page, base, hash_):
     page.goto(base + "/" + hash_)
-    page.wait_for_function("MergedMap._dbg().mounted === true", timeout=20000)
-    page.wait_for_function(
+    _wait_js(page, "MergedMap._dbg().mounted === true", timeout=20000)
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('Valid time')",
         timeout=20000)
     page.locator("#raw-canvas").scroll_into_view_if_needed()
@@ -1429,20 +1465,25 @@ def test_ar_ramp_paints_class_plane(ar_ramp_server, page_ctx):
     page.wait_for_selector("#tooltip:not(.hidden)", timeout=3000)
     assert "750\u20131000" in page.inner_text("#tooltip")
     page.mouse.move(5, 5)   # pointerleave: tooltip must clear
-    page.wait_for_function("document.querySelector('#tooltip').classList.contains('hidden')",
+    _wait_js(page, "document.querySelector('#tooltip').classList.contains('hidden')",
                            timeout=3000)
 
 
 def test_ar_ramp_legend_shows_5_steps(ar_ramp_server, page_ctx):
-    """Legend: 5 swatches stepped 250/500/750/1000/1250 kg m-1 s-1."""
+    """Legend: the AR group steps 250-500 … >=1250 kg m-1 s-1 (5 labelled
+    swatches); layers the URL switched off never appear in it."""
     page = page_ctx
     _ar_ramp_wait(page, ar_ramp_server, "#map=2025110606&layers=a")
     page.wait_for_selector("#gm-legend:not(.hidden)", timeout=20000)
+    assert page.locator("#gm-legend .lg-group").count() == 1      # AR only: layers=a
+    assert page.locator("#gm-legend .lg-group").get_attribute("data-layer") == "a"
     sw = page.locator("#gm-legend .swatch")
     assert sw.count() == 5
     titles = [sw.nth(i).get_attribute("title") for i in range(5)]
-    assert [t.split()[0] for t in titles] == ["250", "500", "750", "1000", "1250"], titles
-    assert "AR IVT" in page.inner_text("#gm-legend")
+    assert [t.split()[0] for t in titles] == ["250\u2013500", "500\u2013750",
+        "750\u20131000", "1000\u20131250", "\u22651250"], titles
+    txt = page.inner_text("#gm-legend")
+    assert "AR IVT" in txt and "kg m\u207b\u00b9 s\u207b\u00b9" in txt
 
 
 def test_ar_ramp_fallback_without_class_plane(ar_ramp_server, page_ctx):
@@ -1528,7 +1569,7 @@ def test_dur_fallback_binary_without_run(raw_server, page_ctx):
     fetches are even attempted)."""
     page = page_ctx
     page.goto(raw_server + "/#raw=2025110606&layers=h")
-    page.wait_for_function(
+    _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('06:00 UTC')",
         timeout=20000)
     page.wait_for_function(_HEAT_PIXEL_JS, timeout=10000)
@@ -1562,6 +1603,167 @@ def test_dur_chip_labels_gradient_and_tips(dur_server, page_ctx):
     assert "layers=h,a" in page.evaluate("decodeURIComponent(location.hash)")
     errs = [e for e in page.errors if "Failed to load resource" not in e]
     assert errs == [], f"unexpected page errors: {errs}"   # 404 = the fixture's absent timeline
+
+
+def test_legend_adapts_to_layers_frame_and_region(dur_server, page_ctx):
+    """The legend describes the map as it stands: one group per layer that is
+    ON, heat/freeze labelled in consecutive days (heat starting at the gate),
+    AR as a single flat stop while the IVT class sidecar is missing, stops the
+    current frame does not paint dimmed, and an empty lane marked for the
+    Region view."""
+    page = page_ctx
+    _mm_goto(page, dur_server)
+    _mm_frame(page, RAW_TS[1])        # heat run 3 + 7+, freeze run 1 + 3+, AR mask north
+    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    groups = page.locator("#gm-legend .lg-group")
+    assert groups.count() == 3
+    assert page.eval_on_selector_all("#gm-legend .lg-group",
+                                     "els => els.map(e => e.dataset.layer)") == ["h", "f", "a"]
+    # stops per lane: heat 3,4,5,6,7+ (gate = detector minimum 3) / freeze 1,2,3+ / AR flat
+    assert page.eval_on_selector_all(
+        "#gm-legend .lg-group[data-layer=h] .lg-t", "e => e.map(x => x.textContent)") \
+        == ["3", "4", "5", "6", "7+"]
+    assert page.eval_on_selector_all(
+        "#gm-legend .lg-group[data-layer=f] .lg-t", "e => e.map(x => x.textContent)") \
+        == ["1", "2", "3+"]
+    assert page.eval_on_selector_all(
+        "#gm-legend .lg-group[data-layer=a] .lg-t", "e => e.map(x => x.textContent)") \
+        == ["AR mask"]
+    # this frame paints heat only at 3 and 7+ days, freeze only at 1 and 3+
+    assert page.locator("#gm-legend .lg-group[data-layer=h] .lg-bin.out").count() == 3
+    assert page.locator("#gm-legend .lg-group[data-layer=f] .lg-bin.out").count() == 1
+    assert page.locator("#gm-legend .lg-group[data-layer=a] .lg-bin.out").count() == 0
+    # layer off -> its group leaves the legend (and never dims to nothing)
+    page.locator("#raw-layers .gm-chip[data-layer=h]").click()
+    page.wait_for_function(
+        "() => document.querySelectorAll('#gm-legend .lg-group').length === 2")
+    assert page.locator("#gm-legend .lg-group[data-layer=h]").count() == 0
+    page.locator("#raw-layers .gm-chip[data-layer=h]").click()
+    page.wait_for_function(
+        "() => document.querySelectorAll('#gm-legend .lg-group').length === 3")
+    # Region view: the veil hides the northern lanes -> both are marked empty
+    page.evaluate("MergedMap.setRegion({key:'southern_hemisphere',"
+                 " label:'Southern Hemisphere', lat:[-90,-20], lon:[-180,180]})")
+    page.wait_for_function(
+        "() => document.querySelectorAll('#gm-legend .lg-group.none').length === 2")
+    assert "none in view" in page.inner_text("#gm-legend .lg-group[data-layer=h]")
+    # freeze still has cells south -> its group stays live
+    assert page.locator("#gm-legend .lg-group[data-layer=f].none").count() == 0
+    page.evaluate("MergedMap.setRegion(null)")
+    page.wait_for_function(
+        "() => !document.querySelector('#gm-legend .lg-group.none')")
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"
+
+
+def test_legend_lives_in_the_map_and_never_moves_the_page(dur_server, page_ctx):
+    """The colour scales are painted INSIDE the map: changing what is on the map
+    (a layer off, a Region view) grows or shrinks the legend, and nothing
+    outside the map — slider, timeline, event list — may move because of it.
+    The panel stays inside the map's box and stays click-through."""
+    page = page_ctx
+    _mm_goto(page, dur_server)
+    _mm_frame(page, RAW_TS[1])
+    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    geo = """() => {
+        const r = (s) => { const b = document.querySelector(s).getBoundingClientRect();
+            return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)]; };
+        const map = r('#raw-map-wrap'), leg = r('#gm-legend');
+        return { map, leg,
+                 below: ['#raw-slider', '#gm-gantt', '#events-sec', '#scorecard-sec'].map(r),
+                 groups: document.querySelectorAll('#gm-legend .lg-group').length,
+                 inMap: !!document.querySelector('#raw-map-wrap #gm-legend'),
+                 fits: leg[0] >= map[0] && leg[1] >= map[1]
+                    && leg[0] + leg[2] <= map[0] + map[2] + 1
+                    && leg[1] + leg[3] <= map[1] + map[3] + 1,
+                 through: getComputedStyle(document.querySelector('#gm-legend')).pointerEvents }; }"""
+    a = page.evaluate(geo)
+    assert a["inMap"], "the legend must live inside #raw-map-wrap"       # out of the flow
+    assert a["fits"] and a["groups"] == 3, a
+    assert a["through"] == "none", a                                     # map stays interactive
+    page.locator('#raw-layers .gm-chip[data-layer=h]').click()           # -> 2 groups
+    page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 2")
+    b = page.evaluate(geo)
+    assert b["groups"] == 2 and b["leg"] != a["leg"], (a, b)             # legend really changed
+    assert b["map"] == a["map"] and b["below"] == a["below"], (a, b)     # nothing moved
+    page.locator('#raw-layers .gm-chip[data-layer=h]').click()
+    page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 3")
+    page.evaluate("MergedMap.setRegion({key:'europe', label:'Europe', lat:[35,75], lon:[-12.5,42.5]})")
+    page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group.none').length === 3")
+    c = page.evaluate(geo)
+    assert c["leg"] != a["leg"] and c["map"] == a["map"] and c["below"] == a["below"], (a, c)
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"
+
+
+def test_legend_lives_in_the_map_and_moves_nothing(dur_server, page_ctx):
+    """The scales are painted INSIDE the map: whatever the legend does (a layer
+    off, a Region view marking lanes empty) changes its own size and NOTHING
+    else's — the map box, the slider, the gantt, the event list and the
+    scorecard keep their exact rectangles, and the panel stays click-through."""
+    page = page_ctx
+    _mm_goto(page, dur_server)
+    _mm_frame(page, RAW_TS[1])
+    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    probe = """() => {
+        const r = (s) => { const b = document.querySelector(s).getBoundingClientRect();
+            return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; };
+        const map = r('#raw-map-wrap'), leg = r('#gm-legend');
+        const el = document.elementFromPoint(leg[0] + leg[2] / 2, leg[1] + leg[3] / 2);
+        return { map, leg, groups: document.querySelectorAll('#gm-legend .lg-group').length,
+                 inMap: !!document.querySelector('#raw-map-wrap > #gm-legend'),
+                 below: ['#raw-slider', '#gm-gantt', '#events-sec', '#scorecard-sec'].map(r),
+                 under: el && el.id, flow: getComputedStyle(document.querySelector('#gm-legend')).position }; }"""
+    a = page.evaluate(probe)
+    assert a["inMap"] and a["flow"] == "absolute" and a["groups"] == 3, a
+    assert a["under"] == "raw-canvas", a          # the map stays clickable under the panel
+    assert a["leg"][2] > 40 and a["leg"][3] > 20, a
+    assert (a["leg"][0] >= a["map"][0] - 1 and a["leg"][1] >= a["map"][1] - 1
+            and a["leg"][0] + a["leg"][2] <= a["map"][0] + a["map"][2] + 1
+            and a["leg"][1] + a["leg"][3] <= a["map"][1] + a["map"][3] + 1), a   # inside the map
+    page.locator('#raw-layers .gm-chip[data-layer=h]').click()          # heat off -> 2 groups
+    page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 2")
+    b = page.evaluate(probe)
+    assert b["groups"] == 2 and b["leg"] != a["leg"], (a, b)            # the panel resized
+    assert b["map"] == a["map"] and b["below"] == a["below"], (a, b)     # nothing else moved
+    page.locator('#raw-layers .gm-chip[data-layer=h]').click()
+    page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 3")
+    page.evaluate("MergedMap.setRegion({key:'europe', label:'Europe', lat:[35,75], lon:[-12.5,42.5]})")
+    page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group.none').length === 3")
+    c = page.evaluate(probe)                        # 'none in view' badges: still no shift
+    assert c["map"] == a["map"] and c["below"] == a["below"], (a, c)
+    page.evaluate("MergedMap.setRegion(null)")
+    page.wait_for_function("() => !document.querySelector('#gm-legend .lg-group.none')")
+    # the strongest form of the claim: deleting the panel outright moves nothing
+    page.evaluate("document.querySelector('#gm-legend').style.display = 'none'")
+    d = page.evaluate(probe)
+    assert d["below"] == a["below"] and d["map"] == a["map"], (a, d)
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"
+
+
+def test_legend_provisional_stop_only_where_the_frame_dithers(dur2_server, page_ctx):
+    """dur rev v2: a provisional cell dithers toward the NEXT shade, so that
+    shade and a 'today' stop join the legend for the lane that has them — and
+    only for that lane."""
+    page = page_ctx
+    _mm_goto(page, dur2_server)
+    _mm_frame(page, RAW_TS[1])
+    page.wait_for_selector("#gm-legend .lg-group[data-layer=h] .swatch.prov", timeout=20000)
+    assert page.eval_on_selector_all("#gm-legend .lg-group[data-layer=h] .lg-t",
+                                     "e => e.map(x => x.textContent)") \
+        == ["3", "4", "5", "6", "7+", "today"]
+    # the dither paints the 4-day shade, so '4' is live; 5 and 6 are not
+    assert page.locator("#gm-legend .lg-group[data-layer=h] .lg-bin.out").count() == 2
+    assert page.locator("#gm-legend .lg-group[data-layer=h] .lg-bin.out .lg-t").all_inner_texts() \
+        == ["5", "6"]
+    # freeze has no provisional cell in this frame -> no 'today' stop at all
+    assert page.locator("#gm-legend .lg-group[data-layer=f] .swatch.prov").count() == 0
+    assert "today" not in page.inner_text("#gm-legend .lg-group[data-layer=f]")
+    assert "provisional" in page.get_attribute(
+        "#gm-legend .lg-group[data-layer=h] .swatch.prov", "title")
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"
 
 
 def test_merged_event_tooltip_shows_span_days(gd_server, page_ctx):

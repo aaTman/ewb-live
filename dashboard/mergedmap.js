@@ -15,7 +15,10 @@
    bit-packed rows heat/freeze/ar, row0=lat0, MSB-first), duration sidecars
    <ts>.run (zlib, two raw u8 planes heat/freeze; dur rev v2: low 7 bits =
    consecutive COMPLETED UTC days meeting the daily rule — constant across
-   all four frames of a day — bit 7 = today so far, paint provisional) and
+   all four frames of a day — bit 7 = today so far, dithered on qualifying
+   cells only. Qualification gate: a cell paints only when its completed
+   streak reaches the lane minimum (heat = detector MIN_CONSECUTIVE_DAYS = 3,
+   freeze = 1; index.dur.min overrides the built-in LAYERS[].min)) and
    data/results/global_timeline.json (events[]: id,type,title,start,end,bbox,
    grid,day,days,masks[,qualified_at]).
    Reduced motion: playback is frame-stepping only; nothing auto-plays.
@@ -26,18 +29,28 @@
   const PAD = 12;
   const HIT_MIN = 44;                      // min touch target (px)
   const LAYERS = [                         // draw order bottom→top
-    { key: 'h', name: 'heat',   label: 'Heat — days > P85', ramp: true, bins: 7,
-      tip: 'Solid = consecutive COMPLETED UTC days the cell exceeded the P85 climatology at all four 6-hourly steps (constant within a day); dithered = today so far (provisional). Darkest = 7+ days.' },
-    { key: 'f', name: 'freeze', label: 'Freeze — days < P15', ramp: true, bins: 3,
-      tip: 'Solid = consecutive COMPLETED UTC days the cell fell below the P15 climatology at all four 6-hourly steps (constant within a day); dithered = today so far (provisional). Darkest = 3+ days.' },
+    // min = qualification gate: heat is the detector's MIN_CONSECUTIVE_DAYS
+    // (ewb_live/events/temperature.py, 3) — index.dur.min (published by the
+    // exceedance build) overrides these built-in defaults. Freeze paints from
+    // its first completed day (owner 2026-11-10): freeze EVENTS still need the
+    // detector minimum, but cold runs are shorter/rarer, so a 3-day paint floor
+    // would leave the lane nearly blank and the 1-2 day ramp shades unusable.
+    { key: 'h', name: 'heat',   label: 'Heat — days > P85', ramp: true, bins: 7, min: 3,
+      tip: 'Blank below 3 consecutive completed days — the detector minimum, so such a cell can never become a heat wave. Solid = consecutive COMPLETED UTC days the cell exceeded the P85 climatology at all four 6-hourly steps (constant within a day; 3–7+); dithered = today so far (provisional), only on a cell that already qualifies. Darkest = 7+ days.' },
+    { key: 'f', name: 'freeze', label: 'Freeze — days < P15', ramp: true, bins: 3, min: 1,
+      tip: 'Shaded from its first consecutive completed day: cold runs are short, so sub-3-day cells stay visible for context (a freeze EVENT still needs 3+ days). Solid = consecutive COMPLETED UTC days the cell fell below the P15 climatology at all four 6-hourly steps (constant within a day; 1–3+); dithered = today so far (provisional), only on a cell that already shows at least one completed day. Darkest = 3+ days.' },
     { key: 'a', name: 'ar',     label: 'AR — IVT magnitude', ramp: true, bins: 5,
       tip: 'AR mask with IVT magnitude bins (kg m-1 s-1): 250-500, 500-750, 750-1000, 1000-1250, >=1250' },
   ];
   const RUN_ALPHA = { heat: [110, 125, 140, 155, 170, 190, 215], freeze: [140, 175, 215],
                       ar: [255, 255, 255, 255, 255] };  // bin opacities; AR paints opaque (its colour IS the class)
-  // run value -> painted day count: v2 = completed days + provisional day;
-  // v1 sidecars (dur.rev != v2) carry the old provisional per-step run
-  const runCount = (r, v2) => (v2 ? (r & 127) + ((r & 128) ? 1 : 0) : r);
+  // qualification gate per lane: heat = the detector's MIN_CONSECUTIVE_DAYS,
+  // freeze = 1 completed day (context; events still need 3). index.dur.min
+  // (published with the v2 sidecars) wins; otherwise the built-in LAYERS[].min.
+  // raw is still null when renderLayerButtons first runs, so every branch must
+  // tolerate that and fall back to L.min.
+  const minDays = (L) => (raw && raw.dur && raw.dur.min && raw.dur.min[L.name] != null)
+    ? raw.dur.min[L.name] : (L.min || 0);
   const runBin = (count, bins) => Math.min(count - 1, bins - 1);   // bins: 1..bins
   const TYPES = {
     heat_wave:          { css: 'heat',   short: 'Heat' },
@@ -333,7 +346,7 @@
         : null));
     }
     const packed = packedCache, ramp = rampCache;
-    const durV2 = !!(raw.dur && raw.dur.rev === 'v2');
+    const durV2 = !!(raw.dur && String(raw.dur.rev || '').indexOf('v2') === 0);
     const act = LAYERS.map((L, li) => (on[L.key] ? li : -1)).filter((li) => li >= 0);
     const ivt = curIvt = (raw.ivt && frame.ivt) ? frame.ivt : null;   // AR IVT class plane (u8, per-cell; hover reads curIvt)
     const n = cw * ch;
@@ -352,17 +365,16 @@
           if (cls > 0 && cls <= 5) px[p] = ramp[li][cls - 1];  // ramp bins are 0-indexed
           else if (u8[li * plane + bi] & m) px[p] = packed[li];
         } else if (run && ramp[li]) {
+          const L = LAYERS[li];
           const r = run[li * cells + cellIdx[p]];             // heat plane 0, freeze plane 1; 0 = unpainted
-          const cnt = runCount(r, durV2);
-          if (cnt <= 0) continue;
-          // provisional day (bit 7): 2px checkerboard between the completed
-          // bin and completed+1 — today's day rides visibly unfinished
-          if (durV2 && (r & 128) && ((((p % cw) >> 1) + ((p / cw) | 0) >> 1) & 1)) {
-            const done = r & 127;
-            if (done > 0) px[p] = ramp[li][runBin(done, LAYERS[li].bins)];
-            continue;
-          }
-          px[p] = ramp[li][runBin(cnt, LAYERS[li].bins)];
+          const done = durV2 ? (r & 127) : r;        // v1 sidecars: whole byte is the run
+          if (done < minDays(L)) continue;           // sub-threshold: blank, every hour
+          // today so far (bit 7) = texture only, never a new point: 2px
+          // checkerboard to the next ramp shade on an already-painted cell
+          const prov = durV2 && (r & 128)
+            && ((((p % cw) >> 1) + ((p / cw) | 0) >> 1) & 1);
+          px[p] = ramp[li][runBin(done + (prov ? 1 : 0), L.bins)];
+          continue;
         } else if (u8[li * plane + bi] & m) px[p] = packed[li];
       }
     }
@@ -671,11 +683,13 @@
         note.classList.remove('hidden');
         note.textContent = `Frame ${fmtReadout(ts)} is not available yet — `
           + 'the raw exceedance build has not produced it.';
-        paintFrame(null);
+        legStats = null; paintFrame(null);
       } else {
         note.classList.add('hidden');
+        legStats = censusFrame(frame);        // legend describes THIS painted frame
         paintFrame(frame);
       }
+      renderLegend();
       prefetch(idx);
     });
   }
@@ -753,8 +767,14 @@
       b.dataset.layer = L.key;
       if (L.tip) b.title = L.tip;
       b.setAttribute('aria-pressed', on[L.key] ? 'true' : 'false');
+      // legend gradient shows only the bins that can be painted: ramp tokens
+      // min..bins (sub-threshold cells are blank). minDays(L) picks up
+      // index.dur.min once raw has loaded (re-called from the boot path).
+      // clamp to [1, bins]: dur.min arrives from the index, so a min of 0 or a
+      // min above the lane's bin count must not build an empty/undefined gradient
+      const rampFrom = L.ramp ? Math.min(Math.max(minDays(L), 1), L.bins) : 1;
       b.innerHTML = `<i style="${L.ramp
-        ? `background: linear-gradient(90deg, ${Array.from({ length: L.bins }, (_, bi) => `var(--dur-${L.name}-${bi + 1})`).join(', ')})`
+        ? `background: linear-gradient(90deg, ${Array.from({ length: L.bins - rampFrom + 1 }, (_, bi) => `var(--dur-${L.name}-${rampFrom + bi})`).join(', ')})`
         : `background: var(--series-${L.name})`}"></i>${L.label}`;
       b.onclick = () => {
         on[L.key] = !on[L.key];
@@ -769,20 +789,162 @@
     renderLegend();
   }
 
+  /* ---------------- adaptive colour legend ----------------
+     The lanes' colours mean different things (heat/freeze = consecutive
+     COMPLETED days, AR = IVT magnitude in kg m⁻¹ s⁻¹), a lane's ramp can
+     shrink at runtime (index.dur.min raises the paint floor; a missing .run /
+     .ivt sidecar falls back to one flat colour), and the Region dropdown
+     veils everything outside its rect. So the legend is generated from the
+     state the map is in right now: one group per layer that is ON, listing
+     only the stops that lane can paint, with the stops this frame does not
+     paint dimmed and a lane with no cells at all marked. A colour that is not
+     on screen never reads as live. */
+  const LEGEND = {
+    heat:   { name: 'Heat wave', unit: 'consecutive days > P85',
+      flat: 'exceeds P85', flatTip: 'Exceeds P85 — the duration sidecar is unavailable, so one flat colour paints every exceeded cell' },
+    freeze: { name: 'Freeze', unit: 'consecutive days < P15',
+      flat: 'below P15', flatTip: 'Below P15 — the duration sidecar is unavailable, so one flat colour paints every exceeded cell' },
+    ar:     { name: 'AR IVT', unit: 'kg m⁻¹ s⁻¹',
+      flat: 'AR mask', flatTip: 'AR mask — the IVT class sidecar is unavailable, so one flat green paints every masked cell' },
+  };
+  let legStats = null;                         // lane census of the painted frame
+  let legHtml = '';                            // last rendered markup (playback: no reflow churn)
+
+  const legStop = (bg, label, title, out, extraCls) =>
+    `<span class="lg-bin${out ? ' out' : ''}">`
+    + `<i class="swatch${extraCls || ''}" style="background:${bg}" title="${title}"></i>`
+    + `<span class="lg-t">${label}</span></span>`;
+  const dayLbl = (b, bins) => (b >= bins ? b + '+' : String(b));
+  const dayTip = (L, b) => `${dayLbl(b, L.bins)} consecutive completed day`
+    + `${b > 1 ? 's' : ''} ${L.name === 'heat' ? 'above P85' : 'below P15'}`;
+
+  /* Cell census of one frame: which legend stops the frame ACTUALLY paints,
+     under the same rules paintFrame applies (dur gate, the v2 provisional bit,
+     the IVT class plane, the binary fallbacks), scoped to the Region view —
+     outside the veil nothing is legible. Presence, not counts: the legend only
+     asks "is this colour on screen", so a lane leaves the scan as soon as every
+     stop it can reach has been found once and the whole scan stops when all
+     three are satisfied — at 0.25° that keeps it well under the repaint cost.
+     Layer toggles never enter it (it describes the frame, the legend decides
+     what to show), and it is cached on the frame object, recomputed when the
+     Region changes. */
+  function censusFrame(frame) {
+    if (!raw || !frame || !frame.bin) return null;
+    const key = region ? region.key : 'global';
+    if (frame.legKey === key) return frame.leg;
+    const g = raw.grid, nx = g.nx, ny = g.ny, cells = nx * ny;
+    const durV2 = !!(raw.dur && String(raw.dur.rev || '').indexOf('v2') === 0);
+    const run = (raw.dur && frame.run) ? frame.run : null;
+    const ivt = (raw.ivt && frame.ivt) ? frame.ivt : null;
+    const s = { key, durV2, ramp: { heat: !!run, freeze: !!run, ar: !!ivt },
+                n: LAYERS.map((L) => new Uint8Array(L.bins)), prov: [0, 0, 0] };
+    const clampGate = (li) => (li === 2 ? 1
+      : Math.min(Math.max(minDays(LAYERS[li]), 1), LAYERS[li].bins));
+    const reach = (li) => (li === 2 ? (ivt ? LAYERS[2].bins : 1)
+      : !run ? 1 : LAYERS[li].bins - clampGate(li) + 1 + (durV2 ? 1 : 0));
+    const need = [reach(0), reach(1), reach(2)];    // stops still missing per lane
+    const hit = (li, b) => { if (!s.n[li][b]) { s.n[li][b] = 1; need[li]--; } };
+    const bin = frame.bin, stride = Math.ceil(nx / 8), planeB = ny * stride;
+    let j0 = 0, j1 = ny - 1, i0 = 0, i1 = nx - 1;
+    if (region) {
+      j0 = Math.max(0, Math.round((region.lat[0] - g.lat0) / g.step_lat));
+      j1 = Math.max(j0, Math.min(ny - 1, Math.round((region.lat[1] - g.lat0) / g.step_lat)));
+      if (region.lon[1] - region.lon[0] < 360) {   // whole-width regions stay global in lon
+        const wi = (v) => ((Math.round((v - g.lon0) / g.step_lon) % nx) + nx) % nx;
+        i0 = wi(region.lon[0]); i1 = wi(region.lon[1]);
+      }
+    }
+    const span = (j, a, b) => {
+      const crow = j * stride;
+      for (let i = a; i <= b; i++) {
+        const c = j * nx + i, byte = crow + (i >> 3), m = 1 << (7 - (i & 7));
+        for (let li = 0; li < 2; li++) {                   // heat plane 0, freeze plane 1
+          if (!need[li]) continue;
+          const L = LAYERS[li];
+          if (run) {
+            const r = run[li * cells + c];
+            const done = durV2 ? (r & 127) : r;
+            if (done < minDays(L)) continue;               // sub-gate: never painted
+            hit(li, Math.min(done - 1, L.bins - 1));
+            // the provisional bit dithers toward the NEXT shade, so that shade is on
+            // screen too — and the 'today' stop itself rides as a third outcome
+            if (durV2 && (r & 128)) {
+              hit(li, Math.min(done, L.bins - 1));
+              if (!s.prov[li]) { s.prov[li] = 1; need[li]--; }
+            }
+          } else if (bin[li * planeB + byte] & m) hit(li, 0);
+        }
+        if (need[2]) {                                     // AR: class plane, never run[]
+          if (ivt) { const cls = ivt[c]; if (cls > 0 && cls <= LAYERS[2].bins) hit(2, cls - 1); }
+          // cls === 0 with the bit set paints the flat series green (a non-finite
+          // IVT under the mask — the class edges start at 250, the mask at 400).
+          // Not a legend stop: it is a data gap, and its colour is the top class
+          // in the light ramp anyway.
+          else if (bin[2 * planeB + byte] & m) hit(2, 0);
+        }
+      }
+    };
+    for (let j = j0; j <= j1 && need[0] + need[1] + need[2] > 0; j++) {
+      if (i0 <= i1) span(j, i0, i1);
+      else { span(j, i0, nx - 1); span(j, 0, i1); }         // dateline-crossing region
+    }
+    frame.leg = s; frame.legKey = key;
+    return s;
+  }
+
   function renderLegend() {
     const leg = $('#gm-legend');
     if (!leg) return;
-    // Only show AR legend when AR layer is on and has ramp (IVT classes)
-    if (!on.a || !LAYERS[2].ramp || !raw || !raw.ivt) {
-      leg.innerHTML = '';
-      leg.classList.add('hidden');
-      return;
+    const groups = [];
+    if (raw) {
+      const cen = legStats;
+      LAYERS.forEach((L, li) => {
+        if (!on[L.key]) return;                            // off the map → off the legend
+        const M = LEGEND[L.name];
+        const n = cen ? cen.n[li] : null;                  // null = nothing painted yet
+        const ramp = !cen || cen.ramp[L.name];
+        const live = n ? n.reduce((a, b) => a + b, 0) : -1;  // stops present in this frame
+        const from = L.name === 'ar' ? 1 : Math.min(Math.max(minDays(L), 1), L.bins);
+        const stops = [];
+        if (ramp) {
+          // only stops the lane can paint: days below the gate never reach the canvas
+          for (let b = from; b <= L.bins; b++) {
+            const lo = IVT_BINS[b - 1];
+            stops.push(legStop(
+              `var(--dur-${L.name}-${b})`,
+              // top class reads '1250+' — same '+ suffix as the day ramps; the
+              // caption column stays narrow enough that the digits never touch
+              L.name === 'ar' ? (b < L.bins ? String(lo) : `${lo}+`) : dayLbl(b, L.bins),
+              L.name === 'ar'
+                ? (b < L.bins ? `${lo}\u2013${IVT_BINS[b]} kg m\u207b\u00b9 s\u207b\u00b9` : `\u2265${lo} kg m\u207b\u00b9 s\u207b\u00b9`)
+                : dayTip(L, b),
+              !!n && n[b - 1] === 0));
+          }
+          // 'today so far' rides as a dithered shade, never a new colour (dur rev v2)
+          if (L.name !== 'ar' && cen && cen.durV2 && cen.prov[li] > 0) {
+            stops.push(legStop(
+              `repeating-conic-gradient(var(--dur-${L.name}-${from}) 0% 25%, var(--series-${L.name}) 0% 50%) 0 0 / 4px 4px`,
+              'today',
+              'Today so far (provisional): dithered one shade up on a cell that already qualifies — it never adds a new point',
+              false, ' prov'));
+          }
+        } else {
+          stops.push(legStop(`var(--series-${L.name})`, M.flat, M.flatTip, !!n && live === 0));
+        }
+        const none = !!n && live === 0;
+        groups.push(`<span class="lg-group${none ? ' none' : ''}" data-layer="${L.key}"`
+          + ` title="${L.tip || M.name}">`
+          + `<span class="lg-head"><span class="lg-name">${M.name}</span>`
+          + `<span class="lg-unit">${M.unit}</span>`
+          + (none ? '<span class="lg-none">none in view</span>' : '') + '</span>'
+          + `<span class="lg-stops">${stops.join('')}</span></span>`);
+      });
     }
-    leg.classList.remove('hidden');
-    const bins = IVT_BINS;   // single source: hover + legend share the class edges
-    leg.innerHTML = '<span class="label">AR IVT:</span>' +
-      bins.map((b, i) => `<span class="swatch" style="background: var(--dur-ar-${i + 1})" title="${b} kg m⁻¹ s⁻¹"></span>`).join('') +
-      '<span class="label">+</span>';
+    const html = groups.join('');
+    if (html === legHtml) return;              // same legend: no reflow per frame
+    legHtml = html;
+    leg.innerHTML = html;
+    leg.classList.toggle('hidden', !groups.length);
   }
 
   /* ---------------- boot ---------------- */

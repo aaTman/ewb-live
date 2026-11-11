@@ -25,7 +25,13 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXCLUDES=(--exclude .venv --exclude __pycache__ --exclude .git --exclude data --exclude logs --exclude node_modules --exclude .e2e-webkit-libs)
 
 rsync_code() {
-    rsync -az "${EXCLUDES[@]}" "$REPO/" "$HOST:$REMOTE_DIR/"
+    # Serialize box deploys across agent lanes (AR-lane incident 2026-11-10: a
+    # whole-tree sync reverted another lane's code mid-publish). Builders hold
+    # the same lock: flock -w 900 /opt/ewb-live/.deploy.lock -c '<build>'.
+    rsync -az --rsync-path="flock -w 900 $REMOTE_DIR/.deploy.lock rsync" \
+        "${EXCLUDES[@]}" "$REPO/" "$HOST:$REMOTE_DIR/"
+    # Make reverts visible: box md5s of the AR-lane sentinel files after every sync.
+    ssh "$HOST" "md5sum $REMOTE_DIR/ewb_live/viz/exceedance.py $REMOTE_DIR/ewb_live/events/ar_filter.py $REMOTE_DIR/dashboard/mergedmap.js 2>/dev/null" >&2
 }
 
 remote_run() {  # remote_run <log-file> <cmd string>  — streamed, logged, exit code kept
