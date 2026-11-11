@@ -50,7 +50,7 @@
   // qualification gate per lane: heat = the detector's MIN_CONSECUTIVE_DAYS,
   // freeze = 1 completed day (context; events still need 3). index.dur.min
   // (published with the v2 sidecars) wins; otherwise the built-in LAYERS[].min.
-  // raw is still null when renderLayerButtons first runs, so every branch must
+  // raw is still null on the early paint/legend paths, so every branch must
   // tolerate that and fall back to L.min.
   const minDays = (L) => (raw && raw.dur && raw.dur.min && raw.dur.min[L.name] != null)
     ? raw.dur.min[L.name] : (L.min || 0);
@@ -777,7 +777,8 @@
       const keep = new Set((params.layers || '').split(',').filter(Boolean));
       for (const L of LAYERS) { const v = keep.has(L.key); if (on[L.key] !== v) { on[L.key] = v; changed = true; } }
       if (!on.h && !on.f && !on.a) on.h = on.f = on.a = true;
-      renderLayerButtons();
+      // no widget: the type tabs are the only layer toggles (complaint 3);
+      // #layers= deep links ride the state alone. render() below repaints.
     }
     const s = params.sel || params.global;           // old #global= links redirect
     if (s !== undefined) {
@@ -786,37 +787,6 @@
     }
     if (changed) render();
     return changed;
-  }
-
-  function renderLayerButtons() {
-    const box = $('#raw-layers');
-    box.innerHTML = '';
-    for (const L of LAYERS) {
-      const b = document.createElement('button');
-      b.className = 'gm-chip'; b.type = 'button';
-      b.dataset.layer = L.key;
-      if (L.tip) b.title = L.tip;
-      b.setAttribute('aria-pressed', on[L.key] ? 'true' : 'false');
-      // legend gradient shows only the bins that can be painted: ramp tokens
-      // min..bins (sub-threshold cells are blank). minDays(L) picks up
-      // index.dur.min once raw has loaded (re-called from the boot path).
-      // clamp to [1, bins]: dur.min arrives from the index, so a min of 0 or a
-      // min above the lane's bin count must not build an empty/undefined gradient
-      const rampFrom = L.ramp ? Math.min(Math.max(minDays(L), 1), L.bins) : 1;
-      b.innerHTML = `<i style="${L.ramp
-        ? `background: linear-gradient(90deg, ${Array.from({ length: L.bins - rampFrom + 1 }, (_, bi) => `var(--dur-${L.name}-${rampFrom + bi})`).join(', ')})`
-        : `background: var(--series-${L.name})`}"></i>${L.label}`;
-      b.onclick = () => {
-        on[L.key] = !on[L.key];
-        if (!on.h && !on.f && !on.a) on[L.key] = true;   // never all-off (no blank map)
-        renderLayerButtons();
-        renderLegend();
-        writeUrl(false);
-        paintFrame(frameCache.get(raw.frames[idx]) || null);
-      };
-      box.appendChild(b);
-    }
-    renderLegend();
   }
 
   /* ---------------- adaptive colour legend ----------------
@@ -1110,7 +1080,6 @@
     if (!land) land = { type: 'FeatureCollection', features: [] };
     mounted = true;
     fitProjection();                          // before any render (paint needs fit)
-    renderLayerButtons();
     // URL restore (deep link) before first paint; redirects fold in here
     const boot = hashParams();
     updateCount();   // region may have been parked by a deep link pre-mount
@@ -1118,7 +1087,7 @@
     $('#raw-skel').hidden = true;
     $('#raw-canvas').hidden = false;
     $('#gm-boxes').removeAttribute('hidden');   // SVGElement has no .hidden IDL — attribute only
-    if (!('layers' in boot) && pageTab() !== 'all') { layersForTab(pageTab()); renderLayerButtons(); }
+    if (!('layers' in boot) && pageTab() !== 'all') layersForTab(pageTab());
     applyUrl(boot);                           // renders if anything changed
     if (boot.raw || boot.global || boot.date) writeUrl(false);   // old keys never survive (redirect shim)
     // same-document hash nav (no reload) must strip old keys too
@@ -1166,7 +1135,7 @@
     },
     onTabChange: (tab) => {
       if (!mounted) return;
-      if (tab) { layersForTab(tab); renderLayerButtons(); writeUrl(false); }
+      if (tab) { layersForTab(tab); writeUrl(false); }
       render();
     },
     // project/ramp/dpr/grid: the e2e bin-probe reads painted pixels at known cells
