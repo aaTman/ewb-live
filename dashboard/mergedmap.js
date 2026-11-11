@@ -37,20 +37,28 @@
     // detector minimum, but cold runs are shorter/rarer, so a 3-day paint floor
     // would leave the lane nearly blank and the 1-2 day ramp shades unusable.
     { key: 'h', name: 'heat',   label: 'Heat — days > P85', ramp: true, bins: 7, min: 3,
-      tip: 'Blank below 3 consecutive completed days — the detector minimum, so such a cell can never become a heat wave. Solid = consecutive COMPLETED UTC days the cell exceeded the P85 climatology at all four 6-hourly steps (constant within a day; 3–7+); dithered = today so far (provisional), only on a cell that already qualifies. Darkest = 7+ days.' },
+      tip: 'Blank below 3 consecutive completed days — the detector minimum, so such a cell can never become a heat wave. Solid = consecutive COMPLETED UTC days the cell exceeded the P85 climatology at all four 6-hourly steps (constant within a day; 3–7+); dithered = today so far (provisional), only on a cell that already qualifies. 7+ days is the darkest stop in light, the brightest in dark.' },
     { key: 'f', name: 'freeze', label: 'Freeze — days < P15', ramp: true, bins: 3, min: 1,
-      tip: 'Shaded from its first consecutive completed day: cold runs are short, so sub-3-day cells stay visible for context (a freeze EVENT still needs 3+ days). Solid = consecutive COMPLETED UTC days the cell fell below the P15 climatology at all four 6-hourly steps (constant within a day; 1–3+); dithered = today so far (provisional), only on a cell that already shows at least one completed day. Darkest = 3+ days.' },
+      tip: 'Shaded from its first consecutive completed day: cold runs are short, so sub-3-day cells stay visible for context (a freeze EVENT still needs 3+ days). Solid = consecutive COMPLETED UTC days the cell fell below the P15 climatology at all four 6-hourly steps (constant within a day; 1–3+); dithered = today so far (provisional), only on a cell that already shows at least one completed day. 3+ days is the darkest stop in light, the brightest in dark.' },
     { key: 'a', name: 'ar',     label: 'AR — IVT magnitude', ramp: true, bins: 5,
       tip: 'Detected atmospheric rivers, shaded by IVT magnitude (kg m-1 s-1): 250-500, 500-750, 750-1000, 1000-1250, >=1250.'
-        + ' Faint tint = IVT >= 400 that is NOT painted as an AR (screened as tropical/cyclone, or a marginal detection)'
-        + ' — the moisture flux is real, the AR call is not. Pale green = a track\'s gap-bridge footprint (display only).' },
+        + ' Only cells the EWB AR detector flags (and the tropical/cyclone screens keep) are drawn; IVT outside an AR is never shown.'
+        + ' Pale green = a track\'s gap-bridge footprint (display only).' },
   ];
-  const RUN_ALPHA = { heat: [110, 125, 140, 155, 170, 190, 215], freeze: [140, 175, 215],
-                      ar: [255, 255, 255, 255, 255] };  // bin opacities; AR paints opaque (its colour IS the class)
+  // bin opacities: ONE constant alpha per lane (all lanes 200) — the ramps'
+  // lightness carries the scale (light theme: even L* steps, darker = more
+  // days / higher IVT; dark theme: the same steps REVERSED, brightest = most
+  // extreme, so extremes never recede into the dark map), and one alpha per
+  // lane keeps that ordering intact after blending. Constant < 255 also lets
+  // the graticule and coasts read through every fill; coastlines are
+  // additionally re-stroked above the raster in paintFrame (owner review
+  // 2026-11-11, complaint 1: opaque AR sheets hid the oceans' grid).
+  const RUN_ALPHA = { heat: [200, 200, 200, 200, 200, 200, 200], freeze: [200, 200, 200],
+                      ar: [200, 200, 200, 200, 200] };
   // qualification gate per lane: heat = the detector's MIN_CONSECUTIVE_DAYS,
   // freeze = 1 completed day (context; events still need 3). index.dur.min
   // (published with the v2 sidecars) wins; otherwise the built-in LAYERS[].min.
-  // raw is still null when renderLayerButtons first runs, so every branch must
+  // raw is still null on the early paint/legend paths, so every branch must
   // tolerate that and fall back to L.min.
   const minDays = (L) => (raw && raw.dur && raw.dur.min && raw.dur.min[L.name] != null)
     ? raw.dur.min[L.name] : (L.min || 0);
@@ -272,9 +280,9 @@
      linear in x). One pixel → one cell: no strip overlaps, no scanline
      stripes, clean date-line wrap, pole rows blank. */
   let lut = null, rasterCv = null, packedCache = null, rampCache = null,
-      ghostCache = null, ivtFltCache = null;   // packed colours: one cache per theme
+      ghostCache = null;   // packed colours: one cache per theme
   let curIvt = null;                                   // AR IVT class plane of the painted frame (hover)
-  let curPaint = null;   // {u8, plane, ghostPlane, ivtS2, ivtAbove} of the painted frame (hover reads the AR bit)
+  let curPaint = null;   // {u8, plane, ghostPlane, ivtS2} of the painted frame (hover reads the AR bit)
   const IVT_BINS = [250, 500, 750, 1000, 1250];        // kg m-1 s-1 class edges (index.ivt.bins)
   function buildLut() {
     const g = raw.grid, nx = g.nx, ny = g.ny, stride = Math.ceil(nx / 8);
@@ -337,7 +345,6 @@
     // wherever the AR layer did not paint — which is how "IVT values just
     // disappear" happened, so the two schemas are read differently.
     const ivtS2 = !!(raw.ivt && raw.ivt.schema >= 2);
-    const ivtAbove = (raw.ivt && raw.ivt.above_bit) || 128;
     const { cw, ch, byteIdx, bitMask, cellIdx } = lut;
     if (!rasterCv || rasterCv.width !== cw || rasterCv.height !== ch) {
       rasterCv = document.createElement('canvas');
@@ -354,25 +361,21 @@
     if (!packedCache) {
       const cs = getComputedStyle(document.documentElement);
       const pack = (c, al) => ((al << 24) | (c[2] << 16) | (c[1] << 8) | c[0]) >>> 0;
-      // AR paints opaque (255): its colour IS the class, and pixel tests
-      // match CSS RGBs exactly; heat/freeze keep RUN_ALPHA (blend-calibrated)
-      packedCache = LAYERS.map((L) => pack(rgbOf(cs.getPropertyValue(`--series-${L.name}`)), L.key === 'a' ? 255 : 215));
+      // every lane's flat binary-fallback paint rides one alpha (215): the
+      // colour is the lane token, the alpha keeps the basemap readable
+      packedCache = LAYERS.map((L) => pack(rgbOf(cs.getPropertyValue(`--series-${L.name}`)), 215));
       // the gap-bridge footprint stays visibly weaker than a physical AR cell:
       // it is a tracking decision, not a cell that met the IVT rule
       ghostCache = pack(rgbOf(cs.getPropertyValue('--series-ar')), 90);
-      // IVT >= 400 where the AR layer does not paint: the moisture flux is
-      // real, the AR call is not (screened or a marginal-Laplacian dropout),
-      // so it gets a faint tint and a hover value, never AR colour
-      ivtFltCache = pack(rgbOf(cs.getPropertyValue('--series-ar')), 55);
       rampCache = LAYERS.map((L) => (L.ramp
         ? RUN_ALPHA[L.name].map((al, b) => pack(rgbOf(cs.getPropertyValue(`--dur-${L.name}-${b + 1}`)), al))
         : null));
     }
-    const packed = packedCache, ramp = rampCache, ghostCol = ghostCache, ivtFlt = ivtFltCache;
+    const packed = packedCache, ramp = rampCache, ghostCol = ghostCache;
     const durV2 = !!(raw.dur && String(raw.dur.rev || '').indexOf('v2') === 0);
     const act = LAYERS.map((L, li) => (on[L.key] ? li : -1)).filter((li) => li >= 0);
     const ivt = curIvt = (raw.ivt && frame.ivt) ? frame.ivt : null;   // IVT class plane (u8, per-cell; hover reads curIvt)
-    curPaint = { u8, plane, ghostPlane, ivtS2, ivtAbove };
+    curPaint = { u8, plane, ghostPlane, ivtS2 };
     const n = cw * ch;
     for (let p = 0; p < n; p++) {
       const bi = byteIdx[p];
@@ -393,7 +396,7 @@
           else if (u8[li * plane + bi] & m) {
             if (cls > 0 && cls <= 5) px[p] = ramp[li][cls - 1];  // bins are 0-indexed
             else px[p] = packed[li];                       // mask w/o class: flat green
-          } else if (ivtS2 && (v & ivtAbove) && ivtFlt) px[p] = ivtFlt;
+          }
         } else if (run && ramp[li]) {
           const L = LAYERS[li];
           const r = run[li * cells + cellIdx[p]];             // heat plane 0, freeze plane 1; 0 = unpainted
@@ -413,6 +416,18 @@
     ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
     ctx.drawImage(rasterCv, 0, 0, fit.W, fit.H);
     ctx.restore();
+    // coastlines ABOVE the fills (owner complaint 2026-11-11: fills hid the
+    // basemap): a second thin stroke pass of the same Natural Earth land so
+    // coasts and the sphere edge read through every layer
+    if (land) {
+      const cs2 = getComputedStyle(document.documentElement);
+      ctx.save();
+      ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+      ctx.strokeStyle = cs2.getPropertyValue('--map-line').trim() || '#999';
+      ctx.lineWidth = 0.6;
+      ctx.stroke(new Path2D(path(land)));
+      ctx.restore();
+    }
     dimOutside(ctx);
   }
 
@@ -777,7 +792,8 @@
       const keep = new Set((params.layers || '').split(',').filter(Boolean));
       for (const L of LAYERS) { const v = keep.has(L.key); if (on[L.key] !== v) { on[L.key] = v; changed = true; } }
       if (!on.h && !on.f && !on.a) on.h = on.f = on.a = true;
-      renderLayerButtons();
+      // no widget: the type tabs are the only layer toggles (complaint 3);
+      // #layers= deep links ride the state alone. render() below repaints.
     }
     const s = params.sel || params.global;           // old #global= links redirect
     if (s !== undefined) {
@@ -786,37 +802,6 @@
     }
     if (changed) render();
     return changed;
-  }
-
-  function renderLayerButtons() {
-    const box = $('#raw-layers');
-    box.innerHTML = '';
-    for (const L of LAYERS) {
-      const b = document.createElement('button');
-      b.className = 'gm-chip'; b.type = 'button';
-      b.dataset.layer = L.key;
-      if (L.tip) b.title = L.tip;
-      b.setAttribute('aria-pressed', on[L.key] ? 'true' : 'false');
-      // legend gradient shows only the bins that can be painted: ramp tokens
-      // min..bins (sub-threshold cells are blank). minDays(L) picks up
-      // index.dur.min once raw has loaded (re-called from the boot path).
-      // clamp to [1, bins]: dur.min arrives from the index, so a min of 0 or a
-      // min above the lane's bin count must not build an empty/undefined gradient
-      const rampFrom = L.ramp ? Math.min(Math.max(minDays(L), 1), L.bins) : 1;
-      b.innerHTML = `<i style="${L.ramp
-        ? `background: linear-gradient(90deg, ${Array.from({ length: L.bins - rampFrom + 1 }, (_, bi) => `var(--dur-${L.name}-${rampFrom + bi})`).join(', ')})`
-        : `background: var(--series-${L.name})`}"></i>${L.label}`;
-      b.onclick = () => {
-        on[L.key] = !on[L.key];
-        if (!on.h && !on.f && !on.a) on[L.key] = true;   // never all-off (no blank map)
-        renderLayerButtons();
-        renderLegend();
-        writeUrl(false);
-        paintFrame(frameCache.get(raw.frames[idx]) || null);
-      };
-      box.appendChild(b);
-    }
-    renderLegend();
   }
 
   /* ---------------- adaptive colour legend ----------------
@@ -830,9 +815,9 @@
      paint dimmed and a lane with no cells at all marked. A colour that is not
      on screen never reads as live. */
   const LEGEND = {
-    heat:   { name: 'Heat wave', unit: 'consecutive days > P85',
+    heat:   { name: 'Heat wave', unit: 'days > P85',
       flat: 'exceeds P85', flatTip: 'Exceeds P85 — the duration sidecar is unavailable, so one flat colour paints every exceeded cell' },
-    freeze: { name: 'Freeze', unit: 'consecutive days < P15',
+    freeze: { name: 'Freeze', unit: 'days < P15',
       flat: 'below P15', flatTip: 'Below P15 — the duration sidecar is unavailable, so one flat colour paints every exceeded cell' },
     ar:     { name: 'AR IVT', unit: 'kg m⁻¹ s⁻¹',
       flat: 'AR mask', flatTip: 'AR mask — the IVT class sidecar is unavailable, so one flat green paints every masked cell' },
@@ -985,7 +970,9 @@
     if (html === legHtml) return;              // same legend: no reflow per frame
     legHtml = html;
     leg.innerHTML = html;
-    leg.classList.toggle('hidden', !groups.length);
+    // never display:none: the strip's height is a CLS reservation (styles.css
+    // #gm-legend:empty), and "all layers off" cannot happen anyway
+    leg.classList.remove('hidden');
   }
 
   /* ---------------- boot ---------------- */
@@ -1009,7 +996,7 @@
     slider.addEventListener('input', () => { stopPlay(); idx = +slider.value; writeUrl(false); render(); });
     // theme flip: the canvas bakes ocean/land/series colours at paint time, so repaint
     new MutationObserver(() => {
-      packedCache = null; rampCache = null; ghostCache = null; ivtFltCache = null;   // theme flip: repack colours
+      packedCache = null; rampCache = null; ghostCache = null;   // theme flip: repack colours
       if (raw && fit) paintFrame(frameCache.get(raw.frames[idx]) || null);
     })
       .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
@@ -1021,22 +1008,23 @@
     let tipRaf = 0, tipEv = null;
     const tipShow = () => {
       tipRaf = 0;
-      let cls = 0, painted = false;
+      let cls = 0;
       if (on.a && curIvt && lut) {
         const r = tipCv.getBoundingClientRect();
         const x = Math.round((tipEv.clientX - r.left) * (tipCv.width / r.width));
         const y = Math.round((tipEv.clientY - r.top) * (tipCv.height / r.height));
         if (x >= 0 && y >= 0 && x < lut.cw && y < lut.ch) {
           const cell = lut.cellIdx[y * lut.cw + x];
-          if (cell >= 0) {
-            const v = curIvt[cell];
-            cls = curPaint && curPaint.ivtS2 ? (v & 7) : v;
-            // is this cell painted as an AR, or is it only the IVT field?
-            if (curPaint && cls > 0) {
-              const nx = raw.grid.nx, stride = Math.ceil(nx / 8);
-              const j = Math.floor(cell / nx), i = cell - j * nx;
-              painted = !!(curPaint.u8[2 * curPaint.plane + j * stride + (i >> 3)]
-                           & (1 << (7 - (i & 7))));
+          if (cell >= 0 && curPaint) {
+            // the schema-2 class plane covers the whole IVT field; the map
+            // only shows ARs, so only cells the AR layer paints answer a hover
+            const nx = raw.grid.nx, stride = Math.ceil(nx / 8);
+            const j = Math.floor(cell / nx), i = cell - j * nx;
+            const bit = 1 << (7 - (i & 7)), o = j * stride + (i >> 3);
+            const gh = curPaint.ghostPlane >= 0 && (curPaint.u8[curPaint.ghostPlane + o] & bit);
+            if (!gh && (curPaint.u8[2 * curPaint.plane + o] & bit)) {
+              const v = curIvt[cell];
+              cls = curPaint.ivtS2 ? (v & 7) : v;
             }
           }
         }
@@ -1044,9 +1032,7 @@
       if (cls > 0 && cls <= 5) {
         const lo = IVT_BINS[cls - 1];
         const rng = cls < 5 ? `${lo}–${IVT_BINS[cls]}` : `≥${lo}`;
-        tipEl.innerHTML = `<div class="t-title">IVT ${rng} kg m⁻¹ s⁻¹</div>`
-          + (painted ? '' : '<div class="t-sub">moisture flux above the AR threshold'
-             + ' — not classified as an AR (screened or marginal detection)</div>');
+        tipEl.innerHTML = `<div class="t-title">IVT ${rng} kg m⁻¹ s⁻¹</div>`;
         tipEl.classList.remove('hidden');
         if (window.moveTip) window.moveTip(tipEv);
       } else tipEl.classList.add('hidden');
@@ -1110,7 +1096,6 @@
     if (!land) land = { type: 'FeatureCollection', features: [] };
     mounted = true;
     fitProjection();                          // before any render (paint needs fit)
-    renderLayerButtons();
     // URL restore (deep link) before first paint; redirects fold in here
     const boot = hashParams();
     updateCount();   // region may have been parked by a deep link pre-mount
@@ -1118,7 +1103,7 @@
     $('#raw-skel').hidden = true;
     $('#raw-canvas').hidden = false;
     $('#gm-boxes').removeAttribute('hidden');   // SVGElement has no .hidden IDL — attribute only
-    if (!('layers' in boot) && pageTab() !== 'all') { layersForTab(pageTab()); renderLayerButtons(); }
+    if (!('layers' in boot) && pageTab() !== 'all') layersForTab(pageTab());
     applyUrl(boot);                           // renders if anything changed
     if (boot.raw || boot.global || boot.date) writeUrl(false);   // old keys never survive (redirect shim)
     // same-document hash nav (no reload) must strip old keys too
@@ -1166,7 +1151,7 @@
     },
     onTabChange: (tab) => {
       if (!mounted) return;
-      if (tab) { layersForTab(tab); renderLayerButtons(); writeUrl(false); }
+      if (tab) { layersForTab(tab); writeUrl(false); }
       render();
     },
     // project/ramp/dpr/grid: the e2e bin-probe reads painted pixels at known cells

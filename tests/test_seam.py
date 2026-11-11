@@ -55,6 +55,29 @@ def test_ar_spanning_350E_to_20E_is_one_component_one_track_360_grid():
     assert cols.sum() == len(span)                   # no duplicate/dropped seam col
 
 
+def test_diagonal_only_seam_touch_keeps_its_cells_and_joins_one_object():
+    # left-edge cell at row r, right-edge cell only at row r+1 (8-connected
+    # across the seam, NOT same-row): label_periodic read lab[r, -1] (0) and
+    # merged the whole object into the background -> every cell unlabeled.
+    m = np.zeros((12, 40), bool)
+    m[5, 0:6] = True                 # east piece, touches col 0 at row 5
+    m[6, 34:40] = True               # west piece, touches col -1 at row 6
+    lab, n = label_periodic(m)
+    assert n == 1
+    assert (lab[m] > 0).all()        # no mask cell left unlabeled
+    assert (lab[~m] == 0).all()
+    # same-row touch (the case that always worked) is unchanged
+    m2 = np.zeros((12, 40), bool)
+    m2[5, 0:6] = True
+    m2[5, 34:40] = True
+    lab2, n2 = label_periodic(m2)
+    assert n2 == 1 and (lab2[m2] > 0).all()
+    # 4-connected callers (seam_rows=0, ar_mask) must NOT join the diagonal pair
+    lab3, n3 = label_periodic(m, np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], bool),
+                              seam_rows=0)
+    assert n3 == 2 and (lab3[m] > 0).all()
+
+
 def test_ar_spanning_170E_to_170W_one_component_pm180_grid():
     lons = _lons(-180.0)
     m = np.zeros((3, LATS.size, lons.size), bool)

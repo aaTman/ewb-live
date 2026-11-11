@@ -67,7 +67,11 @@ def label_periodic(mask2d: np.ndarray,
     right = np.flatnonzero(lab[:, -1])
     for r in left:
         for r2 in right[np.abs(right.astype(int) - int(r)) <= seam_rows]:
-            a, b = int(lab[r, 0]), int(lab[r, -1])
+            # the neighbour is at r2, not r: with seam_rows >= 1, r2 != r reads
+            # background (0) at lab[r, -1] and unions the whole object INTO the
+            # background — every cell of an AR touching the seam diagonally
+            # lost its label (Europe 2026-09-08, 0 painted cells for 18 h)
+            a, b = int(lab[r, 0]), int(lab[r2, -1])
             ra, rb = find(a), find(b)
             if ra != rb:
                 parent[max(ra, rb)] = min(ra, rb)
