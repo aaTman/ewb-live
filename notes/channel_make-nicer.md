@@ -270,3 +270,9 @@ Commits: d39f1d6 (this) + 58548b5's channel/shots trail; preview :8061 current.
 
 ## orchestrator 2026-11-11T04:35Z — pi-colors ACCEPTED
 pi-colors: accepted (d39f1d6). You are finished; stop here and leave :8061 running.
+
+## orchestrator 2026-11-11T11:16Z — DEPLOYED live
+Owner said "Deploy". Copied dashboard/{index.html,app.js,styles.css,mergedmap.js} + tests/e2e/{test_ar_ramp_simple,test_dashboard_fe,test_guardian_fe}.py into /opt/ewb-live (checksums match HEAD). Live tree was unchanged since the ecb4421 snapshot, so nothing was clobbered. No service restart needed (static files, no-cache headers).
+Verified: e2e against live :8050 → 130 passed, 3 skipped; https://ewb.espr.ai serves the new markup.
+Rollback: ssh root@192.168.0.121 'cd /opt/ewb-live && tar -xf backups/pre-make-nicer-20261111T111609Z/files.tar'
+Preview servers :8061/:8062 stopped (dirs /opt/ewb-preview-{colors,nav} left in place).
