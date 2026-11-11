@@ -33,17 +33,20 @@
   --medal-gold: #c9930f;  --medal-silver: #8e979e;  --medal-bronze: #b3703c;
 
   /* ---- Duration ramp (channel_consecutive_days §5, dur rev v2): heat/freeze
-     paint by consecutive COMPLETED-day bins — heat 1,2,3,4,5,6,7+ /
-     freeze 1,2,3+; top bin = the series token, low bins
-     darken so every stop keeps >=3:1 on canvas/paper/map-ocean (min 4.28).
-     The per-bin alpha ramps live in mergedmap.js RUN_ALPHA. ---- */
-  --dur-heat-1: #7c2b23;  --dur-heat-2: #8b332a;  --dur-heat-3: #9a392f;  --dur-heat-4: #aa3f34;  --dur-heat-5: #b84438;  --dur-heat-6: #c94d40;  --dur-heat-7: var(--series-heat);
-  --dur-freeze-1: #123769;  --dur-freeze-2: #164481;  --dur-freeze-3: var(--series-freeze);
+     paint by consecutive COMPLETED-day bins — heat 1..7+ / freeze 1..3+;
+     perceptually even sequential ramps (ColorBrewer YlOrRd / Blues / Greens
+     sampled at equal lightness steps, monotonic L*, darker = more days/
+     higher IVT in LIGHT; the dark block mirrors the direction (see below);
+     colourblind-safe single-hue-per-lane).
+     The per-bin alpha is constant in mergedmap.js RUN_ALPHA — lightness
+     alone carries the ramp. ---- */
+  --dur-heat-1: #feca66;  --dur-heat-2: #fea747;  --dur-heat-3: #fd8038;  --dur-heat-4: #f94828;  --dur-heat-5: #e2191c;  --dur-heat-6: #c00225;  --dur-heat-7: #8a0026;
+  --dur-freeze-1: #a6cee4;  --dur-freeze-2: #4191c6;  --dur-freeze-3: #084a91;
 
-  /* AR IVT ramp (5 classes: 250-500, 500-750, 750-1000, 1000-1250, >=1250 kg m-1 s-1)
-     Light-to-dark green sequential, matching AR green identity (#2e7d32 light / #66bb6a dark).
-     Adjacent bins >=12 dE76 apart, >=3:1 contrast on both ocean grounds. */
-  --dur-ar-1: #b8e0b8;  --dur-ar-2: #8fbc8f;  --dur-ar-3: #659b65;  --dur-ar-4: #3c7a3c;  --dur-ar-5: #2e7d32;
+  /* AR IVT ramp (5 equal-width classes: 250-500, 500-750, 750-1000, 1000-1250, >=1250 kg m-1 s-1)
+     Greens sequential, equal L* steps; distinct hue family from heat (warm)
+     and freeze (cool). */
+  --dur-ar-1: #a9dca3;  --dur-ar-2: #73c476;  --dur-ar-3: #3ba458;  --dur-ar-4: #157f3b;  --dur-ar-5: #005321;
 
   /* Lightness ladder is fixed: AR 26.1 < freeze 34.0 < heat 48.4 (L*), never inverted. */
 
@@ -110,13 +113,16 @@ html[data-theme="dark"] {
   --stone-grey:           #acab9c;
   --medal-gold: #d9a92c;  --medal-silver: #a7b0b8;  --medal-bronze: #c98a52;
 
-  /* Duration ramp, dark (mirrors the light block; heat 7 bins / freeze 3 bins;
-     on the dark ground low bins
-     lighten — every stop keeps >=3:1 on canvas/paper/map-ocean, min 3.26). */
-  --dur-heat-1: #f9a99e;  --dur-heat-2: #f89c90;  --dur-heat-3: #f79083;  --dur-heat-4: #f68576;  --dur-heat-5: #f67b6b;  --dur-heat-6: #f46d5c;  --dur-heat-7: var(--series-heat);
-  --dur-freeze-1: #829dd2;  --dur-freeze-2: #6687c8;  --dur-freeze-3: var(--series-freeze);
-  /* AR IVT ramp, dark (inverted: dark-to-light green on dark ground) */
-  --dur-ar-1: #3a5a3a;  --dur-ar-2: #4a7a4a;  --dur-ar-3: #66bb6a;  --dur-ar-4: #8fcf8f;  --dur-ar-5: #b8e0b8;
+  /* Duration ramp, dark: the lightness direction REVERSES (owner review
+     2026-11-11: dark mode's most extreme bins must be the BRIGHTEST, not
+     the darkest — dark extremes recede into the dark map). Same ColorBrewer
+     families sampled in the opposite direction: low bins dim and close to
+     the background, high bins brightest and most saturated, equal L* steps
+     (heat L* 31→88 / freeze 26→84 / AR 30→87). Light theme keeps darker = more. */
+  --dur-heat-1: #970026;  --dur-heat-2: #c90823;  --dur-heat-3: #e92720;  --dur-heat-4: #fc5b2e;  --dur-heat-5: #fd923e;  --dur-heat-6: #feb54f;  --dur-heat-7: #fed976;
+  --dur-freeze-1: #083c7d;  --dur-freeze-2: #4191c6;  --dur-freeze-3: #b7d4ea;
+  /* AR IVT ramp, dark */
+  --dur-ar-1: #005321;  --dur-ar-2: #19833e;  --dur-ar-3: #45ad5f;  --dur-ar-4: #87cd86;  --dur-ar-5: #bee5b8;
 
   --bg: var(--canvas);
   --bg-panel: var(--paper);
@@ -178,17 +184,20 @@ button:disabled, select:disabled, input:disabled {
 
 /* ---------- shell: rail nav + content column (after owb.brightband.com) ------
    OWB puts navigation in a 220 px sticky column and lets the content keep its own
-   title. The rail is the canvas ground; panels inside the content stay paper. ---- */
+   title. The rail is the canvas ground; panels inside the content stay paper.
+   Vertical rhythm is one ladder: 14 px between rail zones, 12 px inside them,
+   34 px rows, 2 px between rows in a group, 8 px above a group caption. ---- */
 .app-shell { display: flex; align-items: flex-start; min-height: 100vh; }
 .content { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .rail {
   flex: 0 0 220px; width: 220px; align-self: flex-start;
   position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 12px;
+  display: flex; flex-direction: column; gap: 14px;
   padding: 12px 12px 16px; border-right: 1px solid var(--border); background: var(--bg);
+  scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
 }
-.rail-head { display: flex; align-items: center; gap: 8px; min-height: 28px;
-  margin: 0 -12px; padding: 0 12px 12px; border-bottom: 1px solid var(--border); }
+.rail-head { display: flex; align-items: center; gap: 8px; min-height: 32px;
+  margin: 0 -12px; padding: 2px 12px 12px; border-bottom: 1px solid var(--border); }
 /* the brand name is a 12.5/500 line under the mark, not a headline — the h1 says it bigger */
 .rail-brand { min-width: 0; flex: 1 1 auto; font-size: var(--text-sm); line-height: 1.1;
   font-weight: 500; color: var(--ink-secondary);
@@ -198,27 +207,67 @@ button:disabled, select:disabled, input:disabled {
   color: var(--stone-grey); cursor: pointer; line-height: 0; }
 .rail-toggle:hover { background: var(--tint); color: var(--matte-black); border: 0; }
 .rail-toggle .ic-close { display: none; }   /* the drawer gets an ✕, the desktop rail a collapse glyph */
-.rail-nav { display: flex; flex-direction: column; gap: 2px; }
-.rail-link { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px;
-  border: 0; border-radius: 8px; background: none; color: var(--ink-secondary);
-  font: 500 var(--text-base)/1 var(--font-sans); text-align: left; cursor: pointer; }
+.rail-nav { display: flex; flex-direction: column; }
+.rail-group { display: flex; flex-direction: column; gap: 2px; }
+/* group caption: the same tracked micro-label the metric tables use (§3), so the
+   rail reads as an indexed list rather than four icons in a row */
+.rail-cap { margin: 0; padding: 0 10px 6px;
+  font-size: var(--text-2xs); font-weight: 500; line-height: 1.1; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink-muted); }
+.rail-sep { height: 1px; margin: 12px -12px 10px; background: var(--border); }
+.rail-link { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px;
+  border: 0; border-radius: 6px; background: none; color: var(--ink-secondary);
+  font: 500 var(--text-base)/1 var(--font-sans); letter-spacing: -0.005em;
+  text-align: left; cursor: pointer; }
 .rail-link:hover { background: var(--tint); border: 0; color: var(--matte-black); }
-.rail-link.is-active { background: var(--tint); color: var(--matte-black); }  /* OWB: current section */
-.rail-link.is-active .rail-icon { color: var(--accent); }
-.rail-icon { flex: none; color: var(--stone-grey); }
+.rail-link:active { background: var(--alabaster-mid); }
+.rail-link:hover .rail-icon { color: var(--matte-black); }
+/* current section (§5 selected state, the same one the tabs, pills and table rows
+   use): alabaster wash + 3 px ink key-line. Never orange — orange is a brand
+   graphic here, not a state, and it read as "live" everywhere else on the page. */
+.rail-link.is-active { background: var(--alabaster); color: var(--matte-black);
+  box-shadow: inset 3px 0 0 var(--matte-black); }
+.rail-link.is-active .rail-icon { color: var(--matte-black); }
+.rail-icon { flex: none; color: var(--stone-grey); transition: color .08s ease; }
 .rail-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rail-foot { margin-top: auto; display: flex; flex-direction: column; align-items: stretch; gap: 6px;
-  padding-top: 12px; border-top: 1px solid var(--border); }
+/* the footer is the rail's settings column: a micro-label over each control, all
+   of it on the rail's text column (22 px = rail padding 12 + link padding 10) so
+   it lines up with the nav icons; its rule runs edge to edge like the head's */
+.rail-foot { margin-top: auto; margin-inline: -12px; display: flex; flex-direction: column;
+  align-items: stretch; gap: 10px; padding: 12px 22px 4px; border-top: 1px solid var(--border); }
+.rail-set { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .rail-foot #week-picker { width: 100%; max-width: none; }
+/* theme: the same segmented control as the skill-chart toggle, sized to the rail.
+   Selected = alabaster + ink, keyed with a 2 px underline: at this width the 3 px
+   left bar the list controls use lands on the segment divider and reads as an
+   artifact, an underline does not. */
+.theme-ctl { display: flex; }
+.theme-ctl button { flex: 1 1 0; min-width: 0; padding: 5px 4px;
+  font-size: var(--text-xs); line-height: 1.2; }
+.theme-ctl button:not(.on) { color: var(--ink-secondary); }
+.theme-ctl button + button { border-left: 0; }   /* one shared divider, not two */
+/* .rail-foot prefix only to out-specify .toggle button.on further down the file,
+   whose 3 px left bar lands on the segment divider at this width */
+.rail-foot .theme-ctl button.on { background: var(--alabaster); color: var(--matte-black);
+  box-shadow: inset 0 -2px 0 var(--matte-black); }
+.theme-ctl button:focus-visible { outline-offset: -2px; }   /* inside the segmented box */
 
-/* collapsed rail (desktop): 58 px, marks and glyphs only — OWB's is-collapsed */
+/* collapsed rail (desktop): 58 px, marks and glyphs only — OWB's is-collapsed.
+   Labels go clip-hidden, NOT display:none: the button keeps its accessible name
+   (the icon svg is aria-hidden, so display:none left every glyph unnamed) and
+   setCollapsed() adds a matching tooltip. */
 html.rail-collapsed .rail { flex-basis: 58px; width: 58px; padding: 12px 10px 16px; align-items: stretch; }
-html.rail-collapsed .rail-brand, html.rail-collapsed .rail-label, html.rail-collapsed .rail-foot { display: none; }
+html.rail-collapsed .rail-sep { margin-inline: -10px; }
+html.rail-collapsed .rail-brand, html.rail-collapsed .rail-foot { display: none; }
 html.rail-collapsed .rail-head { flex-direction: column; gap: 8px; margin: 0 -10px; padding: 0 10px 12px; }
 html.rail-collapsed .rail-toggle { margin-left: 0; }
 html.rail-collapsed .rail-toggle svg { transform: rotate(180deg); }
-html.rail-collapsed .rail-nav { width: 100%; gap: 4px; }
+html.rail-collapsed .rail-nav { width: 100%; }
+html.rail-collapsed .rail-group { gap: 4px; }
+html.rail-collapsed .rail-cap { display: none; }
 html.rail-collapsed .rail-link { justify-content: center; padding: 0; }
+html.rail-collapsed .rail-label { position: absolute; width: 1px; height: 1px; margin: -1px;
+  padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* rail → drawer (<1100px, the shell breakpoint): the column cannot be a column at
    phone width, so it becomes OWB's mobile-topbar + a drawer over the same markup. */
@@ -230,22 +279,64 @@ html.rail-collapsed .rail-link { justify-content: center; padding: 0; }
     height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border);
     background: color-mix(in srgb, var(--canvas) 92%, transparent);
     backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-  .mobile-topbar .rail-brand { flex: 1 1 auto; color: var(--matte-black); }
-  .rail-toggle { width: 32px; height: 32px; }
+  .rail-toggle { width: 40px; height: 40px; }
   .rail-toggle .ic-rail { display: none; }
   .rail-toggle .ic-close { display: block; }
   nav.controls { top: 52px; }   /* under the sticky topbar, not behind it */
-  .nav-btn { flex: none; width: 36px; height: 36px; margin-right: -8px; padding: 0; border: 0;
-    border-radius: 8px; background: none; color: var(--matte-black); cursor: pointer; line-height: 0;
+  .nav-btn { flex: none; width: 40px; height: 40px; margin-left: auto; margin-right: -10px; padding: 0;
+    border: 0; border-radius: 8px; background: none; color: var(--matte-black); cursor: pointer; line-height: 0;
     display: grid; place-items: center; }
-  .nav-btn:active { background: var(--tint); }
+  .nav-btn:hover { background: var(--tint); }
+  .nav-btn:active { background: var(--alabaster-mid); }
+  /* 40 px segments: the theme control is a touch target in the drawer */
+  .theme-ctl button { padding: 9px 4px; min-height: 40px; }
   body.nav-open { overflow: hidden; }
   body.nav-open::before { content: ""; position: fixed; inset: 0; z-index: 999;
     background: rgba(38, 38, 32, .34); }
   body.nav-open .rail { display: flex; position: fixed; top: 0; bottom: 0; left: 0; z-index: 1000;
-    width: min(280px, 86vw); height: 100dvh; background: var(--bg-panel);
+    width: min(300px, 86vw); height: 100dvh; background: var(--bg-panel);
     box-shadow: 0 0 40px rgba(38, 38, 32, .18); }
+  /* the drawer is touch-first: 44 px rows and 44 px toggles (M7 tap targets) */
+  .rail-link { height: 44px; padding: 0 12px; }
+  .rail-cap { padding-left: 12px; }
+  .rail-foot { padding-inline: 24px; }   /* matches the drawer's 12 + 12 text column */
+  .rail-head { margin: 0 -12px; padding: 0 12px 12px; }
+  /* A section jump lands BELOW the sticky topbar: scrollIntoView(block:'start')
+     puts the section's top at y=0, which the 52 px bar would sit on. */
+  #explore, main section { scroll-margin-top: 60px; }
 }
+@media (max-width: 479px) {
+  .nav-btn { width: 44px; height: 44px; }
+}
+
+/* the drawer slides in over the scrim; both follow the page's reduced-motion rule */
+@keyframes rail-slide-in { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes rail-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) {
+  body.nav-open .rail { animation: rail-slide-in .18s ease-out; }
+  body.nav-open::before { animation: rail-scrim-in .18s ease-out; }
+}
+
+/* ---- skip link (WCAG 2.4.1): off-canvas until focused, then pinned to the top
+   of the CONTENT column — at the viewport's top-left it sat on the rail's brand
+   tile. Desktop: just past the 220 px rail (70 px past the collapsed 58 px one);
+   below the drawer breakpoint: the content gutter, and under the 52 px topbar
+   instead of on it. Fixed, not in flow: a display:none link is not focusable at
+   all, and an in-flow one would shove the page down while focused. app.js
+   intercepts the click so the hash (app state) is never touched. ---- */
+.skip-link { position: fixed; top: -60px; left: 232px; z-index: 1300;
+  display: inline-flex; align-items: center; height: 38px; padding: 0 14px;
+  background: var(--bg-panel); color: var(--matte-black); border: 1px solid var(--border-strong);
+  border-radius: 6px; box-shadow: var(--shadow); text-decoration: none;
+  font: 500 var(--text-sm)/1 var(--font-sans); }
+.skip-link:focus { top: 12px; outline: 2px solid var(--accent-focus); outline-offset: 2px; }
+html.rail-collapsed .skip-link { left: 70px; }
+@media (max-width: 1099px) {
+  .skip-link { left: 24px; top: -120px; }
+  .skip-link:focus { top: 64px; }        /* below the sticky topbar, not on it */
+}
+@media (max-width: 620px) { .skip-link { left: 16px; } }
+#main-content:focus { outline: none; }
 
 /* brand mark — the EWB mark on its tile: the same drawing as favicon.svg, so the tab and the rail
    carry one thing. A tile is what makes a small mark read as a logo instead of as the UI's own
@@ -637,6 +728,17 @@ footer a:hover { color: var(--matte-black); }
 #about-dialog p { max-width: 68ch; font-size: var(--text-base); line-height: 1.55; margin: 0 0 12px; }
 #about-dialog .chip { display: inline-flex; margin: 0 4px 6px 0; }
 #about-dialog .dlg-note { font-size: var(--text-xs); color: var(--ink-muted); }
+/* "How a spell becomes an event" + the Python listing (About dialog) */
+#about-dialog .method-steps { margin: 0 0 12px; padding-left: 20px; max-width: 72ch; }
+#about-dialog .method-steps li { font-size: var(--text-base); line-height: 1.55; margin: 0 0 7px; }
+#about-dialog .method-steps li::marker { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+#about-dialog .repro { margin: 0 0 16px; max-width: 78ch; }
+#about-dialog .repro > summary { cursor: pointer; font-size: var(--text-sm); color: var(--accent-link); }
+#about-dialog .repro > summary:hover { color: var(--matte-black); }
+#about-dialog .repro pre { margin: 10px 0 0; padding: 12px 14px; max-height: 46vh; overflow: auto;
+  background: var(--bg-inset); border: 1px solid var(--border); border-radius: 6px;
+  font: 400 var(--text-2xs)/1.55 var(--font-mono); color: var(--text); white-space: pre;
+  user-select: text; -webkit-user-select: text; }
 .linkbtn { border: none; background: none; padding: 0; font: inherit; cursor: pointer;
   color: var(--accent-ui); text-decoration: underline; text-underline-offset: 2px; }
 .linkbtn:hover { color: var(--matte-black); background: none; }
@@ -773,19 +875,12 @@ nav.controls .dd .dd-body {
   fill: var(--ink); }
 .gm-open-wrap:hover .gm-open-pill { stroke: var(--accent); }
 .gm-halo { fill: none; stroke: var(--canvas); stroke-width: 3; }
-.gm-chips { display: flex; gap: 8px; flex-wrap: wrap; }
-.gm-chip { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  border: 1px solid var(--border-strong); border-radius: 999px; padding: 4px 10px;
-  background: var(--bg-panel); font: inherit; font-size: var(--text-xs); color: var(--ink); }
-.gm-chip i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 .gm-time-row { display: grid; grid-template-columns: minmax(0, 1fr) auto;
   align-items: center; gap: 2px 12px; margin-top: 6px; }
 .gm-time-row > span:empty { display: none; }   /* legacy leading spacer */
 .gm-date-readout { font-size: var(--text-base); font-weight: 500; white-space: nowrap; }
-/* layer-chip row (the colour scales live INSIDE the map — see #gm-legend), so
-   this row's height never depends on what is painted; the timeline card below
-   is one widget: transport + current time, the scrubber, the event lanes */
-.map-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+/* the timeline card under the map is one widget: transport + current time, the
+   scrubber, the event lanes (the colour scales ride inside the map itself) */
 .timeline { margin-top: 12px; padding: 10px 12px 6px; background: var(--bg-panel);
   border: 1px solid var(--border); border-radius: 6px; }
 .tl-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
@@ -795,52 +890,63 @@ nav.controls .dd .dd-body {
 #gm-gantt { width: 100%; display: block; margin-top: 2px; overflow: visible; }
 .gm-note { color: var(--text-dim); font-size: var(--text-sm); margin: 8px 0 0; }
 .gm-note[hidden] { display: none; }
-/* Adaptive colour scales, painted INSIDE the map (mergedmap.js renderLegend).
-   #raw-map-wrap is position:relative + overflow:hidden, so the panel is
-   clipped to the canvas and its height — which changes with the layers that
-   are on, the frame under the slider and the Region view — can never move the
-   slider, the timeline, the event list or any card below (the layout-shift
-   reservations below, applied to a live control). Groups stack vertically in
-   the bottom-left, the corner an Equal Earth sphere leaves empty. Every stop
-   is labelled in its lane's own units; a stop the CURRENT frame does not
-   paint dims with a dashed edge, and a lane with nothing in view says so. */
-#gm-legend { position: absolute; left: 8px; bottom: 8px; z-index: 2;
-  display: flex; flex-direction: column; gap: 5px;
-  max-width: min(330px, calc(100% - 16px)); padding: 6px 8px 5px;
+/* Adaptive colour scales (mergedmap.js renderLegend): a slim key strip BELOW
+   the map (owner complaint 2026-11-11: the in-map panel hid a quarter of the
+   map). Its height is FIXED for a given width — content changing (layer
+   toggles, the frame under the slider, the Region view) can never move the
+   timeline or the cards below. Wide containers: one row. Narrow containers
+   (container query on #global-sec, so it follows the MAP column, not the
+   viewport): lanes stack one per row — no horizontal scroll at any width
+   from 320 up, nothing hidden behind a scrollbar nobody discovers. Every
+   stop is labelled in its lane's own units; a stop the CURRENT frame does
+   not paint dims with a dashed edge, and a lane with nothing in view says
+   so. Swatches are uniform-width; each ramp's labels set one shared column
+   width, centred under their swatch, so the key reads as even as the scale. */
+#global-sec { container-type: inline-size; }
+#gm-legend { display: flex; flex-direction: column; align-items: flex-start;
+  gap: 3px; overflow-x: visible;
+  margin-top: 8px; padding: 5px 8px 4px; min-height: 116px;
   background: var(--bg-panel); border: 1px solid var(--border);
-  border-radius: 6px; box-shadow: var(--shadow);
-  pointer-events: none; }        /* map underneath stays clickable + hoverable;
-                                    the layer chips below carry the long tips */
-#gm-legend:empty { display: none; }
-.gm-legend .swatch { width: 24px; height: 11px; border: 1px solid var(--border-strong);
+  border-radius: 6px; }
+/* height is reserved while empty (CLS contract with the reservations below);
+   it only paints chrome once it paints content */
+#gm-legend:empty { visibility: hidden; border-color: transparent; background: none; }
+.gm-legend .swatch { width: 20px; height: 10px; border: 1px solid var(--border-strong);
   border-radius: 2px; display: block; }
-/* one line per lane: label column + ramp, so the panel stays a corner strip */
-.lg-group { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 1px 8px; }
+/* one group per lane: stacked name+unit, then the ramp of stops to its right */
+.lg-group { display: flex; align-items: center; gap: 8px; flex: none; position: relative; }
 .lg-head { display: grid; gap: 1px; }
 .lg-name { font-size: var(--text-2xs); font-weight: 500; letter-spacing: .08em;
   text-transform: uppercase; color: var(--text-dim); white-space: nowrap; }
-.lg-unit { font-size: var(--text-2xs); color: var(--ink-muted); }
-.lg-none { font-size: var(--text-2xs); color: var(--warn-ink); }
-.lg-stops { display: flex; align-items: flex-start; gap: 4px; }
-/* each stop reserves room for its own caption: '1000' / '1250+' are wider than
-   the swatch and would otherwise run into the next label */
-.lg-bin { display: grid; justify-items: center; gap: 2px; min-width: 32px; }
-.lg-bin.prov { margin-left: 8px; }   /* a texture, not the next step of the ramp */
-.lg-t { font-size: var(--text-2xs); color: var(--ink-muted); font-family: var(--font-mono); }
+.lg-unit { font-size: var(--text-2xs); color: var(--ink-muted); white-space: nowrap; }
+/* 'none in view' floats as a pill over its lane — an empty lane is a
+   transient Region/frame state, and a third grid line in the head would
+   grow the strip and move everything below it (the strip's whole promise
+   is a fixed height per layout) */
+.lg-none { position: absolute; top: -2px; left: 4px; z-index: 1;
+  font-size: var(--text-2xs); color: var(--warn-ink);
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 999px; padding: 0 5px; line-height: 1.4; white-space: nowrap; }
+.lg-stops { display: flex; align-items: flex-start; gap: 3px; }
+/* equal-width columns per ramp (widest label of that lane), label centred */
+.lg-bin { display: grid; justify-items: center; gap: 2px; width: 22px; }
+.lg-group[data-layer="a"] .lg-bin { width: 34px; }   /* '1250+' sets the IVT column */
+.lg-bin.prov { width: 22px; margin-left: 8px; }   /* a texture, not the next step of the ramp */
+.lg-t { font-size: var(--text-2xs); color: var(--ink-muted); font-family: var(--font-mono);
+  white-space: nowrap; }
 .lg-bin.out { opacity: .32; }
 .lg-bin.out .swatch { border-style: dashed; }
 .lg-group.none { opacity: .6; }
-@media (max-width: 699px) {   /* small map: a flush key strip along its bottom edge */
-  #gm-legend { left: 0; right: 0; bottom: 0; max-width: none;
-    flex-flow: row wrap; gap: 2px 14px; padding: 3px 6px;
-    border: 0; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; }
-  .lg-group { gap: 0 6px; }
-  .lg-unit { display: none; }   /* the chips under the map name the lanes + thresholds */
-  .gm-legend .swatch { width: 14px; height: 9px; }
-  .lg-bin { min-width: 15px; }
-  .lg-bin.prov { margin-left: 5px; }
-  /* mid-scale digits would collide at 14px swatches: the endpoints carry the range */
-  .lg-stops .lg-bin:not(:first-child):not(:last-child) .lg-t { visibility: hidden; }
+@container (min-width: 680px) {   /* one row when the map column can hold all three lanes */
+  #gm-legend { flex-direction: row; align-items: center; gap: 20px;
+    min-height: 48px; padding: 6px 8px 4px; }
+  .lg-bin.prov { width: auto; }
+  .lg-bin.prov .lg-t { display: none; }   /* the dither texture + its title carry it in one row */
+  /* one row has no vertical air between the lanes: a hairline divider keeps
+     '…7+ today | FREEZE…' from reading as one string; each unit caption
+     belongs to its own title and never touches the previous group */
+  .lg-group + .lg-group::before { content: ""; position: absolute; left: -11px;
+    top: 3px; bottom: 3px; width: 1px; background: var(--border); }
 }
 
 /* base map primitives live in the canvas paint — see mergedmap.js drawBase */
@@ -885,11 +991,6 @@ nav.controls .dd .dd-body {
 @media (max-width: 620px) {
   #global-sec .gm-date-readout { text-align: right; }
 }
-/* pressed type chip = same quiet selected state as every other chip */
-.gm-chip[aria-pressed="true"] { background: var(--alabaster); border-color: var(--border);
-  box-shadow: inset 3px 0 0 var(--matte-black); }
-.gm-chip[aria-pressed="false"] { color: var(--ink-secondary); }
-
 /* G-04 superseded 2026-11-09 (briefs/event_view_overlay.md): the event detail
    is ONE map card with stacked model overlays — the 2-up panel grid retires. */
 #detail-viz .ev3-root > .ev3-obsblock { margin: 0; }

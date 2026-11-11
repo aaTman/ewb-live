@@ -22,6 +22,7 @@ from typing import Any
 import numpy as np
 import xarray as xr
 
+from . import ar_mask
 from ._upstream import temperature_events as _te
 from .types import Event, make_event_id, normalize_lon_180
 
@@ -31,9 +32,29 @@ logger = logging.getLogger(__name__)
 AR_MIN_LAND_PIXELS = 10
 # detection-rule version (cache key, events/__init__._cache_path): bump on
 # any AR mask/screen rule change. v2 = SPEC "AR tropical exclusion" 2026-11-08
-AR_RULE_REV = "v5"  # v3 = track exclusion; v4 = seam-periodic labeling;
+AR_RULE_REV = "v7"  # v3 = track exclusion; v4 = seam-periodic labeling;
                     # v5 = 1-step gap bridge (display-only bridged cells;
                     # physical keep unchanged, event ids stable)
+                    # v6 = seam-periodic AR mask (events/ar_mask: the stencil
+                    # and the >=500-cell floor wrap in longitude, so an AR
+                    # across Greenwich is no longer cut at the prime meridian)
+                    # + PUBLISHED BBOX = the AR object's own IVT-mask extent
+                    # (screens/detections unchanged); bbox is in the event id,
+                    # v7 = TRACK definition (events/ar_filter): centroid drift
+                    # cap + 40-step age cap on linking, and the tropical
+                    # screen now keys on the track CENTROID staying inside
+                    # +/-15 deg for a full day instead of any cell at any
+                    # step (owner 2026-11-10: a month-long chain hid 1.92M
+                    # cells this way and "reappeared" as a new id)
+                    # so ids shift and the window re-detects once.
+# Search window (deg) around a land-falling blob for the AR OBJECT it belongs
+# to: the kept AR cells of the blob's own tracks, whose extent becomes the
+# published bbox. An AR filament routinely runs 30+ deg out over the ocean
+# ahead of its landfall, and the land blob alone is what used to be published
+# as the event bbox — so every crop that bbox produced sliced the plume (25/30
+# live AR viz assets clipped their own mask; for the 2026-08-27 Europe AR the
+# clip line sat exactly on the prime meridian).
+AR_OBJECT_SEARCH_PAD_DEG = 30.0
 AR_MIN_DAYS = 2
 AR_MAX_DURATION_DAYS = 9   # upstream cases.yaml AR p90 duration (was 12)
 AR_PAD_DEG = 5.0
@@ -131,13 +152,19 @@ def _step_arrays(
     ds_step: xr.Dataset, scheduler_workers: int = 6
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Raw 6-hourly arrays for one chunk: (AR mask, land intersection, IVT,
-    step times). Tracking + exclusion happen on the full window above."""
+    step times). Tracking + exclusion happen on the full window above.
+
+    The mask comes from ewb_live.events.ar_mask — EWB's detector with the
+    longitude stencils/labeling made periodic (see that module: upstream's
+    non-wrapping Laplacian, dilation and component floor cut ARs at the
+    prime meridian, which is the array edge of a 0..360 ERA5 grid).
+    """
     from extremeweatherbench.events import atmospheric_river as ar
 
     ds_step = ds_step.chunk(
         {"valid_time": 1, "level": -1, "latitude": -1, "longitude": -1}
     )
-    out = ar.build_atmospheric_river_mask_and_land_intersection(
+    out = ar_mask.build_atmospheric_river_mask_and_land_intersection(
         ds_step,
         output_variables=["atmospheric_river_mask", "atmospheric_river_land_intersection",
                           "integrated_vapor_transport"],
@@ -156,6 +183,59 @@ def _step_arrays(
         np.asarray(ivt, dtype=np.float32),
         np.asarray(out.valid_time, "datetime64[h]"),
     )
+
+
+def _object_extent(labels6: np.ndarray, ti: np.ndarray, region: np.ndarray,
+                   ilat: np.ndarray, ilon: np.ndarray, lats: np.ndarray,
+                   lons: np.ndarray) -> tuple[float, float, float, float] | None:
+    """Extent (lat_min, lat_max, west, east) of the AR OBJECT a segment fell
+    on to: the kept AR cells of the very tracks that own its land cells,
+    inside a window grown by AR_OBJECT_SEARCH_PAD_DEG around the land blob.
+
+    The published bbox must describe the AR, not only where it came ashore —
+    the land blob alone clipped 25/30 live AR crops (and for the 2026-08-27
+    Europe AR it clipped it exactly along the prime meridian). Returns None
+    when the segment's land cells carry no track label (caller keeps the
+    land-blob box).
+
+    lon endpoints come back in the longitude ARRAY's convention (west > east
+    = the object straddles the array seam); the caller maps them with
+    seam.arc_bbox_180.
+    """
+    from . import seam
+
+    lab_win = labels6[np.ix_(ti, ilat, ilon)]
+    ids = np.unique(lab_win[np.asarray(region, bool)])
+    ids = ids[ids > 0]
+    if ids.size == 0:
+        return None
+
+    la = np.flatnonzero(ilat)
+    klat = int(round(AR_OBJECT_SEARCH_PAD_DEG / abs(float(lats[1] - lats[0]))))
+    win_lat = np.arange(max(0, int(la[0]) - klat),
+                        min(len(lats), int(la[-1]) + klat + 1))
+    cell = 360.0 / len(lons)
+    klon = int(round(AR_OBJECT_SEARCH_PAD_DEG / cell))
+    grow = np.zeros(len(lons), bool)          # longitude wraps; latitude does not
+    for off in range(-klon, klon + 1):
+        grow |= np.roll(ilon, off)
+    win_lon = np.flatnonzero(grow)
+    if win_lat.size == 0 or win_lon.size == 0:
+        return None
+
+    obj = np.isin(labels6[np.ix_(ti, win_lat, win_lon)], ids)
+    union = obj.any(axis=0)
+    arc = seam.mask_arc(union, lons[win_lon])
+    span = seam.mask_lat_span(union, lats[win_lat])
+    if arc is None or span is None:
+        return None
+    if union[:, 0].any() or union[:, -1].any():
+        # touching the search-window edge means the extent MIGHT continue
+        # past it; for a seam-straddling object the arc crossing the seam is
+        # exactly that and correct, so this is a debug breadcrumb, not a bug
+        logger.debug("AR object touches the search-window lon edge (pad=%s deg)",
+                     AR_OBJECT_SEARCH_PAD_DEG)
+    return float(span[0]), float(span[1]), float(arc[0]), float(arc[1])
 
 
 def _dominant_track_id(labels6, days, seg_dates, tracks6, ilat, ilon):
@@ -287,7 +367,7 @@ def scan_ar_events(
     # owner 2026-11-09 (HIGH): the upstream tracker labels non-periodically,
     # so one AR crossing the 0-meridian arrives as two seam pieces; stitch
     # them back (bbox becomes the minimal arc, wrap = lon_min > lon_max)
-    from .seam import merge_seam_objects, seam_columns
+    from .seam import arc_bbox_180, merge_seam_objects, seam_columns
 
     blobs = merge_seam_objects(blobs, lons)
 
@@ -366,11 +446,30 @@ def scan_ar_events(
 
             start_dt = dt.datetime.combine(dates[ti].min().astype(dt.date), dt.time())
             end_dt = dt.datetime.combine(dates[ti].max().astype(dt.date), dt.time()) + dt.timedelta(days=1)
+            # PUBLISHED bbox = the AR OBJECT (its IVT-mask extent), not the
+            # land-falling blob: a 5 deg pad around a land-only footprint cut
+            # the oceanic half of the plume out of every crop built from it.
+            # All the SCREENS above stay on the land-blob window (their
+            # thresholds are calibrated there); only the box moves.
+            extent = _object_extent(labels6, ti, region, ilat, ilon, lats, lons)
+            bbox_source = "ar_object"
+            if extent is not None:
+                o_lat_min, o_lat_max, o_west, o_east = extent
+                # arc_bbox_180 returns the LONGITUDE PAIR only (west padded
+                # west, east padded east, normalised to [-180, 180]; a wrap arc
+                # comes back lon_min > lon_max, which the bbox encoding
+                # understands). The latitudes come from the extent itself.
+                lon_lo, lon_hi = arc_bbox_180(o_west, o_east, AR_PAD_DEG)
+                lat_lo, lat_hi = o_lat_min, o_lat_max
+            else:
+                bbox_source = "land_blob"
+                lon_lo = normalize_lon_180(lon_min - AR_PAD_DEG)
+                lon_hi = normalize_lon_180(lon_max + AR_PAD_DEG)
+                lat_lo, lat_hi = lat_min, lat_max
             bbox = (
-                max(-90.0, lat_min - AR_PAD_DEG),
-                min(90.0, lat_max + AR_PAD_DEG),
-                normalize_lon_180(lon_min - AR_PAD_DEG),
-                normalize_lon_180(lon_max + AR_PAD_DEG),
+                max(-90.0, lat_lo - AR_PAD_DEG),
+                min(90.0, lat_hi + AR_PAD_DEG),
+                lon_lo, lon_hi,
             )
             eid = make_event_id("atmospheric_river", start_dt, bbox)
             details: dict[str, Any] = {
@@ -389,6 +488,8 @@ def scan_ar_events(
                     str(dates[ti][rule["landfall_step"]])
                     if rule["landfall_step"] is not None else None),
                 "detection": "EWB AR mask + land intersection blob tracking",
+                # which extent produced bbox (see _object_extent)
+                "bbox_source": bbox_source,
                 # persistent AR track id (owner 2026-11-09): dominant track
                 # label over the segment's steps (shared label array)
                 "track_id": _dominant_track_id(labels6, days, dates[ti],

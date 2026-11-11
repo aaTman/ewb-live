@@ -5,15 +5,27 @@ exceedance masks BEFORE the AND/3-day/area/curation filters, no event boxes.
 Layers per 6-hourly frame: heat (2t > OWB p85), freeze (2t < OWB p15) — the
 exact frame-level operators of upstream build_exceedance_mask minus only the
 daily min-over-4-steps pass, land-only as the detector is; AR = EWB's own
-build_atmospheric_river_mask_and_land_intersection (IVT>=400 & Laplacian),
-per 6-hourly step. Source: the local ERA5 mirror (2t + u/v/q on exactly the
-levels AR detection uses — no ARCO fetch needed); frames end at the mirror
-end, which is what the pipeline's own ERA5 copy covers (index `cutoff`).
+IVT>=400 & Laplacian detector computed seam-periodically
+(ewb_live/events/ar_mask.py — upstream's non-wrapping stencil and component
+floor cut ARs along the prime meridian, which is the array edge of a 0..360
+ERA5 grid), per 6-hourly step. Source: the local ERA5 mirror (2t + u/v/q on
+exactly the levels AR detection uses — no ARCO fetch needed); frames end at
+the mirror end, which is what the pipeline's own ERA5 copy covers (index
+`cutoff`).
 
 Frame file <YYYYMMDDHH>.bin = zlib( packbits(heat) ++ packbits(freeze) ++
-packbits(ar) ); each layer row-major over DISPLAY orientation: lat -90..90
-(row 0 = south), lon -180..179.75 (col 0 = west) — mirror-native (N→S,
-0-360) is flipped/rolled at load. Sidecar <YYYYMMDDHH>.run = zlib( u8 heat_run
+packbits(ar) ++ packbits(bridged) ); each layer row-major over DISPLAY
+orientation: lat -90..90 (row 0 = south), lon -180..179.75 (col 0 = west) —
+mirror-native (N→S, 0-360) is flipped/rolled at load. Plane 2 `ar` is what
+the AR lane PAINTS (physical cells plus a gap-bridged footprint); plane 3
+`bridged` flags the cells that are only that carried-over footprint, so the
+frontend can render them faintly instead of passing them off as physical.
+Sidecar <YYYYMMDDHH>.ivt = zlib(u8 IVT magnitude classes, DISPLAY orientation):
+low 3 bits = bin (0 = <250, 1 = 250-500, 2 = 500-750, 3 = 750-1000,
+4 = 1000-1250, 5 = >=1250 kg m-1 s-1), bit 7 = IVT >= 400 (the AR detector's
+threshold). Computed from the IVT FIELD — never masked by the AR paint, which
+is what made IVT values vanish whenever a track was screened (schema 2).
+Sidecar <YYYYMMDDHH>.run = zlib( u8 heat_run
 ++ u8 freeze_run ) per consecutive-day duration (dur rev v2, contract
 notes/channel_consecutive_days.md §4): low 7 bits = CONSECUTIVE COMPLETED UTC
 days the cell met the daily rule (all four 00/06/12/18Z steps exceeded),
@@ -54,7 +66,15 @@ logger = logging.getLogger(__name__)
 
 SCHEMA = 3  # v3: adds AR IVT class plane sidecars .ivt (2026-11-09)
 OUT_DIRNAME = "raw_exceedance"
-LAYER_REV = "v7"  # bump when mask/screen rules change (v7 = .ivt classified in
+LAYER_REV = "v9"  # bump when mask/screen rules change (v9 = `.ivt` published
+# from the IVT FIELD (schema 2: class in the low 3 bits, bit 7 = IVT >= 400)
+# instead of being masked by the AR paint, which is what made "IVT values just
+# disappear" whenever a track was screened (owner report 2026-11-10,
+# notes/ar_outage_20261110.md §3); the TC screen is step-level now too
+# (events/ar_filter). v8 = seam-periodic AR
+# mask (events/ar_mask) + the 4th `.bin` plane `bridged`: the gap-bridge
+# footprint reaches the screen as a flag now, not as an indistinguishable
+# physical cell. v7 = .ivt classified in
 # DISPLAY orientation; v6 sidecars were native-mixed garbage — ponytail 23:59Z.
 # v6 = owner gap-bridge
 # 2026-11-09: tracks persist through 1-step (6 h) gaps; the gap frame shows
@@ -88,28 +108,38 @@ def _load_index(out: Path) -> dict:
             "frames": []}
 
 
-def frame_bytes(heat: np.ndarray, freeze: np.ndarray,
-                ar: np.ndarray) -> bytes:
-    """3 bool layers (same (lat, lon) shape) -> zlib(packbits x3).
+def frame_bytes(heat: np.ndarray, freeze: np.ndarray, ar: np.ndarray,
+                bridged: np.ndarray | None = None) -> bytes:
+    """4 bool layers (same (lat, lon) shape) -> zlib(packbits x4).
+
+    Plane 2 is the AR paint mask (physical cells + gap-bridge footprint);
+    plane 3 `bridged` marks WHICH of those cells are only the carried-over
+    footprint, so the frontend can paint them faintly (SPEC "AR tropical
+    exclusion": the bridge is a display flag, not a physical cell). Pass
+    bridged=None for an empty plane: the payload is ALWAYS 4 planes, so the
+    offsets of planes 0-2 never move for an older reader.
 
     Per-ROW packing (axis=1): matches the JS decoder's ceil(nx/8) row
     stride for any nx, not just nx % 8 == 0."""
+    if bridged is None:
+        bridged = np.zeros(np.shape(ar), bool)
     blob = (np.packbits(heat, axis=1).tobytes()
             + np.packbits(freeze, axis=1).tobytes()
-            + np.packbits(ar, axis=1).tobytes())
+            + np.packbits(ar, axis=1).tobytes()
+            + np.packbits(np.asarray(bridged, bool), axis=1).tobytes())
     return zlib.compress(blob, 6)
 
 
-def frame_layers(raw: bytes, shape: tuple[int, int]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def frame_layers(raw: bytes, shape: tuple[int, int]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Decode frame_bytes() output (used by tests; the JS decoder is the port)."""
     ny, nx = shape
     rs = -(-nx // 8)
     plane = ny * rs
     b = zlib.decompress(raw)
-    if len(b) != 3 * plane:
-        raise ValueError(f"frame payload {len(b)} B != {3 * plane} B")
+    if len(b) != 4 * plane:
+        raise ValueError(f"frame payload {len(b)} B != {4 * plane} B")
     out = []
-    for i in range(3):
+    for i in range(4):
         bits = np.unpackbits(np.frombuffer(b[i * plane:(i + 1) * plane], np.uint8))
         out.append(bits.reshape(ny, rs * 8)[:, :nx].astype(bool))
     return tuple(out)  # type: ignore[return-value]
@@ -203,36 +233,57 @@ def run_from_bytes(raw: bytes, shape: tuple[int, int]
     return a[:n].reshape(shape), a[n:].reshape(shape)
 
 
-def ivt_class_plane(ivt: np.ndarray, ar_mask: np.ndarray) -> np.ndarray:
-    """Compute AR IVT class plane (u8) from IVT magnitude and AR mask.
-    
-    Bins (kg m-1 s-1):
-    - 0: no AR (mask is False)
+IVT_CLASS_EDGES = [250, 500, 750, 1000, 1250]   # kg m-1 s-1, class 1..5
+IVT_AR_MIN = 400.0    # the AR detector's own IVT threshold
+IVT_ABOVE_BIT = 128   # plane bit 7: IVT >= IVT_AR_MIN (ivt schema 2)
+IVT_CLASS_MASK = 7    # low 3 bits: the IVT class (0 = below the first edge)
+
+
+def ivt_class_plane(ivt: np.ndarray) -> np.ndarray:
+    """IVT magnitude class plane (u8) from the IVT FIELD itself.
+
+    Bins (kg m-1 s-1), low 3 bits:
+    - 0: below 250
     - 1: 250-500
     - 2: 500-750
     - 3: 750-1000
     - 4: 1000-1250
     - 5: >=1250
-    
+    plus bit 7 (`IVT_ABOVE_BIT`) wherever IVT >= `IVT_AR_MIN` (400) — the
+    detector's own threshold, so the frontend can keep the moisture-flux field
+    visible without calling those cells ARs.
+
+    It is deliberately NOT gated on the AR mask (owner report 2026-11-10, "IVT
+    values just disappear", north Atlantic 08-12 18Z -> 08-13 00Z). The plane
+    used to be `class(ivt, ar_paint)` — zero wherever the AR layer does not
+    paint — and the dashboard colours AND hovers from it alone, so the published
+    `.ivt` non-zero mask was cell-identical to the `.bin` AR plane
+    (notes/ar_outage_20261110.md §3). Every track screen and every marginal
+    `|blurred v2 IVT| >= 2.5` flicker therefore deleted the IVT field too: at
+    08-13 00Z the basin held 5 515 cells at IVT >= 400 while 85 were painted.
+    What the screens decide is what COUNTS as an AR (`.bin` plane 2); the field
+    itself is never unpublished.
+
     Args:
         ivt: (ny, nx) float array of IVT magnitude
-        ar_mask: (ny, nx) bool array of AR mask
-    
+
     Returns:
-        (ny, nx) u8 array with class values 0-5
+        (ny, nx) u8 array: class in the low 3 bits, `IVT_ABOVE_BIT` on cells at
+        or above the AR IVT threshold.
     """
+    ok = np.isfinite(ivt)
+    v = np.where(ok, ivt, 0.0)
     classes = np.zeros(ivt.shape, dtype=np.uint8)
-    # Only classify cells where AR mask is True
-    ar_cells = ar_mask & np.isfinite(ivt)
-    
-    # Classify IVT values into bins
-    classes[ar_cells & (ivt >= 1250)] = 5
-    classes[ar_cells & (ivt >= 1000) & (ivt < 1250)] = 4
-    classes[ar_cells & (ivt >= 750) & (ivt < 1000)] = 3
-    classes[ar_cells & (ivt >= 500) & (ivt < 750)] = 2
-    classes[ar_cells & (ivt >= 250) & (ivt < 500)] = 1
-    # Cells below 250 or not in AR mask remain 0
-    
+
+    # Classify the IVT field into bins (NaN cells and cells below the first
+    # edge stay 0; nothing here consults a mask)
+    classes[v >= IVT_CLASS_EDGES[4]] = 5
+    classes[(v >= IVT_CLASS_EDGES[3]) & (v < IVT_CLASS_EDGES[4])] = 4
+    classes[(v >= IVT_CLASS_EDGES[2]) & (v < IVT_CLASS_EDGES[3])] = 3
+    classes[(v >= IVT_CLASS_EDGES[1]) & (v < IVT_CLASS_EDGES[2])] = 2
+    classes[(v >= IVT_CLASS_EDGES[0]) & (v < IVT_CLASS_EDGES[1])] = 1
+    classes[~ok] = 0
+    classes[(v >= IVT_AR_MIN) & ok] |= IVT_ABOVE_BIT
     return classes
 
 
@@ -286,9 +337,10 @@ def _write_atomic(path: Path, data: bytes) -> None:
 def build_frames(out: Path, times: list[np.datetime64], layer_fn, force: bool,
                  frames: list[str], run_seed: dict | None = None) -> int:
     """Write missing frames; returns count written. layer_fn(day_times) ->
-    (heat, freeze, ar[, labels[, ivt]]) arrays (len(day_times), LAT_N, LON_N):
-    heat/freeze/ar are bool, labels is uint16 track ids, ivt is float IVT values;
-    display orientation. run_seed: {day: (c_heat, c_freeze)} C grids from
+    (heat, freeze, ar[, labels[, ivt[, bridged]]]) arrays (len(day_times),
+    LAT_N, LON_N): heat/freeze/ar are bool, labels is uint16 track ids, ivt is
+    float IVT values, bridged is the bool AR gap-bridge plane; display
+    orientation. run_seed: {day: (c_heat, c_freeze)} C grids from
     _daily_runs, seeding the .run recurrence (§2/§3)."""
     out.mkdir(parents=True, exist_ok=True)
     done = set(frames)
@@ -308,13 +360,15 @@ def build_frames(out: Path, times: list[np.datetime64], layer_fn, force: bool,
             continue
         labels4 = res[3] if len(res) > 3 else None
         ivt_day = res[4] if len(res) > 4 else None
+        bridged4 = res[5] if len(res) > 5 else None
         heat, freeze, ar = res[0], res[1], res[2]
         seed_h, seed_f = _seed_for(run_seed, group[0])
         h_runs = run_recurrence([list(heat)], seed_h)
         f_runs = run_recurrence([list(freeze)], seed_f)
         for t in pending:
             i = group.index(t)
-            raw = frame_bytes(heat[i], freeze[i], ar[i])
+            raw = frame_bytes(heat[i], freeze[i], ar[i],
+                              bridged4[i] if bridged4 is not None else None)
             _write_atomic(out / _frame_name(t), raw)
             tag = _frame_name(t)[:-4]
             if labels4 is not None:  # per-frame track labels (owner 2026-11-09)
@@ -322,9 +376,16 @@ def build_frames(out: Path, times: list[np.datetime64], layer_fn, force: bool,
                               labels_bytes(labels4[i]))
             _write_atomic(out / f"{tag}{RUN_NAME}",
                           run_bytes(h_runs[i], f_runs[i]))
-            # AR IVT class plane sidecar (v3 schema)
+            # AR IVT class plane sidecar (v3 schema) — the gap-bridge
+            # footprint is excluded: it never met the IVT rule, so it must
+            # not carry a magnitude class (the screen paints it faintly from
+            # plane 3, and hover reads this same plane)
+            # AR IVT class plane sidecar (v3 schema) — computed from the IVT
+            # field, NOT from the paint: see ivt_class_plane's docstring for the
+            # owner report that proves why (the gap-bridge footprint carries no
+            # class of its own because it never met the IVT rule)
             if ivt_day is not None and len(ivt_day) > i:
-                class_plane = ivt_class_plane(ivt_day[i], ar[i])   # both display-oriented
+                class_plane = ivt_class_plane(ivt_day[i])   # display-oriented
                 _write_atomic(out / f"{tag}{IVT_CLASS_NAME}",
                               ivt_class_bytes(class_plane))
             if tag in done:
@@ -369,11 +430,14 @@ def _step_heat_freeze(t2m, clim_hi, clim_lo, land, n: int):
 
 
 def _make_layer_fn(mirror, clim_hi, clim_lo, land, keep6, labels6, times6,
-                   remap, ivt6):
+                   remap, ivt6, ghost6=None):
     """layer_fn for one day of 6-hourly mirror steps. AR layer + track
     labels come from the ONE window-level tracked pass (events/ar_filter) —
     no per-frame object decisions, so an AR cannot blink between frames
-    (owner 2026-11-09). ivt6 is the full window IVT for AR class plane."""
+    (owner 2026-11-09). ivt6 is the full window IVT for AR class plane.
+    ghost6 (optional) is the gap-bridge footprint alone — kept separate from
+    keep6 (physical | ghost, what the AR lane paints) so the frame can carry
+    the flag and the frontend can paint those cells faintly."""
     pos_of = {str(np.datetime64(t, "h")): i for i, t in enumerate(times6)}
 
     def layer_fn(day_times):
@@ -389,9 +453,12 @@ def _make_layer_fn(mirror, clim_hi, clim_lo, land, keep6, labels6, times6,
         keep = keep6[pos]
         lab = np.where(keep, remap[labels6[pos]], np.uint16(0))
         ivt_day = ivt6[pos] if len(ivt6) > 0 else np.zeros((len(day_times),) + keep[0].shape, float)
+        ghost = (_to_display(ghost6[pos]) if ghost6 is not None
+                 else np.zeros_like(_to_display(keep)))
         return (_to_display(heat), _to_display(freeze), _to_display(keep),
                 _to_display(lab),
-                np.stack([_to_display(v) for v in ivt_day]))  # contract: ALL outputs display-oriented
+                np.stack([_to_display(v) for v in ivt_day]),  # contract: ALL outputs display-oriented
+                ghost)
     return layer_fn
 
 
@@ -473,27 +540,33 @@ def read_presence(out: Path, frames: list[str],
 def _empty_pass():
     """Zero-length AR pass: empty window (:361 guard) or every day's AR
     path failed in the loop (ponytail 08:16Z NICE — same opaque
-    concatenate ValueError the input guard names)."""
+    concatenate ValueError the input guard names).
+
+    7-tuple, same shape as _ar_window_pass's: (keep, labels, times, remap,
+    ivt, bridged-dict, ghost)."""
     return (np.zeros((0, LAT_N, LON_N), bool),
             np.zeros((0, LAT_N, LON_N), np.int32),
             np.array([], "datetime64[h]"),
             np.zeros(1, np.uint16),
             np.zeros((0, LAT_N, LON_N), float),
-            {})
+            {},
+            np.zeros((0, LAT_N, LON_N), bool))
 
 
 def _ar_window_pass(mirror, times, ledger_path: Path):
     """ONE AR mask + tracking pass over the full frame window. Returns
-    (keep6, labels6, times6, remap, ivt6, bridged). Exclusion happens at
-    TRACK level via the shared events/ar_filter fn — same function detection
-    uses, so map and events cannot diverge (owner 2026-11-09). keep6 here is
-    the DISPLAY mask (physical | gap-bridged footprint — the physical/detec-
-    tion keep stays inside ar_filter). remap maps global track label -> u2
-    sidecar id (kept tracks only); bridged maps sidecar id -> gap frame tags.
-    The ledger json carries {track_id: window/reason} for design's
-    before/after reports."""
+    (keep6, labels6, times6, remap, ivt6, bridged, ghost6). Exclusion happens
+    at TRACK level via the shared events/ar_filter fn — same function
+    detection uses, so map and events cannot diverge (owner 2026-11-09). The
+    mask itself comes from events/ar_mask (EWB detector, seam-periodic).
+    keep6 here is the DISPLAY mask (physical | gap-bridged footprint — the
+    physical/detection keep stays inside ar_filter); ghost6 is that bridged
+    footprint alone, so the frame can carry it as a flag. remap maps global
+    track label -> u2 sidecar id (kept tracks only); bridged maps sidecar id
+    -> gap frame tags. The ledger json carries {track_id: window/reason} for
+    design's before/after reports."""
     import dask
-    from extremeweatherbench.events import atmospheric_river as ar_ev
+    from ewb_live.events import ar_mask
     from ewb_live.events.ar_filter import ar_filter_tracks
     from ewb_live.events.tc_screen import TC_SCREEN_ON, load_ibtracs_tracks
 
@@ -517,7 +590,7 @@ def _ar_window_pass(mirror, times, ledger_path: Path):
                                "time": "valid_time"})
                       .chunk({"valid_time": 1, "level": -1, "latitude": -1,
                               "longitude": -1}))
-                result = ar_ev.build_atmospheric_river_mask_and_land_intersection(
+                result = ar_mask.build_atmospheric_river_mask_and_land_intersection(
                     ds, output_variables=["atmospheric_river_mask", "integrated_vapor_transport"])
                 m = result["atmospheric_river_mask"]
                 ivt_day = result["integrated_vapor_transport"]
@@ -565,6 +638,14 @@ def _ar_window_pass(mirror, times, ledger_path: Path):
                 str(np.datetime64(times6[s], "h")).replace("-", "")
                                      .replace("T", "")[:10]
                 for s in tr["bridged"]]
+    # STEP-LEVEL TC SCREEN audit (owner 2026-11-10): a kept track that lost
+    # cells to a cyclone records WHICH steps, so a hole in the AR layer is
+    # answerable from the ledger instead of a detector re-run
+    tc_masked: dict[str, dict] = {}
+    for k, tr in enumerate(tracks, start=1):
+        if remap[k] and tr.get("tc_steps"):
+            tc_masked[str(int(remap[k]))] = {"steps": tr["tc_steps"],
+                                             "tc": tr.get("tc_name")}
     tmp = ledger_path.with_name(ledger_path.name + f".tmp.{os.getpid()}")
     tmp.write_text(json.dumps({
         "generated": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
@@ -572,9 +653,10 @@ def _ar_window_pass(mirror, times, ledger_path: Path):
         "tracks": track_map,
         "dropped": dropped,
         "bridged": bridged,
+        "tc_masked": tc_masked,
     }, separators=(",", ":")))
     os.replace(tmp, ledger_path)   # torn ar_tracks.json kills ar_diff.py
-    return keep6, labels6, times6, remap, ivt6, bridged
+    return keep6, labels6, times6, remap, ivt6, bridged, ghost6
 
 
 def prune_frames(out: Path, frames: list[str], floor: str) -> None:
@@ -661,7 +743,7 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
     # ONE tracked AR pass for the whole window (owner 2026-11-09): track-level
     # exclusion, per-frame labels, ledger for design. Frames cached by name
     # only, so LAYER_REV bumped to v3 (tracking) forces the full rebuild.
-    keep6, labels6, ar_times, remap, ivt6, bridged = _ar_window_pass(
+    keep6, labels6, ar_times, remap, ivt6, bridged, ghost6 = _ar_window_pass(
         mirror, times, out / "ar_tracks.json")
     if not len(ar_times) and had_frames:
         # AR pass saw nothing (stale mirror or every day failed): the
@@ -674,7 +756,7 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
                        "frames — keeping last good index", len(index["frames"]))
         return out
     layer_fn = _make_layer_fn(mirror, clim_hi, clim_lo, land, keep6, labels6,
-                              ar_times, remap, ivt6)
+                              ar_times, remap, ivt6, ghost6)
     # owner 2026-11-09: track-level filtering must not blink a long-lived AR
     # across consecutive frames (off-Japan bug) — gate every build, BEFORE
     # any write AND before the expensive recurrence (ponytail 12:16Z: the
@@ -760,8 +842,14 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
     index["layers"] = {
         "h": "heat exceedance (> P85 climatology)",
         "f": "freeze exceedance (< P15 climatology)",
-        "a": ("AR mask: EWB detection minus tropical objects (any cell "
-              "within 15 deg of the equator) and tropical cyclones"),
+        "a": ("AR mask: EWB detection minus tropical objects (centroid inside "
+              "15 deg of the equator for a full day) and tropical cyclones "
+              "(step-level); the IVT magnitude field itself is published "
+              "separately in the .ivt sidecar and is never screened"),
+        # 4th `.bin` plane, not a paintable lane: flags the AR cells that are
+        # only a gap-bridged footprint, which the frontend paints faintly
+        "b": ("AR gap-bridge footprint (display only — the track persisted "
+              "through a 1-step mask dropout; not a physical AR cell)"),
     }
     index["cutoff"] = fmt(mirror_end)
     # feature-detect keys are published ONLY when the sidecars actually
@@ -780,7 +868,8 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
     # AR IVT class plane feature-detect (v3): consumer paints ramp only when
     # this key exists; bins: 250-500, 500-750, 750-1000, 1000-1250, >=1250 kg m-1 s-1
     if head and (out / f"{head}{IVT_CLASS_NAME}").exists():
-        index["ivt"] = {"schema": 1, "bins": [250, 500, 750, 1000, 1250]}
+        index["ivt"] = {"schema": 2, "bins": IVT_CLASS_EDGES,
+                        "ar_min": IVT_AR_MIN, "above_bit": IVT_ABOVE_BIT}
     else:
         index.pop("ivt", None)
     index["generated"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")

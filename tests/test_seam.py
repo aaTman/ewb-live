@@ -8,7 +8,7 @@ import pandas as pd
 
 from ewb_live.events.ar_filter import ar_filter_tracks, track_ar_components
 from ewb_live.events.seam import (arc_bbox_180, label_periodic,
-                                  merge_seam_objects, minimal_arc,
+                                  merge_seam_objects, minimal_arc, pad_bbox_180,
                                   seam_columns)
 
 T = np.array([np.datetime64("2026-10-03T00", "h")
@@ -35,7 +35,7 @@ def test_ar_spanning_350E_to_20E_is_one_component_one_track_360_grid():
     lab, n = label_periodic(m[0])
     assert n == 1                                    # ONE component
     assert lab.shape[1] == lons.size                 # no seam column added
-    _labels, tracks = track_ar_components(m, T)
+    _labels, tracks = track_ar_components(m, T, LATS, lons)
     assert len(tracks) == 1 and tracks[0]["steps"] == [0, 1, 2]
     keep, dropped, _lab2, _t = ar_filter_tracks(m, LATS, lons, T, None)
     assert keep.any() and not dropped                # kept at ALL steps
@@ -55,6 +55,29 @@ def test_ar_spanning_350E_to_20E_is_one_component_one_track_360_grid():
     assert cols.sum() == len(span)                   # no duplicate/dropped seam col
 
 
+def test_diagonal_only_seam_touch_keeps_its_cells_and_joins_one_object():
+    # left-edge cell at row r, right-edge cell only at row r+1 (8-connected
+    # across the seam, NOT same-row): label_periodic read lab[r, -1] (0) and
+    # merged the whole object into the background -> every cell unlabeled.
+    m = np.zeros((12, 40), bool)
+    m[5, 0:6] = True                 # east piece, touches col 0 at row 5
+    m[6, 34:40] = True               # west piece, touches col -1 at row 6
+    lab, n = label_periodic(m)
+    assert n == 1
+    assert (lab[m] > 0).all()        # no mask cell left unlabeled
+    assert (lab[~m] == 0).all()
+    # same-row touch (the case that always worked) is unchanged
+    m2 = np.zeros((12, 40), bool)
+    m2[5, 0:6] = True
+    m2[5, 34:40] = True
+    lab2, n2 = label_periodic(m2)
+    assert n2 == 1 and (lab2[m2] > 0).all()
+    # 4-connected callers (seam_rows=0, ar_mask) must NOT join the diagonal pair
+    lab3, n3 = label_periodic(m, np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], bool),
+                              seam_rows=0)
+    assert n3 == 2 and (lab3[m] > 0).all()
+
+
 def test_ar_spanning_170E_to_170W_one_component_pm180_grid():
     lons = _lons(-180.0)
     m = np.zeros((3, LATS.size, lons.size), bool)
@@ -63,7 +86,7 @@ def test_ar_spanning_170E_to_170W_one_component_pm180_grid():
         _blob(m, i, 25, 35, np.array(span), lons)
     _lab, n = label_periodic(m[0])
     assert n == 1
-    _labels, tracks = track_ar_components(m, T)
+    _labels, tracks = track_ar_components(m, T, LATS, lons)
     assert len(tracks) == 1
     pieces = [{"lat_min": 25.0, "lat_max": 35.0, "lon_min": -180.0,
                "lon_max": -171.0, "start": "2026-10-03", "end": "2026-10-05"},
@@ -95,3 +118,18 @@ def test_merge_requires_lat_overlap_and_date_overlap():
     old = {"lat_min": 25.0, "lat_max": 35.0, "lon_min": 350.0,
            "lon_max": 359.0, "start": "2026-09-01", "end": "2026-09-02"}
     assert len(merge_seam_objects([a, old], lons)) == 2   # dates disjoint
+
+
+def test_arc_bbox_180_returns_a_lon_pair_pad_bbox_180_a_full_bbox():
+    """Arity contract between seam and ar.py's published-bbox path.
+
+    `ar.scan_ar_events` unpacks both helpers inline, and a migration from
+    pad_bbox_180 (4 values: lat_lo, lat_hi, lon_lo, lon_hi) to arc_bbox_180
+    (2 values: the longitude pair) left a 4-target unpack in place, which
+    raised `ValueError: not enough values to unpack (expected 4, got 2)` in the
+    live weekly lane on 2026-11-10T23:09Z — detection died before any event was
+    written. Nothing else exercises that call site offline, so pin the shapes.
+    """
+    assert arc_bbox_180(-10.0, 10.0, 5.0) == (-15.0, 15.0)
+    assert arc_bbox_180(175.0, -175.0, 5.0) == (170.0, -170.0)   # wrap arc
+    assert len(pad_bbox_180((-10.0, 10.0, -20.0, 20.0), 5.0, 5.0)) == 4

@@ -185,3 +185,79 @@ Lane state: live + reviewed + tested (unit 223/28 skipped; live e2e 120/3 skippe
 failed). Branch `aaTman/regions-integration` (off `aaTman/fable-review` @ `b901e2e`).
 Remaining owner calls only: centroid vs >25 % footprint assignment (changes
 published numbers), muting scorecard cells with n < 5.
+
+## 2026-11-10 (day 2) — owner's two follow-ups: footprint rule + small-sample cue (deployed)
+
+**1 · Region membership is now footprint overlap, >25 %.** `ewb_live/regions.py`
+unpacks each event's detection mask from its viz asset (`data/results/events/
+<id>/viz.json`, both `ar_ivt` peak-day masks and `consecutive_days` unions, packed
+or text) and assigns an event to a region when **more than 25 % of its cells**
+fall inside the region box; events can belong to several regions at once. An event
+with no asset falls back to the largest-overlap bbox centroid, and the output says
+so: `assignment: {rule, threshold, fallback, events_with_footprint, events_total,
+min_sample}`. The build also publishes `events: {id: [region keys]}` — the
+authoritative map — and the JS views filter with that map (`EwbRegions.forEvent`)
+instead of re-deriving geometry, so the tables, the counts and the list/map filter
+can never disagree. `weekly.py` gained step 6c (rebuild regions *after* viz
+assets, so a new event's first assignment is already footprint-based).
+Live: footprints cover 29/132 events (all 28 scored ones); counts unchanged today
+(28 global = 9 tropics + 14 NH + 5 SH; NA 1, EU 6) — this universe's masks sit well
+inside their boxes, and a sweep from 5 % to 50 % only ever moved 3-4 memberships,
+all at the hemispheres' ±20° seam, never dropping an event. The rule earns its keep
+on the thin atmospheric rivers this was raised for. Sample mode has no viz assets,
+so it runs on the centroid fallback and the JSON says so.
+
+**2 · Small-sample cue.** A cell whose score rests on fewer than 5 events (read
+from the server: `assignment.min_sample`) gets a soft warning-red halo and a corner
+pip, and the page says it in words three ways: the lane header ("1 event ·
+indicative" / "3 events · small sample"), a note under the verdict strip ("Glowing
+cells rest on fewer than 5 events in North America … one event can move a cell by
+tens of percent"), and the tooltip ("n events 1", "sample 1 event · below 5").
+Never colour-only: shape + words, and it disappears with the region. First pass
+used a hard inset ring in `--worse` red; the owner's screenshot showed why that is
+wrong — in a 1-event lane every cell qualifies and the grid read as a wall of
+worse-than-baseline. It is now a desaturated `--small-n` halo, low alpha, outer
+glow only. Live today: 60 of 188 Global cells flagged, all in the freeze lane (1
+event); tropics and Europe are clean; North America flags 60/61, which is the truth
+about a one-event region.
+
+**Clobber incident — read this before your next `ops/remote.sh run|bg|sync`.**
+At 11:14:50Z a `remote.sh run` from a lane whose tree predates the regions work
+rsynced that tree over `/opt/ewb-live` and silently reverted my 11:05 deploy
+(`remote.sh` syncs first; mtimes came from the source tree, which is how I traced
+it). Both lane trees now **carry** the regions code —
+`dashboard/{regions.json,app.js,mergedmap.js,index.html,styles.css}`,
+`ewb_live/{regions,pipeline,weekly,serve}.py`, `scripts/{build_region_scores,dev_preview}.py`,
+`tests/{test_regions.py,e2e/test_dashboard_regions_fe.py}`, `tests/e2e/test_dashboard_fe.py`
+(+2 lazy-fetch stubs) — byte-identical to this worktree, left uncommitted for the
+orchestrator to commit. So a sync from `dogfish` or `fable-review` now reproduces
+the full live state instead of undoing it. Until those files are committed in those
+trees, single-file scp only.
+Live is re-deployed and md5-verified against this worktree (10 files), service
+restarted, region file regenerated (scorecard.json/scores.json md5s unchanged).
+Rollback of this round: `/opt/ewb-live/rollback_pre_regions_v2_20261110/` +
+`notes/rollback_pre_regions_v2/` (8 files, pre-footprint-rule bytes).
+
+## 2026-11-10 13:10Z — another lane deployed over us (cleanly this time), and fable-review was a reverter
+
+term_720dbed3 shipped the heat-3/freeze-1 paint gate at 13:01:28Z by scp'ing
+`dashboard/{app,mergedmap}.js`, `dashboard/index.html` and
+`ewb_live/viz/exceedance.py` from the **dogfish** working copy — which has carried
+the regions code since 11:40Z, so their edit landed *on top of* mine and both
+features are live together (verified: `forEvent` ×3 and `.small-n` ×14 on the
+public bytes; live-mode e2e 122/3/0 incl. the 9 region tests). I adopted their
+four files byte-for-byte from the box (commit `65dbb8c`) so this branch stays in
+parity with live — unit 230/28, fixture e2e 51 passed.
+
+The hazard runs both ways: dogfish matches live, but `fable-review/` still held
+pre-gate bytes for those three files plus `viz/exceedance.py`, so one
+`remote.sh run|bg|sync` from that lane would have reverted *their* fix exactly as
+one from a pre-regions tree reverted mine. `fable-review/` is now synced to the
+live bytes; the three trees agree on all 11 shared files. Still open, and stated
+to that lane: their `dur.min` frontend contract is running on its `LAYERS[].min`
+fallback in production (live `raw_exceedance/index.json` has `dur:{rev:'v2',
+seed:'2026072500'}`, no `min`), and `test_raw_exceedance.py` exists only in
+`diurnal-cycle-check/tests/`, so neither dogfish nor this branch covers the gate.
+
+My v2 rollback dir now carries a warning README (box + tree, `927dc0e`): restoring
+those 11:05Z dashboard files would revert their gate.

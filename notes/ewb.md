@@ -964,3 +964,38 @@ Conventions/limits (tests/test_periodic_index.py):
   legacy _lon_idx path in build.py.
 Design-lane adoption done: build.py open_truth_window / climatology
 thresholds / _ar_inputs_window now crop via attach_periodic+sel.
+
+## Heat/freeze detection: the 2026-11-10 area rule (owner instruction)
+
+Full review + before/after measurements in **`notes/temperature_area_rule.md`**;
+contract text in `SPEC.md` §2. One-line summary: heat/freeze tracking left the
+upstream blob tracker (1°-per-edge unbounded expansion, "blob vanished or <50%
+of own peak" ending, no seed suppression) for
+`ewb_live/events/temperature_detect.py` — seed on >=200k km2 of 3 consecutive
+exceedance days, box = seed bbox +250 km per edge, end when the in-box area
+drops below 100k km2, seeds inside a live box absorbed, 31-day cap
+(`EWB_LIVE_TEMP_MAX_DAYS`) for belts that never drop under the floor.
+Measured on the live window (08-11..11-03): curated 15 heat + 1 freeze ->
+15 heat + 4 freeze raw / 3 curated, curated box median 4.58 -> 1.91 M km2, raw
+duration median 3 -> 7 d, 0 publish-gate rejections. AR untouched.
+
+## Heat/freeze tracking: the footprint/core port (owner instruction, same day)
+
+The area rule above was replaced hours later by the owner's own tracker, ported
+from `aaTman/ewb-events` into `ewb_live/events/event_tracker.py`; full
+mechanics, port map, deviations and measurements in
+**`notes/footprint_tracker.md`**, contract text in `SPEC.md` §2. What it fixes
+in the area rule: a fixed padded box cannot follow a moving event, and "in-box
+area below 100k km2" never fires over belts that exceed the climatology all
+season (those needed an arbitrary 31-day cap). The port seeds candidates at
+50k km2 (so ramp-ups keep early starts), grows the box with the event's
+footprint, and ends events when their **core** — cells valid every day since
+the start, counted inside the day-3 anchor box — falls below 100k km2, which
+closes permanent-belt spells physically (max 33 d in the live window). Masks are
+read from the published `raw_exceedance` lane (`ewb_live/events/frame_masks.py`)
+so detection cannot drift from the map; ERA5 ARCO stays the fallback.
+Measured on the reference's own copy of the live window (08-11..11-02): 175
+events (153 heat / 22 freeze), byte-identical `(hazard, start, end)` triple set
+against the reference CLI, 0 publish-gate rejections, curated 15 heat / 12
+freeze / 15 AR with curated heat durations 5-20 d. `validate.MAX_DURATION_DAYS`
+31 -> 45 (cap removed from the detector). AR detection untouched.

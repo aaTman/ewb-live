@@ -108,9 +108,13 @@ NOT_FOUND_PAGE = ("<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">"
                   "<h1 style=\"font-size:1.25rem\">Page not found</h1>"
                   "<p>That page or data file does not exist. <a href=\"/\">Back to EWB Live</a></p></body></html>")
 
-# web-root file types that may be served (directory listings are disabled)
+# web-root file types that may be served (directory listings are disabled).
+# `.py` is here for one file: dashboard/detection.py, the criteria listing the
+# About dialog shows and offers for download. The web root is dashboard/ only
+# (its JavaScript is already public source), so this adds no new surface — but
+# keep it that way: nothing that does not belong on the site goes in dashboard/.
 STATIC_EXT = {".html", ".js", ".css", ".svg", ".png", ".jpg", ".jpeg", ".webp", ".ico",
-              ".woff2", ".woff", ".json", ".geojson", ".txt", ".webmanifest"}
+              ".woff2", ".woff", ".json", ".geojson", ".txt", ".webmanifest", ".py"}
 
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
