@@ -217,8 +217,7 @@
     <ul>
       <li><b>Heat wave</b> — ERA5 2&nbsp;m temperature above the 85th percentile of the
       Operational WeatherBench ERA5 1990–2019 climatology (per day of year and hour) at <em>every</em>
-      6-hourly step of a UTC day, over land, for at least 3 consecutive days across at least
-      200,000&nbsp;km².</li>
+      6-hourly step of a UTC day, over land, tracked into events by the rule set out below.</li>
       <li><b>Freeze</b> — the same rule below the 15th percentile. A window with no freeze is a
       valid result.</li>
       <li><b>Atmospheric river</b> — EWB’s AR mask: integrated vapour transport (IVT) of at least
@@ -239,6 +238,48 @@
       <li>Parts of one system are merged, no two events overlap in time and space, and each type
       is capped at 15 events.</li>
     </ul>
+
+    <h3>How a spell becomes an event</h3>
+    <p>Heat waves and freezes are found in two stages. A <b>daily rule</b> picks the pixels:
+    a cell counts on a UTC day when 2&nbsp;m temperature is past the climatology bound (p85 for heat,
+    p15 for freeze) at <em>all four</em> 6-hourly steps and the cell is on land. A <b>tracker</b> then
+    decides which pixels belong to the same event, and when the event is over — the same numbers for
+    both hazards.</p>
+    <ol class="method-steps">
+      <li><b>Group</b> the counting cells of the day into regions. A cell belongs to a region when it
+      is counting, or when it sits in a hole the closing fills (up to 12 cells wide) and at least
+      30&nbsp;% of the surrounding 13×13 window is counting. Patchy heat inside a broad warm area
+      therefore counts as one object, while a thin scatter of lone cells does not chain across a
+      continent.</li>
+      <li><b>Seed</b> a candidate when a region covers <b>50,000&nbsp;km²</b> — about 65 cells of
+      the 0.25° grid near the equator, more toward the poles. It has five days to become an event or
+      it is dropped.</li>
+      <li><b>Qualify</b> on the first day the candidate's footprint covers <b>200,000&nbsp;km²</b>.
+      The event keeps its earlier start date, so a heat wave that builds over three days is not cut
+      short. It must last at least <b>3&nbsp;days</b>.</li>
+      <li><b>Follow</b> it: the event's box grows to cover wherever its footprint moves, up to 8
+      cells a day, so a heat wave that travels stays one event instead of three. Where two events
+      would claim the same ground, the older one goes first.</li>
+      <li><b>End</b> it when its <b>core</b> — the cells that have been counting <em>every</em> day
+      since it started, counted inside the box it had on day&nbsp;3 — holds less than
+      <b>100,000&nbsp;km²</b>. Regions that are hotter than the climatology all season (the Sahara,
+      the Amazon, Indonesia) always keep 200,000&nbsp;km² somewhere, but their day-one heat does not
+      stay put, so those spells close on their own instead of running for a season.</li>
+    </ol>
+    <p class="dlg-note">Boxes are reported on 0.25° cell centres. The thresholds live in
+    <code>ewb_live/events/event_tracker.py</code> (<code>Params</code>); the daily masks are read
+    from the same published frames the raw map paints, so the list and the map cannot disagree.</p>
+
+    <details class="repro">
+      <summary>Reproduce the tracker in Python</summary>
+      <p class="dlg-note">The rule above in one readable pass, same thresholds, numpy + scipy only:
+      <a href="detection.py" download>detection.py</a> — run <code>python3 detection.py</code> for a
+      worked example. It leaves out two details of the shipped tracker (events that grow into each
+      other merge; the box can be size-capped), which is why the numbers on this site come from
+      <code>ewb_live/events/</code>. The project's test suite runs this listing against the shipped
+      tracker and fails if the two disagree.</p>
+      <pre id="detection-code" aria-live="polite">loading…</pre>
+    </details>
 
     <h3>Scoring</h3>
     <p>Models are scored from daily 00&nbsp;UTC runs at leads of 0–240&nbsp;h (the scorecard shows

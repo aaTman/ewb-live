@@ -97,3 +97,70 @@ claim first (match('d/**') False on 3.12+3.13), then integration-checked:
 `changed_files(06:00)` now returns `ewb_live/scoring/evaluate.py` — the exact
 file this run proved missing — plus 14 others; skip-dirs/non-code still
 rejected. py_compile clean, synced; next timer tick uses it.
+
+## 2026-11-08 23:42 UTC — 1 finding (1 SHOULD)
+- [SHOULD] ops/freshness_check.py:101 — `pgrep -f "ewb_live.weekly"` is an
+  unanchored regex: the `.` matches any char, so `ewb_live/weekly` (a path)
+  matches too, and the pattern hits any long-lived process that merely
+  *mentions* it (demonstrated on this host: two hermes-agent cmdlines whose
+  launch prompts contain `ewb_live/weekly` match). Failure case: on a host
+  where such a process lingers, every tick logs "weekly in flight; skipping"
+  and the stall alarm is silently disabled — exactly the watcher-blindness
+  this tool exists to prevent.
+  fix: anchor the real invocation and escape the dot:
+  `["pgrep", "-f", r"python -m ewb_live\.weekly$"]` — matches the unit's
+  ExecStart and remote-exec wrappers, rejects path mentions.
+
+## 2026-11-09 00:17 UTC — 1 findings (1 must) [FULL SWEEP]
+- [MUST] scripts/review/purge_dropped_events.py:43-44 — rewriting
+  scores.parquet in place: a kill mid-write (memguard or a freshness
+  restart landing during the ops window this script documents) truncates
+  the parquet, and the next pipeline.run() dies at pd.read_parquet with no
+  repair path — Restart=on-failure crash-loops the unit. This is the exact
+  failure class pipeline.py:707-711 fixed for its own publish path.
+  fix: follow the house pattern — write `scores.parquet.tmp.{pid}` with to_parquet, then os.replace onto scores.parquet; two lines.
+- CARRIED (open since 23:42): freshness_check.py:101 `pgrep -f "ewb_live.weekly"`
+  — unescaped dot still matches `ewb_live/weekly` paths; one lingering
+  mentioner permanently silences the stall alarm. fix: use `ewb_live\.weekly`.
+
+## 2026-11-09 03:24 UTC — 0 new (2 carried, owner offline)
+- CARRIED MUST (since 00:17): scripts/review/purge_dropped_events.py:43-44 — `to_parquet` still rewrites scores.parquet IN PLACE (re-verified by reading the file this run); pair_status.json got the tmp+replace treatment, the parquet did not. A kill mid-write truncates the only score store and pipeline.run() crash-loops at read_parquet. fix unchanged: write `scores.parquet.tmp.{pid}` then `os.replace`.
+- CARRIED SHOULD (since 23:42): ops/freshness_check.py:101 — `pgrep -f "ewb_live.weekly"` unescaped dot still matches any char (e.g. `ewb_live_weekly`, `ewb_live/weekly`); one lingering mentioner silences the weekly-stall alarm. fix unchanged: `ewb_live\\.weekly`.
+- infra-domain handle term_987fee64 absent from `orca terminal list` — no live infra agent to nudge; orchestrator attention.
+
+## 2026-11-09 08:16 UTC — 1 finding (1 nice) + 2 carried (owner offline)
+- [NICE] scripts/review/purge_event_parts.py:49-50 — the pair_status tmp is
+  named `pair_status.tmp` (`ps_path.with_suffix(".tmp")`): no suffix after
+  `.tmp`, so the pipeline's `_sweep_orphan_temps` glob `*.tmp.*` never
+  matches it — a killed purge orphans the file forever, and two concurrent
+  purges clobber the same fixed name. fix: match the pipeline's own
+  convention `ps_path.with_name(ps_path.name + f".tmp.{os.getpid()}")`;
+  purge_dropped_events.py:50 has the same fixed-name pattern, same one-line
+  change. (Ownership guess noted: default scripts/ → infra mapping; the
+  file mutates ewb-lane data but no module imports it, and its sibling
+  purge_dropped_events.py already reports here.)
+- CARRIED MUST (since 00:17): scripts/review/purge_dropped_events.py:43-44
+  — scores.parquet still rewritten IN PLACE by `to_parquet` (re-verified by
+  reading the file this run); a kill mid-write truncates the only score
+  store. fix unchanged: write tmp + `os.replace` (purge_event_parts.py:56-
+  61 now shows the pattern, with a backup).
+- CARRIED SHOULD (since 23:42): ops/freshness_check.py:101 — `pgrep -f
+  "ewb_live.weekly"` unescaped dot still matches any char; a lingering
+  mentioner silences the weekly-stall alarm. fix unchanged:
+  `ewb_live\\.weekly`.
+- infra-domain handle term_987fee64 absent from `orca terminal list` again
+  — no live infra agent to nudge; orchestrator attention.
+
+## 2026-11-10 01:15 UTC — 0 new (3 carried, owner offline)
+- CARRIED MUST (since 2026-11-09 00:17): scripts/review/purge_dropped_events.py:43-44 — `to_parquet`
+  still rewrites scores.parquet IN PLACE (re-read this run); a kill mid-write truncates the only score
+  store and pipeline.run() crash-loops at read_parquet. fix unchanged: write `scores.parquet.tmp.{pid}`
+  then `os.replace` (purge_event_parts.py:59-61 shows the house pattern with a backup).
+- CARRIED SHOULD (since 2026-11-08 23:42): ops/freshness_check.py:101 — `pgrep -f "ewb_live.weekly"`
+  unescaped dot still matches any char; one lingering mentioner silences the weekly-stall alarm.
+  fix unchanged: `ewb_live\\.weekly`. (file touched 22:25Z — line 101 unchanged.)
+- CARRIED NICE (since 2026-11-09 08:16): scripts/review/purge_event_parts.py:49 — fixed-name
+  `pair_status.tmp` is invisible to the pipeline sweep glob `*.tmp.*`; concurrent purges clobber it.
+  fix: name it `ps_path.name + f".tmp.{os.getpid()}"`.
+- infra-domain handle term_987fee64 absent from `orca terminal list` (10th consecutive run) — no live
+  infra agent to nudge. design handle term_f3c16ead also absent this run. Orchestrator attention.

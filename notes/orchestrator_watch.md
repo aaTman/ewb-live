@@ -11,6 +11,7 @@
 | global-dashboard (design+frontend) | see notes/briefs/global_dashboard.md | Equal Earth global map of all 90-day events at the top of the home page, time slider, multi-select, URL state, tests; GLOBAL DASHBOARD READY posted |
 | raw-exceedance-map (design+frontend+ewb) | see notes/briefs/raw_exceedance_map.md | second Equal Earth map, raw per-6h exceedance (heat/freeze/AR overlaid, toggles), no boxes, slider, tests; RAW MAP READY posted; gates guardians |
 | merged-global-map (frontend+design+ewb, Hermes) | see notes/briefs/merged_global_map.md | one Equal Earth map: 6-hourly raw layers + slider + event boxes from qualified_at to end; MERGED MAP READY posted |
+| ar-ramp (successor 2, Hermes; Mistral budget exhausted) | term_b61ce383-3bdc-4312-aaf3-278340e07893 | stepped AR IVT ramp (250/500/750/1000/1250) live on the merged map, legend, binary fallback kept, tests; AR RAMP READY posted |
 | infra-domain (successor 2) | term_987fee64-7d9d-40a0-ac39-4a5d70147c29 | https://ewb.espr.ai live with valid TLS (or OWNER ACTION NEEDED checklist posted), proxy as a systemd unit on the box, documented, '## DONE' in notes/infra_domain.md |
 
 Done (no watch): sources, infra, ops, legacy-review, portability (phase 1).

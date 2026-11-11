@@ -71,8 +71,14 @@ def qualified_at(event, frames_dir: Path | None = None) -> str:
     try:
         idx = json.loads(idx_p.read_text())
         grid = idx["grid"]
+        # heat/freeze: the tracker knows the day the footprint first reached the
+        # area floor (details.qualified_date). Start the frame scan there, so a
+        # box that later grew over other heat cannot qualify before its own
+        # footprint did. AR events carry no qualified_date -> unchanged.
+        qd = (getattr(event, "details", None) or {}).get("qualified_date")
+        lo = max(f"{event.start:%Y-%m-%d}", str(qd)) if qd else f"{event.start:%Y-%m-%d}"
         frames = [f for f in idx["frames"]
-                  if f"{f[:4]}-{f[4:6]}-{f[6:8]}" >= f"{event.start:%Y-%m-%d}"
+                  if f"{f[:4]}-{f[4:6]}-{f[6:8]}" >= lo
                   and f"{f[:4]}-{f[4:6]}-{f[6:8]}" < f"{event.end:%Y-%m-%d}"]
     except (ValueError, KeyError):
         return fallback

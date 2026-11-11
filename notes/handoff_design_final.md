@@ -111,3 +111,53 @@ Slider polish QA PASS 20:50 (thumb centers pixel-exact on the gantt axis at
 1280+390; readout row-1 right-aligned; e2e 103/1 with the 1 being a flake).
 Ponytail 22:21 sweep (4 NICE) all fixed 22:40: tall-note pair, gm-chip-pressed
 dup + --accent-soft token, gm-halo dup, empty @media. Live==worktree.
+
+## Owner rule change ~23:15 UTC: raw AR layer filtered like events — DONE
+Shared fn ewb_live/events/ar_filter.py::filter_ar_objects (landed at my
+22:55Z contract after ewb deadline; ewb owns review + the scan_ar_events
+mean-lat-vs-touch decision — the ONE open cross-lane item). exceedance.py
+switched; all frames rebuilt on box (340 frames, |lat|<15 AR px = 0,
+TC IN-FA/LALA dropped at 6-17km); layers.a/About/tooltip carry owner copy
+verbatim; raw e2e 6/6. tests/test_ar_filter.py 6 passed (sibling added a
+25-60N case). NEVER smoke exceedance with --days (retention block
+truncates index.json; bins survive, full rebuild re-indexes — recovery =
+plain `python -m ewb_live.viz.exceedance`). Ponytail 23:42 tall-note full
+retirement fixed too (element + guard deleted).
+
+## OWNER BUG 2026-11-09 00:25Z: AR flicker -> AR TRACKS (IN PROGRESS, blocked on ewb)
+Owner: per-step filtering blinks the off-Japan AR; ewb adding persistent
+track ids + track-level filtering as THE shared function (replaces my
+per-step ar_filter for the raw asset). Design lane DONE while blocked:
+- Asset contract posted (channel_design_ewb 00:30/00:32Z): .trk sidecar
+  per frame (zlib uint16 labels, cell-identical geometry to bin AR plane,
+  global persistent ids <=65535), index schema 2 + tracks{id:{t0,t1}};
+  .bin bytes UNCHANGED (v1 keeps working).
+- exceedance.py: labels_bytes/labels_from_bytes codec, read_presence,
+  flickering_tracks (interior dropout, span>=12 steps) RAISES on flicker
+  — every build is gated. serve.py allowlist + .trk routes. Synthetic
+  test test_track_sidecar_and_flicker_gate (5 passed).
+- JS ask posted to frontend (channel_design_frontend 00:40Z): hover ->
+  .trk fetch+cache -> "AR #<id> · t0 -> t1" tooltip, v1 fallback, e2e.
+REMAINING (my lane, when ewb lands): wire layer_fn to the tracking fn
+(labels+spans), rebuild all frames (plain exceedance, NEVER --days),
+live-QA Japan scrub + consecutive frames, sign off in channel, tooltip
+visual QA. Delta-plane optimization measured & rejected (xor > planes).
+
+## AR TRACKING v3 DONE 2026-11-09 ~02:22Z
+ewb landed ar_filter_tracks (shared fn, tracking) in ar_filter.py; I
+closed the last contract bits (index schema 2 + tracks{t0,t1}, SCHEMA=2,
+ponytail fixes in their landing) and rebuilt all 340 frames v3 on box.
+QA PASS all frames (see channel_design_ewb 02:20Z): geometry identical,
+tropical band 0, zero flicker, Japan track #2749 continuous live.
+web = systemd unit ewb-live-web (restart after serve.py edits).
+open: frontend .trk hover JS + my visual QA of it; e2e re-run pending
+their JS. Live assets: index schema 2, 3446 tracks, .trk mean 5.1KB.
+
+## Seam fix 2026-11-09 ~03:10Z: PeriodicBoundaryIndex VENDORED + adopted in viz
+ewb_live/periodic_index.py (vendored EWB repo @3b6506b MIT + wrap-formula
+fix; docs+versions in notes/ewb.md). build.py crops (truth/clim/AR-input
+window) index-driven; NaN-hole fallback kept. Tests 6 new (continuous-
+label convention slice(350,380) NOT (350,20)). label_sig numbering-fingerprint gate (supersedes label_base) +
+.trk retention unlink in exceedance.py (ponytail 02:16Z). 36 tests green,
+synced. PENDING: ewb source fix -> rebuild 3 assets + full seam QA per
+02:40Z contract (channel_design_ewb).

@@ -854,3 +854,33 @@ column isn't squeezed; readout right-aligned same row (not relocated — e2e
 reads it in place); mobile: readout above, track below; QA gate: track both
 edges = section edges, step 0/max on the strip's first/last x within the
 strip's own margins. Spec text in channel 19:45.
+
+## Session 6 cont. — owner rule: filtered AR raw layer (22:55-23:58 UTC)
+Contract-first coordination with ewb; landed shared filter at deadline per
+posted notice. Frame in-place refilter shortcut proved unneeded (full
+rebuild cheap enough at 340 frames). Copy single-sourced from owner text
+in three places (index layers.a, About, chip tip).
+
+## Session 7 (design pi succ-7) — v7 ivt flip accepted, ramp QA PASS, dur-rev-v2 freeze (2026-11-10 01:30-03:00 UTC)
+- DASHBOARD FREEZE active (fable-review owns dashboard/* until 'REDESIGN
+  LANDED'); all frontend asks handed over in channel 01:55Z post (play-leak
+  MUST, sidecar byteLength SHOULD, layerRuns seed, bridged-frame lighter
+  fill + Japan regression, verbatim AR About copy, bins-from-index rider).
+- v7 ivt-orientation rebuild (someone fired it 01:38Z as unit ewb-ivt-v7):
+  ACCEPTED from served bytes — parity AR==classed on guardian frame
+  (15,166/15,166), zero class>0 outside the AR mask on all sampled frames
+  (antipodal phantoms gone), guardian e2e green. ar-ramp's DATA READY +
+  my ramp QA (channel 02:15Z/02:40Z): ramp paints 4 classes live, 5-swatch
+  legend verified, CB gate PASS on the two lightest bins (14.0) — note
+  bins4->5 light-pair dE 8.6 < 12 (0.07% coverage; flagged to fable-review).
+- Data fact: raw window honestly ends 2026110218 (mirror end), layer_rev v7,
+  dur.rev still v1 on live.
+- OPEN: dur.rev flip gap in deploy-pi's merged builder (channel 02:55Z):
+  next exceedance run publishes dur.rev=v2 while 336 v1 .run sidecars exist
+  (_frame_complete is existence-only) -> JS off-by-one-high read until a
+  sidecar backfill. Builder-side fix offered; awaiting deploy-pi DONE to
+  touch exceedance.py (six-file freeze) — queued change: gate index
+  dur/ivt keys on newest-frame sidecar existence (ponytail 00:15Z SHOULD).
+- v5->v7 data drift note (channel 02:15Z): Oct-3 UK track no longer
+  straddles 0E in the raw mask (nearest north cells from 5.2E); ewb to
+  classify; 0df36ee11032 left events_selected (anchor 029719d1e741).

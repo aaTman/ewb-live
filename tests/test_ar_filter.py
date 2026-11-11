@@ -11,8 +11,8 @@ it touches, not the AR's whole life.
 import numpy as np
 import pandas as pd
 
-from ewb_live.events.ar_filter import (LINK_MAX_STEPS, ar_filter_tracks,
-                                       track_ar_components)
+from ewb_live.events.ar_filter import (LINK_MAX_STEPS, _storm_pass,
+                                       ar_filter_tracks, track_ar_components)
 
 LATS = np.arange(-90.0, 91.0, 1.0)
 LONS = np.arange(-180.0, 180.0, 1.0)
@@ -344,3 +344,20 @@ def test_elder_chain_restarts_under_a_new_id():
     assert tracks[0]["steps"] == list(range(LINK_MAX_STEPS))
     assert tracks[1]["steps"] == list(range(LINK_MAX_STEPS, n))
     assert tracks[0]["id"] != tracks[1]["id"]
+
+
+def test_storm_pass_ignores_ghost_label_pixels():
+    """A label pixel where the physical mask is False (gap-bridge ghost)
+    must never trigger the TC screen (physical px only)."""
+    times = np.array([f"2026-10-01T{h:02d}" for h in range(0, 24, 6)],
+                     "datetime64[h]")
+    lat3, lon3 = np.array([-89.0, -88.0, -87.0]), np.array([-179., -178., -177.])
+    mask = np.zeros((4, 3, 3), bool)
+    labels = np.zeros((4, 3, 3), np.int32)
+    labels[2, 2, 2] = 1                     # GHOST px only (mask False)
+    storm = pd.DataFrame({"valid_time": [pd.Timestamp("2026-10-01T12")],
+                          "latitude": [-88.0], "longitude": [-178.0],
+                          "storm_id": ["X"], "tc_name": ["X"]})
+    assert _storm_pass(labels, mask, lat3, lon3, times, storm) == {}
+    mask[2, 2, 2] = True                    # same px physical now -> hits
+    assert 0 in _storm_pass(labels, mask, lat3, lon3, times, storm)

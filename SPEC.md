@@ -106,6 +106,21 @@ def score_event(event: Event, models: list[str]) -> pd.DataFrame
   climatology built from /opt/ewb-owb/data/clim2 (1990-2020, 6-hourly; method from /opt/ewb-owb/clim.py),
   written to /opt/ewb-live/data/clim/t2m_owb_1990_2020.zarr on the ewb box. It replaces EWB's default climatology.
   Thresholds: p85 for heat waves (owner, 2026-11-07, after the science review of missed heat waves; EWB-native), p15 for freezes (owner, 2026-11-07; EWB-native; zero freezes acceptable if none qualify).
+- **Heat/freeze tracking rule (owner, 2026-11-10; the footprint/core methodology, ported from `aaTman/ewb-events` into `ewb_live/events/event_tracker.py`; documented in `notes/footprint_tracker.md`, which supersedes `notes/temperature_area_rule.md`):** the thresholds and the daily exceedance mask (all four 6-hourly steps pass, land only) stay EWB-style; tracking is neither EWB's blob tracker nor the same morning's 200 k-seed/+250 km box rule. Identical for heat waves and freezes, on the daily mask `M[d]`:
+  1. **Region:** each day the valid cells are grouped by a morphological closing — one dilation and
+     erosion with a `(2r+1)²` square element (`region_radius`=6 cells, so holes up to 12 cells wide are
+     filled; longitude wraps, latitude does not) — plus a local-density test: at least 30&nbsp;% of that
+     13×13 window must be valid, which keeps a thin scatter from chaining across a continent and means
+     bridging only happens inside an otherwise dense area. Valid cells always join; components are
+     labelled with 8-connectivity.
+  2. **Candidate:** a region whose valid area reaches **50 000 km²** (`seed_area_km2`) starts a candidate on its first qualifying day; a candidate must reach the qualify floor within `max_ramp_days`=5 days or it is dropped.
+  3. **Qualify:** the candidate becomes an **event** on the first day its *footprint* covers **200 000 km²** (`qualify_area_km2`) — `details.qualified_date`. The event's `start` stays the candidate's first day, so ramp-ups keep early start dates.
+  4. **Box:** the event box is the bbox of everything its footprint has covered, so it grows with the event (no fixed pad, no per-iteration expansion). The footprint may claim new region cells within `move_cells`=8 cells/day of what it already holds, and only where the region is claimed by nobody or overlaps an existing event's box by >= `min_overlap`=0.5 of the smaller side; older events claim first. `max_box_area_km2` (default `None`) caps growth where an owner wants smaller objects.
+  5. **End:** the **core** — the cells valid on *every* day since the event began, counted inside the **anchor box** (the box as it stood on day 3, `anchor_day`) — must hold >= **100 000 km²** (`end_area_km2`). Below that the event closes and that day is not part of it. This is what ends permanent-belt spells physically (longest in the live window: 33 days over central Africa) without a duration cap; `end` is exclusive.
+  An event still open at the end of the scan window is `ongoing` and keeps its start date across runs. `min_days`=3 is a detection floor (a shorter spell is not an event). Because 31-day caps are gone, the publish-gate ceiling is `validate.MAX_DURATION_DAYS = 45` (and `select.MAX_MERGED_DAYS`), above the longest real spell and below nonsense.
+  **Mask source:** the daily masks are read from the published `raw_exceedance` frames (four steps ANDed; `ewb_live/events/frame_masks.py`) whenever the lane spans the window and the active clip is the lane's owb p85/p15, so detection cannot drift from what the map paints or from `qualified_at`; otherwise ERA5 ARCO is streamed through the upstream helpers. Daily-mean temperatures for `peak_value` come from the local ERA5 mirror on the same grid (`_mirror_t2m_daily`), per event when the mirror cannot serve the window.
+  `qualified_at` scans frames from `details.qualified_date` onwards, so a grown box cannot qualify an event before its own footprint reached the floor.
+  Per-event provenance is published in `details`: `qualified_date`, `duration_days`, `ongoing`, `footprint_area_km2`, `box_area_km2`, `core_area_km2`, `anchor_box`, `mask_source`, `peak_area_km2`, `tracker_params`, `detection`.
 
 ### 3. `ewb_live/pipeline.py` (owner: agent `ewb`, integration later)
 `python -m ewb_live.pipeline --days 90` → writes:
@@ -136,6 +151,15 @@ Incremental: re-runs reuse cached scores; only new events/inits are computed.
      model at a selected lead). AR visual = IVT map + observed AR mask contour + forecast mask overlap.
      Presentation reference: https://windbornesystems.com/blog/introducing-windborne-weather-events
   Also reference dynamical.org scorecards and WeatherBench 2 scorecards for conventions.
+- **Methodology explainer (About dialog, owner 2026-11-10):** the About dialog is the page that
+  explains the detection criteria — the daily rule plus the five tracker steps (group / seed /
+  qualify / follow / end) with the numbers the detector actually uses, then a collapsed
+  "Reproduce the tracker in Python" fold that fetches `dashboard/detection.py` (authored, plain
+  numpy + scipy, `python3 detection.py` prints a worked example). The listing is documentation that
+  people run, so `tests/test_detection_page.py` runs the same masks through it and through
+  `ewb_live/events/event_tracker.py` and fails if the two disagree, and checks the About wording
+  against `Params` — a threshold change must not leave the page describing the old rule. Keep new
+  methodology text here (not on the main view) and keep the numbers derived from `Params`.
 - Must work with the sample data in `data/results/sample/` until real data exists
   (dashboard agent generates realistic sample files following the schemas above).
 - Header shows the weekly cycle: "Week YYYY-WW · updated <date> · next update <date>"; optional week picker over data/results/history/.

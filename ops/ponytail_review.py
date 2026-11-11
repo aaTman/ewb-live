@@ -9,7 +9,7 @@ Runs on the orca container under ewb-live-ponytail-review.service (systemd
   2. Write the scope to notes/.ponytail_worklist.txt (the review agent reads it).
   3. Close the previous run's Orca terminal if it is still open.
   4. Launch ONE Hermes review agent in this worktree:
-       orca agent launch --agent hermes --surface terminal --prompt "$(cat notes/briefs/ponytail_review.md)" --json
+       orca agent launch --agent pi --surface terminal --prompt "$(cat notes/briefs/ponytail_review.md)" --json
   5. Wait until the agent writes notes/.ponytail_done.txt bearing this run's
      RUN STAMP (its last step per the brief), or the deadline hits (45 min
      incremental / 110 min full sweep; timeouts do not advance state);
@@ -139,7 +139,7 @@ def _find_handle(obj) -> str | None:
 def launch_agent() -> str | None:
     prompt = BRIEF.read_text()
     r = subprocess.run(
-        [ORCA, "agent", "launch", "--agent", "hermes", "--surface", "terminal",
+        [ORCA, "agent", "launch", "--agent", "pi", "--surface", "terminal",
          "--prompt", prompt, "--json"],
         cwd=REPO, capture_output=True, text=True, timeout=180)
     print(f"[ponytail] launch rc={r.returncode}")

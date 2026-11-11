@@ -499,3 +499,521 @@ ewb's fix (channel 20:15Z) independently verified on the box:
 - Post-fix lane numbers reconcile end-to-end: west/east heat RMSE unchanged (1.70/2.05 K), Greenland IFS 4.04 K mean, scorecard AR CSI@48 ifs_hres 0.1672 with n_events=15 == raw parquet recompute.
 
 **FINAL VERDICT: PASS, no open items.** Residual disclosures for the About page: (1) heat/freeze percentile-relative (p85/p15); (2) peak_value = gridded daily-mean; (3) detection can miss tmax-only heatwaves; (4) model variable coverage varies (aigfs no t2m); (5) league cells rest on few events (CIs shipped, D3); (6) truth = ERA5 — home-field advantage for ERA5-trained models; latest events score against remote ARCO until the local mirror catches up (aligned + normalized now, verified); (7) freeze lane n=1; (8) AR mask includes tropical tails by upstream design; 0c7a/Hanna-class TC screening applies from the next detection cycle. Review closed.
+
+---
+
+# Section I — AR tropical exclusion, tracking/persistence, seam connectivity, curation, scores (2026-11-09, successor 3)
+
+## Method + a correction against myself
+Audited the live box (frames 336, rescored 26,200 rows, full_run_complete 07:02Z) with
+sr12/sr13. FIRST PASS CONTAINED FALSE POSITIVES: my raw-bin decode skipped
+`np.unpackbits` (byte-as-pixel). All raw-layer claims from that pass were retracted on
+channel at 07:4xZ before any verdict was written; scripts now import the canonical
+`exceedance.frame_layers()` decoder. Everything below is from the corrected run.
+Independent code paths (xarray event masks, parquet, JSON) were never affected.
+
+## Rule implementation (code, both surfaces) — PASS
+`ewb_live/events/ar_filter.py` is the single rule (8-conn labeling, strict |lat|<15 touch,
+storm-driven TC screen 500 km / ±24 h +6 h grid tolerance, in-or-out over ALL of a track's
+steps); called by detection (`ar.py:151`) and by the raw-layer builder
+(`exceedance.py:394`, same call chain → D1/D2 can't diverge). `|lat| = 15.00` center
+policy pinned in SPEC + code (ewb 03:0x post; cells at exactly ±15 retained, documented).
+
+## Raw layer — PASS (value-level, all 336 frames, independent IBTrACS)
+- AR pixels at |lat| < 15: **0**. Pixels exactly at ±15.00: 57 — compliant by pinned rule.
+- Retained AR px vs every gated IBTrACS storm point (my own haversine, 102 storms):
+  closest retained pixel to any TC center across all 336 frames = **503.4 km**
+  (2026101700) — 3.4 km inside the 500 km line. Compliant; margin is thin by construction
+  (grid 0.25°), noted, no action.
+- The earlier "NOLO 7.6 km residual" was my decode artifact — withdrawn.
+
+## Events — PASS
+- 12 ARs; TC-screen provenance 12/12; events↔tracks bijection holds (12 unique track_ids).
+- Tropical drops verified at pixel level: a3bb50ccde3d (10.75°), 97c52bf337b5 (7.0°),
+  1ff0485667cc (10.25°) — genuine mask pixels < 15°, correctly dropped; 5d13cb4e4747
+  (12.5° per ewb's recorded touch, consistent with its disappearance in the seam rerun).
+- bbox-touch survivors are padding artifacts, pixel-verified: 4a9c67b01f25 min|lat| 19.0°,
+  bf07d11c8060 window-wide min|lat| 19.5° — no mask pixel in the band. Curation
+  82dc9c1b533c has exited selection via the seam/merge churn (not a tropical drop).
+
+## Seam (periodic longitude) — PASS
+- UK Oct-3 AR (0df36ee11032): single component/track (`ar_20261005T18_4764`), single bbox
+  [50.5, 71.75, 0.25, 23.5], no split twin. (Track id stamps Oct 5 vs event start Oct 3 —
+  provenance quirk only.)
+- All bboxes: arc < 180°, no bad wraps, none ≥180. Three events cross 0°E (e86c13f47bc0,
+  c3a4e175680c, +1) — each a single event with unique track_id, curation-conflict-free.
+
+## Flicker — PASS with scope note
+Independent per-frame rebuild (8-conn, ≥50 px) + 30%-overlap linkage over all 336 frames:
+1,835 objects, **84 on-off-on transitions — 1 in a real AR region** (22-px speckle, Bay of
+Bengal 2026-08-11; a sub-threshold speckle, not a curated object), the rest single-frame
+speckle churn at the floor. The Japan-scale blink the owner saw is not reproducible in the
+published layer; track-level filtering + hysteresis is working. Scope note: this audits the
+published grid, not the ledger's internal linking; the 22-px speckle is cosmetic and below
+the 500-px upstream floor.
+
+## Scores — 2 open items
+- Symmetry: 12/12 selected ARs scored, 0 phantom ids, 26,200 rows, AR CSI@48 mean 0.1282.
+- **[MAJOR] e86c13f47bc0 short-lead-zero persists at completion**: CSI = 0 for ALL models
+  at leads 0–144 h; only ifs_hres nonzero (0.081, ~192 h band). H4-style zero fingerprint on
+  a mirror-path event (window ends Nov 1 < mirror end Nov 2) — the ARCO mechanism does NOT
+  apply, so this is a NEW root cause. ewb acknowledged WATCH→ must root-cause H4-style.
+- **[MINOR] scorecard AR@48 ifs n=11 vs 12 scored**: leave-one-out on the raw parquet
+  identifies **bbbd78137ddd** as the excluded event (ifs@48 0.1685). Silent exclusion —
+  needs a documented reason or inclusion.
+
+## Churn (my reconstruction from evidence; ewb's final map still pending)
+Original 15 → final 12: dropped 7 = tropical {a3bb, 97c52, 1ff04, 5d13c} + seam-merge
+{8fe8ae212d73 → into 4a9c6, 791068e83b87, e62186d67646}; retained 8; new 4 (bf07d, eb65e,
+c3a4e, 79d28) admitted at track level. Awaiting ewb's authoritative map to confirm.
+
+## VERDICT section I: PASS with 2 open items
+Blocking close-out: (1) e86c root cause (MAJOR — do not ship AR lane headline stats until
+resolved or disclosed); (2) scorecard exclusion reason for bbbd78137ddd (MINOR). Churn map
+confirmation pending from ewb. Everything else — raw compliance, event rule, seam,
+flicker, bijection, curation — verified on corrected decoding.
+— science-review (successor 3), 2026-11-09 07:5x UTC
+
+## Section I — addendum 2026-11-09 08:5x UTC (post-ponytail sweep, live box state)
+- Raw-layer D2 now triple-confirmed CLEAN on the published layer: fixed d2_pixel_audit,
+  sr12, and the earlier battery all give min AR-px->TC-center = 503.4 km > 500 km over all
+  336 frames; every frame has a Nov-9 04:33Z rebuild mtime, so the durbackfill-contaminated
+  Aug-26 cluster (LALA 0.0 km) is gone from what ships. `layer_rev` still reads v4 — the
+  stamp is stale, the bytes are current-screen (ewb's v5 bump is a cache-key formality).
+- e86c13f47bc0 MAJOR: purge landed (817 stale rows dropped; 0 rows now, rescore unit
+  ewb-live-e86crescore3 ACTIVE mid-run). short_lead_zero=[] is purge-effect, NOT a fix —
+  MAJOR stays open until rows return with sane short-lead CSI; watcher armed.
+- Churn map received (ewb: 3 same-id + 4 re-id + 6 track-level drops + 5 new = 12). My
+  id-level reconstruction from the 20:43 snapshot differs in re-id bookkeeping (8 same-id
+  keeps from exact-id diff), but the load-bearing invariants both agree on: no shipped
+  event references a dropped track, events<->tracks bijection 12/12, curation conflicts 0.
+  Accepted as delivered; the drop-reason classes match my pixel-verified set.
+- Open for §I close: (1) e86c rescore result, (2) bbbd78137ddd scorecard exclusion reason.
+
+## Section I — FINAL CLOSURE 2026-11-09 09:1x UTC: PASS, no open items
+- [MAJOR e86c13f47bc0] CLOSED. Root cause accepted: stale 27-row truth part from a Nov-7
+  partial write (leads 192–234 only, fingerprint-only invalidation kept it) — the ARCO
+  mechanism genuinely did not apply, as flagged; this was a third, distinct cause.
+  Verified after e86crescore3: 1,182 rows, 11/11 models x 41 leads, pair_status all
+  'scored', short-lead CSI 0.03–0.32 across models (ifs mean 0.094 at <=48 h), max 0.318.
+  Whole-lane tripwire `ARs with all-zero short-lead CSI` = [] on the current parquet.
+- [MINOR scorecard n=11] CLOSED, and my attribution was WRONG: leave-one-out pointed at
+  bbbd78137ddd, but the actually-absent event was e86c (no lead-48 rows in its stale part;
+  LOO matched bbbd within my 0.0006 tolerance by arithmetic luck — recorded as a method
+  limitation: LOO-attribution is only valid at tighter tolerance or with the cell's event
+  list exposed). Now verified live: AR@48 ifs cell n=12, mean 0.1549 == 12-event parquet
+  mean exactly (e86c ifs@48 = 0.0455). No silent exclusion.
+- Raw-layer D2: triple-confirmed CLEAN (503.4 km > 500 km, 336 frames, rebuilt bytes).
+- FINAL VERDICT section I: PASS.
+— science-review (successor 3)
+
+## §J — Owner HIGH report: landfalling ARs not considered events (2026-11-09, CLOSED — no bugs, four rule attributions)
+Full audit in `notes/review_artifacts/ar_landfall_funnel.md` (65-row candidate table, ledger top-20, funnel counts, maps sr-arfunnel-1..5). Verdict: every landfall rejection attributable to a named owner rule; zero bugs (TC screen/tropical/land mask/seam re-verified; mirror window + cross-type overlap dropped zero this window, proven by replaying production rank_and_cap). Impact ranking: (1) landfall_days>=3 floor: 37/65, incl. IVT 980/943/840 landfallers; (2) span<=60 cap: deletes window's #1 AR eb42387c81a3 (IVT 1038, 8 landfall days, 3255 px/day); (3) severity quota: ranks 15-23, IVT 938 out while 600-653 ship; (4) publish gate peak_land<500: silent -3 (15->12, no decision log). Land-locked raw-map blobs (Kara/Ural/monsoon) correctly die at ocean-start. Tracking-split real at ledger level (304 1-day land-touching fragments (daily-union px)), benign at event level. Owner ASKs: floor 2-vs-3, span exemption, ranking formula. ewb owns: gate rejections -> curation.json + always ERROR-log. Repro scripts scripts/review/sr14*.py; ledger JSON /tmp/sr14_funnel.json on box. — science-review (successor 3)
+
+### §J addendum (pi, 2026-11-10) — rank_cap_replay mismatch root-caused, no production bug
+The replay-vs-shipped mismatch flagged by ponytail 2026-11-10 00:10Z is code-era
+drift: shipped artifacts are from the floor=3 world (Nov-09 08:13Z runner);
+AR_MIN_LANDFALL_DAYS was relaxed to 1 later that day (owner landfall-funnel
+amendment, select.py:184). A/B on the box with the recompute_merged_max_consec
+mirror applied: floor=3 reproduces the shipped curation exactly (26 floor-pass,
+9 quota drops incl. 85636ad4eb4c, 2 merges, gate triple a6126c/adcdad/ce2db7,
+kept 28 == shipped 28); floor=1 reproduces the reported mismatch set exactly.
+rank_and_cap is deterministic and correct. rank_cap_replay.py pinned to the
+artifact era (EWB_REPLAY_LANDFALL_FLOOR=3 default, unpin after next curation
+run). Next curation will ship 06ceb4d8d4fe and the merged 49a026+8002c product
+e1bd4ec451c5 in place of 0df36ee11032/8002c1ab3ba0 — exactly as §J predicted
+for the floor change. Dispositions: channel_ponytail_science_review.md
+(pi, 03:1xZ), channel_science_review.md (pi, 03:2xZ).
+
+## §K — Flicker re-audit against dur-rev-v2 layer (2026-11-10, referee)
+
+Scope: §I's flicker verdict was generalized from a truncated 15-blink view.
+Re-ran sr13 (v2, full dump) on the current 336-frame published layer and
+attributed every curated-window blink to the per-frame `.trk` label sidecars
+(decoders imported from ewb_live.viz.exceedance, never hand-decoded).
+
+Findings:
+1. Population: 75 flicker blinks over the window, 49 >= 500 px (was reported
+   as ~15 floor specks). Sample truncation in §I understated prevalence.
+2. Curated overlap: 5 big blinks fall inside published curated AR event
+   windows AND bboxes (6b4dec9dc8db x2, 920f2f81e54d x2, bf07d11c8060 x1;
+   766-9745 px).
+3. Attribution (.trk labels, before/gap/after frames):
+   - 920f2f81e54d @ 2026090606: NOT a blink — gap frame holds 2840 AR px,
+     same label id (1083) before and after. sr13's 3x3 chain matcher splits
+     continuous masks; artifact of my audit script, flagged for sr13 fix.
+   - 4 TRUE blinks (6b4dec9dc8db @ 2026082712 gap-px 21 and 2026082918 gap-px
+     0; 920f2f81e54d @ 2026090706 gap-px 0; bf07d11c8060 @ 2026091406 gap-px
+     43). Inside the event's own bbox+window the AR mask is empty or
+     near-empty at the gap hour, and the before/after components carry
+     DIFFERENT track ids; none of these gap frames appears in any track's
+     `bridged` list. The tracker never bridges them; the display layer
+     shows on-off-on within the curated footprint.
+4. Not a v2 regression: LAYER_REV v7 and the mask/screen rules are
+   unchanged by the dur-rev-v2 rebuild (duration sidecars only); these
+   blinks predate v2 — §I simply missed them.
+
+Verdict: §I's "no published flicker within curated event windows" is
+OVERTURNED for these 4 cases. Requirement "no on-off-on objects in
+published raw layer after track-level filtering" is violated at the
+display level for curated AR windows. Lane call for owner: whether the
+gap-bridge (exceedance.py _ar_window_pass, bridged) should extend across
+1-step interior dropouts of curated-track footprints, or whether the
+events curator should exclude windows containing empty-interior gaps.
+Referee recommendation: bridge interior dropouts up to the existing
+bridge window when the event is curated (the pixels are already
+re-extended in the other direction); do not shrink events.
+
+Method note: first attribution pass silently indexed nothing (bbox is
+[latmin,latmax,lonmin,lonmax], grid south-first) — caught by a global
+mask/label coverage check (mask px with zero labels must be 0; it was 0
+globally but non-empty nowhere was impossible given blink px). Verify
+non-empty before trusting a bbox result.
+
+Artifacts (survive worktree git-clean — root-owned box logs, NOT worktree):
+  /opt/ewb-live/logs/sr13_v2_report.json   (full blink dump + curated overlay)
+
+### §K follow-up — v3 re-audit with authoritative `.trk` label veto (2026-11-10)
+
+sr13 chain matcher fixed: chains now carry the per-pixel track-id sets from the
+`.trk` sidecar (decoded via imported `labels_from_bytes`); a candidate on-off-on
+is vetoed when before/after components share a label id. Re-run on the full
+336-frame dur-rev-v2 layer (box: `logs/sr13_v3_stdout.json`):
+
+- v2 reported 75 blinks / 49 >=500px / 5 curated-window. v3: **68 / 43 / 4** —
+  the 7 removed are chain-matcher artifacts, including `920f2f81e54d @2026090606`
+  (label 1083 continuous), exactly as §K predicted. The 4 TRUE curated flickers
+  are unchanged; §K verdict stands, now machine-confirmed, not hand-adjudicated.
+- Join caveat found the hard way: `ar_tracks.json` value ordinals and curated
+  `details.track_id` ordinals are DIFFERENT generation eras (`ar_20260828T12_2349`
+  has no exact ledger value; only an unrelated `ar_20260927T00_2349`). Event->label
+  joins by id are invalid on this layer; use label-free mask geometry inside the
+  event bbox instead (assert non-empty index sets first — a silent empty slice
+  once reported 'all clear').
+- Stronger evidence found: label-free AR-px series in the event bbox for
+  `920f2f81e54d` (window 0906-0909): dark at 090600,090606,090706 AND a
+  **3-frame blackout 090800/090806/090812** between bright neighbors (1084px ->
+  0,0,0 -> 1372px). The 1-step blink rule does not even count a multi-frame
+  blackout; the curated footprint visibly vanishes for 18h. 6b4dec9dc8db dips to
+  21px@082712 and bf07d11c8060 to 43px@091406 inside its box.
+- Referee recommendation unchanged and strengthened: extend display gap-bridge to
+  interior dropouts (incl. multi-frame) for curated/tracked ARs, or exclude
+  gap-containing windows from curation. The blackout case argues the gap-bridge
+  extension should cover >=3 consecutive dark frames, not just single steps.
+
+## §L — Population audit: interior dark frames in curated AR footprints (2026-11-10)
+
+Label-free AR-px series (imported `frame_layers`, bbox-geometry only — no cross-era
+id joins) for all 12 `event_type=="atmospheric_river"` curated events, over their
+window frames in the published dur-rev-v2 raw layer:
+
+- **9 of 12 AR events have >=1 interior frame with zero AR pixels in their own bbox**;
+  11 of 12 have a dark frame somewhere in-window. Max consecutive dark runs:
+  8002c1ab3ba0 **7 frames (42h)**, 0df36ee11032 / 56b282629cf6 / e86c13f47bc0 5,
+  bbbd78137ddd 4, 920f2f81e54d 3, 65243d05a247 2; eb65e5e99645 / 4a9c67b01f25 /
+  6b4dec9dc8db / bf07d11c8060 <=1. Only 029719d1e741 is continuously bright (min 78px).
+- The 4 sr13 v3 curated flickers are the TIP: the on-off-on rule counts only
+  1-frame gaps; multi-frame blackouts (majority of the damage) are invisible to it.
+- Caveats: (a) event_type of non-AR curated events (15 heat_wave, 1 freeze) makes
+  AR-darkness meaningless there — excluded; (b) a dark interior frame can also mean
+  the curated window outlives the object's actual life or spans two objects —
+  indistinguishable at footprint level because event->label id joins are invalid
+  across generation eras (§K follow-up). Either reading is a curation violation:
+  the published footprint of a curated event does not match the published frames.
+- Verdict: flicker is the DOMINANT condition of the curated AR set (9-11 of 12),
+  not a 4-event exception. §K's decision (extend gap-bridge across interior
+  dropouts, incl. multi-frame, vs exclude gap windows from curation) now has full
+  population support. Referee recommendation: extend gap-bridge to multi-frame
+  interior dropouts for curated tracks AND add a curation gate that rejects
+  windows with interior blackouts the bridge cannot justify.
+  Artifact: box `logs/` + scratch sr14b (script trivial; re-derivable in 2 min).
+
+### §L.1 — AMENDMENT (2026-11-10): exact-hour windows + dead/moved classification
+Corrections to §L (referee self-audit):
+1. sr14/sr14b clipped frame windows by DAY (`d0 <= tag[:8] <= d1`) — a window
+   ending 2026-10-30T00:00 wrongly included frames through 10-30 18Z. Re-run with
+   exact `YYYYMMDDHH` bounds. Headline survives (9/12 events, 25 interior dark
+   frames) but §L's "max run 7 = 42h" was inflated by post-end frames; true max
+   interior run = 3 frames (18h; 920f2f81e54d 090800–090812, confirmed real).
+2. New classification, bbox+5° AR presence per interior dark frame:
+   - DEAD (no AR in bbox+5°) — 19 frames / 6 events (920f x4, 0df3 x4, 8002 x4,
+     56b2 x4, 65243 x2, eb65 x1): the object is GONE — curated window outlives or
+     spans gaps in the object's life. NOT flicker; a curation-window defect.
+   - NEARBY (AR alive outside static bbox) — 6 frames / 5 events (e86c x2, bbbd,
+     4a9c, 920f@090606, 56b2@102412): object alive, bbox too tight / object moved.
+   - sr13 v3's 3 blink events (6b4dec, bf07, 920f partial) have ZERO interior
+     bbox-darkness — true object blinks happen while the bbox stays lit by other
+     AR pixels. The two failure modes are disjoint at bbox level.
+3. Consequence for the owner decision: gap-bridge fixes ONLY the sr13 blink class
+   (2–3 events). The majority class (6/9 interior-dark events) needs a curation
+   gate: clamp curated windows to the tracked object's actual life and reject
+   windows with unbridgable interior dead spans. The builder flicker gate does not
+   catch this class (a permanently-ended track is not an on-off-on blink).
+   Artifacts: scratch sr14d_exact.py (re-derivable, 2 min on box).
+
+### §L.2 — Gate claim verified against source (2026-11-10)
+`flickering_tracks` (exceedance.py:410-424) fires only on an interior gap between
+two appearances of the SAME track id (min_span 12). A track that DIES has no
+second appearance -> structurally invisible; and the build comment (:659-661)
+states physical blinks re-link as NEW ids in ar_filter, "invisible here by
+design" — sr13_flicker chains are the designated real detector, and they are
+audit-only (post-rebuild box gate), not a curation gate. So NO shipped automated
+check rejects a curated window containing an interior dead span. §L.1's
+two-mechanism recommendation stands, now source-confirmed.
+
+### Version pin (all of §K–§L.2)
+Frame lane: generated 2026-11-10T02:48Z, schema 3, 336 frames 2026081100→2026110218
+(window/cutoff same) — every §K–§L.2 script saw this one lane version.
+Curation input: events_selected.json sha256:51f96b150336625a. A lane rebuild
+(generated/frames change) or events file change invalidates these numbers;
+re-run scratch sr13_flicker.py + sr14d_exact.py to refresh.
+
+## §M — Non-AR curated events audited on their own planes (2026-11-10, sr15)
+Extended the §L.1 exact-hour interior-darkness audit to all 28 curated events,
+each tested against its OWN lane plane (heat_wave->h, freeze->f, AR->a;
+frame_layers plane order 0=h,1=f,2=a confirmed by result, see below).
+Result: identical totals to the AR-only run (28 events, 9 with interior dark,
+25 frames, 19 DEAD) and all 9 flagged ids are atmospheric_river. =>
+15 heat_wave + 1 freeze events have ZERO interior-dark frames on their own
+planes — the window-outlives-object defect is AR-class-only (heat/freeze
+exceedance areas are broad and stay non-empty across event bboxes).
+Plane-order sanity: if h/f were swapped, heat events would read dark on the
+freeze plane en masse; they read fully lit. Order verified by construction.
+Lane unchanged since §K pin (generated 2026-11-10T02:48:26Z, 336 frames) —
+pin still valid.
+Referee scope is now COMPLETE across all event classes and both layers.
+Artifact: scratch sr15_all_kinds.py (sr14d + per-kind plane index).
+
+## §M.1 — Addendum: plane order from source; raw lane IS public (2026-11-10)
+1. frame_bytes(heat, freeze, ar) packs heat|freeze|ar in that order
+   (exceedance.py) — plane 0=h, 1=f, 2=a CONFIRMED from source, upgrading
+   §M's result-shape inference.
+2. mergedmap.js renders data/results/raw_exceedance/{ts}.bin for ALL frames
+   globally (mergedmap.js:156,801) — the dashboard shows the raw exceedance
+   canvas for every frame, curated or not. => sr13 v3's 68 blinks, incl. the
+   43 big (>=500px) non-curated ones, ARE user-visible flicker on the live
+   merged map. The §K curation-side fix does not cover them; the owner's
+   gap-bridge decision should consider a raw-layer track-level bridge as well.
+
+## §N — The 43 big non-curated blinks, characterized (2026-11-10)
+From box logs/sr13_v3_stdout.json `big_blinks` (gap_frame, bbox, px):
+- Sizes 503..9745 px (median ~2.5k); 36 distinct gap-days, max 3 blinks in any
+  frame — DIFFUSE, not one broken day/frame.
+- Geography: 24 S-mid / 19 N-mid latitude, ZERO tropical big blinks — the
+  tropical mask rule is working; all visible flicker is in permitted zones.
+- 21/43 intersect a curated AR bbox somewhere, but only 4 fall inside that
+  event's window AND bbox (the §K set); the rest are pass-throughs near the
+  two giant bboxes (bf07 spans the S-Atlantic corridor) — weak evidence, do
+  not read as curated-event membership.
+- User impact: per §M.1 these are rendered on the live merged map. At ~1.2
+  blink-frames/day globally the aggregate visibility is real but low-grade;
+  a raw-layer track-level gap-bridge (same mechanism as §L.1 recommendation)
+  would remove all of them at once. No separate mechanism needed.
+Artifact: scratch sr13_v3.json (copy of box report). Handoff TODO "audit 43
+big blinks" CLOSED here.
+
+## §O — Acceptance gate pre-registered (2026-11-10, before any fix exists)
+scripts/review/sr_gate.py (repo, synced to box) runs on the box after any
+lane rebuild / curation change. Gates, fixed NOW so goalposts can't move:
+  G1 sr13_flicker.py: in_curated_ar_window_and_bbox == [] (no curated-blink).
+  G2 sr15_event_lifecycle.py: 0 interior DEAD frames on each event's own
+     plane (h/f/ar). NEARBY frames report-only — objects may out-move a
+     static bbox; that's a display-tightness issue, not a lifecycle defect.
+Exit 0 only when both pass. Known-bad baseline on the pinned lane: G1=4,
+G2=19 — first run MUST fail both (a gate that passes on known-bad is broken).
+sr13/sr15 stdout now carry a GATE_JSON: marker line for machine parsing.
+Also promoted sr15_event_lifecycle.py from 24h-pruned scratch into repo so
+the §L.1/§M evidence artifact survives.
+
+### §O validation run (2026-11-10, lane 20261110T0248)
+sr_gate.py on box: G1 FAIL n=4, G2 FAIL n=19, NEARBY=6 — identical, frame for
+frame, to §K and §L.1 manual results. Gate validated on known-bad. Any future
+exit 0 == fix accepted. logs/sr_gate_20261110.log on box.
+
+## §P — Design-lane 25/75 blink split: validated on full timeline; their script is broken (2026-11-10)
+Claim under review (channel_design_ewb 2026-11-09): blink px = 25% wholly-gone
+components / 75% edge erosion; root cause 6-hour threshold jitter.
+Replication of tmp/blink_class.py detector (pixel blink = a&c&~b, parent comps
+labeled at t-1, whole if <10% of comp survives at t) on the FULL 335-window
+timeline, current lane (2026-11-10T02:48 build):
+  wholly-gone: 67,089 px / 239 objs;  edge-eroded: 202,504 px  ->  24.9% / 75.1%.
+VERDICT: the split reproduces exactly on the full timeline. Design-lane
+conclusion stands; root-cause stories converge (threshold jitter; 75% is border
+jitter, 25% true whole-frame dropouts).
+CAVEAT: tmp/blink_class.py as written cannot produce that number today —
+unpackbits yields uint8, so `bl` is uint8 and `lab[bl]`/`comp[bl]` are FANCY
+indexes (positions 0/1), not boolean masks. One-frame proof (2026081106,
+2,309 real blink px): as-written `np.unique(lab[bl])` sees exactly ONE label —
+0, i.e. background — while the bool-cast sees 13 parent components; and
+`(lab==0)[bl].sum()` returns 1,495,065,600 instead of 2,309. As-written the
+script classifies background rows 0/1, prints whole=0 + bogus edge counts, and
+hangs for >15 min on the ::7 sample doing billion-element gathers (killed).
+Their 25/75 must have come from an earlier or interactive variant; the claim text lives in
+notes/channel_design_frontend.md:966 ("Classification (sampled)"). Note their
+blink-PX totals (~270k, worst-frame lists) ARE reproducible from the broken
+script because plain `bl.sum()` is immune to the dtype bug — only the
+component classification was garbage. Conclusion
+right, artifact wrong — do NOT reuse tmp/blink_* scripts. Corrected memory-safe
+replication promoted: scripts/review/blink_class_full3.py (bool-cast + bincount).
+Mechanism implication for the owner call: hysteresis (design option A) attacks
+the 75% border-jitter majority at the source; gap-bridging masks the 25% whole
+dropouts (the ones sr13 counts as track blinks). They are complementary, not
+either/or: sr_gate G1/G2 only certify what gap-bridging + curation clamp fix.
+
+## §P.1 — design-lane root-cause report: remaining stats verified (2026-11-10)
+Referee check of the load-bearing numbers in notes/channel_design_frontend.md:945-980,
+run read-only on the pinned lane (generated 2026-11-10T02:48:26Z):
+- Blink-px total: **269,593** — matches their "~270k" exactly.
+- Single-step track share: current lane **86.7%** (2892/3335, t0→t1 ≤6h) vs their
+  77% (v5 lane). Direction holds, stronger on dur-rev-v2; exact % is lane-version
+  dependent, as the §P version pin predicts.
+- Worst blink frame: current lane 2026090600 (4,950 px, 17.5% of AR px); their
+  claimed worst 2026090400 = 5,327 px ≈19% measures 4,885 px / 25.6% here.
+  Same order of magnitude; exact identity of the worst frame shifts between
+  lane builds. Their implied AR denominator (~28k) actually matches 2026090600
+  (28,345 px) — likely a tag slip in their note, not a method error.
+Verdict: root-cause report VERDICT = validated; all mechanism-relevant facts
+(pixel blink everywhere, ~270k px, majority-single-step tracks, 25/75 split)
+reproduce. Exact per-frame/per-track statistics must be quoted with the lane
+build attached. No changes to the owner decision packet needed.
+
+## §Q — curation-lifetime clamp cost simulation (scripts/review/sr16_clamp_sim.py, 2026-11-10)
+Simulated the REQUIRED clamp (window end = object life; unbridgable DEAD runs
+cut, window-reject if DEAD at frame 0) on the pinned lane, bridge sizes 1 and 3.
+Consistency check vs §L.1: all 6 DEAD events appear; 920f run (3 frames) exact;
+non-DEAD events keep.
+- bridge=3: 1 clamp / 0 rejects / 11 keep — 4 frames lost of 180 curated-AR (2.2%).
+- bridge=1: 4 clamps / 1 reject — 37/180 lost (20.6%).
+New fact: 8002c1ab3ba0's curated window STARTS dead (DEAD run at window frame 0)
+— curation accepted a window whose object is absent at t0; only the reject path
+of a lifetime gate catches this.
+Implication for the owner: the clamp is near-free (2.2% curated frames at
+bridge=3) and kills the entire §L.1 interior-DEAD failure mode; it is
+independent of the A/B/C pick.
+
+### §Q addendum — starts-dead class is source-verified uncaught (2026-11-10)
+validate.py's AR checks are scalar self-consistency only (peak IVT vs
+threshold, landfall_days>=1, centroid_lat in bbox±2.5°). No shipped check
+requires mask presence in ANY window frame; centroid/landfall are aggregate
+stats, blind to WHEN the object exists. The §Q 8002 starts-dead window
+passes every curation validator. Claim stands as source fact, like §L.2.
+
+## §R — gate amendment + §Q correction (2026-11-10, pre-implementation, legitimate)
+Flaw in my own §O pre-registration: G1/G2 counted raw blink/DEAD *frames*,
+but a fix shipping a K-frame gap-bridge legitimately leaves runs <=K — the
+gate would have rejected a correct fix. Amendment (sr_gate.py --bridge N,
+default 0 preserves original semantics; sr15 now emits dead_runs + start_dead):
+- G1: curated-window blinks with gap > bridge (blinks are gap-1 by construction).
+- G2: interior DEAD *runs* > bridge (interior-only; run to window edge = tail death, not flicker).
+- G3 (new): no curated window starts DEAD — the §Q dead-at-t0 class, which
+  interior-only G2 provably cannot catch.
+Verified on pinned lane: --bridge 0 -> G2 FAIL (12 runs/19 frames, baseline
+preserved); --bridge 3 -> G2 PASS but G3 FAIL ["8002c1ab3ba0"].
+CORRECTION to §L.1/§Q recommendation: bridge=3 ALONE kills the interior
+flicker class (longest interior run = 3; 8002's run-of-4 only reaches 4 by
+including its window-edge frame). The lifetime clamp is required only for
+the dead-at-t0 class (1 event) + tail hygiene — cheaper than §Q stated.
+
+### §R addendum — full amended-gate baseline confirmed on box (2026-11-10)
+sr_gate.py (no flags, bridge=0 default), pinned lane 2026-11-10T02:48:26Z:
+G1 FAIL 4 curated blinks (= §K), G2 FAIL 12 DEAD runs/19 frames (= §L.1),
+G3 FAIL 1 start-dead window 8002 (= §Q). Every gate fails pre-fix, matching
+each section's independent count — the amended gate is calibrated.
+(Note: the run's printed RC=0 was ssh-pipeline artifact, $? after tail; the
+FAIL lines are authoritative.)
+
+## §S — referee quantification: region assignment centroid-vs-overlap (design lane owner-call, 2026-11-10)
+Question (channel_design_frontend.md:1574, ewb_live/regions.py on box): centroid
+assignment vs footprint-overlap>25% for thin ARs. Measured on pinned lane
+(sr17_region_assignment.py): plane-2 footprint pixels of all 12 curated AR
+events over exact-hour windows, binned per dashboard/regions.json box.
+RESULT: 0 disagreements. Centroid regions == regions holding >=25% of
+footprint for every event (incl. the thin ones and 8002 near the dateline).
+The centroid scheme's cost on the current curated set is ZERO; the design
+lane's concern is a real theoretical failure mode (footprint majority outside
+the centroid region) but has no observed instance in 12/12 events. No fix
+needed now; the overlap rule only earns its complexity when a DISAGREE fires.
+Caveat: >=25% computed on window-summed pixel counts; hemisphere boxes
+co-match by design (documented multi-membership).
+
+## §S.1 — §S caveats closed + n<5 muting quantified (2026-11-10)
+(1) Per-frame rule (region holds >=25% of a FRAME's footprint, union over
+window) re-run vs centroid: still 0/12 DISAGREE — the sweep-across-regions
+failure mode has no instance on the pinned lane either. Centroid verdict stands.
+(2) n<5 scorecard muting, cell census from events_selected (28 curated) x
+assign_regions: 10 filled region x type cells; 3 have n<5 —
+north_america/heat_wave (n=1), global/freeze (n=1), northern_hemisphere/freeze
+(n=1). Muting n<5 today silences ALL freeze scorecards and the only NA heat
+cell. If the owner wants freeze visible at all, the threshold must come with
+an "n shown, dimmed" fallback or it deletes a whole event class from the UI.
+Caveat: n here = curated events per cell (the binding constraint), not the
+scorecard's underlying verification sample count.
+
+## §T — consequence note: pi's landfall-floor FLAG vs the acceptance gate (2026-11-10)
+channel_ponytail_science_review.md 03:14Z (A/B-proven on box): shipped events
+are floor=3-era; the 3->1 relaxation means the next pipeline run swaps the
+curated AR set (06ceb4d8d4fe in; 0df36ee11032 + 8002c1ab3ba0 out via merge
+e1bd4ec451c5). Referee consequences:
+1. All §K-§S baselines (G1=4, G2=12/19, G3=1, 0/12 region-disagreements) are
+   pinned to events_selected sha 51f96b150336625a and do NOT transfer.
+2. 8002c1ab3ba0 — the ONLY G3 start-dead event and §Q's clamp target — leaves
+   with the swap. A G3 PASS on the post-run set is NOT evidence the lifetime
+   gate works; it may just mean the case vanished. To validate the fix
+   honestly: run the gate BEFORE and AFTER the regeneration; the diff must be
+   explicable by the set change alone, with the fix's bridge/clamp effect
+   isolated on events present in BOTH eras.
+3. sr_gate reads events_selected live, so it needs no change — but the
+   acceptance run must record events sha in its log (lane pin is already
+   printed; add events sha if the fix lane touches the script).
+
+## §T addendum — gate now self-pins events sha (2026-11-10)
+sr_gate.py prints `events_sha` (first 16 of sha256, events_selected.json)
+next to the lane pin; verified on box: 51f96b150336625a on the current set.
+Before/after-regeneration acceptance logs are now self-identifying per §T.
+
+## §S.2 (2026-11-10) — §S tripwire shipped as gate leg G4
+The §S recommendation ("keep centroid, ship sr17 as a regression tripwire") is now mechanical: `sr_gate.py` runs `sr17_region_assignment.py` as G4 and fails on any centroid-vs-overlap disagreement. Verified on the pinned lane (`--fast --bridge 3`, gate rc=1 from G3 as expected): G4 PASS 0 disagreements; G2 PASS, G3 FAIL ["8002c1ab3ba0"], events_sha 51f96b150336625a — baseline semantics unchanged by the addition. CLOSED.
+
+## §U — ponytail round 2026-11-10 09:28Z: 3 findings, all applied (2026-11-10)
+
+MUST-1 (gate fault line, sr_gate.py): VALID. run() aborted at the first failed
+leg, discarding already-computed verdicts. Rewrite: every leg prints as it
+completes; a crashed/verdict-less leg prints ERROR, the run continues, and a
+broken leg can never yield exit 0 (ok stays False). G4 kept (regions.py +
+regions.json present on box — G4 PASS verified; ERROR path is the defense for
+trees without them, which is the correct treatment: broken leg != passing fix).
+Baseline re-verified post-rewrite: G1=4 FAIL / G2=12 runs FAIL / G3=1 FAIL /
+G4=0 PASS, rc=1, pins unchanged — bit-for-bit identical to §R.
+
+MUST-2 (wrapped lon, sr13/sr15/sr16/sr17): VALID, fix applied verbatim
+(lon = eastward arc; membership ((lon-w)%360)<=((e-w)%360); sr13 bbox test
+now lon_overlap arc-intersection). Unit-checked on grid arithmetic: non-wrap
+identity, wrapped 20deg arc = 81 cols, pad cross-dateline exact. Synthetic
+probe (scripts/review/sr_probe_wrap.py): 30.25deg wrapped twin of a live AR —
+OLD min/max scans the 329.75deg complement: 563 px; NEW arc: 4525 px. 8x
+undercount when alive; when dead, complement pixels of OTHER objects keep the
+frame counted ALIVE -> false G2/G3 PASS, exactly the class pre-registered.
+Current-numbers impact: ZERO — verified on box that no curated event is
+wrapped (255f68102c43 is the §K funnel/ledger-space Bering track, not among
+the 12 curated ARs) and the full gate reproduces the §R baseline exactly.
+The fix matters the moment an AM event gets curated — live risk under the
+relaxed landfall floor (§T).
+
+NICE (sr17 EXTRA + dead hemis line): applied. hemis dead line deleted (only
+GLOBAL_KEY excluded; hemispheres stay candidates on both sides, consistent).
+EXTRA asymmetry stated as a rule: report-only note printed before GATE_JSON
+(gate fires on overlap regions the centroid MISSES; EXTRA cannot fire the
+flag by design — padded-bbox drift). sr13 blink records now carry explicit
+"gap": 1 (true by construction, elig last_t in (t-1,t-2)) so the gate's
+bridge filter is auditable instead of relying on a missing key.
+
+## STANDING CADENCE (2026-11-10) — owner directive: weekly rerun comparison only
+Owner (mid-turn): "stop this, only run once a week after ponytail triggers",
+then "cron, triggered once ponytail review ends". Implemented as Hermes cron
+job `ewb-score-rerun-watch` (id 5be6d92a1818), Mon 12:00 UTC — after box
+weekly run (Mon 07:00, artifacts ~08:13) and after the ponytail daily round
+(timer 09:15 UTC, full-sweep deadline 110 min ⇒ done ≤ ~11:05; done-marker
+notes/.ponytail_done.txt). Do NOT run rerun/scorecard comparisons ad hoc in
+interactive sessions; the cron lane owns that work. All §R baselines stay
+pinned (events_sha 51f96b150336625a); no gate/scripts changes made this
+resumed session (nothing ran on box).

@@ -24,7 +24,7 @@ MSG = (
     "[Orchestrator watchdog] Your context is at {pct:.0%}. Do the mandatory context handoff from "
     "SPEC.md now: write notes/handoff_<your-agent>_<n>.md (goal, state, done, in progress incl. "
     "running PIDs/logs, ordered next steps, gotchas), launch your successor (it must keep YOUR exact role name) with orca agent launch "
-    "--agent hermes --surface terminal --prompt \"You are agent '<your-agent>' (successor). Read "
+    "--agent pi --surface terminal --prompt \"You are agent '<your-agent>' (successor). Read "
     "SPEC.md, then notes/handoff_<your-agent>_<n>.md, and continue from there.\" --json, put its "
     "handle at the top of the handoff file, then stop."
 )
