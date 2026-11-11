@@ -832,19 +832,12 @@ nav.controls .dd .dd-body {
   fill: var(--ink); }
 .gm-open-wrap:hover .gm-open-pill { stroke: var(--accent); }
 .gm-halo { fill: none; stroke: var(--canvas); stroke-width: 3; }
-.gm-chips { display: flex; gap: 8px; flex-wrap: wrap; }
-.gm-chip { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  border: 1px solid var(--border-strong); border-radius: 999px; padding: 4px 10px;
-  background: var(--bg-panel); font: inherit; font-size: var(--text-xs); color: var(--ink); }
-.gm-chip i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 .gm-time-row { display: grid; grid-template-columns: minmax(0, 1fr) auto;
   align-items: center; gap: 2px 12px; margin-top: 6px; }
 .gm-time-row > span:empty { display: none; }   /* legacy leading spacer */
 .gm-date-readout { font-size: var(--text-base); font-weight: 500; white-space: nowrap; }
-/* layer-chip row (the colour scales live INSIDE the map — see #gm-legend), so
-   this row's height never depends on what is painted; the timeline card below
-   is one widget: transport + current time, the scrubber, the event lanes */
-.map-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+/* the timeline card under the map is one widget: transport + current time, the
+   scrubber, the event lanes (the colour scales ride inside the map itself) */
 .timeline { margin-top: 12px; padding: 10px 12px 6px; background: var(--bg-panel);
   border: 1px solid var(--border); border-radius: 6px; }
 .tl-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
@@ -944,11 +937,6 @@ nav.controls .dd .dd-body {
 @media (max-width: 620px) {
   #global-sec .gm-date-readout { text-align: right; }
 }
-/* pressed type chip = same quiet selected state as every other chip */
-.gm-chip[aria-pressed="true"] { background: var(--alabaster); border-color: var(--border);
-  box-shadow: inset 3px 0 0 var(--matte-black); }
-.gm-chip[aria-pressed="false"] { color: var(--ink-secondary); }
-
 /* G-04 superseded 2026-11-09 (briefs/event_view_overlay.md): the event detail
    is ONE map card with stacked model overlays — the 2-up panel grid retires. */
 #detail-viz .ev3-root > .ev3-obsblock { margin: 0; }
