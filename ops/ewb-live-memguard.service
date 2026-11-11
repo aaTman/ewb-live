@@ -1,0 +1,14 @@
+[Unit]
+Description=EWB memory guard v2 (pause/resume scoring, guaranteed resume)
+
+[Service]
+ExecStart=/bin/bash __REPO__/ops/memguard.sh
+Restart=always
+RestartSec=30
+# 256 GB box (2026-11-08): pause scoring above 200 GB own RSS, i.e. below
+# 3 AR lanes (~60-75 GB each) + std + OS; resume keeps >=60 GB available
+Environment=EWB_LIVE_MEM_BUDGET_GB=200
+Environment=EWB_LIVE_RESUME_ABOVE_GB=60
+
+[Install]
+WantedBy=multi-user.target

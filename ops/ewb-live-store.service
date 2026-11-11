@@ -1,0 +1,16 @@
+[Unit]
+Description=EWB Live CIRA MLWP Icechunk store daily update
+# One-shot: started by ewb-live-store.timer (daily 05:30 UTC, Persistent).
+# `update` appends inits missing from the full-archive virtual store
+# (ewb_live.stores/mlwp_icechunk.py), one Icechunk commit per run, idempotent,
+# flock-guarded against a concurrent weekly catch-up. Stall watchdog inside the
+# module rebuilds a wedged worker pool; TimeoutStartSec is the hard backstop.
+
+[Service]
+Type=oneshot
+WorkingDirectory=__REPO__
+ExecStart=__REPO__/.venv/bin/python -m ewb_live.stores.mlwp_icechunk update
+TimeoutStartSec=3h
+# OnFailure= needs a template unit; keeping logs/store.log as the single trail.
+StandardOutput=append:__REPO__/logs/store.log
+StandardError=append:__REPO__/logs/store.log

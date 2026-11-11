@@ -1,0 +1,15 @@
+[Unit]
+Description=EWB Live: hourly Ponytail code review (agent tooling, not EWB compute)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/orca/orca/workspaces/ewb-live/dogfish
+# flock: only one review ever runs at a time; -n = skip the tick if busy
+ExecStartPre=/bin/mkdir -p /home/orca/orca/workspaces/ewb-live/dogfish/logs/ponytail
+ExecStart=/usr/bin/flock -n /home/orca/orca/workspaces/ewb-live/dogfish/logs/ponytail/.lock /usr/bin/python3 /home/orca/orca/workspaces/ewb-live/dogfish/ops/ponytail_review.py
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=120min
+
+[Install]
+WantedBy=default.target
