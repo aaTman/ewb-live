@@ -563,7 +563,8 @@ def test_controls_live_in_the_section_they_change(live_url, page_ctx):
                  maps: document.querySelectorAll('#map, .events-grid').length,
                  navOutside: document.querySelectorAll('body > nav.controls').length }; }""")
     assert where["models"] == where["leads"] == where["metrics"] == "scorecard-sec", where
-    assert where["search"] == "events-sec" and where["layers"] == where["play"] == "global-sec", where
+    assert where["search"] == "events-sec" and where["play"] == "global-sec", where
+    assert where["layers"] is None, where   # the #raw-layers chip row retired (complaint 3)
     assert where["tabs"] and where["maps"] == 0 and where["navOutside"] == 0, where
     # map and list share the first screen on a desktop viewport
     tops = page.evaluate("""() => ['#raw-map-wrap', '#events-sec', '#raw-slider'].map(
@@ -668,18 +669,24 @@ def test_lead_deep_link_nonfirst_lead(live_url, heat_event, page_ctx):
 
 def test_page_width_shell_caps_content(live_url, page_ctx):
     """Owner spec: main content constrained to min(75vw, 1280px) on wide
-    screens, centered, no overflow."""
+    screens, centered, no overflow. Since the OWB rail (2026-11-10) the shell is
+    centered in the space the rail leaves, not in the viewport."""
     page = page_ctx
     page.set_viewport_size({"width": 1920, "height": 900})
     page.goto(live_url + "/")
     page.wait_for_selector("#event-table tbody tr, .gm-lrow")
     m = page.evaluate("""(() => { const e = document.querySelector('.shell')
             || document.querySelector('main');
+        const rail = document.querySelector('.rail');
+        const railW = rail && getComputedStyle(rail).display !== 'none'
+            ? rail.getBoundingClientRect().width : 0;
         const r = e.getBoundingClientRect();
-        return {w: r.width, left: r.left, right: innerWidth - r.right}; })()""")
+        return {w: r.width, left: r.left - railW, right: innerWidth - r.right,
+                rail: railW}; })()""")
     assert m["w"] <= 1280.5, f"content wider than 1280 at 1920: {m}"
     assert m["w"] <= 1920 * 0.75 + 1
-    assert abs(m["left"] - m["right"]) <= 2, f"not centered: {m}"
+    assert m["rail"] == 220, f"rail should be 220 px on desktop: {m}"
+    assert abs(m["left"] - m["right"]) <= 2, f"not centered beside the rail: {m}"
 
 
 def test_os_theme_flip_repaints_open_detail(live_url, heat_event, page_ctx):
@@ -706,8 +713,7 @@ def test_ar_type_color_token_both_themes(live_url, page_ctx):
     light = page.evaluate(
         "getComputedStyle(document.documentElement).getPropertyValue('--series-ar').trim()")
     assert light == "#2e7d32", light
-    page.click("#theme-toggle")   # auto -> light
-    page.click("#theme-toggle")   # light -> dark
+    page.click("#theme-ctl button[data-pref='dark']")   # segmented control (rail footer)
     dark = page.evaluate(
         "getComputedStyle(document.documentElement).getPropertyValue('--series-ar').trim()")
     assert dark == "#66bb6a", dark
@@ -774,7 +780,8 @@ GD_RAW_TS = [d.strftime("%Y%m%d%H") for d in
               for i in range(41)]]   # 2026-01-01T00 … 2026-01-11T00, 6-hourly
 
 
-def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=None, raw_run=False, raw_ivt=False):
+def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=None, raw_run=False, raw_ivt=False,
+                      raw_run_v2=False):
     src = os.path.join(ROOT, "data", "results")
     root = os.path.join(tmpdir, "webroot")
     os.makedirs(root)
@@ -800,9 +807,9 @@ def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=No
     if raw_frames is not None:
         _build_raw_fixture(data_dir, frames=raw_frames,
                            cutoff=raw_cutoff if raw_cutoff is not None else raw_frames[-1],
-                           run=raw_run, ivt=raw_ivt)
+                           run=raw_run, ivt=raw_ivt, run_v2=raw_run_v2)
     else:
-        _build_raw_fixture(data_dir, run=raw_run, ivt=raw_ivt)
+        _build_raw_fixture(data_dir, run=raw_run, ivt=raw_ivt, run_v2=raw_run_v2)
     if with_timeline:
         tl = _gd_timeline()
         json.dump(tl, open(os.path.join(data_dir, "global_timeline.json"), "w"))
@@ -859,7 +866,8 @@ def _gd_server(root):
 RAW_TS = ["2025110600", "2025110606", "2025110612"]  # 6-hourly, ts2 is past cutoff
 
 
-def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=False, ivt=False):
+def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=False, ivt=False,
+                       run_v2=False):
     """raw_exceedance asset per the contract in channel_design_frontend.md:
     zlib'd layer-major bitpacked rows (heat,freeze,ar; ny x ceil(nx/8),
     row 0 = lat0 lowest, MSB-first). 5-deg grid; heat blob mid-pacifica,
@@ -869,7 +877,9 @@ def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=Fal
     with runs for heat: 2 (unpainted), 3 (bin0), 14+ (bin4); freeze unchanged
     1/7+; a fourth heat bit cell is added with run=0 (must stay unpainted).
     ivt=True adds AR IVT class plane sidecars (.ivt) with 5 bins (250-500,
-    500-750, 750-1000, 1000-1250, >=1250 kg m-1 s-1) for the AR layer."""
+    500-750, 750-1000, 1000-1250, >=1250 kg m-1 s-1) for the AR layer.
+    run_v2=True publishes the sidecars as dur rev v2 and sets the provisional
+    (today-so-far) bit on the heat run=3 cell."""
     import zlib
     frames = frames or RAW_TS
     cutoff = cutoff or RAW_TS[1]
@@ -883,7 +893,7 @@ def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=Fal
            "frames": frames, "cutoff": cutoff,
            "window": {"start": frames[0][:8], "end": frames[-1][:8]}}
     if run:
-        idx["dur"] = {"rev": "v1", "seed": frames[0]}
+        idx["dur"] = {"rev": "v2" if run_v2 else "v1", "seed": frames[0]}
     if ivt:
         idx["ivt"] = {"schema": 1, "bins": [250, 500, 750, 1000, 1250]}
         idx["schema"] = 3  # v3 with IVT class planes
@@ -913,7 +923,7 @@ def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=Fal
             planes = bytearray(2 * ny * nx)
             # heat plane (li=0): run=2 at (j,i), run=3 at (j,i+1), run=0 at (j,i+20), run=14 at (j,i+40)
             planes[0 * ny * nx + jh * nx + ih] = 2       # unpainted (< 3)
-            planes[0 * ny * nx + jh * nx + ih + 1] = 3   # bin 0
+            planes[0 * ny * nx + jh * nx + ih + 1] = 3 | (0x80 if run_v2 else 0)   # bin 0 (+ today)
             planes[0 * ny * nx + jh * nx + ih + 20] = 0   # unpainted (= 0)
             planes[0 * ny * nx + jh * nx + ih + 40] = 14  # bin 4
             # freeze plane (li=1): unchanged 1/7+
@@ -985,6 +995,17 @@ def dur_server(tmp_path_factory):
     every frame has a `.run` sidecar (heat/freeze runs 1/7+ + a run=0 bit cell)."""
     root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-dur")),
                              with_timeline=False, raw_run=True)
+    srv, url = _gd_server(root)
+    yield url
+    srv.shutdown()
+
+
+@pytest.fixture(scope="module")
+def dur2_server(tmp_path_factory):
+    """dur rev v2 lane: the provisional bit rides on the heat run=3 cell, so the
+    legend must show a 'today' stop for heat and none for freeze."""
+    root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-dur2")),
+                             with_timeline=False, raw_run=True, raw_run_v2=True)
     srv, url = _gd_server(root)
     yield url
     srv.shutdown()
@@ -1294,27 +1315,33 @@ def test_raw_renders_steps_and_badge(raw_server, page_ctx):
 
 
 def test_raw_layer_toggles_and_url(raw_server, page_ctx):
+    """The #layers= deep-link contract after the chip row retired (complaint 3):
+    the Show tabs are the only layer widget, yet URL state still drives the
+    layers on load and records them on every change."""
     page = page_ctx
     page.goto(raw_server + "/")
     _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('Valid time')",
         timeout=20000)
-    chips = page.locator("#raw-layers .gm-chip")
-    assert chips.count() == 3
-    chips.nth(1).click()               # freeze off
-    assert chips.nth(1).get_attribute("aria-pressed") == "false"
-    assert page.evaluate("decodeURIComponent(location.hash)").find("layers=h,a") >= 0
-    chips.nth(1).click()               # back on -> param disappears
-    assert "layers" not in page.evaluate("location.hash")
-    # deep link: frame + only-heat layers survive a load
+    assert page.locator("#raw-layers").count() == 0        # chips retired
+    tabs = page.locator("#type-tabs button")
+    assert tabs.count() == 4                               # All + the three types
+    # deep link: frame + only-heat layers survive a load, no widget involved
     page.goto(raw_server + "/#raw=2025110606&layers=h")
     _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('06:00 UTC')",
         timeout=20000)
-    chips = page.locator("#raw-layers .gm-chip")
-    assert chips.nth(0).get_attribute("aria-pressed") == "true"
-    assert chips.nth(1).get_attribute("aria-pressed") == "false"
-    assert chips.nth(2).get_attribute("aria-pressed") == "false"
+    assert page.evaluate("MergedMap._dbg().on") == {"h": True, "f": False, "a": False}
+    # the freeze tab narrows to freeze only and records layers=f
+    tabs.filter(has_text="Freezes").click()
+    page.wait_for_timeout(400)
+    assert page.evaluate("MergedMap._dbg().on") == {"h": False, "f": True, "a": False}
+    assert "layers=f" in page.evaluate("decodeURIComponent(location.hash)")
+    # All restores every layer and drops the param again
+    tabs.filter(has_text="All").click()
+    page.wait_for_timeout(400)
+    assert page.evaluate("MergedMap._dbg().on") == {"h": True, "f": True, "a": True}
+    assert "layers" not in page.evaluate("location.hash")
     errs = [e for e in page.errors if "Failed to load resource" not in e]
     assert errs == [], errs   # the frame-0 prefetch 404 is the fixture's doing
 
@@ -1388,14 +1415,23 @@ def test_raw_section_honest_without_data(live_url, page_ctx):
 # AR ramp (atmospheric river IVT class plane tests)
 # ---------------------------------------------------------------------------
 
-# AR ramp bins paint opaque (mergedmap RUN_ALPHA rule): canvas RGB == token.
+# AR ramp bins paint with the lane's constant RUN_ALPHA over the basemap
+# (owner review 2026-11-11: opaque sheets hid the graticule/coasts), so a
+# painted pixel is token RGB blended over --map-ocean or --paper (land).
 # AR fixture truth: frame 2025110606 (k=1) has the AR blob at row j=28, cols
 # i=46..50 carrying classes 1..5; 2025110612 is PAST the fixture cutoff, so
 # ramp tests must drive 2025110606.
 _AR_CENSUS_JS = """() => {
     const d = MergedMap._dbg();
-    const bins = [0, 1, 2, 3, 4].map((b) => d.ramp(2, b).slice(0, 3));
+    const bins = [0, 1, 2, 3, 4].map((b) => d.ramp(2, b));
     if (!bins.every(Boolean)) return { arPixels: 0, classes: [] };
+    const varRgb = (v) => { const s = document.createElement('span'); s.style.color = v;
+        document.body.appendChild(s); const m = getComputedStyle(s).color.match(/\\d+/g);
+        s.remove(); return m.map(Number); };
+    const grounds = [varRgb('var(--map-ocean)'), varRgb('var(--paper)')];
+    const eff = (c) => { const t = c[3] / 255;   // the alpha the pack ACTUALLY paints with
+        return grounds.map((g) => c.slice(0, 3).map((v, k) => v * t + g[k] * (1 - t))); };
+    const targets = bins.map(eff);
     const cv = document.querySelector('#raw-canvas');
     const px = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
     let arPixels = 0; const classes = new Set();
@@ -1403,7 +1439,7 @@ _AR_CENSUS_JS = """() => {
         if (px[i + 3] === 0) continue;
         const p = [px[i], px[i + 1], px[i + 2]];
         for (let b = 0; b < 5; b++) {
-            if (bins[b].every((v, k) => Math.abs(v - p[k]) <= 12)) {
+            if (targets[b].some((col) => col.every((v, k) => Math.abs(v - p[k]) <= 12))) {
                 arPixels++; classes.add(b + 1); break;
             }
         }
@@ -1448,16 +1484,72 @@ def test_ar_ramp_paints_class_plane(ar_ramp_server, page_ctx):
                            timeout=3000)
 
 
+@pytest.fixture(scope="module")
+def ar_s2_server(tmp_path_factory):
+    """Schema-2 `.ivt` (the live one): the class plane covers the WHOLE IVT field.
+    Adds a class-3, IVT>=400 cell at (j=20, i=10) that is NOT in the AR mask —
+    the tropics' moisture the map must never draw (owner 2026-11-11)."""
+    import zlib
+    root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-ar-s2")),
+                             with_timeline=False, raw_ivt=True)
+    rd = os.path.join(root, "data", "results", "raw_exceedance")
+    ix = json.load(open(os.path.join(rd, "index.json")))
+    ix["ivt"] = {"schema": 2, "bins": [250, 500, 750, 1000, 1250],
+                 "ar_min": 400.0, "above_bit": 128}
+    json.dump(ix, open(os.path.join(rd, "index.json"), "w"))
+    nx = ix["grid"]["nx"]
+    for ts in ix["frames"]:
+        fp = os.path.join(rd, ts + ".ivt")
+        if not os.path.exists(fp):
+            continue
+        pl = bytearray(zlib.decompress(open(fp, "rb").read()))
+        pl[20 * nx + 10] = 3 | 128                      # outside the mask
+        open(fp, "wb").write(zlib.compress(bytes(pl)))
+    srv, url = _gd_server(root)
+    yield url
+    srv.shutdown()
+
+
+def test_ivt_outside_the_ar_mask_is_neither_painted_nor_hoverable(ar_s2_server, page_ctx):
+    """Tropics bug: schema-2 classes exist outside the mask, and the map used to
+    tint every IVT>=400 cell and answer hovers on it. Only AR-mask cells show."""
+    page = page_ctx
+    _ar_ramp_wait(page, ar_s2_server, "#map=2025110606&layers=a")
+    assert page.evaluate("MergedMap._dbg().ivtAt(20, 10)") == 3      # the field is there
+    assert page.evaluate("MergedMap._dbg().arAt(20, 10)") == 0        # the mask is not
+    spot = lambda j, i: page.evaluate("""([j, i]) => {
+        const d = MergedMap._dbg(), g = d.grid;
+        const p = d.project([g.lon0 + i * g.step_lon, g.lat0 + j * g.step_lat]);
+        const cv = document.querySelector('#raw-canvas');
+        const k = cv.width / cv.getBoundingClientRect().width;
+        const px = cv.getContext('2d').getImageData(Math.round(p[0] * k), Math.round(p[1] * k), 1, 1).data;
+        const r = cv.getBoundingClientRect();
+        return { rgba: [...px], x: r.left + p[0], y: r.top + p[1] }; }""", [j, i])
+    a, ref = spot(20, 10), spot(20, 14)       # (20,14): no IVT, no AR — same basemap
+    # no faint tint on the IVT-only cell: basemap shading differs by ~1 between two
+    # neighbouring pixels, the old alpha-55 tint moved the channels by tens
+    assert max(abs(x - y) for x, y in zip(a["rgba"], ref["rgba"])) <= 4, (a, ref)
+    page.mouse.move(a["x"] - 60, a["y"])
+    page.mouse.move(a["x"], a["y"])
+    page.wait_for_timeout(300)
+    assert page.evaluate("document.querySelector('#tooltip').classList.contains('hidden')")
+
+
 def test_ar_ramp_legend_shows_5_steps(ar_ramp_server, page_ctx):
-    """Legend: 5 swatches stepped 250/500/750/1000/1250 kg m-1 s-1."""
+    """Legend: the AR group steps 250-500 … >=1250 kg m-1 s-1 (5 labelled
+    swatches); layers the URL switched off never appear in it."""
     page = page_ctx
     _ar_ramp_wait(page, ar_ramp_server, "#map=2025110606&layers=a")
     page.wait_for_selector("#gm-legend:not(.hidden)", timeout=20000)
+    assert page.locator("#gm-legend .lg-group").count() == 1      # AR only: layers=a
+    assert page.locator("#gm-legend .lg-group").get_attribute("data-layer") == "a"
     sw = page.locator("#gm-legend .swatch")
     assert sw.count() == 5
     titles = [sw.nth(i).get_attribute("title") for i in range(5)]
-    assert [t.split()[0] for t in titles] == ["250", "500", "750", "1000", "1250"], titles
-    assert "AR IVT" in page.inner_text("#gm-legend")
+    assert [t.split()[0] for t in titles] == ["250\u2013500", "500\u2013750",
+        "750\u20131000", "1000\u20131250", "\u22651250"], titles
+    txt = page.inner_text("#gm-legend")
+    assert "AR IVT" in txt and "kg m\u207b\u00b9 s\u207b\u00b9" in txt
 
 
 def test_ar_ramp_fallback_without_class_plane(ar_ramp_server, page_ctx):
@@ -1469,12 +1561,17 @@ def test_ar_ramp_fallback_without_class_plane(ar_ramp_server, page_ctx):
     _ar_ramp_wait(page, ar_ramp_server, "#map=2025110606&layers=a")
     assert page.evaluate("MergedMap._dbg().ivtAt(28, 46)") == 0   # no plane
     n = page.evaluate("""() => {
-        const d = MergedMap._dbg(), c = d.packed(2).slice(0, 3);
+        const d = MergedMap._dbg(), c = d.packed(2), t = c[3] / 255;
+        const varRgb = (v) => { const s = document.createElement('span'); s.style.color = v;
+            document.body.appendChild(s); const m = getComputedStyle(s).color.match(/\\d+/g);
+            s.remove(); return m.map(Number); };
+        const grounds = [varRgb('var(--map-ocean)'), varRgb('var(--paper)')]
+            .map((g) => c.slice(0, 3).map((v, k) => v * t + g[k] * (1 - t)));
         const cv = document.querySelector('#raw-canvas');
         const px = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
         let n = 0;
         for (let i = 0; i < px.length; i += 4) {
-            if (c.every((v, k) => Math.abs(v - px[i + k]) <= 12)) n++;
+            if (grounds.some((col) => col.every((v, k) => Math.abs(v - px[i + k]) <= 12))) n++;
         }
         return n; }""")
     assert n > 0, "binary AR pixels missing while the .ivt sidecar is 404"
@@ -1551,32 +1648,189 @@ def test_dur_fallback_binary_without_run(raw_server, page_ctx):
     assert errs == [], f"unexpected page errors: {errs}"
 
 
-def test_dur_chip_labels_gradient_and_tips(dur_server, page_ctx):
-    """Acceptance 7: the chip row is the ramp legend — heat/freeze labels
-    carry 'days', their swatches are gradients, AR is the IVT ramp; the tips
-    state the dur-rev-v2 rule (completed days, provisional today, top bins)."""
+def test_show_tabs_are_the_only_layer_toggle(dur_server, page_ctx):
+    """Complaint 3 (2026-11-11): the #raw-layers chip row retired — the Show
+    tabs are the one type toggle. The legend strip carries the lane keys
+    (heat stops start at the detector gate) and the long dur-rev-v2 tips the
+    chips used to hold; a tab click narrows layers + legend and records
+    #layers= for deep links."""
     page = page_ctx
     _mm_goto(page, dur_server)
-    chips = page.locator("#raw-layers .gm-chip")
-    assert chips.count() == 3
-    labels = chips.all_inner_texts()
-    assert "days > P85" in labels[0] and "days < P15" in labels[1]
-    assert "IVT" in labels[2]
-    sw = page.eval_on_selector_all("#raw-layers .gm-chip i",
-                                   "els => els.map(e => e.style.background)")
-    assert sw[0].startswith("linear-gradient") and sw[1].startswith("linear-gradient")
-    assert "var(--dur-ar-5)" in sw[2]   # AR chip is the IVT ramp legend since 2026-11-09 brief
-    tips = page.eval_on_selector_all("#raw-layers .gm-chip",
-                                     "els => els.map(e => e.title)")
-    assert "COMPLETED UTC days" in tips[0] and "Darkest = 7+ days" in tips[0]
-    assert "all four 6-hourly steps" in tips[0] and "provisional" in tips[0]
-    assert "P15" in tips[1]
-    assert "Darkest = 3+ days" in tips[1]
-    # toggle/URL semantics ride along: clicking freeze off writes layers=h,a
-    chips.nth(1).click()
-    assert "layers=h,a" in page.evaluate("decodeURIComponent(location.hash)")
+    assert page.locator("#raw-layers").count() == 0
+    assert page.locator(".map-legend").count() == 0
+    tabs = page.locator("#type-tabs button")
+    assert tabs.count() == 4                                  # All + the three types
+    labels = " ".join(tabs.all_inner_texts())
+    assert "Heat waves" in labels and "Freezes" in labels and "Atmospheric rivers" in labels
+    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    assert page.eval_on_selector_all("#gm-legend .lg-group",
+                                     "els => els.map(e => e.dataset.layer)") == ["h", "f", "a"]
+    assert page.eval_on_selector_all(
+        "#gm-legend .lg-group[data-layer=h] .lg-t", "e => e.map(x => x.textContent)") \
+        == ["3", "4", "5", "6", "7+"]
+    tips = page.eval_on_selector_all("#gm-legend .lg-group", "els => els.map(e => e.title)")
+    assert "COMPLETED UTC days" in tips[0] and "7+ days is the darkest stop in light" in tips[0]
+    assert "P15" in tips[1] and "3+ days is the darkest stop in light" in tips[1]
+    # the tab narrows the map layers and the legend, and records #layers=
+    page.locator("#type-tabs button", has_text="Atmospheric rivers").click()
+    page.wait_for_function(
+        "() => document.querySelectorAll('#gm-legend .lg-group').length === 1")
+    assert page.locator("#gm-legend .lg-group[data-layer=a]").count() == 1
+    assert "layers=a" in page.evaluate("decodeURIComponent(location.hash)")
+    page.locator("#type-tabs button", has_text="All").click()
+    page.wait_for_function(
+        "() => document.querySelectorAll('#gm-legend .lg-group').length === 3")
     errs = [e for e in page.errors if "Failed to load resource" not in e]
     assert errs == [], f"unexpected page errors: {errs}"   # 404 = the fixture's absent timeline
+
+
+def test_legend_sits_below_the_map_and_never_moves_the_page(dur_server, page_ctx):
+    """New contract (2026-11-11 redesign): the colour scales are an in-flow
+    strip BELOW the map — outside #raw-map-wrap, never covering the canvas.
+    Its height is fixed per layout, so content changes (a lane off through
+    the tabs, a Region view) never move what sits below the strip: the map
+    box, the slider and the gantt keep their exact rectangles. (The event
+    list and the scorecard DO reflow on a tab change — that is the tabs'
+    own page-wide filter contract, not the strip's layout.)"""
+    page = page_ctx
+    _mm_goto(page, dur_server)
+    _mm_frame(page, RAW_TS[1])
+    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    geo = """() => {
+        const r = (s) => { const b = document.querySelector(s).getBoundingClientRect();
+            return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)]; };
+        const map = r('#raw-map-wrap'), leg = r('#gm-legend');
+        return { map, leg,
+                 below: ['#raw-slider', '#gm-gantt'].map(r),
+                 groups: document.querySelectorAll('#gm-legend .lg-group').length,
+                 inMap: !!document.querySelector('#raw-map-wrap #gm-legend'),
+                 belowMap: leg[1] >= map[1] + map[3] }; }"""
+    a = page.evaluate(geo)
+    assert not a["inMap"], "the strip must live outside #raw-map-wrap"
+    assert a["belowMap"] and a["groups"] == 3, a          # sits under the map, not on it
+    page.locator("#type-tabs button", has_text="Atmospheric rivers").click()   # 3 -> 1 lane
+    page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 1")
+    b = page.evaluate(geo)
+    assert b["groups"] == 1 and b["leg"][3] == a["leg"][3], (a, b)   # height is fixed
+    assert b["below"] == a["below"] and b["map"] == a["map"], (a, b)  # nothing moved
+    page.locator("#type-tabs button", has_text="All").click()
+    page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 3")
+    page.evaluate("MergedMap.setRegion({key:'europe', label:'Europe', lat:[35,75], lon:[-12.5,42.5]})")
+    page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group.none').length === 3")
+    c = page.evaluate(geo)
+    assert c["leg"] == a["leg"] and c["map"] == a["map"] and c["below"] == a["below"], (a, c)
+    page.evaluate("MergedMap.setRegion(null)")
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"
+
+
+def test_legend_never_hides_a_lane_behind_a_scroll(dur_server, page_ctx):
+    """Strip responsiveness contract (owner review 2026-11-11): from 320 up
+    the strip NEVER scrolls horizontally and every ON lane is fully inside
+    it — a lane behind a scrollbar nobody discovers is as good as deleted.
+    Narrow map columns stack the lanes one per row; wide columns lay them in
+    a single row (container query, so it follows the map column, not the
+    viewport)."""
+    page = page_ctx
+    _mm_goto(page, dur_server)
+    _mm_frame(page, RAW_TS[1])
+    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    probe = """() => {
+        const leg = document.querySelector('#gm-legend');
+        const lb = leg.getBoundingClientRect();
+        const gs = [...document.querySelectorAll('.lg-group')].map((g) => g.getBoundingClientRect());
+        const rows = new Set(gs.map((r) => Math.round(r.y))).size;
+        return { fits: leg.scrollWidth <= leg.clientWidth + 1,
+                 inside: gs.every((r) => r.right <= lb.right + 1 && r.left >= lb.left - 1),
+                 rows, lanes: gs.length,
+                 dir: getComputedStyle(leg).flexDirection }; }"""
+    for w in (320, 390, 768, 1100, 1440):
+        page.set_viewport_size({"width": w, "height": 900})
+        page.wait_for_timeout(600)          # ResizeObserver refit + legend reflow
+        p = page.evaluate(probe)
+        assert p["fits"] and p["inside"], (w, p)
+        assert p["lanes"] == 3, (w, p)
+        if p["dir"] == "column":
+            assert p["rows"] == 3, (w, p)   # stacked: one lane per row
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"
+
+
+def test_legend_adapts_to_layers_frame_and_region(dur_server, page_ctx):
+    """The legend describes the map as it stands: one group per layer that is
+    ON, heat/freeze labelled in consecutive days (heat starting at the gate),
+    AR as a single flat stop while the IVT class sidecar is missing, stops the
+    current frame does not paint dimmed, and an empty lane marked for the
+    Region view."""
+    page = page_ctx
+    _mm_goto(page, dur_server)
+    _mm_frame(page, RAW_TS[1])        # heat run 3 + 7+, freeze run 1 + 3+, AR mask north
+    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    groups = page.locator("#gm-legend .lg-group")
+    assert groups.count() == 3
+    assert page.eval_on_selector_all("#gm-legend .lg-group",
+                                     "els => els.map(e => e.dataset.layer)") == ["h", "f", "a"]
+    # stops per lane: heat 3,4,5,6,7+ (gate = detector minimum 3) / freeze 1,2,3+ / AR flat
+    assert page.eval_on_selector_all(
+        "#gm-legend .lg-group[data-layer=h] .lg-t", "e => e.map(x => x.textContent)") \
+        == ["3", "4", "5", "6", "7+"]
+    assert page.eval_on_selector_all(
+        "#gm-legend .lg-group[data-layer=f] .lg-t", "e => e.map(x => x.textContent)") \
+        == ["1", "2", "3+"]
+    assert page.eval_on_selector_all(
+        "#gm-legend .lg-group[data-layer=a] .lg-t", "e => e.map(x => x.textContent)") \
+        == ["AR mask"]
+    # this frame paints heat only at 3 and 7+ days, freeze only at 1 and 3+
+    assert page.locator("#gm-legend .lg-group[data-layer=h] .lg-bin.out").count() == 3
+    assert page.locator("#gm-legend .lg-group[data-layer=f] .lg-bin.out").count() == 1
+    assert page.locator("#gm-legend .lg-group[data-layer=a] .lg-bin.out").count() == 0
+    # a Show tab narrows to one lane -> the other groups leave the legend
+    # (and never dim to nothing)
+    page.locator("#type-tabs button", has_text="Freezes").click()
+    page.wait_for_function(
+        "() => document.querySelectorAll('#gm-legend .lg-group').length === 1")
+    assert page.locator("#gm-legend .lg-group[data-layer=f]").count() == 1
+    assert page.locator("#gm-legend .lg-group[data-layer=h]").count() == 0
+    page.locator("#type-tabs button", has_text="All").click()
+    page.wait_for_function(
+        "() => document.querySelectorAll('#gm-legend .lg-group').length === 3")
+    # Region view: the veil hides the northern lanes -> both are marked empty
+    page.evaluate("MergedMap.setRegion({key:'southern_hemisphere',"
+                 " label:'Southern Hemisphere', lat:[-90,-20], lon:[-180,180]})")
+    page.wait_for_function(
+        "() => document.querySelectorAll('#gm-legend .lg-group.none').length === 2")
+    assert "none in view" in page.inner_text("#gm-legend .lg-group[data-layer=h]")
+    # freeze still has cells south -> its group stays live
+    assert page.locator("#gm-legend .lg-group[data-layer=f].none").count() == 0
+    page.evaluate("MergedMap.setRegion(null)")
+    page.wait_for_function(
+        "() => !document.querySelector('#gm-legend .lg-group.none')")
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"
+
+
+def test_legend_provisional_stop_only_where_the_frame_dithers(dur2_server, page_ctx):
+    """dur rev v2: a provisional cell dithers toward the NEXT shade, so that
+    shade and a 'today' stop join the legend for the lane that has them — and
+    only for that lane."""
+    page = page_ctx
+    _mm_goto(page, dur2_server)
+    _mm_frame(page, RAW_TS[1])
+    page.wait_for_selector("#gm-legend .lg-group[data-layer=h] .swatch.prov", timeout=20000)
+    assert page.eval_on_selector_all("#gm-legend .lg-group[data-layer=h] .lg-t",
+                                     "e => e.map(x => x.textContent)") \
+        == ["3", "4", "5", "6", "7+", "today"]
+    # the dither paints the 4-day shade, so '4' is live; 5 and 6 are not
+    assert page.locator("#gm-legend .lg-group[data-layer=h] .lg-bin.out").count() == 2
+    assert page.locator("#gm-legend .lg-group[data-layer=h] .lg-bin.out .lg-t").all_inner_texts() \
+        == ["5", "6"]
+    # freeze has no provisional cell in this frame -> no 'today' stop at all
+    assert page.locator("#gm-legend .lg-group[data-layer=f] .swatch.prov").count() == 0
+    assert "today" not in page.inner_text("#gm-legend .lg-group[data-layer=f]")
+    assert "provisional" in page.get_attribute(
+        "#gm-legend .lg-group[data-layer=h] .swatch.prov", "title")
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"
 
 
 def test_merged_event_tooltip_shows_span_days(gd_server, page_ctx):
