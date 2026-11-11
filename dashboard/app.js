@@ -500,8 +500,15 @@ function renderAboutModels() {
 function renderWeekPicker() {
   const sel = $('#week-picker');
   if (!sel) return;
-  if (!state.weeks.length) { sel.classList.add('hidden'); return; }
+  // the visible label belongs to the control: no snapshots = no row at all
+  const row = sel.closest('.rail-set');
+  if (!state.weeks.length) {
+    sel.classList.add('hidden');
+    if (row) row.classList.add('hidden');
+    return;
+  }
   sel.classList.remove('hidden');
+  if (row) row.classList.remove('hidden');
   sel.innerHTML = '';
   const opt = (v, t) => {
     const o = document.createElement('option');
@@ -2234,12 +2241,19 @@ function applyTheme() {
     ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
     : state.themePref;
   document.documentElement.dataset.theme = eff;
-  // the rail keeps a persistent #theme-toggle button; only its word changes (the glyph is static)
-  const lab = $('#theme-toggle-label');
-  if (lab) lab.textContent = { auto: 'Auto', light: 'Light', dark: 'Dark' }[state.themePref];
+  /* The rail footer's segmented control marks the PREFERENCE, not the result —
+     'Auto' stays selected while it resolves to dark, and says what it resolves
+     to in its tooltip. Same selected state as every other control in the app. */
+  document.querySelectorAll('#theme-ctl [data-pref]').forEach((b) => {
+    const on = b.dataset.pref === state.themePref;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+    if (b.dataset.pref === 'auto') b.title = `Follow the system setting (currently ${eff})`;
+  });
 }
-function cycleTheme() {
-  state.themePref = { auto: 'light', light: 'dark', dark: 'auto' }[state.themePref];
+function setThemePref(p) {
+  if (!p || p === state.themePref) return;
+  state.themePref = p;
   saveState(); applyTheme(); renderSkillCharts();
   renderEventTable();   // type tokens are theme-paired — re-paint dots
   if (state.selectedEvent) selectEvent(state.selectedEvent, true);
@@ -2329,9 +2343,11 @@ async function boot() {
   if (deepLink) document.documentElement.classList.add('deeplink');
   restoreState();
   applyTheme();
-  $('#theme-toggle').onclick = cycleTheme;
+  document.querySelectorAll('#theme-ctl [data-pref]').forEach((b) => {
+    b.onclick = () => setThemePref(b.dataset.pref);
+  });
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    // ponytail 08:1x: OS theme flip repaints everything cycleTheme does —
+    // ponytail 08:1x: OS theme flip repaints everything setThemePref does —
     // boxes/table dots/minis read theme-paired CSS tokens at render time;
     // 09:18: and an open detail resolved its palette at build time — re-select
     if (state.themePref === 'auto') {
@@ -2433,13 +2449,10 @@ async function boot() {
     if (e.shiftKey && cur === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && cur === last) { e.preventDefault(); first.focus(); }
   });
-  /* A rail link navigates, so the drawer closes on its way. The theme button is a
-     setting, not a destination: closing it on every press turned a theme try-in
-     into a two-tap loop (open, press, open, press). */
-  document.querySelectorAll('.rail-link').forEach((b) => {
-    if (b.id === 'theme-toggle') return;
-    b.addEventListener('click', closeNav);
-  });
+  /* Every rail link navigates, so the drawer closes on its way. The footer
+     settings (theme, week) are not links and are not in this set — the drawer
+     stays open when you try a theme. */
+  document.querySelectorAll('.rail-link').forEach((b) => b.addEventListener('click', closeNav));
   /* A1: Esc returns from the event detail to the list (owner bug A1). The
      About dialog and the fullscreen map panel own Esc while they are open. */
   document.addEventListener('keydown', (e) => {

@@ -51,8 +51,12 @@
      same <aside> the desktop uses, promoted to a fixed drawer. -->
 <header class="mobile-topbar">
   <svg class="brand-mark" viewBox="0 0 256 256" width="20" height="20" aria-hidden="true"><rect width="256" height="256" rx="57.6" fill="#262620"/><g transform="translate(14.22,14.22) scale(0.89)"><path fill="#FDFDFC" d="M60.0 97.0 L128.0 29.0 L196.0 97.0 H162.06 L128.0 62.94 L93.94 97.0 H60.0Z"/><path fill="#E2452D" d="M35.03 117.0H220.97V139.0H35.03Z"/><path fill="#FDFDFC" d="M60.0 159.0 L128.0 227.0 L196.0 159.0 H162.06 L128.0 193.06 L93.94 159.0 H60.0Z"/></g></svg>
-  <span class="rail-brand">EWB&nbsp;Live</span>
-  <button type="button" id="nav-btn" class="nav-btn" aria-controls="rail" aria-expanded="false" aria-label="Open navigation"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <!-- The phone bar carries the mark only: the page h1 spells the name out two
+       lines below it, and two "EWB Live"s in one screenful is one too many. The
+       wordmark stays for the banner's accessible name. -->
+  <span class="rail-brand sr-only">EWB&nbsp;Live</span>
+  <button type="button" id="nav-btn" class="nav-btn" aria-controls="rail" aria-expanded="false"
+          aria-label="Open navigation"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
 </header>
 
 <!-- RAIL (after owb.brightband.com): the page's whole navigation — two jumps,
@@ -69,8 +73,9 @@
   </div>
 
   <!-- Two groups, one rule: the links above the rule jump to a section of the page,
-       the links below it act on the page itself (About, theme). Each group carries a
-       caption so the rail reads as a list, not a stack of icons. -->
+       the link below it acts on the page itself. Each group carries a caption so the
+       rail reads as a list, not a stack of icons. Settings (week, theme) are not
+       links and live in the footer. -->
   <nav class="rail-nav" aria-label="Site">
     <p class="rail-cap home-only">On this page</p>
     <div class="rail-group home-only">
@@ -87,14 +92,22 @@
       <button type="button" class="rail-link" id="about-btn">
         <svg class="rail-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.6C10.4 5.4 8.6 4.8 6.5 4.8H4v13.1h3c1.9 0 3.6.5 5 1.5 1.4-1 3.1-1.5 5-1.5h3V4.8h-2.5c-2.1 0-3.9.6-5.5 1.8Z"/><path d="M12 6.6v12.8"/></svg>
         <span class="rail-label">About</span></button>
-      <button type="button" class="rail-link" id="theme-toggle" title="Toggle theme (auto / light / dark)">
-        <svg class="rail-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17Z" fill="currentColor" stroke="none"/></svg>
-        <span class="rail-label" id="theme-toggle-label">Auto</span></button>
     </div>
   </nav>
 
+  <!-- Rail footer: the two page-wide settings, each with a visible label on the
+       rail's text column, then the freshness stamp. -->
   <div class="rail-foot">
-    <select id="week-picker" class="hidden" title="Weekly snapshots" aria-label="Weekly snapshot"></select>
+    <div class="rail-set" id="week-set">
+      <label class="ctl-label" for="week-picker">Week</label>
+      <select id="week-picker" class="hidden" title="Weekly snapshot — events and scorecard for that run"></select>
+    </div>
+    <div class="rail-set">
+      <span class="ctl-label" id="theme-label">Theme</span>
+      <div class="toggle theme-ctl" id="theme-ctl" role="group" aria-labelledby="theme-label">
+        <button type="button" data-pref="auto">Auto</button><button type="button" data-pref="light">Light</button><button type="button" data-pref="dark">Dark</button>
+      </div>
+    </div>
     <p class="rail-meta hdr-meta">updated <span id="m-updated" class="mono">—</span></p>
   </div>
 </aside>

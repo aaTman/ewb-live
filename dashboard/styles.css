@@ -227,12 +227,27 @@ button:disabled, select:disabled, input:disabled {
 .rail-link.is-active .rail-icon { color: var(--matte-black); }
 .rail-icon { flex: none; color: var(--stone-grey); transition: color .08s ease; }
 .rail-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* the footer content sits on the rail's text column (22 px = rail padding 12 +
-   link padding 10), so the week picker and the updated stamp line up with the
-   nav icons; its rule runs edge to edge like the head's */
+/* the footer is the rail's settings column: a micro-label over each control, all
+   of it on the rail's text column (22 px = rail padding 12 + link padding 10) so
+   it lines up with the nav icons; its rule runs edge to edge like the head's */
 .rail-foot { margin-top: auto; margin-inline: -12px; display: flex; flex-direction: column;
-  align-items: stretch; gap: 6px; padding: 12px 22px 4px; border-top: 1px solid var(--border); }
+  align-items: stretch; gap: 10px; padding: 12px 22px 4px; border-top: 1px solid var(--border); }
+.rail-set { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .rail-foot #week-picker { width: 100%; max-width: none; }
+/* theme: the same segmented control as the skill-chart toggle, sized to the rail.
+   Selected = alabaster + ink, keyed with a 2 px underline: at this width the 3 px
+   left bar the list controls use lands on the segment divider and reads as an
+   artifact, an underline does not. */
+.theme-ctl { display: flex; }
+.theme-ctl button { flex: 1 1 0; min-width: 0; padding: 5px 4px;
+  font-size: var(--text-xs); line-height: 1.2; }
+.theme-ctl button:not(.on) { color: var(--ink-secondary); }
+.theme-ctl button + button { border-left: 0; }   /* one shared divider, not two */
+/* .rail-foot prefix only to out-specify .toggle button.on further down the file,
+   whose 3 px left bar lands on the segment divider at this width */
+.rail-foot .theme-ctl button.on { background: var(--alabaster); color: var(--matte-black);
+  box-shadow: inset 0 -2px 0 var(--matte-black); }
+.theme-ctl button:focus-visible { outline-offset: -2px; }   /* inside the segmented box */
 
 /* collapsed rail (desktop): 58 px, marks and glyphs only — OWB's is-collapsed.
    Labels go clip-hidden, NOT display:none: the button keeps its accessible name
@@ -261,16 +276,17 @@ html.rail-collapsed .rail-label { position: absolute; width: 1px; height: 1px; m
     height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border);
     background: color-mix(in srgb, var(--canvas) 92%, transparent);
     backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-  .mobile-topbar .rail-brand { flex: 1 1 auto; font-size: var(--text-base); color: var(--matte-black); }
   .rail-toggle { width: 40px; height: 40px; }
   .rail-toggle .ic-rail { display: none; }
   .rail-toggle .ic-close { display: block; }
   nav.controls { top: 52px; }   /* under the sticky topbar, not behind it */
-  .nav-btn { flex: none; width: 40px; height: 40px; margin-right: -10px; padding: 0; border: 0;
-    border-radius: 8px; background: none; color: var(--matte-black); cursor: pointer; line-height: 0;
+  .nav-btn { flex: none; width: 40px; height: 40px; margin-left: auto; margin-right: -10px; padding: 0;
+    border: 0; border-radius: 8px; background: none; color: var(--matte-black); cursor: pointer; line-height: 0;
     display: grid; place-items: center; }
   .nav-btn:hover { background: var(--tint); }
   .nav-btn:active { background: var(--alabaster-mid); }
+  /* 40 px segments: the theme control is a touch target in the drawer */
+  .theme-ctl button { padding: 9px 4px; min-height: 40px; }
   body.nav-open { overflow: hidden; }
   body.nav-open::before { content: ""; position: fixed; inset: 0; z-index: 999;
     background: rgba(38, 38, 32, .34); }
@@ -280,6 +296,7 @@ html.rail-collapsed .rail-label { position: absolute; width: 1px; height: 1px; m
   /* the drawer is touch-first: 44 px rows and 44 px toggles (M7 tap targets) */
   .rail-link { height: 44px; padding: 0 12px; }
   .rail-cap { padding-left: 12px; }
+  .rail-foot { padding-inline: 24px; }   /* matches the drawer's 12 + 12 text column */
   .rail-head { margin: 0 -12px; padding: 0 12px 12px; }
   /* A section jump lands BELOW the sticky topbar: scrollIntoView(block:'start')
      puts the section's top at y=0, which the 52 px bar would sit on. */
@@ -852,15 +869,20 @@ nav.controls .dd .dd-body {
 .gm-note[hidden] { display: none; }
 /* Adaptive colour scales (mergedmap.js renderLegend): a slim key strip BELOW
    the map (owner complaint 2026-11-11: the in-map panel hid a quarter of the
-   map). One fixed-height row that scrolls horizontally when the lanes are
-   wider than the strip (phones) — its content changing (layer toggles, the
-   frame under the slider, the Region view) can never move the timeline or
-   the cards below. Every stop is labelled in its lane's own units; a stop
-   the CURRENT frame does not paint dims with a dashed edge, and a lane with
-   nothing in view says so. */
-#gm-legend { display: flex; align-items: center; gap: 14px;
-  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin;
-  margin-top: 8px; padding: 6px 8px 4px; min-height: 48px;
+   map). Its height is FIXED for a given width — content changing (layer
+   toggles, the frame under the slider, the Region view) can never move the
+   timeline or the cards below. Wide containers: one row. Narrow containers
+   (container query on #global-sec, so it follows the MAP column, not the
+   viewport): lanes stack one per row — no horizontal scroll at any width
+   from 320 up, nothing hidden behind a scrollbar nobody discovers. Every
+   stop is labelled in its lane's own units; a stop the CURRENT frame does
+   not paint dims with a dashed edge, and a lane with nothing in view says
+   so. Swatches are uniform-width; each ramp's labels set one shared column
+   width, centred under their swatch, so the key reads as even as the scale. */
+#global-sec { container-type: inline-size; }
+#gm-legend { display: flex; flex-direction: column; align-items: flex-start;
+  gap: 3px; overflow-x: visible;
+  margin-top: 8px; padding: 5px 8px 4px; min-height: 116px;
   background: var(--bg-panel); border: 1px solid var(--border);
   border-radius: 6px; }
 /* height is reserved while empty (CLS contract with the reservations below);
@@ -875,22 +897,21 @@ nav.controls .dd .dd-body {
   text-transform: uppercase; color: var(--text-dim); white-space: nowrap; }
 .lg-unit { font-size: var(--text-2xs); color: var(--ink-muted); white-space: nowrap; }
 .lg-none { font-size: var(--text-2xs); color: var(--warn-ink); }
-.lg-stops { display: flex; align-items: flex-start; gap: 2px; }
-/* each stop reserves room for its own caption: '1000' / '1250+' are wider than
-   the swatch and would otherwise run into the next label */
-.lg-bin { display: grid; justify-items: center; gap: 2px; min-width: 26px; }
-.lg-group[data-layer="a"] .lg-bin { min-width: 30px; }   /* IVT numbers are wide */
-.lg-bin.prov { margin-left: 5px; min-width: 20px; }   /* a texture, not the next step of the ramp */
-.lg-t { font-size: var(--text-2xs); color: var(--ink-muted); font-family: var(--font-mono); }
+.lg-stops { display: flex; align-items: flex-start; gap: 3px; }
+/* equal-width columns per ramp (widest label of that lane), label centred */
+.lg-bin { display: grid; justify-items: center; gap: 2px; width: 24px; }
+.lg-group[data-layer="a"] .lg-bin { width: 34px; }   /* '1250+' sets the IVT column */
+.lg-bin.prov { width: 22px; margin-left: 8px; }   /* a texture, not the next step of the ramp */
+.lg-t { font-size: var(--text-2xs); color: var(--ink-muted); font-family: var(--font-mono);
+  white-space: nowrap; }
 .lg-bin.out { opacity: .32; }
 .lg-bin.out .swatch { border-style: dashed; }
 .lg-group.none { opacity: .6; }
-@media (max-width: 699px) {   /* phone: same strip, tightened; it scrolls, it never wraps */
-  #gm-legend { gap: 14px; padding: 5px 8px 3px; min-height: 44px; }
-  .gm-legend .swatch { width: 16px; height: 9px; }
-  .lg-group { gap: 6px; }
-  .lg-bin { min-width: 20px; }
-  .lg-bin.prov { margin-left: 5px; }
+@container (min-width: 680px) {   /* one row when the map column can hold all three lanes */
+  #gm-legend { flex-direction: row; align-items: center; gap: 14px;
+    min-height: 48px; padding: 6px 8px 4px; }
+  .lg-bin.prov { width: auto; }
+  .lg-bin.prov .lg-t { display: none; }   /* the dither texture + its title carry it in one row */
 }
 
 /* base map primitives live in the canvas paint — see mergedmap.js drawBase */
