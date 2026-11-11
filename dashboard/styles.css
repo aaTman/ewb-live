@@ -900,12 +900,19 @@ nav.controls .dd .dd-body {
 .gm-legend .swatch { width: 20px; height: 10px; border: 1px solid var(--border-strong);
   border-radius: 2px; display: block; }
 /* one group per lane: stacked name+unit, then the ramp of stops to its right */
-.lg-group { display: flex; align-items: center; gap: 8px; flex: none; }
+.lg-group { display: flex; align-items: center; gap: 8px; flex: none; position: relative; }
 .lg-head { display: grid; gap: 1px; }
 .lg-name { font-size: var(--text-2xs); font-weight: 500; letter-spacing: .08em;
   text-transform: uppercase; color: var(--text-dim); white-space: nowrap; }
 .lg-unit { font-size: var(--text-2xs); color: var(--ink-muted); white-space: nowrap; }
-.lg-none { font-size: var(--text-2xs); color: var(--warn-ink); }
+/* 'none in view' floats as a pill over its lane — an empty lane is a
+   transient Region/frame state, and a third grid line in the head would
+   grow the strip and move everything below it (the strip's whole promise
+   is a fixed height per layout) */
+.lg-none { position: absolute; top: -2px; left: 4px; z-index: 1;
+  font-size: var(--text-2xs); color: var(--warn-ink);
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 999px; padding: 0 5px; line-height: 1.4; white-space: nowrap; }
 .lg-stops { display: flex; align-items: flex-start; gap: 3px; }
 /* equal-width columns per ramp (widest label of that lane), label centred */
 .lg-bin { display: grid; justify-items: center; gap: 2px; width: 24px; }

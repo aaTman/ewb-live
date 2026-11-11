@@ -50,9 +50,12 @@ def test_ar_ramp_legend_visible(ar_ramp_server, browser):
 
 
 def test_ar_ramp_paints_green_pixels(ar_ramp_server, page_ctx_with_logs):
-    """Test that AR ramp paints green pixels on the canvas."""
+    """Test that the AR ramp paints green pixels on the canvas.
+    2025110606 is the last frame at/below the fixture cutoff — 2025110612
+    paints NOTHING (past-cutoff frames are boxes-only), which is why this
+    test used to fail with 0 green pixels."""
     page = page_ctx_with_logs
-    page.goto(ar_ramp_server + "/#map=2025110612&layers=a")
+    page.goto(ar_ramp_server + "/#map=2025110606&layers=a")
     page.wait_for_selector("#raw-canvas:not([hidden])", timeout=20000)
     page.wait_for_function("MergedMap._dbg().mounted === true", timeout=20000)
     page.wait_for_timeout(5000)  # wait for frame to load
