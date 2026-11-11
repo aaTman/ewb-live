@@ -45,8 +45,13 @@
         + ' Faint tint = IVT >= 400 that is NOT painted as an AR (screened as tropical/cyclone, or a marginal detection)'
         + ' — the moisture flux is real, the AR call is not. Pale green = a track\'s gap-bridge footprint (display only).' },
   ];
-  const RUN_ALPHA = { heat: [110, 125, 140, 155, 170, 190, 215], freeze: [140, 175, 215],
-                      ar: [255, 255, 255, 255, 255] };  // bin opacities; AR paints opaque (its colour IS the class)
+  // bin opacities: constant per lane — the ramp's lightness (even L* steps,
+  // darker = more days / higher IVT) carries the scale; one alpha per lane
+  // keeps that ordering intact after blending and lets the basemap read
+  // through. AR paints opaque (its colour IS the class); coastlines are
+  // re-stroked above every fill in paintFrame, so the basemap still reads.
+  const RUN_ALPHA = { heat: [200, 200, 200, 200, 200, 200, 200], freeze: [200, 200, 200],
+                      ar: [255, 255, 255, 255, 255] };
   // qualification gate per lane: heat = the detector's MIN_CONSECUTIVE_DAYS,
   // freeze = 1 completed day (context; events still need 3). index.dur.min
   // (published with the v2 sidecars) wins; otherwise the built-in LAYERS[].min.
@@ -413,6 +418,18 @@
     ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
     ctx.drawImage(rasterCv, 0, 0, fit.W, fit.H);
     ctx.restore();
+    // coastlines ABOVE the fills (owner complaint 2026-11-11: fills hid the
+    // basemap): a second thin stroke pass of the same Natural Earth land so
+    // coasts and the sphere edge read through every layer
+    if (land) {
+      const cs2 = getComputedStyle(document.documentElement);
+      ctx.save();
+      ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+      ctx.strokeStyle = cs2.getPropertyValue('--map-line').trim() || '#999';
+      ctx.lineWidth = 0.6;
+      ctx.stroke(new Path2D(path(land)));
+      ctx.restore();
+    }
     dimOutside(ctx);
   }
 
@@ -800,9 +817,9 @@
      paint dimmed and a lane with no cells at all marked. A colour that is not
      on screen never reads as live. */
   const LEGEND = {
-    heat:   { name: 'Heat wave', unit: 'consecutive days > P85',
+    heat:   { name: 'Heat wave', unit: 'days > P85',
       flat: 'exceeds P85', flatTip: 'Exceeds P85 — the duration sidecar is unavailable, so one flat colour paints every exceeded cell' },
-    freeze: { name: 'Freeze', unit: 'consecutive days < P15',
+    freeze: { name: 'Freeze', unit: 'days < P15',
       flat: 'below P15', flatTip: 'Below P15 — the duration sidecar is unavailable, so one flat colour paints every exceeded cell' },
     ar:     { name: 'AR IVT', unit: 'kg m⁻¹ s⁻¹',
       flat: 'AR mask', flatTip: 'AR mask — the IVT class sidecar is unavailable, so one flat green paints every masked cell' },
@@ -955,7 +972,9 @@
     if (html === legHtml) return;              // same legend: no reflow per frame
     legHtml = html;
     leg.innerHTML = html;
-    leg.classList.toggle('hidden', !groups.length);
+    // never display:none: the strip's height is a CLS reservation (styles.css
+    // #gm-legend:empty), and "all layers off" cannot happen anyway
+    leg.classList.remove('hidden');
   }
 
   /* ---------------- boot ---------------- */
