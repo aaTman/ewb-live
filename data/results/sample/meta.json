@@ -1,0 +1,134 @@
+{
+ "last_updated": "2026-11-06T03:00:00Z",
+ "cycle": "weekly",
+ "week": "2026-W45",
+ "next_update": "2026-11-09T06:00:00Z",
+ "window": {
+  "start": "2026-08-08",
+  "end": "2026-11-06"
+ },
+ "models": [
+  "ifs_hres",
+  "graphcast",
+  "pangu_weather",
+  "aifs",
+  "aurora",
+  "fourcastnet"
+ ],
+ "baseline_model": "ifs_hres",
+ "truth_source": "ERA5 (ARCO) single-levels, GHCN for station t2m where available; fallback IFS HRES 0-h analysis",
+ "lead_times_hours": [
+  6,
+  12,
+  24,
+  48,
+  72,
+  120,
+  168,
+  240
+ ],
+ "event_counts": {
+  "heat_wave": 7,
+  "freeze": 6,
+  "atmospheric_river": 7
+ },
+ "metrics": {
+  "rmse_k": {
+   "label": "RMSE",
+   "units": "K",
+   "event_types": [
+    "heat_wave",
+    "freeze"
+   ],
+   "higher_is_better": false,
+   "ewb": "RootMeanSquaredError(surface_air_temperature)"
+  },
+  "mae_k": {
+   "label": "MAE",
+   "units": "K",
+   "event_types": [
+    "heat_wave",
+    "freeze"
+   ],
+   "higher_is_better": false,
+   "ewb": "MeanAbsoluteError(surface_air_temperature)"
+  },
+  "tmax_mae_k": {
+   "label": "TMAX MAE",
+   "units": "K",
+   "event_types": [
+    "heat_wave"
+   ],
+   "higher_is_better": false,
+   "ewb": "MaximumMeanAbsoluteError"
+  },
+  "tmin_mae_k": {
+   "label": "TMIN MAE",
+   "units": "K",
+   "event_types": [
+    "freeze"
+   ],
+   "higher_is_better": false,
+   "ewb": "LowestHighestMeanAbsoluteError (analog)"
+  },
+  "onset_error_days": {
+   "label": "Onset error",
+   "units": "days",
+   "event_types": [
+    "heat_wave",
+    "freeze"
+   ],
+   "higher_is_better": false,
+   "ewb": "event onset timing error"
+  },
+  "duration_error_days": {
+   "label": "Duration error",
+   "units": "days",
+   "event_types": [
+    "heat_wave",
+    "freeze"
+   ],
+   "higher_is_better": false,
+   "ewb": "event duration error"
+  },
+  "ivt_rmse_kg_m_s": {
+   "label": "IVT RMSE",
+   "units": "kg m$^{-1}$ s$^{-1}$",
+   "event_types": [
+    "atmospheric_river"
+   ],
+   "higher_is_better": false,
+   "ewb": "RMSE on integrated water vapour transport"
+  },
+  "csi": {
+   "label": "CSI",
+   "units": "",
+   "event_types": [
+    "atmospheric_river"
+   ],
+   "higher_is_better": true,
+   "ewb": "Critical Success Index on AR mask over land"
+  },
+  "spatial_displacement_km": {
+   "label": "Spatial displacement",
+   "units": "km",
+   "event_types": [
+    "atmospheric_river"
+   ],
+   "higher_is_better": false,
+   "ewb": "displacement of IVT centre of mass"
+  },
+  "onset_lead_hours": {
+   "label": "Early signal (onset lead)",
+   "units": "h",
+   "event_types": [
+    "atmospheric_river"
+   ],
+   "higher_is_better": true,
+   "ewb": "lead time at which AR onset is first signalled"
+  }
+ },
+ "is_sample": true,
+ "generated_by": "dashboard/tools/generate_sample_data.py (seeded synthetic sample; NOT real scores)",
+ "schema_version": 1
+}

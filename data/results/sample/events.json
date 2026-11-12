@@ -1,0 +1,429 @@
+[
+ {
+  "id": "hw-iberia-0810",
+  "event_type": "heat_wave",
+  "title": "Iberia heat wave",
+  "start": "2026-08-10",
+  "end": "2026-08-16",
+  "bbox": [
+   36.0,
+   43.5,
+   -9.0,
+   2.0
+  ],
+  "peak_value": 44.8,
+  "details": {
+   "peak_value_units": "degC",
+   "duration_days": 7,
+   "detection": "95th percentile of 90-day sliding t2m climatology (EWB percentile method), >=3 consecutive days",
+   "bbox_units": "degrees",
+   "synoptic": "Celtic-high heat dome"
+  }
+ },
+ {
+  "id": "hw-us-west-0812",
+  "event_type": "heat_wave",
+  "title": "Great Basin / Southwest US heat wave",
+  "start": "2026-08-12",
+  "end": "2026-08-19",
+  "bbox": [
+   32.0,
+   42.0,
+   -120.0,
+   -108.0
+  ],
+  "peak_value": 46.1,
+  "details": {
+   "peak_value_units": "degC",
+   "duration_days": 8,
+   "detection": "95th percentile of 90-day sliding t2m climatology (EWB percentile method), >=3 consecutive days",
+   "bbox_units": "degrees",
+   "synoptic": "monsoon-ridge collapse"
+  }
+ },
+ {
+  "id": "hw-n-sam-0818",
+  "event_type": "heat_wave",
+  "title": "Northern South America heat wave",
+  "start": "2026-08-18",
+  "end": "2026-08-24",
+  "bbox": [
+   -2.0,
+   10.0,
+   -76.0,
+   -66.0
+  ],
+  "peak_value": 38.9,
+  "details": {
+   "peak_value_units": "degC",
+   "duration_days": 7,
+   "detection": "95th percentile of 90-day sliding t2m climatology (EWB percentile method), >=3 consecutive days",
+   "bbox_units": "degrees",
+   "synoptic": "subsidence under anomalous subtropical high"
+  }
+ },
+ {
+  "id": "hw-caspia-0902",
+  "event_type": "heat_wave",
+  "title": "Caspian / Central Asia heat wave",
+  "start": "2026-09-02",
+  "end": "2026-09-09",
+  "bbox": [
+   38.0,
+   48.0,
+   55.0,
+   72.0
+  ],
+  "peak_value": 41.2,
+  "details": {
+   "peak_value_units": "degC",
+   "duration_days": 8,
+   "detection": "95th percentile of 90-day sliding t2m climatology (EWB percentile method), >=3 consecutive days",
+   "bbox_units": "degrees",
+   "synoptic": "blocking ridge"
+  }
+ },
+ {
+  "id": "hw-se-aus-0918",
+  "event_type": "heat_wave",
+  "title": "Southeast Australia spring heat wave",
+  "start": "2026-09-18",
+  "end": "2026-09-23",
+  "bbox": [
+   -34.0,
+   -28.0,
+   144.0,
+   152.0
+  ],
+  "peak_value": 41.5,
+  "details": {
+   "peak_value_units": "degC",
+   "duration_days": 6,
+   "detection": "95th percentile of 90-day sliding t2m climatology (EWB percentile method), >=3 consecutive days",
+   "bbox_units": "degrees",
+   "synoptic": "offshore flow ahead of trough"
+  }
+ },
+ {
+  "id": "hw-se-us-0922",
+  "event_type": "heat_wave",
+  "title": "Southeast US lingering autumn heat",
+  "start": "2026-09-22",
+  "end": "2026-09-30",
+  "bbox": [
+   29.0,
+   36.0,
+   -92.0,
+   -78.0
+  ],
+  "peak_value": 38.3,
+  "details": {
+   "peak_value_units": "degC",
+   "duration_days": 9,
+   "detection": "95th percentile of 90-day sliding t2m climatology (EWB percentile method), >=3 consecutive days",
+   "bbox_units": "degrees",
+   "synoptic": "dipole pattern, ridge off Southeast coast"
+  }
+ },
+ {
+  "id": "hw-medit-1002",
+  "event_type": "heat_wave",
+  "title": "Maghreb\u2013Iberia October heat wave",
+  "start": "2026-10-02",
+  "end": "2026-10-08",
+  "bbox": [
+   34.0,
+   40.0,
+   -6.0,
+   10.0
+  ],
+  "peak_value": 39.7,
+  "details": {
+   "peak_value_units": "degC",
+   "duration_days": 7,
+   "detection": "95th percentile of 90-day sliding t2m climatology (EWB percentile method), >=3 consecutive days",
+   "bbox_units": "degrees",
+   "synoptic": "Saharan plume, cut-off low to the north"
+  }
+ },
+ {
+  "id": "fr-prairies-0921",
+  "event_type": "freeze",
+  "title": "Canadian Prairies early-season freeze",
+  "start": "2026-09-21",
+  "end": "2026-09-25",
+  "bbox": [
+   49.0,
+   56.0,
+   -112.0,
+   -98.0
+  ],
+  "peak_value": -3.8,
+  "details": {
+   "peak_value_units": "degC",
+   "duration_days": 5,
+   "detection": "t2m <= 10th percentile of local climatology, >=1 day below 273.15 K (EWB freeze default)",
+   "bbox_units": "degrees",
+   "synoptic": "post-frontal Arctic outbreak"
+  }
+ },
+ {
+  "id": "fr-rockies-0928",
+  "event_type": "freeze",
+  "title": "Central Rockies high-elevation freeze",
+  "start": "2026-09-28",
+  "end": "2026-10-02",
+  "bbox": [
+   37.0,
+   43.0,
+   -108.0,
+   -104.0
+  ],
+  "peak_value": -8.2,
+  "details": {
+   "peak_value_units": "degC",
+   "duration_days": 5,
+   "detection": "t2m <= 10th percentile of local climatology, >=1 day below 273.15 K (EWB freeze default)",
+   "bbox_units": "degrees",
+   "synoptic": "trough + radiative nights over snow"
+  }
+ },
+ {
+  "id": "fr-hokkaido-1008",
+  "event_type": "freeze",
+  "title": "Hokkaido first-frost freeze",
+  "start": "2026-10-08",
+  "end": "2026-10-12",
+  "bbox": [
+   41.5,
+   45.5,
+   140.0,
+   145.5
+  ],
+  "peak_value": -1.9,
+  "details": {
+   "peak_value_units": "degC",
+   "duration_days": 5,
+   "detection": "t2m <= 10th percentile of local climatology, >=1 day below 273.15 K (EWB freeze default)",
+   "bbox_units": "degrees",
+   "synoptic": "seasonal cold-air mass buildup"
+  }
+ },
+ {
+  "id": "fr-siberia-1014",
+  "event_type": "freeze",
+  "title": "Central Siberia early cold spell",
+  "start": "2026-10-14",
+  "end": "2026-10-21",
+  "bbox": [
+   55.0,
+   64.0,
+   85.0,
+   105.0
+  ],
+  "peak_value": -18.4,
+  "details": {
+   "peak_value_units": "degC",
+   "duration_days": 8,
+   "detection": "t2m <= 10th percentile of local climatology, >=1 day below 273.15 K (EWB freeze default)",
+   "bbox_units": "degrees",
+   "synoptic": "Ural blocking, persistent pool"
+  }
+ },
+ {
+  "id": "fr-baltic-1022",
+  "event_type": "freeze",
+  "title": "Baltic / Northern Europe first freeze",
+  "start": "2026-10-22",
+  "end": "2026-10-27",
+  "bbox": [
+   53.0,
+   60.0,
+   8.0,
+   24.0
+  ],
+  "peak_value": -6.3,
+  "details": {
+   "peak_value_units": "degC",
+   "duration_days": 6,
+   "detection": "t2m <= 10th percentile of local climatology, >=1 day below 273.15 K (EWB freeze default)",
+   "bbox_units": "degrees",
+   "synoptic": "continental easterly"
+  }
+ },
+ {
+  "id": "fr-plains-1101",
+  "event_type": "freeze",
+  "title": "Northern Plains hard freeze",
+  "start": "2026-11-01",
+  "end": "2026-11-05",
+  "bbox": [
+   44.0,
+   49.0,
+   -105.0,
+   -95.0
+  ],
+  "peak_value": -12.7,
+  "details": {
+   "peak_value_units": "degC",
+   "duration_days": 5,
+   "detection": "t2m <= 10th percentile of local climatology, >=1 day below 273.15 K (EWB freeze default)",
+   "bbox_units": "degrees",
+   "synoptic": "500-hPa trough, Canadian transfer"
+  }
+ },
+ {
+  "id": "ar-norcal-0814",
+  "event_type": "atmospheric_river",
+  "title": "Northern California coastal AR",
+  "start": "2026-08-14",
+  "end": "2026-08-17",
+  "bbox": [
+   37.0,
+   42.0,
+   -127.0,
+   -121.0
+  ],
+  "peak_value": 650.0,
+  "details": {
+   "peak_value_units": "kg/m/s",
+   "duration_days": 4,
+   "detection": "IVT >= 250 kg m-1 s-1 crossing an AR mask, landfall within bbox",
+   "bbox_units": "degrees",
+   "landfall": "Mendocino coast",
+   "peak_ivt": 650
+  }
+ },
+ {
+  "id": "ar-pnw-0914",
+  "event_type": "atmospheric_river",
+  "title": "Pacific Northwest AR",
+  "start": "2026-09-14",
+  "end": "2026-09-17",
+  "bbox": [
+   43.0,
+   49.0,
+   -128.0,
+   -121.0
+  ],
+  "peak_value": 720.0,
+  "details": {
+   "peak_value_units": "kg/m/s",
+   "duration_days": 4,
+   "detection": "IVT >= 250 kg m-1 s-1 crossing an AR mask, landfall within bbox",
+   "bbox_units": "degrees",
+   "landfall": "Columbia River mouth",
+   "peak_ivt": 720
+  }
+ },
+ {
+  "id": "ar-weur-0926",
+  "event_type": "atmospheric_river",
+  "title": "Western Europe / UK AR",
+  "start": "2026-09-26",
+  "end": "2026-09-29",
+  "bbox": [
+   47.0,
+   58.0,
+   -12.0,
+   3.0
+  ],
+  "peak_value": 780.0,
+  "details": {
+   "peak_value_units": "kg/m/s",
+   "duration_days": 4,
+   "detection": "IVT >= 250 kg m-1 s-1 crossing an AR mask, landfall within bbox",
+   "bbox_units": "degrees",
+   "landfall": "SW England, Wales",
+   "peak_ivt": 780
+  }
+ },
+ {
+  "id": "ar-japan-1005",
+  "event_type": "atmospheric_river",
+  "title": "Japan / NW Pacific AR",
+  "start": "2026-10-05",
+  "end": "2026-10-08",
+  "bbox": [
+   31.0,
+   40.0,
+   138.0,
+   146.0
+  ],
+  "peak_value": 610.0,
+  "details": {
+   "peak_value_units": "kg/m/s",
+   "duration_days": 4,
+   "detection": "IVT >= 250 kg m-1 s-1 crossing an AR mask, landfall within bbox",
+   "bbox_units": "degrees",
+   "landfall": "Sea of Japan coast",
+   "peak_ivt": 610
+  }
+ },
+ {
+  "id": "ar-schile-1011",
+  "event_type": "atmospheric_river",
+  "title": "Southern Chile AR",
+  "start": "2026-10-11",
+  "end": "2026-10-14",
+  "bbox": [
+   -45.0,
+   -37.0,
+   -76.0,
+   -70.0
+  ],
+  "peak_value": 690.0,
+  "details": {
+   "peak_value_units": "kg/m/s",
+   "duration_days": 4,
+   "detection": "IVT >= 250 kg m-1 s-1 crossing an AR mask, landfall within bbox",
+   "bbox_units": "degrees",
+   "landfall": "Araucan\u00eda / Los R\u00edos",
+   "peak_ivt": 690
+  }
+ },
+ {
+  "id": "ar-calif-1024",
+  "event_type": "atmospheric_river",
+  "title": "California October AR",
+  "start": "2026-10-24",
+  "end": "2026-10-28",
+  "bbox": [
+   34.0,
+   41.0,
+   -126.0,
+   -119.0
+  ],
+  "peak_value": 820.0,
+  "details": {
+   "peak_value_units": "kg/m/s",
+   "duration_days": 5,
+   "detection": "IVT >= 250 kg m-1 s-1 crossing an AR mask, landfall within bbox",
+   "bbox_units": "degrees",
+   "landfall": "Bodega to Big Sur",
+   "peak_ivt": 820
+  }
+ },
+ {
+  "id": "ar-nsea-1101",
+  "event_type": "atmospheric_river",
+  "title": "North Sea / South Norway AR",
+  "start": "2026-11-01",
+  "end": "2026-11-04",
+  "bbox": [
+   57.0,
+   66.0,
+   -5.0,
+   12.0
+  ],
+  "peak_value": 760.0,
+  "details": {
+   "peak_value_units": "kg/m/s",
+   "duration_days": 4,
+   "detection": "IVT >= 250 kg m-1 s-1 crossing an AR mask, landfall within bbox",
+   "bbox_units": "degrees",
+   "landfall": "Rogaland, Oslofjord",
+   "peak_ivt": 760
+  }
+ }
+]

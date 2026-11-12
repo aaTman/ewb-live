@@ -1,0 +1,10 @@
+{
+  "regions": [
+    {"key": "global", "label": "Global", "lat": [-90, 90], "lon": [-180, 180]},
+    {"key": "tropics", "label": "Tropics", "lat": [-20, 20], "lon": [-180, 180]},
+    {"key": "northern_hemisphere", "label": "Northern Hemisphere", "lat": [20, 90], "lon": [-180, 180]},
+    {"key": "southern_hemisphere", "label": "Southern Hemisphere", "lat": [-90, -20], "lon": [-180, 180]},
+    {"key": "north_america", "label": "North America", "lat": [25, 60], "lon": [-120, -75]},
+    {"key": "europe", "label": "Europe", "lat": [35, 75], "lon": [-12.5, 42.5]}
+  ]
+}

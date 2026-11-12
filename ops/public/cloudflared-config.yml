@@ -1,0 +1,19 @@
+# EWB Live Cloudflare Tunnel connector config — rendered by
+# ops/setup-public.sh to /etc/cloudflared/ewb-live.yml.
+#
+# The tunnel itself is created once with the product owner's Cloudflare
+# authorisation (`cloudflared tunnel login` browser click, or an API token —
+# see notes/infra_domain.md "OWNER ACTION NEEDED"). `cloudflared tunnel
+# create __TUNNEL_NAME__` drops the credentials JSON next to this file.
+#
+# No inbound ports are opened anywhere: the connector only dials out to
+# Cloudflare over 443. Public hostname -> loopback nginx on this box.
+
+tunnel: __TUNNEL_NAME__
+credentials-file: /etc/cloudflared/__TUNNEL_NAME__.json
+
+ingress:
+  - hostname: __PUBLIC_HOSTNAME__
+    service: http://127.0.0.1:__PROXY_PORT__
+  # reject any other hostname this connector might be asked to serve
+  - service: http_status:404

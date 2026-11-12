@@ -1,0 +1,6 @@
+[Unit]
+Description=EWB Live freshness alarm (restart stale-but-active scoring)
+
+[Service]
+Type=oneshot
+ExecStart=__REPO__/.venv/bin/python __REPO__/ops/freshness_check.py

@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EWB Live — ExtremeWeatherBench scorecard</title>
+<meta name="description" content="Weekly scorecard of open AI weather models on the last 90 days of heat waves, freezes and atmospheric rivers, using ExtremeWeatherBench defaults.">
+<meta name="theme-color" content="#fdfdfc" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1e1e1a" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="%PUBLIC_URL%/">
+<meta property="og:site_name" content="EWB Live">
+<meta property="og:url" content="%PUBLIC_URL%/">
+<meta property="og:image" content="%PUBLIC_URL%/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="EWB Live: scorecard of AI weather models on the last 90 days of heat waves, freezes and atmospheric rivers">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="EWB Live — extreme-weather scorecard for AI weather models">
+<meta name="twitter:description" content="Heat waves, freezes and atmospheric rivers of the last 90 days, scored against IFS HRES with ExtremeWeatherBench.">
+<meta name="twitter:image" content="%PUBLIC_URL%/og-image.png">
+<meta property="og:type" content="website">
+<meta property="og:title" content="EWB Live — extreme-weather scorecard for AI weather models">
+<meta property="og:description" content="Heat waves, freezes and atmospheric rivers of the last 90 days, scored against IFS HRES with ExtremeWeatherBench.">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="icon" href="favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preload" href="vendor/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="vendor/fonts/inter-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="vendor/fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="styles.css">
+<script src="vendor/leaflet.js" defer></script>
+<!-- d3-geo UMD consumes d3.Adder/range/merge from this file — do not remove -->
+<script src="vendor/d3-array.min.js" defer></script>
+<script src="vendor/d3-geo.min.js" defer></script>
+<script src="app.js" defer></script>
+<script src="eventviz.js" defer></script>
+<script src="mergedmap.js" defer></script>
+</head>
+<body>
+
+<a href="#main-content" class="skip-link" id="skip-link">Skip to content</a>
+
+<div id="load-error" class="banner hidden">Could not load score data. Reload the page; if the
+  problem persists, the data refresh may be in progress.</div>
+
+<div class="app-shell">
+
+<!-- Phone/tablet (<1100px) top bar: OWB's mobile-topbar. The rail it opens is the
+     same <aside> the desktop uses, promoted to a fixed drawer. -->
+<header class="mobile-topbar">
+  <svg class="brand-mark" viewBox="0 0 256 256" width="20" height="20" aria-hidden="true"><rect width="256" height="256" rx="57.6" fill="#262620"/><g transform="translate(14.22,14.22) scale(0.89)"><path fill="#FDFDFC" d="M60.0 97.0 L128.0 29.0 L196.0 97.0 H162.06 L128.0 62.94 L93.94 97.0 H60.0Z"/><path fill="#E2452D" d="M35.03 117.0H220.97V139.0H35.03Z"/><path fill="#FDFDFC" d="M60.0 159.0 L128.0 227.0 L196.0 159.0 H162.06 L128.0 193.06 L93.94 159.0 H60.0Z"/></g></svg>
+  <!-- The phone bar carries the mark only: the page h1 spells the name out two
+       lines below it, and two "EWB Live"s in one screenful is one too many. The
+       wordmark stays for the banner's accessible name. -->
+  <span class="rail-brand sr-only">EWB&nbsp;Live</span>
+  <button type="button" id="nav-btn" class="nav-btn" aria-controls="rail" aria-expanded="false"
+          aria-label="Open navigation"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+</header>
+
+<!-- RAIL (after owb.brightband.com): the page's whole navigation — two jumps,
+     About, theme, week, updated — lives in a 220 px sticky column. The header is
+     then free to be a title, not a toolbar. -->
+<aside class="rail" id="rail" aria-label="Primary">
+  <div class="rail-head">
+    <!-- EWB mark: two 45° departures and the reference level between them — an extreme is a value
+         that has left climatology, hot or cold. Same drawing as favicon.svg; the level keeps the
+         brand colour (Signal Ember). 20 px = the rail's line box (12 px/14 px brand line + 6 gap). -->
+    <svg class="brand-mark" viewBox="0 0 256 256" width="20" height="20" role="img" aria-labelledby="brand-mark-t"><title id="brand-mark-t">Extreme Weather Bench</title><rect width="256" height="256" rx="57.6" fill="#262620"/><g transform="translate(14.22,14.22) scale(0.89)"><g id="symbol"><path fill="#FDFDFC" d="M60.0 97.0 L128.0 29.0 L196.0 97.0 H162.06 L128.0 62.94 L93.94 97.0 H60.0Z"/><path fill="#E2452D" id="level" d="M35.03 117.0H220.97V139.0H35.03Z"/><path fill="#FDFDFC" d="M60.0 159.0 L128.0 227.0 L196.0 159.0 H162.06 L128.0 193.06 L93.94 159.0 H60.0Z"/></g></g></svg>
+    <span class="rail-brand">EWB&nbsp;Live</span>
+    <button type="button" class="rail-toggle" id="rail-toggle" aria-controls="rail" aria-expanded="true"><svg class="ic-rail" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3.5" width="18" height="17" rx="2"/><path d="M9 3.5v17"/><path d="m17 9-3 3 3 3"/></svg><svg class="ic-close" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+  </div>
+
+  <!-- Two groups, one rule: the links above the rule jump to a section of the page,
+       the link below it acts on the page itself. Each group carries a caption so the
+       rail reads as a list, not a stack of icons. Settings (week, theme) are not
+       links and live in the footer. -->
+  <nav class="rail-nav" aria-label="Site">
+    <p class="rail-cap home-only">On this page</p>
+    <div class="rail-group home-only">
+      <button type="button" class="rail-link home-only" data-jump="explore">
+        <svg class="rail-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>
+        <span class="rail-label">Events</span></button>
+      <button type="button" class="rail-link home-only" data-jump="scorecard-sec">
+        <svg class="rail-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9.5 9.5v10"/></svg>
+        <span class="rail-label">Scorecard</span></button>
+    </div>
+
+    <div class="rail-sep home-only" aria-hidden="true"></div>
+    <div class="rail-group">
+      <button type="button" class="rail-link" id="about-btn">
+        <svg class="rail-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.6C10.4 5.4 8.6 4.8 6.5 4.8H4v13.1h3c1.9 0 3.6.5 5 1.5 1.4-1 3.1-1.5 5-1.5h3V4.8h-2.5c-2.1 0-3.9.6-5.5 1.8Z"/><path d="M12 6.6v12.8"/></svg>
+        <span class="rail-label">About</span></button>
+    </div>
+  </nav>
+
+  <!-- Rail footer: the two page-wide settings, each with a visible label on the
+       rail's text column, then the freshness stamp. -->
+  <div class="rail-foot">
+    <div class="rail-set" id="week-set">
+      <label class="ctl-label" for="week-picker">Week</label>
+      <select id="week-picker" class="hidden" title="Weekly snapshot — events and scorecard for that run"></select>
+    </div>
+    <div class="rail-set">
+      <span class="ctl-label" id="theme-label">Theme</span>
+      <div class="toggle theme-ctl" id="theme-ctl" role="group" aria-labelledby="theme-label">
+        <button type="button" data-pref="auto">Auto</button><button type="button" data-pref="light">Light</button><button type="button" data-pref="dark">Dark</button>
+      </div>
+    </div>
+    <p class="rail-meta hdr-meta">updated <span id="m-updated" class="mono">—</span></p>
+  </div>
+</aside>
+
+<div class="content">
+
+<header class="top">
+ <div class="shell">
+  <h1>EWB&nbsp;Live
+    <span id="sample-badge" class="badge warn hidden" title="Showing generated sample data.">sample</span>
+    <span id="mini-badge" class="badge warn hidden"></span>
+  </h1>
+  <p class="tagline">AI weather models, scored on recent extreme weather</p>
+ </div>
+</header>
+
+<main id="main-content" tabindex="-1">
+
+<!-- EXPLORE: the event-type filter sits directly on what it filters (map,
+     timeline, list); the scorecard below echoes it. Nothing up here acts on
+     content further down the page. -->
+<div class="explore" id="explore">
+  <div class="explore-head home-only">
+    <div class="sec-head">
+      <h2>Extreme events — last 90 days
+        <span class="sec-badge" id="raw-badge" hidden>IFS analysis (ERA5 lag)</span></h2>
+      <span class="count" id="gm-count"></span>
+    </div>
+    <p class="sec-lede">Shading shows where the heat, freeze and atmospheric-river detectors fired;
+      dashed boxes are the events the models are scored on. Move through time below the map, or pick an event.</p>
+    <div class="type-filter">
+      <span class="ctl-label" id="type-tabs-label">Show</span>
+      <div class="ctl-group" id="type-tabs" role="group" aria-labelledby="type-tabs-label"></div>
+      <div class="ctl-group ctl-region hidden" id="region-group">
+        <label class="ctl-label" for="region-select">Region</label>
+        <select id="region-select" title="Events, map and scorecard by region"></select>
+      </div>
+    </div>
+  </div>
+
+  <section id="global-sec" aria-label="Global events and raw detector output — last 90 days">
+    <div class="raw-map-wrap" id="raw-map-wrap">
+      <div class="raw-skeleton" id="raw-skel" aria-hidden="true"></div>
+      <canvas id="raw-canvas" role="img" aria-label="Equal Earth world map of raw threshold exceedances and event boxes" hidden></canvas>
+      <svg id="gm-boxes" hidden></svg>
+    </div>
+    <!-- The colour scales sit BELOW the map (owner complaint 2026-11-11: the
+         in-map panel hid a quarter of it). It is a fixed-height slim strip —
+         one row, horizontal scroll when narrow — so its content changing
+         (layer toggles, the frame, the Region view) can never reflow the
+         timeline or the cards below. -->
+    <span id="gm-legend" class="gm-legend" role="group" aria-label="Map colour legend — what the lane colours mean"></span>
+    <div class="timeline" role="group" aria-label="Time controls">
+      <div class="tl-head">
+        <span class="raw-play-row">
+          <button id="raw-play" class="tl-play" type="button" aria-label="Play frames">▶ play</button>
+          <button id="raw-prev" class="mini" type="button" aria-label="−6h, step back 6 hours">−6h</button>
+          <button id="raw-next" class="mini" type="button" aria-label="+6h, step forward 6 hours">+6h</button>
+        </span>
+        <span class="gm-date-readout mono" id="raw-readout">—</span>
+        <label class="raw-speed">speed
+          <select id="raw-speed" aria-label="Playback speed">
+            <option value="2">2 fps</option>
+            <option value="5" selected>5 fps</option>
+            <option value="10">10 fps</option>
+          </select>
+        </label>
+      </div>
+      <div class="gm-time-row">
+        <input id="raw-slider" type="range" min="0" max="0" step="1" value="0"
+               aria-label="Frame time (6-hourly)">
+      </div>
+      <svg id="gm-gantt" role="img" aria-label="Event timeline by type — click a bar to jump to it"></svg>
+    </div>
+    <p class="gm-note hidden" id="raw-note" role="status"></p>
+  </section>
+
+  <section id="events-sec" aria-label="Detected events">
+   <div class="evlist">
+    <div class="evlist-head">
+      <h3 class="sec-title">Events</h3>
+      <span class="count" id="event-count"></span>
+      <input id="event-search" type="search" placeholder="filter by place, type or id…" autocomplete="off" aria-label="Filter events">
+    </div>
+    <div class="table-wrap tall">
+      <table id="event-table">
+        <thead><tr><th><span class="sr-only">Type</span></th><th>Event</th><th class="num" title="Heat/freeze: ERA5 daily-mean 2 m temperature at the peak day. Atmospheric river: peak IVT.">Peak</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+   </div>
+  </section>
+</div>
+
+<section id="scorecard-sec">
+  <div class="sec-head">
+    <h2>Scorecard <span id="scorecard-status" class="sec-badge hidden"></span></h2>
+    <span id="sc-scope" class="sc-scope"></span>
+    <span class="sc-key" title="cell colour = skill vs IFS HRES at the same metric &amp; lead">
+      <i style="background:rgba(var(--better),.55)"></i>better
+      <i style="background:rgba(var(--worse),.55)"></i>worse than IFS HRES
+      <span class="sc-ticks" title="relative skill vs baseline at the same metric and lead (%)">
+        <span class="tick-bar"><b class="better"></b><b class="worse"></b></span>
+        <span class="tick-labels"><span>−50</span><span>0</span><span>+50%</span></span>
+      </span>
+    </span>
+  </div>
+  <p class="sec-lede">Mean score of each model over the events above, by forecast lead time.</p>
+  <nav class="controls" aria-label="Scorecard options">
+    <div class="ctl-group models" id="model-pills"></div>
+    <div class="ctl-group leads">
+      <span class="ctl-label">Lead time</span>
+      <span id="lead-chips"></span>
+      <button id="lead-more" class="mini" aria-expanded="false">more leads</button>
+    </div>
+    <div class="ctl-group">
+      <span class="ctl-label">Metrics</span>
+      <button id="metrics-more" class="mini" type="button" aria-pressed="false">more metrics</button>
+    </div>
+  </nav>
+  <div id="kv-line" class="kv-line" aria-label="run summary"></div>
+  <div id="verdict-strip" class="verdict-strip" aria-label="verdict"></div>
+  <p class="sc-note" id="sc-sample-note" hidden></p>
+  <div id="scorecard-tables"></div>
+  <details id="skill-details" class="fold">
+    <summary>Skill vs lead</summary>
+    <div class="toggle fold-tools" id="chart-mode" role="radiogroup" aria-label="chart mode">
+      <button data-mode="abs" class="on">absolute</button><button data-mode="rel">vs&nbsp;IFS&nbsp;%</button>
+    </div>
+    <div id="skill-charts"></div>
+  </details>
+</section>
+
+<section id="detail-sec" class="hidden">
+  <button id="detail-close" class="backlink" type="button">← All events</button>
+  <div class="sec-head">
+    <h2 id="detail-title">Event</h2>
+  </div>
+  <div class="detail-chips" id="detail-chips"></div>
+  <p class="event-story" id="detail-story"></p>
+  <div id="detail-viz" class="detail-viz"></div>
+  <details id="detail-scores" class="fold">
+    <summary>Scores</summary>
+    <div id="detail-mini"></div>
+    <div id="detail-charts"></div>
+  </details>
+</section>
+
+</main>
+
+<footer>
+  <p>Metrics: <a href="https://github.com/brightbandtech/ExtremeWeatherBench" rel="noopener">ExtremeWeatherBench</a>
+  defaults · scorecard design: Brightband
+  <a href="https://owb.brightband.com/scorecard" rel="noopener">Operational WeatherBench</a> ·
+  methodology: <button id="about-btn-foot" class="linkbtn">About</button></p>
+</footer>
+
+</div><!-- /content -->
+</div><!-- /app-shell -->
+
+<dialog id="about-dialog" aria-labelledby="about-title">
+  <div class="dlg-head">
+    <h2 id="about-title">About</h2>
+    <button id="about-close" class="mini" aria-label="close">✕</button>
+  </div>
+  <div class="dlg-body">
+    <h3>What this is</h3>
+    <p>EWB Live finds the extreme-weather events of the last 90 days and scores open AI weather
+    models against IFS&nbsp;HRES on them, using ExtremeWeatherBench (EWB) defaults. It refreshes
+    every Monday: events are re-detected each week and scores do not accumulate across runs.</p>
+
+    <h3>Events</h3>
+    <ul>
+      <li><b>Heat wave</b> — ERA5 2&nbsp;m temperature above the 85th percentile of the
+      Operational WeatherBench ERA5 1990–2019 climatology (per day of year and hour) at <em>every</em>
+      6-hourly step of a UTC day, over land, tracked into events by the rule set out below.</li>
+      <li><b>Freeze</b> — the same rule below the 15th percentile. A window with no freeze is a
+      valid result.</li>
+      <li><b>Atmospheric river</b> — EWB’s AR mask: integrated vapour transport (IVT) of at least
+      400&nbsp;kg&nbsp;m⁻¹&nbsp;s⁻¹ with a ridge criterion. The river must start over the ocean and
+      reach land — making landfall on at least one day; objects entirely over land are excluded,
+      and tropical cyclones are screened out using IBTrACS best tracks.</li>
+      <li>The raw detector map shades each cell by its consecutive <b>completed</b> UTC days
+      meeting the daily rule. Heat shades only cells reaching the detector’s 3-day minimum
+      (heat ramp 3–7+) — below that a cell can never become a heat wave, so it stays blank —
+      while freeze shades from its first completed day (freeze ramp 1–3+) so short cold runs
+      remain visible for context. Today’s in-progress day is dithered as provisional on cells
+      that already qualify; the same daily criterion is the one the detector applies within its
+      AND-chain. The AR layer is EWB detection minus tropical objects
+      (any cell within 15&nbsp;deg of the equator) and tropical cyclones, dropped whole at the
+      level of the tracked river (no frame-to-frame flicker). A river that briefly dips below
+      threshold for one 6-hour step keeps its id; that step shows its previous footprint with a
+      lighter fill (bridged — display only, the river was not physically detected there).</li>
+      <li>Parts of one system are merged, no two events overlap in time and space, and each type
+      is capped at 15 events.</li>
+    </ul>
+
+    <h3>How a spell becomes an event</h3>
+    <p>Heat waves and freezes are found in two stages. A <b>daily rule</b> picks the pixels:
+    a cell counts on a UTC day when 2&nbsp;m temperature is past the climatology bound (p85 for heat,
+    p15 for freeze) at <em>all four</em> 6-hourly steps and the cell is on land. A <b>tracker</b> then
+    decides which pixels belong to the same event, and when the event is over — the same numbers for
+    both hazards.</p>
+    <ol class="method-steps">
+      <li><b>Group</b> the counting cells of the day into regions. A cell belongs to a region when it
+      is counting, or when it sits in a hole the closing fills (up to 12 cells wide) and at least
+      30&nbsp;% of the surrounding 13×13 window is counting. Patchy heat inside a broad warm area
+      therefore counts as one object, while a thin scatter of lone cells does not chain across a
+      continent.</li>
+      <li><b>Seed</b> a candidate when a region covers <b>50,000&nbsp;km²</b> — about 65 cells of
+      the 0.25° grid near the equator, more toward the poles. It has five days to become an event or
+      it is dropped.</li>
+      <li><b>Qualify</b> on the first day the candidate's footprint covers <b>200,000&nbsp;km²</b>.
+      The event keeps its earlier start date, so a heat wave that builds over three days is not cut
+      short. It must last at least <b>3&nbsp;days</b>.</li>
+      <li><b>Follow</b> it: the event's box grows to cover wherever its footprint moves, up to 8
+      cells a day, so a heat wave that travels stays one event instead of three. Where two events
+      would claim the same ground, the older one goes first.</li>
+      <li><b>End</b> it when its <b>core</b> — the cells that have been counting <em>every</em> day
+      since it started, counted inside the box it had on day&nbsp;3 — holds less than
+      <b>100,000&nbsp;km²</b>. Regions that are hotter than the climatology all season (the Sahara,
+      the Amazon, Indonesia) always keep 200,000&nbsp;km² somewhere, but their day-one heat does not
+      stay put, so those spells close on their own instead of running for a season.</li>
+    </ol>
+    <p class="dlg-note">Boxes are reported on 0.25° cell centres. The thresholds live in
+    <code>ewb_live/events/event_tracker.py</code> (<code>Params</code>); the daily masks are read
+    from the same published frames the raw map paints, so the list and the map cannot disagree.</p>
+
+    <details class="repro">
+      <summary>Reproduce the tracker in Python</summary>
+      <p class="dlg-note">The rule above in one readable pass, same thresholds, numpy + scipy only:
+      <a href="detection.py" download>detection.py</a> — run <code>python3 detection.py</code> for a
+      worked example. It leaves out two details of the shipped tracker (events that grow into each
+      other merge; the box can be size-capped), which is why the numbers on this site come from
+      <code>ewb_live/events/</code>. The project's test suite runs this listing against the shipped
+      tracker and fails if the two disagree.</p>
+      <pre id="detection-code" aria-live="polite">loading…</pre>
+    </details>
+
+    <h3>Scoring</h3>
+    <p>Models are scored from daily 00&nbsp;UTC runs at leads of 0–240&nbsp;h (the scorecard shows
+    1, 3, 5, 7 and 10 days). Truth is ERA5. ERA5 trails real time by about six days; an event
+    ending after that point would be scored against the IFS&nbsp;HRES 0-h analysis, which favours
+    IFS.</p>
+    <p id="about-models">—</p>
+    <p class="dlg-note">Names ending <code>_gfs</code> are forced with GFS initial conditions;
+    the others use ECMWF-based forcing.</p>
+
+    <h3>Reading the scorecard</h3>
+    <p>Each cell prints the mean metric over events. Its colour is the relative skill against
+    IFS&nbsp;HRES at the same metric and lead: blue is better, red is worse, whichever way the
+    metric points. Hover or tap a cell for the baseline value, the relative skill and
+    the number of events.</p>
+    <ul>
+      <li><b>RMSE, peak-max MAE, min MAE</b> (K) — lower is better; 0 is perfect.</li>
+      <li><b>Duration error</b> (h) — signed; 0 is ideal, positive over-predicts. Closeness to
+      zero counts, not sign.</li>
+      <li><b>CSI</b> — overlap of forecast and observed AR mask, 0–1; higher is better.</li>
+      <li><b>Spatial displacement</b> (km) — distance between forecast and observed AR; lower is
+      better.</li>
+      <li><b>Early signal</b> — share of events the forecast flags, 0–1; higher is better.</li>
+    </ul>
+
+    <h3>Limits to keep in mind</h3>
+    <ul>
+      <li>Heat and freeze are <i>percentile-relative</i>, not absolute hazard levels: a freeze at
+      −43.7&nbsp;°C over Greenland is ordinary for there.</li>
+      <li>Peak values are ERA5 grid <i>daily-mean</i> temperatures. Station daily maxima run 4–8&nbsp;°C
+      higher, so figures will not match record-high headlines.</li>
+      <li>Detection uses daily-mean 0.25° fields: heat waves that show only in daily maxima, or
+      that are patchy (parts of Europe in September), can be missed. No event here does not mean
+      no extreme.</li>
+      <li>Cells rest on a handful of events (about 6–15 per type) and the freeze lane is
+      a single event: read it as indicative, not a ranking.</li>
+      <li>ERA5 is also the training reference of several AI models, which gives them a
+      structural advantage over physics-based forecasts; truth inherits ERA5’s own biases.</li>
+      <li>Not every model covers every event: <code>aigfs</code> has no 2&nbsp;m temperature (no heat or
+      freeze scores) and some models lack some archive dates. Two very large AR events are
+      listed but not scored. Missing cells are shown as — .</li>
+    </ul>
+
+    <h3>Credits</h3>
+    <p class="dlg-note">Metrics and event definitions: <a href="https://github.com/brightbandtech/ExtremeWeatherBench" rel="noopener">ExtremeWeatherBench</a>
+    (Brightband); scorecard design after Brightband’s Operational WeatherBench. AI model forecasts:
+    NOAA/CIRA MLWP archive on AWS Open Data. IFS&nbsp;HRES: ECMWF open data (CC&nbsp;BY&nbsp;4.0).
+    Truth: ERA5 (Copernicus Climate Change Service / ECMWF). Basemaps: Esri, Garmin, GEBCO, NOAA, USGS
+    and the GIS User Community; coastlines: Natural Earth (public domain). Maps: Leaflet, d3-geo;
+    charts: Plotly. Type: Inter and IBM Plex Mono (SIL OFL).</p>
+  </div>
+</dialog>
+
+<div id="tooltip" class="hidden"></div>
+
+</body>
+</html>

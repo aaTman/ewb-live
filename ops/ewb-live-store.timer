@@ -1,0 +1,11 @@
+[Unit]
+Description=EWB Live CIRA MLWP store daily update timer (05:30 UTC)
+
+[Timer]
+OnCalendar=*-*-* 05:30:00 UTC
+Persistent=true
+RandomizedDelaySec=0
+Unit=ewb-live-store.service
+
+[Install]
+WantedBy=__WANTED_BY__

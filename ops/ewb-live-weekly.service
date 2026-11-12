@@ -1,0 +1,13 @@
+[Unit]
+Description=EWB Live weekly refresh cycle (ewb_live.weekly)
+# One-shot: started by ewb-live-weekly.timer (Mondays 07:00 UTC, Persistent).
+# ewb_live/weekly.py owns its own log file (logs/weekly-<date>.log); stdout and
+# stderr are appended to logs/weekly.log to capture crashes before/around it.
+
+[Service]
+Type=oneshot
+WorkingDirectory=__REPO__
+ExecStart=__REPO__/.venv/bin/python -m ewb_live.weekly
+TimeoutStartSec=6h
+StandardOutput=append:__REPO__/logs/weekly.log
+StandardError=append:__REPO__/logs/weekly.log

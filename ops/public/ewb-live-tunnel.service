@@ -1,0 +1,16 @@
+[Unit]
+Description=EWB Live Cloudflare Tunnel connector (__PUBLIC_HOSTNAME__ -> 127.0.0.1:__PROXY_PORT__)
+Documentation=ops/setup-public.sh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/cloudflared --no-autoupdate --config /etc/cloudflared/ewb-live.yml tunnel run
+Restart=always
+RestartSec=5
+# Credentials (/etc/cloudflared/*.json) stay root-only (0600); the process
+# holds no secrets beyond the tunnel token itself.
+
+[Install]
+WantedBy=multi-user.target

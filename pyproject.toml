@@ -1,0 +1,49 @@
+[project]
+name = "ewb-live"
+version = "0.1.0"
+description = "Live ExtremeWeatherBench dashboard: event detection + model scoring"
+authors = [
+    { name = "aaTman" }
+]
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "cartopy>=0.26.0",
+    "cfgrib>=0.9.15.1",
+    "eccodes>=2.50.0",
+    "extremeweatherbench",
+    "fsspec>=2026.9.0",
+    "h5netcdf>=1.8.2",
+    "icechunk>=2.3.1",
+    "matplotlib>=3.11.2",
+    "ruamel-yaml>=0.19.1",
+    "s3fs>=2026.9.0",
+    "virtualizarr>=2.8.0",
+    "zarr>=3.4.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ewb_live"]
+
+[tool.pytest.ini_options]
+markers = [
+    "network: tests that require network access",
+    "e2e: Playwright browser tests against the deployed dashboard (EWB_LIVE_URL, default http://localhost:8050)",
+]
+testpaths = ["tests"]
+# ponytail 10:16 SHOULD: the live Playwright suite must stay out of a default
+# `pytest` run (browser against the DEPLOYED dashboard). An explicit
+# `-m e2e` on the command line overrides this (later -m wins).
+addopts = ["-m", "not e2e"]
+
+[tool.uv.sources]
+extremeweatherbench = { git = "https://github.com/brightbandtech/ExtremeWeatherBench" }
+
+[dependency-groups]
+dev = [
+    "playwright>=1.64.1",
+    "pytest>=9.2.0",
+]
