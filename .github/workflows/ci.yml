@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Runs on the self-hosted mandelhub runner, which holds deploy credentials:
+    # never run code from fork PRs there.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, mandelhub]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: ExtremeWeatherBench checkout (pinned to uv.lock; needed by data_prep tests)
+        run: |
+          sha=$(grep -oP "ExtremeWeatherBench#\K[0-9a-f]{40}" uv.lock | head -1)
+          mkdir -p third_party && rm -rf third_party/ExtremeWeatherBench
+          git init -q third_party/ExtremeWeatherBench
+          git -C third_party/ExtremeWeatherBench fetch -q --depth 1 https://github.com/brightbandtech/ExtremeWeatherBench "$sha"
+          git -C third_party/ExtremeWeatherBench checkout -q FETCH_HEAD
+      - run: uv sync --frozen
+      - run: uv run pytest -q
