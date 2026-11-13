@@ -1,0 +1,6 @@
+[Unit]
+Description=EWB Live: launch guardians when KT docs + raw map are ready
+[Service]
+Type=oneshot
+WorkingDirectory=/home/orca/orca/workspaces/ewb-live/dogfish
+ExecStart=/home/orca/orca/workspaces/ewb-live/dogfish/ops/guardian_launcher.sh

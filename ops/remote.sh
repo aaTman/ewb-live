@@ -17,7 +17,7 @@
 #   pull-results         rsync /opt/ewb-live/data/results back into this worktree
 set -euo pipefail
 
-HOST="${EWB_LIVE_HOST:?set EWB_LIVE_HOST, e.g. user@your-ewb-host}"
+HOST="${EWB_LIVE_HOST:-root@192.168.0.121}"
 REMOTE_DIR="${EWB_LIVE_REMOTE_DIR:-/opt/ewb-live}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Code-only excludes. data/ and logs/ are NEVER synced up once the box is live

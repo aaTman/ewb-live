@@ -24,7 +24,7 @@ import pytest
 pytestmark = pytest.mark.e2e
 
 ROOT = Path(__file__).resolve().parents[2]
-LIVE_URL = os.environ.get("EWB_LIVE_URL", "http://localhost:8050").rstrip("/")
+LIVE_URL = os.environ.get("EWB_LIVE_URL", "http://192.168.0.121:8050").rstrip("/")
 AXE = (Path(__file__).parent / "vendor" / "axe.min.js").read_text()
 
 pytest.importorskip("playwright.sync_api")

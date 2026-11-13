@@ -1,6 +1,6 @@
 """Local preview of dashboard/ against the deployed data (stdlib only).
 
-    python scripts/dev_preview.py [--port 8061] [--upstream http://localhost:8050]
+    python scripts/dev_preview.py [--port 8061] [--upstream http://192.168.0.121:8050]
 
 Serves this worktree's dashboard/ and proxies /data/* to the upstream box, so
 UI work can be checked (and the e2e suite run via EWB_LIVE_URL) before a
@@ -58,7 +58,7 @@ class Handler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8061)
-    ap.add_argument("--upstream", default="http://localhost:8050")
+    ap.add_argument("--upstream", default="http://192.168.0.121:8050")
     args = ap.parse_args()
     Handler.upstream = args.upstream.rstrip("/")
     ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
