@@ -29,6 +29,7 @@ _TITLE_RE = re.compile(
 _TITLE_LABELS = {
     "heat_wave": "Heat Wave",
     "freeze": "Freeze",
+    "cold_snap": "Cold Snap",
     "atmospheric_river": "Atmospheric River",
 }
 # physical sanity ranges for peak_value, per type. NOTE freeze is NOT
@@ -40,6 +41,7 @@ _TITLE_LABELS = {
 _PEAK_RANGE = {
     "heat_wave": (-20.0, 60.0),      # degC
     "freeze": (-90.0, 45.0),         # degC (percentile-relative, see above)
+    "cold_snap": (-90.0, 45.0),      # degC (same rule minus the <=0C cap)
     "atmospheric_river": (0.0, 10000.0),  # IVT kg m-1 s-1
 }
 # Duration ceiling for a published event. The footprint/core tracker (SPEC §2)
@@ -111,7 +113,8 @@ def validate_event(e: Event) -> list[str]:
     det = e.details or {}
 
     # --- temperature events: cross-field ordering of the reported stats
-    if e.event_type in ("heat_wave", "freeze") and pv is not None:
+    # (cold_snap behaves exactly like freeze here: "peak" is the coldest value)
+    if e.event_type in ("heat_wave", "freeze", "cold_snap") and pv is not None:
         mn, mean = det.get("min_temp_c"), det.get("mean_temp_c")
         if mn is not None and mean is not None:
             if not mn <= mean:
@@ -121,7 +124,7 @@ def validate_event(e: Event) -> list[str]:
                     problems.append(f"heat peak_value {pv} < mean_temp_c {mean}")
                 if mn < -90:
                     problems.append(f"min_temp_c {mn} physically implausible")
-            else:  # freeze: peak is the coldest value
+            else:  # freeze / cold_snap: peak is the coldest value
                 if mn is not None and abs(pv - mn) > 0.05:
                     problems.append(f"freeze peak_value {pv} != min_temp_c {mn}")
                 if mean > 273.0:

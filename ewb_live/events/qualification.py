@@ -14,6 +14,11 @@ THE DETECTION CRITERIA. Definition (SPEC §2):
   (e.g. the frames end at the ERA5 mirror cutoff before the event start),
   qualified_at falls back to 00:00 UTC of the event start date.
 
+`cold_snap` (owner 2026-11-16) reads the freeze frame layer: the lane's p15 bit
+IS the cold-snap mask (cold snap = the freeze rule minus the <=0C cap), so the
+200k km^2 frame gate is exactly this event type's own frame-level criterion —
+no new lane, no new floor (see ewb_live/events/cold_snap.py).
+
 Frames are the published data/results/raw_exceedance/ assets — the same
 bytes the raw map serves — so qualification cannot drift from the map.
 """
@@ -84,7 +89,8 @@ def qualified_at(event, frames_dir: Path | None = None) -> str:
         return fallback
     if not frames:
         return fallback
-    layer = {"heat_wave": 0, "freeze": 1, "atmospheric_river": 2}[event.event_type]
+    layer = {"heat_wave": 0, "freeze": 1, "cold_snap": 1,
+             "atmospheric_river": 2}[event.event_type]
     lat_min, lat_max, lon_min, lon_max = event.bbox
     if event.event_type == "atmospheric_river":
         floor_px = AR_MIN_PX
