@@ -10,7 +10,8 @@ suite asserts the two agree on the same masks.
 Input: one boolean (lat, lon) grid per UTC day — True where a cell *counts* on
 that day, i.e. 2 m temperature is above the 85th percentile of the ERA5
 1990-2019 climatology (heat) or below its 15th percentile (freeze) for that day
-of year and hour at **all four** 6-hourly steps, and the cell is on land. The
+of year and hour at **all four** 6-hourly steps (for freeze, also at or below
+0 C at all four), and the cell is on land. The
 grid is 0.25 degrees, longitudes ascending; longitude wraps, latitude does not.
 
 Output: one dict per event — its start, its exclusive end, how long it lasted

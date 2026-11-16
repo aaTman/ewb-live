@@ -174,7 +174,7 @@ def _cell_area_km2(lats: np.ndarray, step_deg: float, nx: int) -> np.ndarray:
     return np.broadcast_to(col[:, None], (col.size, nx))
 
 
-def _mirror_t2m_daily(dates, lats, lons) -> np.ndarray | None:
+def _mirror_t2m_daily(dates, lats, lons, reduce: str = "mean") -> np.ndarray | None:
     """Daily-mean t2m (degC) on the mask grid from the local ERA5 truth mirror.
 
     The mirror holds exactly the four 6-hourly anchors (00/06/12/18) per day,
@@ -226,12 +226,15 @@ def _mirror_t2m_daily(dates, lats, lons) -> np.ndarray | None:
         return None
     sub = t2m.sel(time=stamps).isel(latitude=i_lat, longitude=i_lon)
     arr = sub.transpose("time", "latitude", "longitude").data
-    daily = arr.reshape(len(dates), 4, *arr.shape[1:]).mean(axis=1)
+    daily = getattr(arr.reshape(len(dates), 4, *arr.shape[1:]), reduce)(axis=1)
     with dask.config.set(scheduler="threads"):
         out = np.asarray(daily.compute(), dtype=np.float32)
     logger.info("event temperatures: daily-mean t2m from the truth mirror "
                 "(%d days, %s)", len(dates), out.shape[1:])
     return out - 273.15
+
+
+FREEZE_MAX_C = 0.0   # freeze cells: t2m <= this (degC) at all four 6-hourly steps
 
 
 def _temp_stats(active: np.ndarray, event_type: str) -> dict | None:
@@ -341,6 +344,7 @@ def scan_temperature_events(
                     event_type, reason)
 
     t2m_daily: np.ndarray | None = None
+    t2m_dmax: np.ndarray | None = None
     t2m_source = "era5_arco"
     if lane_ok:
         # ------------------------------------------------ frames-first path --
@@ -356,17 +360,26 @@ def scan_temperature_events(
         # the lane stores booleans only; the peak/mean/min temperatures come
         # from the local ERA5 mirror on the same grid and days
         t2m_daily = _mirror_t2m_daily(dates, lats, lons)
+        t2m_dmax = _mirror_t2m_daily(dates, lats, lons, "max")
         t2m_source = "era5_mirror"
         logger.info("scan %s: %s %s..%s from the raw-exceedance lane "
                     "(%d days, %d x %d grid)", event_type, _clim_mode(),
                     quantile, dates[0], dates[-1], len(dates), *mask.shape[1:])
     else:
         # --------------------------------------------------- ERA5 ARCO path --
-        dates, lats, lons, mask, cell_area, t2m_daily = _scan_masks_from_arco(
+        dates, lats, lons, mask, cell_area, t2m_daily, t2m_dmax = _scan_masks_from_arco(
             start, end, event_type, clip, n_workers=n_workers,
             lat_min=lat_min, lat_max=lat_max)
         if mask is None or not len(dates):
             return []
+
+    if event_type == "freeze":
+        # owner 2026-11-16: a freeze cell must also be <= 0 degC at all four
+        # 6-hourly steps (daily max <= 0), on top of the p15 exceedance
+        if t2m_dmax is None:
+            raise RuntimeError("freeze needs 6-hourly temperatures for the "
+                               "<=0C rule; truth mirror unavailable")
+        mask = mask & (t2m_dmax <= FREEZE_MAX_C)
 
     raw = track_events(mask, dates, cell_area, p, event_type)
     logger.info("  tracked %s: %d valid events (%d cells-days valid)",
@@ -481,7 +494,7 @@ def _scan_masks_from_arco(start: dt.date, end: dt.date, event_type: str,
                           lat_max: float):
     """Daily exceedance masks streamed from ERA5 ARCO (the fallback path).
 
-    Returns ``(dates, lats, lons, mask, cell_area, t2m_daily_c)``; ``mask`` is
+    Returns ``(dates, lats, lons, mask, cell_area, t2m_daily_c, t2m_dmax_c)``; ``mask`` is
     None when the window has no data. Loads extend back by upstream's
     TEMPORAL_LOAD_BUFFER_DAYS so in-progress events keep true start dates.
     """
@@ -522,6 +535,7 @@ def _scan_masks_from_arco(start: dt.date, end: dt.date, event_type: str,
     chunks = [(a, b) for a, b in chunks if a <= b]
     exc_parts: list = []
     t2m_parts: list = []
+    tmax_parts: list = []
     with dask.config.set(scheduler="threads", num_workers=n_workers):
         for ms_d, me_d in chunks:
             t2m_chunk = t2m.sel({tdim: slice(str(ms_d), str(me_d))})
@@ -532,15 +546,18 @@ def _scan_masks_from_arco(start: dt.date, end: dt.date, event_type: str,
                 op_lower=clip["op_lower"], op_upper=clip["op_upper"],
             )
             t2m_lazy = t2m_chunk.resample({tdim: "1D"}).mean()
-            exc_da, t2m_daily_da = dask.compute(exc_lazy, t2m_lazy)
+            tmax_lazy = t2m_chunk.resample({tdim: "1D"}).max()
+            exc_da, t2m_daily_da, tmax_da = dask.compute(exc_lazy, t2m_lazy, tmax_lazy)
             exc_parts.append(exc_da)
             t2m_parts.append(t2m_daily_da)
+            tmax_parts.append(tmax_da)
             logger.info("  chunk %s..%s done", ms_d, me_d)
 
         if not exc_parts:
-            return [], None, None, None, None, None
+            return [], None, None, None, None, None, None
         exc_da = xr.concat(exc_parts, dim=tdim)
         t2m_daily_da = xr.concat(t2m_parts, dim=tdim)
+        tmax_da = xr.concat(tmax_parts, dim=tdim)
         del exc_parts, t2m_parts
 
         mask = exc_da.values.astype(bool)
@@ -548,7 +565,8 @@ def _scan_masks_from_arco(start: dt.date, end: dt.date, event_type: str,
         lats = exc_da.latitude.values
         lons = exc_da.longitude.values
         t2m_daily = (t2m_daily_da.values - 273.15).astype(np.float32)
-    return dates, lats, lons, mask, area_grid, t2m_daily
+        t2m_dmax = (tmax_da.values - 273.15).astype(np.float32)
+    return dates, lats, lons, mask, area_grid, t2m_daily, t2m_dmax
 
 
 def recompute_merged_max_consec(events: list[Event], cutoff) -> int:
@@ -580,6 +598,10 @@ def recompute_merged_max_consec(events: list[Event], cutoff) -> int:
             land = vb.land_mask(lat, lon)
             passed = ((t > thr) if e.event_type == "heat_wave" else (t < thr)) & land
             daily = passed.reshape(len(times) // 4, 4, len(lat), len(lon)).min(axis=1)
+            if e.event_type == "freeze":
+                tmax = (t.reshape(len(times) // 4, 4, len(lat), len(lon))
+                        .max(axis=1) - 273.15)
+                daily = daily & (tmax <= FREEZE_MAX_C)
             d["max_consecutive_days"] = int(vb.consecutive_days(daily).max())
             n += 1
         except Exception as exc:  # noqa: BLE001 — keep member-max, never fail detection
