@@ -92,6 +92,15 @@ def lane(tmp_path, monkeypatch):
     frame_masks.clear_cache()
     d = _lane(tmp_path, hot_days={0, 1, 2}, cold_days={3, 4, 5})
     monkeypatch.setattr(temperature, "_event_temp_stats", _stats)
+
+    def _mirror(dates, lats, lons, reduce="mean"):
+        # no truth mirror in tests: daily means unavailable (per-event stats
+        # are stubbed), daily max well below 0 C so the freeze rule passes
+        if reduce == "max":
+            return np.full((len(dates), len(lats), len(lons)), -4.0, np.float32)
+        return None
+
+    monkeypatch.setattr(temperature, "_mirror_t2m_daily", _mirror)
     yield d
     frame_masks.clear_cache()
 
@@ -192,7 +201,7 @@ def test_scan_falls_back_when_the_lane_does_not_span_the_window(lane, monkeypatc
 
     def fake_arco(*a, **kw):
         called["yes"] = True
-        return [], np.zeros(0), np.zeros(0), None, None, None
+        return [], np.zeros(0), np.zeros(0), None, None, None, None
 
     monkeypatch.setattr(temperature, "_scan_masks_from_arco", fake_arco)
     assert temperature.scan_temperature_events(D0 + dt.timedelta(days=9),

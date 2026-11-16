@@ -105,7 +105,7 @@ def score_event(event: Event, models: list[str]) -> pd.DataFrame
 - **Temperature thresholds (product decision):** heat wave and freeze finders use the ERA5 2 m temperature
   climatology built from /opt/ewb-owb/data/clim2 (1990-2020, 6-hourly; method from /opt/ewb-owb/clim.py),
   written to /opt/ewb-live/data/clim/t2m_owb_1990_2020.zarr on the ewb box. It replaces EWB's default climatology.
-  Thresholds: p85 for heat waves (owner, 2026-11-07, after the science review of missed heat waves; EWB-native), p15 for freezes (owner, 2026-11-07; EWB-native; zero freezes acceptable if none qualify).
+  Thresholds: p85 for heat waves (owner, 2026-11-07, after the science review of missed heat waves; EWB-native), p15 for freezes (owner, 2026-11-07; EWB-native; zero freezes acceptable if none qualify). **Freeze also requires t2m <= 0 degC at all four 6-hourly steps (owner, 2026-11-16)**, applied to the daily mask before tracking (`FREEZE_MAX_C` in `ewb_live/events/temperature.py`).
 - **Heat/freeze tracking rule (owner, 2026-11-10; the footprint/core methodology, ported from `aaTman/ewb-events` into `ewb_live/events/event_tracker.py`; documented in `notes/footprint_tracker.md`, which supersedes `notes/temperature_area_rule.md`):** the thresholds and the daily exceedance mask (all four 6-hourly steps pass, land only) stay EWB-style; tracking is neither EWB's blob tracker nor the same morning's 200 k-seed/+250 km box rule. Identical for heat waves and freezes, on the daily mask `M[d]`:
   1. **Region:** each day the valid cells are grouped by a morphological closing — one dilation and
      erosion with a `(2r+1)²` square element (`region_radius`=6 cells, so holes up to 12 cells wide are
