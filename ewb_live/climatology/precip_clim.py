@@ -536,9 +536,11 @@ def write_template(cfg: Config, lat: np.ndarray, lon: np.ndarray) -> None:
     import dask.array as da
 
     nq, na = len(cfg.quantiles), len(cfg.accums)
+    # NaN-filled thresholds: an interrupted build then reads as "no threshold"
+    # instead of a misleading 0 mm (the .done marker is still the gate).
     tmpl = xr.Dataset(
         {VAR: (("quantile", "accumulation", "dayofyear", "latitude", "longitude"),
-               da.zeros((nq, na, 366, len(lat), len(lon)), dtype="float32")),
+               da.full((nq, na, 366, len(lat), len(lon)), np.nan, dtype="float32")),
          COUNT_VAR: (("accumulation", "dayofyear", "latitude", "longitude"),
                      da.zeros((na, 366, len(lat), len(lon)), dtype="uint8"))},
         coords={"quantile": list(cfg.quantiles),
