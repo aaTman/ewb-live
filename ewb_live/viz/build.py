@@ -43,7 +43,8 @@ logger = logging.getLogger(__name__)
 SCHEMA = 3
 ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = ROOT / "data" / "results" / "events"
-CELL = {"heat_wave": 0.25, "freeze": 0.25, "atmospheric_river": 0.5}
+CELL = {"heat_wave": 0.25, "freeze": 0.25, "cold_snap": 0.25,
+        "atmospheric_river": 0.5}
 # AR input window = event bbox grown by this MUCH before the mask is computed.
 # Two independent reasons, both live bugs (2026-11-10, Europe AR
 # 6b4dec9dc8db "sliced at the prime meridian"):
@@ -654,7 +655,7 @@ def _ar_model_panel(model, anchor, lead, bbox, lats, lons, thr_val):
 
 # ------------------------------------------------------------------ driver
 def build_event(ev: dict, cutoff: dt.datetime, heat_leads, ar_leads) -> dict:
-    if ev["event_type"] in ("heat_wave", "freeze"):
+    if ev["event_type"] in ("heat_wave", "freeze", "cold_snap"):
         return build_heat_freeze(ev, cutoff, heat_leads)
     return build_ar(ev, cutoff, ar_leads)
 
