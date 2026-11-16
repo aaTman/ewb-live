@@ -597,6 +597,8 @@ def run(
     if BASELINE not in models:
         logger.warning("baseline model %s not in sources; scorecard skill will be null", BASELINE)
 
+    from .events.select import TRACK_TYPES   # track lanes are published, not scored
+
     # 2. incremental bookkeeping
     scores_path = RESULTS / "scores.parquet"
     old = pd.read_parquet(scores_path) if scores_path.exists() and not force else pd.DataFrame(
@@ -620,10 +622,15 @@ def run(
     logger.info("cached scores: %d rows; done pairs: %d", len(cached), len(done))
 
     todo = []
+    unscored_track: list = []   # track lanes (tropical_cyclone): published, never scored
     for e in events:
         pending = [m for m in models if (e.id, m) not in done]
-        if pending:
-            todo.append((e, pending))
+        if not pending:
+            continue
+        if e.event_type in TRACK_TYPES:
+            unscored_track.append((e, pending))
+            continue
+        todo.append((e, pending))
     if max_events:
         ids = _select_event_ids(todo, max_events)
         todo = [(e, ms) for e, ms in todo if e.id in ids]
@@ -675,6 +682,24 @@ def run(
     # prune to the live universe (ids churn across selection rebuilds) and
     # sweep orphaned atomic-write temps from SIGKILLed writers
     pair_status = _prune_pair_status(pair_status, events, models)
+    # track lanes (tropical_cyclone, tc 2026-11-16) have no EWB metric set
+    # configured: they are published and rendered, never scored. Record a
+    # DOCUMENTED zero-row status per pair so the pair_coverage contract and
+    # full_run_complete stay decidable instead of showing phantom blockers.
+    if unscored_track:
+        for e, ms in unscored_track:
+            for m in ms:
+                pair_status[f"{e.id}|{m}"] = {
+                    "status": "unsupported", "rows": 0,
+                    "fp": f"{fp_by_event[e.id]}|{truth_by_event[e.id]}",
+                    "reason": "no EWB benchmark for best-track events "
+                              "(tropical_cyclone is published, not scored)"}
+        logger.info("track-lane events: %d published without scoring "
+                    "(%d documented 'unsupported' pairs)",
+                    len(unscored_track),
+                    sum(len(ms) for _e, ms in unscored_track))
+        _persist_pair_status()
+
     # sidecars of churned-out events are dead weight: every run re-parses
     # every file ever written (ponytail 2026-11-08 SHOULD: unbounded growth)
     if not force:
@@ -788,7 +813,8 @@ def run(
             "selection_thresholds": _sel_thresholds(),
             "event_counts": {
                 et: sum(1 for e in events if e.event_type == et)
-                for et in ("heat_wave", "freeze", "atmospheric_river")
+                for et in ("heat_wave", "freeze", "atmospheric_river",
+                           "tropical_cyclone")
             },
             "n_score_rows": len(scores),
             "n_scored_pairs": int(len({(r[0], r[1]) for r in zip(scores['event_id'], scores['model'])})),

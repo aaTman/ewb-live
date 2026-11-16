@@ -43,6 +43,11 @@ def _cache_path(cache_dir: Path, event_type: str, start: dt.date, end: dt.date) 
         from .ar import AR_RULE_REV
 
         tag = f"_{AR_RULE_REV}"
+    if event_type == "tropical_cyclone":
+        # bump when the TC qualification rule changes (tc lane, 2026-11-16)
+        from .tc import MIN_TS_FIXES, MIN_TS_HOURS, MIN_TS_WIND_KT
+
+        tag = f"_v1-{int(MIN_TS_WIND_KT)}kt-{MIN_TS_FIXES}fix-{int(MIN_TS_HOURS)}h"
     return cache_dir / f"{event_type}{tag}_{start:%Y-%m-%d}_{end:%Y-%m-%d}.json"
 
 
@@ -94,6 +99,11 @@ def detect_events(
                 from .temperature import scan_temperature_events
 
                 events = scan_temperature_events(start, det_end, et, **scan_kwargs)
+            elif et == "tropical_cyclone":
+                # track-based lane (IBTrACS best tracks), no ERA5 scan
+                from .tc import scan_tc_events
+
+                events = scan_tc_events(start, det_end)
             else:
                 from .ar import scan_ar_events
 
