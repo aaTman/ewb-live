@@ -1,8 +1,8 @@
 """Event detection for EWB Live (SPEC section 2).
 
-``detect_events`` finds heat_wave / freeze / atmospheric_river events over a
-date range using EWB's defaults and thresholds, with a persistent per-window
-cache so re-runs don't redo completed scans.
+``detect_events`` finds heat_wave / freeze / cold_snap / atmospheric_river
+events over a date range using EWB's defaults and thresholds, with a
+persistent per-window cache so re-runs don't redo completed scans.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ def _cache_path(cache_dir: Path, event_type: str, start: dt.date, end: dt.date) 
     # EWB_LIVE_FREEZE_CLIP); tag the key so neither switch can resurrect
     # a scan made with different thresholds.
     tag = ""
-    if event_type in ("heat_wave", "freeze"):
+    if event_type in ("heat_wave", "freeze", "cold_snap"):
         import os
 
         from .temperature import _mode_clim
@@ -63,11 +63,14 @@ def detect_events(
     beyond the truth cutoff is impossible and would stream NaN). Raw scan
     results are cached per (type, clamped window); a cache hit skips the scan.
 
-    The raw detector output is then curated (ewb_live.events.select):
-    per-type floors, severity ranking (climatology anomaly x area x duration;
-    landfall days x land pixels x IVT excess for ARs), fragment dedup, and a
-    cap of ``top_n`` per type (default 15; None disables curation). Events are
-    returned sorted by (start, id), deduplicated by id.
+    The raw detector output is then curated (ewb_live.events.select): cold
+    snaps already claimed by a freeze are dropped first
+    (ewb_live.events.cold_snap.subsume_freeze_overlaps), then per-type floors,
+    severity ranking (climatology anomaly x area x duration; landfall days x
+    land pixels x IVT excess for ARs), fragment dedup, and a cap of ``top_n``
+    per type (default 15; None disables curation and that drop, so the raw
+    catalogue lists both lanes). Events are returned sorted by (start, id),
+    deduplicated by id.
     """
     if start > end:
         raise ValueError("start must be <= end")
@@ -90,7 +93,7 @@ def detect_events(
             events = [Event.from_dict(d) for d in json.loads(path.read_text())]
             logger.info("detect_events %s: cache hit (%d events)", et, len(events))
         else:
-            if et in ("heat_wave", "freeze"):
+            if et in ("heat_wave", "freeze", "cold_snap"):
                 from .temperature import scan_temperature_events
 
                 events = scan_temperature_events(start, det_end, et, **scan_kwargs)
@@ -108,9 +111,20 @@ def detect_events(
     out = sorted(by_id.values(), key=lambda e: (e.start, e.id))
     raw_counts = {t: sum(1 for e in out if e.event_type == t) for t in types}
     if top_n is not None:
+        # cold snaps that a freeze already claims are removed BEFORE curation,
+        # so the duplicate cannot take a slot or be scored twice (the freeze is
+        # the more specific claim; ewb_live/events/cold_snap.py). The drop log
+        # is prepended to select.LAST_DECISIONS so it lands in curation.json.
+        from .cold_snap import subsume_freeze_overlaps
         from .select import rank_and_cap
 
+        subsumed: list[dict] = []
+        out = subsume_freeze_overlaps(out, subsumed)
         out = rank_and_cap(out, top_n)
+        if subsumed:
+            from . import select as _select
+
+            _select.LAST_DECISIONS[:] = subsumed + list(_select.LAST_DECISIONS)
         # merged heat/freeze: member-max under-reports contiguous runs;
         # recompute from the exceedance mask (guardian-design 2026-11-08)
         from .temperature import recompute_merged_max_consec
