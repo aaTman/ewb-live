@@ -215,6 +215,7 @@ def storm_to_event(sid: str, f: pd.DataFrame,
         "peak_category": category(peak_kt),
         "min_pressure_hpa": _norm(min_pres),
         "intensity_units": "kt",
+        "peak_value_units": "kt",   # the dashboard's Peak column unit (app.js)
         "ts_fixes": int(qual.sum()),
         "ts_hours": round(float(span_h) + step, 1),
         "n_fixes": int(len(f)),
