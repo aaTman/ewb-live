@@ -1,41 +1,59 @@
-"""AIWP store backend: s3://noaa-oar-mlwp-data (CIRA / NOAA-GSL 'MLWP' archive).
+"""AIWP backend: CIRA / NOAA-GSL MLWP archive, read via the Icechunk virtual store.
 
-Layout:  <CODE>_v<V>_<INIT>/YYYY/mmdd/<CODE>_v<V>_<INIT>_YYYYMMDDHH_f000_f240_06.nc
-One file per init (00Z and 12Z), lead hours 0..240 step 6, `time` coord holds
-valid times. 0.25 deg lat/lon (721x1440), lon 0..359.75, 13 pressure levels.
+**Virtual-store only (owner ruling 2026-11-17, drop-subsets).** Every MLWP
+forecast read goes through :func:`open_mlwp_forecast` — the single choke
+point for the archive — which opens the local Icechunk repo built by
+``ewb_live.stores.mlwp_icechunk`` (virtual chunk refs into the archive's
+NetCDF4/HDF5 objects; bit-identical to direct reads per
+``scripts/mlwp_verify_store.py``, ~30x faster for subsets, and it handles
+the archive's per-era chunking/variable changes). Nothing is downloaded or
+materialised to disk: bbox+lead+level cuts are applied lazily and only the
+touched HDF5 chunks are range-fetched at ``compute()`` time.
 
-Two read paths:
-* **primary** — the local Icechunk virtual store built by
-  ``ewb_live.stores.mlwp_icechunk`` (virtual chunk refs into the same NetCDF4
-  objects; per mlwp-store agent: bit-identical to direct reads, ~30x faster
-  for subsets, handles archive chunking/variable changes across eras).
-* **fallback** — direct remote HDF5 range reads (h5netcdf via fsspec). Used
-  automatically when the store module/repo is absent, a model or init is not
-  in the store, or the store raises. Keeps us independent of the store's
-  daily (05:30 UTC) update cadence for the freshest inits.
+Consequently:
+* there is **no direct-bucket read path** in this module (the former HDF5
+  range-read fallback is removed); a store miss or an absent store raises
+  ``FileNotFoundError`` so ``open_forecast_nearest_init`` falls back to an
+  earlier published init and callers degrade the same way as for a gap;
+* init *listing* takes the store as authoritative and only tails the
+  store's coverage using the store builder's listing layer
+  (``ewb_live.stores.mlwp_common``) — the one sanctioned direct-bucket
+  consumer (LIST only, never data reads);
+* keep the store fresh: ``ewb-live-store.timer`` (daily 05:30 UTC) plus the
+  weekly catch-up; inits published after the last store update are not
+  readable until the next one.
+
+Concurrency guard (notes/ewb.md, scoring-run incident 2026-11): icechunk
+sessions hang when >= 3 download concurrently in one host, so
+:class:`threading.BoundedSemaphore` bounds concurrent in-process store
+reads; override with ``EWB_LIVE_ICECHUNK_MAX_SESSIONS``.
+
+Archive layout (for reference only — accessed through the store):
+``<CODE>_v<V>_<INIT>/YYYY/mmdd/<CODE>_v<V>_<INIT>_YYYYMMDDHH_f000_f240_06.nc``,
+one file per init (00Z/12Z), leads 0..240 step 6, 0.25 deg, 13 levels.
 """
 
 from __future__ import annotations
 
 import datetime as dt
-import re
+import os
+import threading
 
 import numpy as np
 import xarray as xr
 
-from . import _net
 from . import _transform
 from .registry import CIRA_NAME_TO_EWB, ModelSpec
 
-AIWP_RE = re.compile(r"_v\d+_(IFS|GFS)_(\d{10})_f\d{3}_f\d{3}_\d{2}\.nc$")
 AIWP_LEADS = list(range(0, 241, 6))
 #: values above this are unmasked CF default fill (9.96921e36) in the source
 #: files — e.g. GraphCast lead 0, which the 2-step model does not produce
 _FILL_LIMIT = 9e35
 
-
-class _StoreMiss(Exception):
-    """Requested data not servable from the icechunk store; use direct path."""
+#: max concurrent icechunk read sessions per process (notes/ewb.md: >=3
+#: concurrent S3-downloading sessions hang; 2 keeps scoring pools safe)
+ICECHUNK_MAX_SESSIONS = max(1, int(os.environ.get("EWB_LIVE_ICECHUNK_MAX_SESSIONS", "2")))
+_ICECHUNK_SESSIONS = threading.BoundedSemaphore(ICECHUNK_MAX_SESSIONS)
 
 
 def _code(spec: ModelSpec) -> str:
@@ -47,14 +65,14 @@ def _code(spec: ModelSpec) -> str:
 
 
 def _store():
-    """Lazy import of the mlwp icechunk store module (may not exist)."""
+    """Lazy import of the mlwp icechunk store module (None if repo absent)."""
     try:
         from ..stores import mlwp_icechunk as mod
 
         if not mod.repo_exists(mod.DEFAULT_REPO):
             return None
         return mod
-    except Exception:  # noqa: BLE001 - store absent/broken: direct path only
+    except Exception:  # noqa: BLE001 - store absent/broken: reads must fail loud
         return None
 
 
@@ -102,70 +120,78 @@ def _finish(
     return _transform.assemble(out, np.datetime64(init.replace(tzinfo=None), "ns"), leads, bbox)
 
 
-# --------------------------------------------------------------------- store path
-def _open_via_store(
-    spec: ModelSpec, init: dt.datetime, native: dict[str, str], leads: list[int], bbox
+# --------------------------------------------------------------- choke point
+def open_mlwp_forecast(
+    spec: ModelSpec,
+    init: dt.datetime,
+    variables: list[str],
+    lead_hours: list[int],
+    bbox,
 ) -> xr.Dataset:
+    """THE entry point for CIRA MLWP forecast data (virtual store only).
+
+    Everything that evaluates MLWP forecasts must arrive here (normally via
+    ``sources.open_forecast`` / ``scoring.fc_cache`` / ``viz``); the
+    no-direct-access rule is enforced by tests/test_mlwp_store_guard.py.
+    Lazy store view -> init/lead/level/bbox cut in memory -> one bounded
+    session per call -> in-memory result. Raises FileNotFoundError when the
+    store or the init is unavailable.
+    """
     store = _store()
     if store is None:
-        raise _StoreMiss("store unavailable")
-    code = _code(spec)
-    try:
-        # open_init() decodes only the one era group holding this init (measured
-        # 0.8s open); open_model() builds the full model view (~8 GB / ~115 s for
-        # the largest model) — never do that on a per-request path.
-        ds = store.open_init(code, init)
-        init64 = np.datetime64(init.replace(tzinfo=None), "ns")
-        ds = ds[list(native)].sel(init_time=init64)  # scalar sel drops the dim
-        ds = ds.sel(lead_time=np.array([np.timedelta64(h, "h") for h in leads]))
-        lv = [int(l) for l in (spec.levels or [])]
-        if lv:
-            ds = ds.sel(level=lv) if "level" in ds.dims else ds
-        ds = _grid_cut(ds, bbox)
-        per_var: dict[str, xr.DataArray] = {}
-        for nat, ewb_name in native.items():
-            da = ds[nat].rename({"lead_time": "lead"}).transpose("lead", ...)
-            per_var[ewb_name] = da.compute()
-        return _finish(per_var, init, leads, bbox)
-    except _StoreMiss:
-        raise
-    except Exception as exc:  # noqa: BLE001 - any store hiccup falls back
-        raise _StoreMiss(f"{type(exc).__name__}: {exc}") from exc
-
-
-# --------------------------------------------------------------------- direct path
-def _open_direct(
-    spec: ModelSpec, init: dt.datetime, native: dict[str, str], leads: list[int], bbox
-) -> xr.Dataset:
-    code = _code(spec)
-    path = (
-        f"{_net.AIWP_BUCKET}/{code}/{init:%Y}/{init:%m%d}/"
-        f"{code}_{init:%Y%m%d%H}_f000_f240_06.nc"
-    )
-    f = _net.open_remote_nc(f"s3://{path}")
-    try:
-        raw = xr.open_dataset(f, engine="h5netcdf", decode_times=True)
-        times = np.array(
-            [
-                np.datetime64(init.replace(tzinfo=None), "h") + np.timedelta64(h, "h")
-                for h in leads
-            ]
+        raise FileNotFoundError(
+            "CIRA MLWP Icechunk store unavailable (repo missing or unreadable); "
+            "MLWP reads require the virtual store — build/update it with "
+            "'python -m ewb_live.stores.mlwp_icechunk build|update'"
         )
-        ds = raw[list(native)].sel(time=times)
-        lv = [int(l) for l in (spec.levels or [])]
-        if "level" in ds.dims and lv:
-            ds = ds.sel(level=lv)
-        ds = _grid_cut(ds, bbox)
-        per_var: dict[str, xr.DataArray] = {}
-        for nat, ewb_name in native.items():
-            da = ds[nat].rename({"time": "lead"}).transpose("lead", ...)
-            per_var[ewb_name] = da.chunk({"lead": 6}).compute()
-    finally:
-        f.close()
+    native = _native_map(spec, variables)
+    leads = _select_leads(lead_hours, spec)
+    code = _code(spec)
+    with _ICECHUNK_SESSIONS:
+        try:
+            # open_init() decodes only the one era group holding this init (measured
+            # 0.8s open); open_model() builds the full model view (~8 GB / ~115 s for
+            # the largest model) — never do that on a per-request path.
+            ds = store.open_init(code, init)
+            init64 = np.datetime64(init.replace(tzinfo=None), "ns")
+            ds = ds[list(native)].sel(init_time=init64)  # scalar sel drops the dim
+            ds = ds.sel(lead_time=np.array([np.timedelta64(h, "h") for h in leads]))
+            lv = [int(l) for l in (spec.levels or [])]
+            if lv:
+                ds = ds.sel(level=lv) if "level" in ds.dims else ds
+            ds = _grid_cut(ds, bbox)
+            per_var: dict[str, xr.DataArray] = {}
+            for nat, ewb_name in native.items():
+                da = ds[nat].rename({"lead_time": "lead"}).transpose("lead", ...)
+                per_var[ewb_name] = da.compute()
+        except KeyError as exc:
+            # open_init raises KeyError for absent model/init: same contract
+            # as a missing object on the old direct path (nearest-init works)
+            raise FileNotFoundError(
+                f"{code} init {init:%Y-%m-%d %H:%M} not in MLWP store: {exc}"
+            ) from exc
+        except FileNotFoundError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - store failure is terminal now
+            raise RuntimeError(
+                f"MLWP virtual-store read failed for {code} "
+                f"{init:%Y%m%d%H}Z: {type(exc).__name__}: {exc}"
+            ) from exc
     return _finish(per_var, init, leads, bbox)
 
 
-# ------------------------------------------------------------------------- public
+def open_forecast(
+    spec: ModelSpec,
+    init: dt.datetime,
+    variables: list[str],
+    lead_hours: list[int],
+    bbox,
+) -> xr.Dataset:
+    """Backend entry point — routes straight to the virtual-store choke point."""
+    return open_mlwp_forecast(spec, init, variables, lead_hours, bbox)
+
+
+# ------------------------------------------------------------------- listing
 def _known_bad_files(store, code: str) -> set[str]:
     """Bare filenames of upstream objects the store knows are unreadable
     (truncated/corrupt). Empty set if the store lacks the API."""
@@ -181,13 +207,16 @@ def _known_bad_files(store, code: str) -> set[str]:
 def available_inits(spec: ModelSpec, start: dt.datetime, end: dt.datetime) -> list[dt.datetime]:
     """Inits available for a model in [start, end] (full history supported).
 
-    The Icechunk store covers the FULL CIRA archive (virtual refs, daily update),
-    so its listing is the primary answer and works for 2020-era queries without
-    ~2200 bucket LIST calls. The direct bucket listing (authoritative for brand-new
-    files, and the only path when the store is absent) then only has to cover the
-    tail newer than the store's last init. The store listing already excludes
-    upstream-corrupt objects (known-bad ledger); the direct path skips them too.
+    The Icechunk store covers the FULL CIRA archive (virtual refs, daily
+    update), so its listing is the answer for everything it covers — no
+    per-day bucket LIST for 2020-era queries. The tail newer than the
+    store's last init is listed through the store builder's own listing
+    layer (``stores.mlwp_common``; LIST only). When the store is absent the
+    whole window is listed there, so *listing* still works; only reads
+    require the store.
     """
+    from ..stores import mlwp_common as mc
+
     code = _code(spec)
     store = _store()
     bad = _known_bad_files(store, code) if store is not None else set()
@@ -198,44 +227,23 @@ def available_inits(spec: ModelSpec, start: dt.datetime, end: dt.datetime) -> li
             store_inits = store.list_inits(code)
             out.update(t for t in store_inits if start <= t <= end)
             covered_through = max(store_inits) if store_inits else None
-        except Exception:  # noqa: BLE001 - store unreadable: direct only
+        except Exception:  # noqa: BLE001 - store unreadable: tail-list only
             covered_through = None
-    # direct bucket listing from the first day the store might not know about;
-    # re-listing the store's last covered day is 1 cheap LIST and closes any gap.
+    # tail-list from the first day the store might not know about; re-listing
+    # the store's last covered day is 1 cheap LIST and closes any gap.
     if covered_through is None or covered_through < start:
         day = dt.datetime(start.year, start.month, start.day)
     else:
         day = dt.datetime(covered_through.year, covered_through.month, covered_through.day)
     while day <= end:
-        key = f"{code}/{day:%Y}/{day:%m%d}/"
-        try:
-            keys = _net.list_prefix(_net.AIWP_BUCKET, key, suffix=".nc")
-        except FileNotFoundError:  # missing day is normal
-            keys = []
-        except Exception as exc:  # noqa: BLE001 - probe failure != absent day
-            raise RuntimeError(f"aiwp listing failed for {key}: {exc}") from exc
-        for k in keys:
-            if k.rsplit("/", 1)[-1] in bad:
+        for fn in mc.day_files(code, day.date()):
+            if fn in bad:
                 continue
-            m = AIWP_RE.search(k)
-            if m:
-                ts = dt.datetime.strptime(m.group(2), "%Y%m%d%H")
-                if start <= ts <= end:
-                    out.add(ts)
+            try:
+                _, init, _ = mc.parse_filename(fn)
+            except ValueError:
+                continue
+            if start <= init <= end:
+                out.add(init)
         day += dt.timedelta(days=1)
     return sorted(out)
-
-
-def open_forecast(
-    spec: ModelSpec,
-    init: dt.datetime,
-    variables: list[str],
-    lead_hours: list[int],
-    bbox,
-) -> xr.Dataset:
-    native = _native_map(spec, variables)
-    leads = _select_leads(lead_hours, spec)
-    try:
-        return _open_via_store(spec, init, native, leads, bbox)
-    except _StoreMiss:
-        return _open_direct(spec, init, native, leads, bbox)

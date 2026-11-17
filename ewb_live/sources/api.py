@@ -12,7 +12,12 @@ dims (init_time, lead_time, level?, latitude, longitude); EWB variable names
 hPa (int). bbox is (lat_min, lat_max, lon_min, lon_max), longitudes in
 [-180, 180], wraps the antimeridian when lon_min > lon_max.
 
-Materialised results are cached as zarr under data/cache/subsets/.
+Repeat calls are memoised IN-PROCESS only (bounded LRU, ~512 MB default,
+``EWB_LIVE_MEM_CACHE_MB``). There is no on-disk forecast-subset cache:
+owner ruling 2026-11-17 removed the retired materialised subset tree —
+MLWP reads go through the Icechunk virtual store
+(:mod:`ewb_live.stores.mlwp_icechunk`) and every other backend re-reads
+its source. ``use_cache`` toggles the in-process memo, not a disk cache.
 """
 
 from __future__ import annotations
@@ -21,11 +26,12 @@ import datetime as dt
 import hashlib
 import json
 import os
-import shutil
+import threading
+from collections import OrderedDict
 
 import xarray as xr
 
-from . import _net, aigfs, aiwp, ecmwf
+from . import aigfs, aiwp, ecmwf
 from .registry import LEVEL_VARS_EWB, ModelSpec, models
 
 _BACKENDS = {"aiwp": aiwp, "ecmwf": ecmwf, "aigfs": aigfs}
@@ -91,6 +97,46 @@ def open_forecast_nearest_init(
         raise exc0
 
 
+# ------------------------------------------------------------------ in-process memo
+# Bounded LRU replacing the old on-disk subset materialisation. Entries are
+# fully materialised Datasets shared between callers; treat them as read-only.
+_MEM_CACHE_MAX_BYTES = int(os.environ.get("EWB_LIVE_MEM_CACHE_MB", "512")) * 1024**2
+_mem_lock = threading.Lock()
+_mem_cache: OrderedDict[str, xr.Dataset] = OrderedDict()
+_mem_bytes = 0
+
+
+def _mem_get(key: str) -> xr.Dataset | None:
+    with _mem_lock:
+        ds = _mem_cache.get(key)
+        if ds is not None:
+            _mem_cache.move_to_end(key)
+        return ds
+
+
+def _mem_put(key: str, ds: xr.Dataset) -> None:
+    global _mem_bytes
+    nbytes = int(ds.nbytes)
+    with _mem_lock:
+        # an object larger than the whole budget is simply not retained
+        if nbytes > _MEM_CACHE_MAX_BYTES:
+            return
+        _mem_cache[key] = ds
+        _mem_bytes += nbytes
+        while _mem_bytes > _MEM_CACHE_MAX_BYTES and _mem_cache:
+            _k, old = _mem_cache.popitem(last=False)
+            _mem_bytes -= int(old.nbytes)
+
+
+def _materialize(ds: xr.Dataset) -> xr.Dataset:
+    """Compute any lazy arrays so the Dataset is safe to retain and share."""
+    lazy = any(
+        type(v.data).__module__.split(".", 1)[0] in ("dask", "zarr", "fsspec")
+        for v in ds.data_vars.values()
+    )
+    return ds.compute() if lazy else ds
+
+
 def _cache_key(spec: ModelSpec, init, variables, lead_hours, bbox) -> str:
     payload = json.dumps(
         {
@@ -125,37 +171,19 @@ def open_forecast(
         raise ValueError("variables must be a non-empty list")
     leads = list(lead_hours) if lead_hours else list(DEFAULT_LEADS)
 
-    cdir = _net.cache_path(
-        "subsets", spec.name, f"{init:%Y%m%d%H}Z", _cache_key(spec, init, variables, leads, bbox)
-    )
-    zpath = os.path.join(cdir, "ds.zarr")
-    if use_cache and os.path.isdir(zpath):
-        try:
-            return xr.open_zarr(zpath, consolidated=False)
-        except Exception:  # noqa: BLE001
-            # kill mid-write leaves a partial store that re-throws forever;
-            # drop the cache entry and refetch (ponytail 2026-11-08)
-            shutil.rmtree(zpath, ignore_errors=True)
+    key = _cache_key(spec, init, variables, leads, bbox)
+    if use_cache:
+        hit = _mem_get(key)
+        if hit is not None:
+            return hit
 
-    from .cache import maybe_prune_daily
-
-    maybe_prune_daily()
     ds = _BACKENDS[spec.backend].open_forecast(spec, init, variables, leads, bbox)
     # reorder level descending (surface -> top) like EWB expects for CAPE paths
     if "level" in ds.dims:
         ds = ds.isel(level=slice(None, None, -1)) if ds.level[0] < ds.level[-1] else ds
     if use_cache:
-        try:
-            # write side-then-move: a kill mid-mode="w" would leave a partial
-            # store at the final path (ponytail 2026-11-08)
-            tmp = zpath + ".tmp"
-            shutil.rmtree(tmp, ignore_errors=True)
-            ds.to_zarr(tmp, mode="w", consolidated=False)
-            shutil.rmtree(zpath, ignore_errors=True)
-            os.replace(tmp, zpath)
-            ds = xr.open_zarr(zpath, consolidated=False)
-        except Exception:  # noqa: BLE001 - cache is best-effort
-            pass
+        ds = _materialize(ds)
+        _mem_put(key, ds)
     return ds
 
 
