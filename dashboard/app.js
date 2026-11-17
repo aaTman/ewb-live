@@ -7,12 +7,13 @@
 const TYPE_META = {
   heat_wave:          { label: 'Heat waves',         short: 'Heat wave',          color: 'var(--series-heat)' },
   freeze:             { label: 'Freezes',            short: 'Freeze',             color: 'var(--series-freeze)' },
+  cold_snap:          { label: 'Cold snaps',         short: 'Cold snap',          color: 'var(--series-cold-snap)' },
   atmospheric_river:  { label: 'Atmospheric rivers', short: 'Atmospheric river',  color: 'var(--series-ar)' },
 };
 /* AR green (design 2026-11-08, owner request): all type colors resolve
    through CSS tokens — dual-theme values, no hardcoded hex in JS. */
 const TYPE_SERIES_VAR = { heat_wave: '--series-heat', freeze: '--series-freeze',
-  atmospheric_river: '--series-ar' };
+  cold_snap: '--series-cold-snap', atmospheric_river: '--series-ar' };
 function cssVar(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || fallback;
@@ -20,14 +21,15 @@ function cssVar(name, fallback) {
 function typeColor(etype) {
   return cssVar(TYPE_SERIES_VAR[etype] || '--series-unknown', '#848475');
 }
-const TYPE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river'];
+const TYPE_ORDER = ['heat_wave', 'freeze', 'cold_snap', 'atmospheric_river'];
 
 /* Owner 2026-11-07: empty lanes are legitimate (freezes may be empty at p15).
    Criteria wording mirrors ewb_live/events/temperature.py + ar.py thresholds —
    keep in sync if detection parameters change. */
 const TYPE_CRITERIA = {
   heat_wave: 'Every 6-hourly step of a UTC day has 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology (per day of year and hour), over land. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). The map shades only cells that reach the same 3-consecutive-day minimum (consecutive COMPLETED days; cells below it are blank because they can never become an event), dithered = today so far on an already-qualifying cell.',
-  freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), over land. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). On the map the freeze layer shades cells from their first consecutive COMPLETED day (cold runs are short, so 1–2-day cells stay visible for context; a freeze still needs 3+ days), dithered = today so far on a cell with at least one completed day.',
+  freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour) and at or below 0 °C, over land. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). On the map the freeze layer shades cells from their first consecutive COMPLETED day (cold runs are short, so 1–2-day cells stay visible for context; a freeze still needs 3+ days), dithered = today so far on a cell with at least one completed day.',
+  cold_snap: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), over land — the freeze rule without its ≤0 °C requirement. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). Where a freeze covers the same window and box the freeze is published instead of the cold snap, so the two never double-count a spell. The cold-snap lane has no raw layer of its own — it reads the same P15 layer as freeze, shading cells from their first consecutive COMPLETED day (dithered = today so far on a cell with at least one completed day).',
   atmospheric_river: 'Integrated water-vapour transport peaking at ≥400 kg m⁻¹ s⁻¹ and reaching land.',
 };
 const emptyLaneLine = (t) => t === 'all'
@@ -795,6 +797,7 @@ function metricsFor(etype) {
   // headline = the metric that reads as skill by lead (RMSE for heat/freeze, CSI for AR); the signed
   // event-level duration error stays behind 'more metrics' (G-10)
   const pref = { heat_wave: 'RootMeanSquaredError', freeze: 'RootMeanSquaredError',
+    cold_snap: 'RootMeanSquaredError',
     atmospheric_river: 'CriticalSuccessIndex' }[etype];
   if (!state.scMore && all.length > 1) return [all.includes(pref) ? pref : all[0]];
   return all;

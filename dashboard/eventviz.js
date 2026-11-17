@@ -118,6 +118,11 @@
     // #dbe9f6 → #08306b, domain 250–1000 kg m⁻¹ s⁻¹, alpha 0 below 250.
     ivt: stops(['#dbe9f6', '#c6dbef', '#9ecae1', '#6baed6', '#4292c6', '#2171b5', '#08519c', '#08306b']),
   };
+  /* cold_snap (owner 2026-11-16) is the freeze rule without the 0 °C cap: the
+     same p15 field, so it renders with the freeze ramp/colour until the design
+     pass gives it its own identity. Only AR is the other kind. */
+  function isFreezeLike(t) { return t === 'freeze' || t === 'cold_snap'; }
+
   function rampRGB(ramp, t) {
     t = Math.max(0, Math.min(1, t));
     const x = t * (ramp.length - 1), i = Math.min(ramp.length - 2, Math.floor(x)), f = x - i;
@@ -524,14 +529,14 @@
        heat: cells above P85 in one warm color; freeze: cells below P15 in one
        blue. The asset drives it: viz.quantile picks the tier and the ramp. */
     const tierQ = !isAR && Number.isFinite(viz.quantile)
-      ? Math.round(viz.quantile * 100) : (viz.event_type === 'freeze' ? 15 : 85);
-    const tierCSS = isAR ? '' : css(viz.event_type === 'freeze' ? '--tier-freeze' : '--tier-heat',
-      viz.event_type === 'freeze' ? '#2171b5' : '#d9663c');
+      ? Math.round(viz.quantile * 100) : (isFreezeLike(viz.event_type) ? 15 : 85);
+    const tierCSS = isAR ? '' : css(isFreezeLike(viz.event_type) ? '--tier-freeze' : '--tier-heat',
+      isFreezeLike(viz.event_type) ? '#2171b5' : '#d9663c');
     const tierLabel = 'P' + tierQ;
     const tierLegend = isAR ? null : {
       color: tierCSS, label: tierLabel,
-      tip: (viz.event_type === 'freeze' ? 'daily value below the ' : 'daily value at or above the ')
-        + tierQ + 'th-percentile local climatology',
+      tip: (isFreezeLike(viz.event_type) ? 'daily value below the '
+        : 'daily value at or above the ') + tierQ + 'th-percentile local climatology',
     };
     const dark = isDarkTheme();
     const grid = viz.grid, ny = grid.lat.length, nx = grid.lon.length;
@@ -653,7 +658,8 @@
     const chip = (function () {
       if (!ev || !ev.id || !viz.grid) return null;
       const name = viz.event_type === 'heat_wave' ? 'Heatwave'
-        : viz.event_type === 'freeze' ? 'Freeze' : 'Atmospheric river';
+        : viz.event_type === 'freeze' ? 'Freeze'
+        : viz.event_type === 'cold_snap' ? 'Cold snap' : 'Atmospheric river';
       let lat = 0, lon = 0, k = 0, anchor = null;
       try {
         let rows = isAR
@@ -1048,7 +1054,9 @@
       const legend = { color: layers.obs ? layers.obs.color : tierLegend.color,
                        label: tierLegend.label, tip: tierLegend.tip };
       const heat = viz.event_type === 'heat_wave';
-      obsPanel.setBar((heat ? 'Heat \u2014 days > ' : 'Freeze \u2014 days < ') + 'P' + tierQ, legend,
+      const kindLab = heat ? 'Heat' : isFreezeLike(viz.event_type)
+        ? (viz.event_type === 'cold_snap' ? 'Cold snap' : 'Freeze') : 'Freeze';
+      obsPanel.setBar(kindLab + ' \u2014 days ' + (heat ? '> ' : '< ') + 'P' + tierQ, legend,
         'Consecutive UTC days the cell has exceeded the P' + tierQ + ' climatology at all four ' +
         '6-hourly steps; darkest = ' + (heat ? '14+ days (runs under 3 days are not painted)' : '7+ days') + '.');
     }

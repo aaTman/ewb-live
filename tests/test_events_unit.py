@@ -80,16 +80,27 @@ def test_temperature_clip_product_decision(monkeypatch):
     monkeypatch.delenv("EWB_LIVE_FREEZE_CLIP")
     monkeypatch.delenv("EWB_LIVE_HEAT_CLIP")
     assert EVENT_CLIP["freeze"]["q_upper"] == 0.15
+    # cold snap (owner 2026-11-16) is the freeze rule minus the <=0C cap: the
+    # same p15 clip, moved by the same env override so the two p15 lanes can
+    # never drift apart (ewb_live/events/cold_snap.py)
+    assert "cold_snap" in EVENT_CLIP
+    assert EVENT_CLIP["cold_snap"] == EVENT_CLIP["freeze"]
+    monkeypatch.setenv("EWB_LIVE_FREEZE_CLIP", "0.05")
+    assert EVENT_CLIP["cold_snap"]["q_upper"] == 0.05
+    monkeypatch.delenv("EWB_LIVE_FREEZE_CLIP")
+    assert EVENT_CLIP["cold_snap"]["q_upper"] == 0.15
     # membership/iteration must see the active keys (box bug 2026-11-06:
     # a dict-subclass with only __missing__ made `in` always False and the
     # scan guard rejected every event type)
     assert "heat_wave" in EVENT_CLIP and "freeze" in EVENT_CLIP
-    assert sorted(EVENT_CLIP) == ["freeze", "heat_wave"]
-    assert len(EVENT_CLIP) == 2
+    assert sorted(EVENT_CLIP) == ["cold_snap", "freeze", "heat_wave"]
+    assert len(EVENT_CLIP) == 3
     # comparison mode keeps the EWB data_prep CLI defaults
     assert EVENT_CLIP_MODES["ewb_default"]["heat_wave"] == dict(
         q_lower=0.85, op_lower=">", q_upper=None, op_upper="<")
     assert EVENT_CLIP_MODES["ewb_default"]["freeze"] == dict(
+        q_lower=None, op_lower=">", q_upper=0.15, op_upper="<")
+    assert EVENT_CLIP_MODES["ewb_default"]["cold_snap"] == dict(
         q_lower=None, op_lower=">", q_upper=0.15, op_upper="<")
 
 

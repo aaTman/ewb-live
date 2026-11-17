@@ -26,6 +26,11 @@
   /* ---- Series (§1/§7.1: exact hex, duplicated into JS) ---- */
   --series-heat:          #c6493c;  --series-heat-soft:     #f1d5d2;
   --series-freeze:        #1a4f96;  --series-freeze-soft:   #cbd7e6;
+  /* Cold snap (owner 2026-11-16): the freeze rule without the 0 °C cap, so it
+     keeps the cold-blue family but a distinct teal hue. Measured: 6.04:1 on
+     canvas/paper and 6.04:1 as a white chip background; L* 41.8 sits between
+     freeze (34.0) and heat (48.4) on the lightness ladder. */
+  --series-cold-snap:      #0e6d78;  --series-cold-snap-soft:  #cfe2e4;
   --series-ar:            #2e7d32;  --series-ar-soft:       #d0e4d1;  /* AR green (design 2026-11-08, measured 5.13:1) */
   --series-alt:           #4f8c1f;  --series-alt-soft:      #d7e4cb;
   --series-unknown:       #848475;  --series-unknown-soft:  #e2e2de;
@@ -73,6 +78,7 @@
   --worse:  198, 73, 60;   /* rgb — series-heat (worse-than-baseline)  */
   --heat:   var(--series-heat);
   --freeze: var(--series-freeze);
+  --cold-snap: var(--series-cold-snap);
   --ar:     var(--series-ar);
   --shadow: 0 1px 2px rgba(38, 38, 32, .06);
   --mono: var(--font-mono);
@@ -107,6 +113,9 @@ html[data-theme="dark"] {
 
   --series-heat:          #f57160;  --series-heat-soft:     #4a332e;  /* L* 63.4 */
   --series-freeze:        #4d73bf;  --series-freeze-soft:   #2d3c52;  /* L* 49.0 */
+  /* cold snap teal, dark: 3.29 on dark paper (freeze: 3.26) and 4.60 as a
+     white chip background; L* 49.3 — the freeze rung of the dark ladder */
+  --series-cold-snap:      #26808f;  --series-cold-snap-soft:  #224247;
   --series-ar:            #66bb6a;  --series-ar-soft:       #2e4434;  /* AR green dark (design 2026-11-08, 6.40:1) */
   --series-alt:           #78b447;  --series-alt-soft:      #33402a;
   --series-unknown:       #acab9c;  --series-unknown-soft:  #3b3b34;
@@ -135,6 +144,7 @@ html[data-theme="dark"] {
   --worse:  232, 124, 110; /* #e87c6e — 5.43 on dark paper */
   --heat:   var(--series-heat);
   --freeze: var(--series-freeze);
+  --cold-snap: var(--series-cold-snap);
   --ar:     var(--series-ar);
   --shadow: 0 1px 4px rgba(0, 0, 0, .40);
 

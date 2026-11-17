@@ -42,6 +42,14 @@ weight of one spell (and ~15 extra event-scoring jobs per weekly run). So:
 
 Partial overlaps with any *other* type keep going through the existing
 cross-type rule (``select._resolve_conflicts``).
+
+EWB side (installed 1.1.1): it ships no cold-snap event type — its ``events/``
+package has AR, severe convection and tropical cyclone only — and ``event_type``
+is a free-form string used for nothing but matching a case to its
+``EvaluationObject`` (``cases.py``). So ``"cold_snap"`` passes through EWB
+untouched and the event is scored with freeze's EWB ingredients
+(``defaults.era5_freeze_target`` + MinMAE / RMSE / DurationMeanError at the p15
+threshold): the quantities are identical, only the event set differs.
 """
 
 from __future__ import annotations
