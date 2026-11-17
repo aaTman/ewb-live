@@ -699,10 +699,16 @@ def test_download_route_prefers_s3_and_falls_back(monkeypatch, tmp_path):
 
     monkeypatch.setattr(imerg, "_get_s3", s3_fail)
     monkeypatch.setattr(imerg, "_get_https", https_ok)
+    monkeypatch.setitem(imerg._S3_CACHE, "s3_broken", False)
     dest = tmp_path / "out" / "g.nc4"
     out = imerg.download_granule("https://example/g.nc4", dest, creds=("u", "p"),
                                  log=lambda m: None)
     assert tried == ["s3", "https"] and Path(out).exists()
+    assert imerg._S3_CACHE.get("s3_broken") is True      # breaker tripped for this process
+    tried.clear()
+    imerg.download_granule("https://example/g.nc4", tmp_path / "y.nc4", creds=("u", "p"),
+                           log=lambda m: None)           # route auto again
+    assert tried == ["https"]                            # the dead route is not re-paid
     tried.clear()
     with pytest.raises(ImergError, match="AccessDenied"):
         imerg.download_granule("https://example/g.nc4", tmp_path / "x.nc4", creds=("u", "p"),

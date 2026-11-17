@@ -499,6 +499,10 @@ def download_granule(url: str, dest: Path, *, creds: tuple[str, str] | None = No
     if route not in ROUTES:
         raise ImergError(f"unknown route {route!r}; use {'|'.join(ROUTES)}")
     order = {"auto": ("s3", "https"), "s3": ("s3",), "https": ("https",)}[route]
+    if route == "auto" and _S3_CACHE.get("s3_broken"):
+        order = ("https",)   # the mirror already failed once in this process: don't
+                             # pay the failed attempt per granule (measured: a same-region
+                             # role off-AWS fails *every* granule the same way)
     geters = {"s3": _get_s3, "https": _get_https}
     dest = Path(dest)
     if dest.exists() and not overwrite:
@@ -519,9 +523,13 @@ def download_granule(url: str, dest: Path, *, creds: tuple[str, str] | None = No
         except Exception as exc:       # transport-library blowups (e.g. an s3fs/botocore
             last = exc                 # version skew raising TypeError mid-download):
                                        # the route is a preference, not a requirement
-            if len(order) > 1 and log:
-                log(f"{name} route failed for {Path(url).name}: "
-                    f"{type(exc).__name__}: {exc}" + (" — trying the next route" if name != order[-1] else ""))
+        if name == "s3" and route == "auto":
+            _S3_CACHE["s3_broken"] = True   # measured 2026-11-17: the minted role is
+                                             # same-region — off-AWS every granule fails
+                                             # the same way; don't re-pay it per granule
+        if log and name != order[-1]:
+            log(f"{name} route failed for {Path(url).name}: {type(last).__name__}: "
+                f"{last} — trying the next route")
     raise ImergError(f"all IMERG routes failed for {url} ({last})")
 
 
@@ -655,17 +663,26 @@ def s3_key(url: str) -> str:
 
 
 def _s3_filesystem(tmp_creds: dict):
+    import inspect
+
     import s3fs
 
     with _S3_LOCK:
         if _S3_CACHE["fs"] is not None and _S3_CACHE["creds"] is tmp_creds:
             return _S3_CACHE["fs"]
-    fs = s3fs.S3FileSystem(
-        key=tmp_creds["access_key_id"], secret=tmp_creds["secret_access_key"],
-        token=tmp_creds["session_token"], anon=False,
-        client_kwargs={"region_name": tmp_creds.get("region") or S3_REGION},
-        block_size=8 << 20, cache_type="none", config_kwargs=_botocore_timeouts(),
-    )
+
+    #: s3fs has renamed its knobs across versions (measured live on the LXC venv,
+    #: s3fs 2026.9.0: ``use_threads``/``block_size``/``cache_type`` are gone and land
+    #: on botocore's AioSession as unexpected kwargs -> TypeError mid-download). Pass
+    #: only what this s3fs version actually accepts; old versions keep the old names.
+    accepted = set(inspect.signature(s3fs.S3FileSystem.__init__).parameters)
+    want = {"key": tmp_creds["access_key_id"], "secret": tmp_creds["secret_access_key"],
+            "token": tmp_creds["session_token"], "anon": False,
+            "client_kwargs": {"region_name": tmp_creds.get("region") or S3_REGION},
+            "config_kwargs": _botocore_timeouts(),
+            "default_block_size": 8 << 20, "default_cache_type": "none",
+            "block_size": 8 << 20, "cache_type": "none", "use_threads": False}
+    fs = s3fs.S3FileSystem(**{k: v for k, v in want.items() if k in accepted})
     with _S3_LOCK:
         _S3_CACHE["fs"] = fs
     return fs
@@ -715,11 +732,22 @@ def _get_s3(url: str, dest: Path, creds: tuple[str, str], *,
         except FileNotFoundError:
             raise ImergError(f"{obj} not found in the AWS mirror (the CMR granule listing "
                              "may be ahead of the copy)")
-        except (PermissionError, OSError) as exc:
-            last = exc
-            if "AccessDenied" in str(exc) or "ExpiredToken" in str(exc) \
-                    or "InvalidAccessKeyId" in str(exc):
+        except PermissionError as exc:
+            msg = str(exc)
+            if "ExpiredToken" in msg or "InvalidAccessKeyId" in msg:
                 tmp = s3_credentials(creds, force=True) or tmp   # rotate and retry once
+                last = exc
+            else:
+                # 403 does not heal by retrying. Measured live 2026-11-17: the mint
+                # hands out arn:...:assumed-role/s3-same-region-access-role/... which is
+                # only usable from inside the bucket's region — off-AWS hosts get
+                # Forbidden on everything and the HTTPS route is the real path.
+                raise ImergError(
+                    f"AWS mirror refused {obj}: {msg[:140]} (the s3credentials role is "
+                    "same-region; from a non-AWS host only the GES DISC HTTPS route "
+                    "works — it is the automatic fallback)") from exc
+        except (ImergError, OSError) as exc:
+            last = exc
         time.sleep(min(60.0, 2.0 ** attempt) + random.uniform(0.0, 0.5))
     raise ImergError(f"S3 download failed after {DOWNLOAD_TRIES} tries: {obj} ({last})")
 
@@ -1658,7 +1686,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover - CLI
         if means:
             log(f"sanity: global mean {np.mean(means):.2f} mm/day (climatological expectation "
                 f"~2-3), daily fields "
-                f"{summary['disk']['daily_mb']} MB, raw {summary['disk']['raw_mb']} MB")
+                f"{summary['disk']['daily']} MB, raw {summary['disk']['raw']} MB")
         return 0
 
     if args.cmd == "status":
