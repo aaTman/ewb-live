@@ -73,10 +73,13 @@ AR_MAX_PEAK_IVT = float(os.environ.get("EWB_LIVE_AR_IVT_MAX_KGM_S", "1500"))
 # the overlap rule would delete the most interesting rows in the catalog.
 # Flagged for the owner in notes/channel_new_events.md.
 TRACK_TYPES = {"tropical_cyclone"}
-# a 90-day window holds ~25-30 named storms globally; the global 15-per-type
-# cap would drop a third of the season
+# a 90-day window is not 15 storms: measured on IBTrACS v04r01 on 2026-11-17,
+# the trailing 90 days held 43 qualifying storms (16 NE Pacific, 14 NW Pacific,
+# 7 Atlantic, 3 North Indian, 3 southern). The global per-type default (15)
+# would silently drop most of the season, so the lane carries its own quota;
+# 60 covers a busy window without pretending to be unlimited.
 TOP_N_BY_TYPE = {"tropical_cyclone":
-                 int(os.environ.get("EWB_LIVE_TOP_N_TC", "30"))}
+                 int(os.environ.get("EWB_LIVE_TOP_N_TC", "60"))}
 
 
 @functools.lru_cache(maxsize=2)

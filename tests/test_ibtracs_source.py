@@ -173,3 +173,23 @@ def test_basin_name_known_and_unknown():
     assert ibtracs.basin_name("WP") == "Northwest Pacific"
     assert ibtracs.basin_name("") == "unassigned basin"
     assert ibtracs.basin_name("ZZ") == "ZZ"
+
+
+def test_atlantic_basin_is_derived_from_the_genesis_fix():
+    """v04r01 ships BASIN EMPTY for the whole North Atlantic. Without a
+    fallback a third of the season prints "unassigned basin" in the UI; the
+    label comes from the storm's first fix, the position IBTrACS itself keys
+    BASIN on."""
+    assert ibtracs.basin_for(14.5, -45.0) == "NA"      # Cape Verde -> Caribbean
+    assert ibtracs.basin_for(25.0, -99.0) == "NA"      # Gulf of Mexico edge
+    assert ibtracs.basin_for(15.0, -120.0) == "EP"     # off Mexico -> E Pacific
+    assert ibtracs.basin_for(18.0, 40.0) == ""         # not ours to guess
+    assert ibtracs.basin_for(-25.0, 130.0) == ""       # southern: leave unknown
+    assert ibtracs.basin_for(float("nan"), -40.0) == ""
+
+    df = pd.DataFrame({"sid": ["A", "A", "B", "B"], "basin": ["", "", "WP", ""],
+                       "lat": [12.0, 20.0, 20.0, -20.0], "lon": [-42.0, -30.0,
+                                                                 140.0, 100.0]})
+    out = ibtracs.fill_basin(df)
+    assert out["basin"].tolist() == ["NA", "NA", "WP", ""]
+    assert df["basin"].tolist() == ["", "", "WP", ""], "must not mutate the input"

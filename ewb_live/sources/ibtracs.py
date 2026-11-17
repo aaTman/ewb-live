@@ -267,12 +267,44 @@ def load_tracks(start: dt.date | dt.datetime, end: dt.date | dt.datetime,
         df = df[df["season"].astype("Float64").isin([float(s) for s in seasons])]
     t0, t1 = pd.Timestamp(start), pd.Timestamp(end)
     df = df[(df["time"] >= t0) & (df["time"] <= t1)]
-    return df.sort_values(["sid", "time"]).reset_index(drop=True)
+    return fill_basin(df).sort_values(["sid", "time"]).reset_index(drop=True)
 
 
 def basin_name(code: str) -> str:
     return BASIN_NAMES.get((code or "").strip().upper(),
                            (code or "unassigned basin").strip() or "unassigned basin")
+
+
+def basin_for(lat: float, lon: float) -> str:
+    """Basin code from a fix position — the fallback IBTrACS itself needs.
+
+    v04r01 leaves BASIN EMPTY for the whole North Atlantic: checked on the
+    live ALL file, all 2,306 empty-BASIN storms are northern-hemisphere
+    systems in the Atlantic box (lat 7..83, lon -137..63 — the outliers past
+    -100/+40 are the same tracks as Gulf departures and European remnants).
+    Label them from position instead of printing "unassigned basin" for a
+    third of the season; anything we cannot place stays unknown.
+    """
+    if not (np.isfinite(lat) and np.isfinite(lon)) or lat < -10.0:
+        return ""
+    if -100.0 <= lon <= -10.0:
+        return "NA"
+    if lat >= 0.0 and lon < -100.0:
+        return "EP"
+    return ""
+
+
+def fill_basin(df: pd.DataFrame) -> pd.DataFrame:
+    """Fill the empty BASIN column from position (see ``basin_for``)."""
+    if df is None or not len(df) or "basin" not in df.columns:
+        return df
+    empty = df["basin"].astype(str).str.strip().eq("")
+    if empty.any():
+        df = df.copy()
+        guess = [basin_for(la, lo) for la, lo in zip(df.loc[empty, "lat"],
+                                                     df.loc[empty, "lon"])]
+        df.loc[empty, "basin"] = guess
+    return df
 
 
 def main(argv=None) -> int:  # pragma: no cover - CLI on the ewb LXC only

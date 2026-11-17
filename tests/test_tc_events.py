@@ -258,7 +258,7 @@ def test_quota_allows_a_whole_season():
                           fixes(sid=f"2026263N{i:05d}", lat0=10.0 + 0.5 * i,
                                 lon0=-40.0)) for i in range(20)]
     out = sel.rank_and_cap([e for e in evs if e], top_n=15)
-    assert len(out) == 20                     # TOP_N_BY_TYPE lifts the cap to 30
+    assert len(out) == 20        # TOP_N_BY_TYPE lifts the cap above the global 15
 
 
 # ------------------------------------------------------------ validator net --
@@ -283,3 +283,14 @@ def test_category_bands():
          "CAT 5"]
     assert tc.category(None) == "TD"
     assert math.isfinite(1.0)
+
+
+def test_recurling_storm_keeps_its_modal_basin():
+    """IBTrACS labels each fix by the basin it sits in, so the last fix of a
+    recurving Atlantic hurricane can be blank; the event takes the modal basin
+    of its qualifying fixes instead."""
+    f = fixes(n=8, lon0=-45.0, dlon=6.0)
+    f.loc[f.index[-2:], "basin"] = ""
+    ev = storm_to_event(SID, f)
+    assert ev.details["basin"] == "NA"
+    assert ev.details["basin_name"] == "North Atlantic"

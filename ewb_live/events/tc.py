@@ -199,7 +199,11 @@ def storm_to_event(sid: str, f: pd.DataFrame,
         name = "Unnamed"
     else:
         name = name.title()
-    basin = str(f["basin"].iloc[-1]).strip()
+    # modal basin over the storm's fixes: IBTrACS labels a fix by the basin it
+    # is in, so a recurving storm has several; the last fix would call Hurricane
+    # Hanna "unassigned" after its European remnant drifted out of the code.
+    modes = f["basin"].mode()
+    basin = str(modes.iat[0]).strip() if len(modes) else ""
     from ..sources.ibtracs import basin_name
 
     track = _track_rows(f)
