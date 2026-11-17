@@ -301,6 +301,34 @@ def copyfile_downloader(url, dest):
     return dest
 
 
+def test_ingest_survives_real_https_urls(tmp_path):
+    """Regression (first live fetch, 2026-11-17): ``ingest`` handed the *Granule* to
+    ``ingest_day``, which falls back to ``Path(granule.url)`` — offline the fake URL was
+    a local path so every test passed, but with a real ``https://`` URL NOTHING was
+    ingested (empty daily store, raw granules stranded on disk). The fix passes the
+    local raw file; this test pins the https-shaped URL and the keep-raw-0 roll."""
+    import dataclasses
+    days = [DAY1, DAY1 + dt.timedelta(days=1)]
+    remote, granules = fake_remote(tmp_path, days)
+    by_name = {p.name: p for p in remote.values()}
+    granules = {d: dataclasses.replace(g, url=(
+        "https://data.gesdisc.earthdata.nasa.gov/data/GPM_L3/GPM_3IMERGDE.07/2026-11/"
+        f"{g.filename}")) for d, g in granules.items()}
+
+    def copier(url: str, dest):
+        dest = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(by_name[Path(url).name].read_bytes())
+        return dest
+
+    out = ingest(DAY1, days[-1], root=tmp_path / "root", granules=granules,
+                 downloader=copier, keep_raw=0, grid_deg=DEG)
+    assert out["fetch"]["fetched"] == 2
+    assert len(out["ingested"]) == 2, out["ingested"]
+    assert len(list((tmp_path / "root" / "daily").glob("imerg_*.nc"))) == 2
+    assert not list((tmp_path / "root" / "raw").rglob("*.nc4"))   # streaming, keep-raw 0
+
+
 def test_fetch_reports_missing_and_survives_a_bad_download(cache):
     days = [DAY1, DAY1 + dt.timedelta(days=1)]
     remote, granules = fake_remote(tmp_path=cache, days=[days[0]])    # days[1]: no granule
@@ -465,6 +493,24 @@ def test_roll_window_drops_outside_90_days(cache):
     assert raw_days == ["20261113", "20261114", "20261115", "20261116"]
     dry = roll_window(root=root, keep_days=1, keep_raw=0, now=now, dry_run=True)
     assert dry["removed"] and len(list((root / "daily").glob("imerg_*.nc"))) == 90
+
+
+def test_roll_window_sweeps_every_collection(cache):
+    """Regression (first live run 2026-11-17): the roller swept ``raw_dir(root)`` — which
+    is one collection's directory (the early one) — so with keep-raw 0 the *Late* raw
+    granules survived every roll and stranded on the disk it was meant to protect.
+    The sweep must cover the whole ``raw/`` tree."""
+    root = cache / "root"
+    now = dt.datetime(2026, 11, 17, 12, 0, tzinfo=dt.timezone.utc)
+    for prod, name in (("late", "3B-DAY-L.MS.MRG.3IMERG.20261113-S000000-E235959.V07C.nc4"),
+                       ("late", "3B-DAY-L.MS.MRG.3IMERG.20261115-S000000-E235959.V07C.nc4"),
+                       ("early", "3B-DAY-E.MS.MRG.3IMERG.20261116-S000000-E235959.V07C.nc4")):
+        p = imerg.raw_dir(root, prod) / "2026-11" / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"x" * 100)
+    out = roll_window(root=root, keep_days=90, keep_raw=0, now=now)
+    assert len(out["removed_raw"]) == 3
+    assert not list((root / "raw").rglob("*.nc4"))
 
 
 # ------------------------------------------------------------- disk headroom guard

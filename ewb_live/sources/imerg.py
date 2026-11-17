@@ -624,6 +624,12 @@ def s3_credentials(creds: tuple[str, str] | None = None, *, force: bool = False,
                 "works without it once the data EULA is agreed.)") from exc
         raise
     data = json.loads(raw)
+    # The GES DISC mint answers with camelCase keys (measured live 2026-11-17:
+    # accessKeyId/secretAccessKey/sessionToken); normalise to the AWS-SDK names that
+    # _s3_filesystem/_get_s3 consume, so both spellings work.
+    alias = {"accessKeyId": "access_key_id", "secretAccessKey": "secret_access_key",
+             "sessionToken": "session_token"}
+    data = {alias.get(k, k): v for k, v in data.items()}
     if not {"access_key_id", "secret_access_key", "session_token"} <= set(data):
         raise ImergError(f"unexpected s3credentials payload: {sorted(data)}")
     expires = now + 55 * 60.0
@@ -948,7 +954,12 @@ def daily_dir(root: str | Path | None = None) -> Path:
 
 
 def raw_dir(root: str | Path | None = None, product: str = "early") -> Path:
-    return _root(root) / "raw" / product_for(product).collection_dir
+    return _raw_root(root) / product_for(product).collection_dir
+
+
+def _raw_root(root: str | Path | None = None) -> Path:
+    """The ``raw/`` tree across *all* collections — what the roller must sweep."""
+    return _root(root) / "raw"
 
 
 def status_path(root: str | Path | None = None) -> Path:
@@ -1205,7 +1216,10 @@ def ingest(start: dt.date, end: dt.date, *, root: str | Path | None = None,
             if not src.exists():
                 continue
             try:
-                entries.append(ingest_day(gran, day, root=root, product=gran.product,
+                # NOT the Granule: ingest_day() falls back to Path(granule.url), which is
+                # an https URL in production — offline tests hid that by using local
+                # paths as fake URLs. The raw file is the source; day/product are pinned.
+                entries.append(ingest_day(src, day, root=root, product=gran.product,
                                           grid_deg=grid_deg, overwrite=overwrite))
             except ImergError as exc:
                 _status_entry(root, day, status="error", error=str(exc), product=product)
@@ -1272,7 +1286,7 @@ def require_headroom(root: str | Path | None = None, need: int = 0, *,
 
 def disk_usage(root: str | Path | None = None) -> dict:
     out = {}
-    for name, path in (("daily", daily_dir(root)), ("raw", _root(root) / "raw")):
+    for name, path in (("daily", daily_dir(root)), ("raw", _raw_root(root))):
         total = sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) if path.exists() else 0
         out[name] = round(total / 1e6, 1)
     out["total_mb"] = round(sum(out.values()), 1)
@@ -1303,7 +1317,8 @@ def roll_window(*, root: str | Path | None = None, keep_days: int = DEFAULT_KEEP
     raw_cutoff = ((now or dt.datetime.now(dt.timezone.utc)).date()
                   - dt.timedelta(days=max(keep_raw, 0)))
     raw_removed = []
-    for path in sorted((raw_dir(root).rglob("*.nc4")).__iter__()) if raw_dir(root).exists() else []:
+    root_raw = _raw_root(root)
+    for path in sorted(root_raw.rglob("*.nc4")) if root_raw.exists() else []:
         try:
             day = dt.datetime.strptime(_DAY_IN_NAME.search(path.name).group(1), "%Y%m%d").date()
         except AttributeError:
