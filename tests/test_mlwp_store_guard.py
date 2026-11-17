@@ -51,6 +51,12 @@ SOURCES = PKG / "sources"
 FORBIDDEN_IN_SOURCES = [
     ("forecast materialisation", re.compile(r"\.to_zarr\(|\.to_netcdf\(")),
 ]
+# Exempt writers: the guard is about the MLWP *forecast archive*. `imerg.py`
+# (flood lane, 2026-11-17) writes its OWN observation store — packed uint16
+# daily NetCDF derived from GPM IMERG granules, which are the source data of
+# that lane, not archive bytes re-downloaded to dodge the virtual store. Keep
+# this set free of anything that reads s3://noaa-oar-mlwp-data.
+MATERIALISE_EXEMPT = {SOURCES / "imerg.py"}
 
 CHOKE_POINT = SOURCES / "aiwp.py"
 # store *data* sessions may be opened by the choke point and the builders only
@@ -79,6 +85,8 @@ def test_bucket_only_under_stores():
 def test_sources_never_materialise():
     hits = []
     for f in sorted(SOURCES.glob("*.py")):
+        if f in MATERIALISE_EXEMPT:
+            continue
         for label, m in _scan(f, FORBIDDEN_IN_SOURCES):
             hits.append(f"{f.relative_to(REPO)}: {label} ({m.group(0)!r})")
     assert not hits, "sources layer materialises forecasts again:\n" + "\n".join(hits)

@@ -132,6 +132,7 @@ def _heartbeat(**fields) -> None:
 def _sel_thresholds() -> dict:
     """Effective selection quantiles for the current run (meta record)."""
     from .events.temperature import _mode_clim
+    from .events import flood as flood_clim
 
     clim = _mode_clim()
     return {
@@ -140,6 +141,9 @@ def _sel_thresholds() -> dict:
         # cold snap = the freeze p15 rule without the <=0C cap (same quantile)
         "cold_snap": {"q_upper": float(clim["cold_snap"]["q_upper"])},
         "atmospheric_river": {"q_upper": "p90 ivt (EWB default)"},
+        # flood: ERA5 wet-day percentile of the daily total and of the trailing
+        # 72 h, plus the absolute plausibility floor (events/flood.py)
+        "flood": {"q_upper": flood_clim.p95, "floor_mm": flood_clim.FLOOR_MM},
     }
 
 
@@ -615,7 +619,8 @@ def run(
     if BASELINE not in models:
         logger.warning("baseline model %s not in sources; scorecard skill will be null", BASELINE)
 
-    from .events.select import TRACK_TYPES   # track lanes are published, not scored
+    from .events.select import UNSCORED_TYPES   # observation lanes (best-track
+    # tropical_cyclone, IMERG flood) are published, never scored
 
     # 2. incremental bookkeeping
     scores_path = RESULTS / "scores.parquet"
@@ -640,13 +645,14 @@ def run(
     logger.info("cached scores: %d rows; done pairs: %d", len(cached), len(done))
 
     todo = []
-    unscored_track: list = []   # track lanes (tropical_cyclone): published, never scored
+    unscored_obs: list = []   # observation lanes (tropical_cyclone, flood):
+                              # published and rendered, never scored
     for e in events:
         pending = [m for m in models if (e.id, m) not in done]
         if not pending:
             continue
-        if e.event_type in TRACK_TYPES:
-            unscored_track.append((e, pending))
+        if e.event_type in UNSCORED_TYPES:
+            unscored_obs.append((e, pending))
             continue
         todo.append((e, pending))
     if max_events:
@@ -700,23 +706,6 @@ def run(
     # prune to the live universe (ids churn across selection rebuilds) and
     # sweep orphaned atomic-write temps from SIGKILLed writers
     pair_status = _prune_pair_status(pair_status, events, models)
-    # track lanes (tropical_cyclone, tc 2026-11-16) have no EWB metric set
-    # configured: they are published and rendered, never scored. Record a
-    # DOCUMENTED zero-row status per pair so the pair_coverage contract and
-    # full_run_complete stay decidable instead of showing phantom blockers.
-    if unscored_track:
-        for e, ms in unscored_track:
-            for m in ms:
-                pair_status[f"{e.id}|{m}"] = {
-                    "status": "unsupported", "rows": 0,
-                    "fp": f"{fp_by_event[e.id]}|{truth_by_event[e.id]}",
-                    "reason": "no EWB benchmark for best-track events "
-                              "(tropical_cyclone is published, not scored)"}
-        logger.info("track-lane events: %d published without scoring "
-                    "(%d documented 'unsupported' pairs)",
-                    len(unscored_track),
-                    sum(len(ms) for _e, ms in unscored_track))
-        _persist_pair_status()
 
     # sidecars of churned-out events are dead weight: every run re-parses
     # every file ever written (ponytail 2026-11-08 SHOULD: unbounded growth)
@@ -742,6 +731,28 @@ def run(
 
     def _pair(eid: str, model: str) -> dict:
         return pair_status.get(f"{eid}|{model}", {})
+
+    # Observation lanes (tropical_cyclone 2026-11-16, flood 2026-11-17) have no
+    # EWB metric set: they are published and rendered, never scored. Record a
+    # DOCUMENTED zero-row status per pair so the pair_coverage contract and
+    # full_run_complete stay decidable instead of showing phantom blockers.
+    _UNSCORED_REASON = {
+        "tropical_cyclone": "no EWB benchmark for best-track events "
+                            "(tropical_cyclone is published, not scored)",
+        "flood": "no EWB benchmark for IMERG-accumulation events "
+                 "(flood is published, not scored)",
+    }
+    if unscored_obs:
+        for e, ms in unscored_obs:
+            for m in ms:
+                pair_status[f"{e.id}|{m}"] = {
+                    "status": "unsupported", "rows": 0,
+                    "fp": f"{fp_by_event[e.id]}|{truth_by_event[e.id]}",
+                    "reason": _UNSCORED_REASON[e.event_type]}
+        logger.info("observation-lane events: %d published without scoring "
+                    "(%d documented 'unsupported' pairs)",
+                    len(unscored_obs), sum(len(ms) for _e, ms in unscored_obs))
+        _persist_pair_status()
 
     failed_after_retry: set[str] = set()
     last_sig = ""  # blocker sig from the most recent _write_outputs (untruncated)

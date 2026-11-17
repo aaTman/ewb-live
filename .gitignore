@@ -9,3 +9,4 @@ data/results/*
 logs/
 third_party/
 .e2e-webkit-libs/
+tmp/

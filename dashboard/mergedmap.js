@@ -70,8 +70,15 @@
     // shares the P15 raw layer, which IS its mask (no third temperature lane)
     cold_snap:          { css: 'cold-snap', short: 'Cold snap' },
     atmospheric_river:  { css: 'ar',        short: 'AR' },
+    // no raw exceedance layer exists for the flood lane (its evidence is a
+    // 0.1 deg IMERG accumulation, not a raster published with the v2 sidecars):
+    // flood events are drawn as boxes and Gantt rows only
+    flood:              { css: 'flood',     short: 'Flood' },
   };
-  const LANE_ORDER = ['heat_wave', 'freeze', 'cold_snap', 'atmospheric_river'];
+  // Gantt lanes. tropical_cyclone is deliberately absent: a storm is a track,
+  // drawn in its own detail view (TrackViz), not a raster lane here.
+  const LANE_ORDER = ['heat_wave', 'freeze', 'cold_snap', 'atmospheric_river',
+    'flood'];
   const SPEEDS = [2, 5, 10];               // fps choices
 
   let raw = null;                          // raw_exceedance index.json
@@ -625,11 +632,13 @@
     const nFrz = active.filter((e) => e.type === 'freeze').length;
     const nCold = active.filter((e) => e.type === 'cold_snap').length;
     const nAr = active.filter((e) => e.type === 'atmospheric_river').length;
+    const nFl = active.filter((e) => e.type === 'flood').length;
     const parts = [];
     if (nHeat) parts.push(`${nHeat} heat`);
     if (nFrz) parts.push(`${nFrz} freeze`);
     if (nCold) parts.push(`${nCold} cold snap`);
     if (nAr) parts.push(`${nAr} AR`);
+    if (nFl) parts.push(`${nFl} flood`);
     $('#raw-canvas').setAttribute('aria-label',
       `Equal Earth world map — raw detector layers and event boxes: `
       + `${active.length} event${active.length === 1 ? '' : 's'} visible`
@@ -647,8 +656,9 @@
   }
   function layersForTab(tab) {                 // the page's type filter narrows the raw layers too
     // cold_snap has no raw layer of its own: the P15 (freeze) lane is its mask.
-    // Track lanes (tropical_cyclone, ...) have no raw layer at all: keep the
-    // user's layer choice instead of switching everything off.
+    // The observation lanes (tropical_cyclone, flood) have no raw layer at all:
+    // keep the user's layer choice rather than repainting the map behind their
+    // back — their evidence is boxes/Gantt rows, not a raster.
     const key = { heat_wave: 'h', freeze: 'f', cold_snap: 'f',
                   atmospheric_river: 'a' }[tab];
     if (!key && tab !== 'all') return;

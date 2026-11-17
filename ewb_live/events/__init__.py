@@ -1,8 +1,9 @@
 """Event detection for EWB Live (SPEC section 2).
 
-``detect_events`` finds heat_wave / freeze / cold_snap / atmospheric_river
-events over a date range using EWB's defaults and thresholds, with a
-persistent per-window cache so re-runs don't redo completed scans.
+``detect_events`` finds heat_wave / freeze / cold_snap / atmospheric_river /
+tropical_cyclone / flood events over a date range using EWB's defaults and
+thresholds, with a persistent per-window cache so re-runs don't redo completed
+scans.
 """
 
 from __future__ import annotations
@@ -48,6 +49,15 @@ def _cache_path(cache_dir: Path, event_type: str, start: dt.date, end: dt.date) 
         from .tc import MIN_TS_FIXES, MIN_TS_HOURS, MIN_TS_WIND_KT
 
         tag = f"_v1-{int(MIN_TS_WIND_KT)}kt-{MIN_TS_FIXES}fix-{int(MIN_TS_HOURS)}h"
+    if event_type == "flood":
+        # bump when the flood rule changes (quantile / accumulation lanes /
+        # tracker floors) so an old scan can't resurrect under new code
+        from .flood import DEFAULT_QUANTILE, FLOOD_PARAMS, WINDOWS
+
+        tag = (f"_v1-q{int(round(DEFAULT_QUANTILE * 100))}-w"
+               f"{''.join(str(w) for w in WINDOWS)}"
+               f"-a{int(FLOOD_PARAMS.qualify_area_km2 // 1000)}k"
+               f"-d{FLOOD_PARAMS.min_days}")
     return cache_dir / f"{event_type}{tag}_{start:%Y-%m-%d}_{end:%Y-%m-%d}.json"
 
 
@@ -87,17 +97,20 @@ def detect_events(
 
     cutoff = truth_cutoff()
     det_end = min(end, cutoff.date())
-    from .select import TRACK_TYPES   # lazy: select pulls in the raster lanes
+
+    from .select import UNSCORED_TYPES   # lazy: select pulls in the raster lanes
 
     by_id: dict[str, Event] = {}
     for et in types:
-        # Track lanes read best-track observations, not ERA5 rasters: the
-        # truth-cutoff clamp must not trim them (2026-11-17 — the clamp
+        # Observation-backed lanes (UNSCORED_TYPES: tropical_cyclone from
+        # IBTrACS best tracks, flood from IMERG) read their own source, not the
+        # ERA5 rasters, so the truth-cutoff clamp must not trim them — it
         # silently erased the last ~6 days of storms from the "90-day" TC
-        # window every week, exactly where the newest cyclone lives).
-        lane_end = end if et in TRACK_TYPES else det_end
+        # window every week (2026-11-17), and the newest days are exactly where
+        # a fresh flood or cyclone lives.
+        lane_end = end if et in UNSCORED_TYPES else det_end
         if lane_end < start:
-            logger.warning("detect_events %s: window %s..%s fully beyond "
+            logger.warning("detect_events %s: window %s..%s fully beyond the "
                            "ERA5 cutoff %s; lane skipped", et, start, end, cutoff)
             continue
         path = _cache_path(cache_dir, et, start, lane_end)
@@ -114,6 +127,11 @@ def detect_events(
                 from .tc import scan_tc_events
 
                 events = scan_tc_events(start, lane_end)
+            elif et == "flood":
+                # observation lane: IMERG daily rain vs the ERA5 percentile
+                from .flood import scan_flood_events
+
+                events = scan_flood_events(start, lane_end)
             else:
                 from .ar import scan_ar_events
 

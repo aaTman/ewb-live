@@ -38,6 +38,14 @@
      common CVD type. Not a map-fill lane, so the AR < freeze < heat fill
      ladder is untouched. */
   --series-tc:            #6f42c1;  --series-tc-soft:       #e0d5f2;
+  /* Flood berry (flood lane 2026-11-17; the --flood alias existed on the flood
+     branch but --series-flood itself was never defined, so the lane would have
+     rendered in the grey unknown colour). Berry hue ~333 deg keeps it apart
+     from every existing lane by hue AND lightness: freeze 217 deg / cold snap
+     186 / AR 123 / TC 271 / heat 6. Measured 7.75:1 on paper, 6.73:1 on the
+     light map ocean, L* 36.1. Not a map-fill lane (boxes + Gantt only), so the
+     heat < freeze < AR fill ladder is untouched. */
+  --series-flood:         #a01e56;  --series-flood-soft:    #f4dbe7;
   --series-alt:           #4f8c1f;  --series-alt-soft:      #d7e4cb;
   --series-unknown:       #848475;  --series-unknown-soft:  #e2e2de;
   --stone-grey:           #848475;
@@ -87,6 +95,7 @@
   --cold-snap: var(--series-cold-snap);
   --ar:     var(--series-ar);
   --tc:     var(--series-tc);
+  --flood:  var(--series-flood);
   --shadow: 0 1px 2px rgba(38, 38, 32, .06);
   --mono: var(--font-mono);
 
@@ -125,6 +134,7 @@ html[data-theme="dark"] {
   --series-cold-snap:      #26808f;  --series-cold-snap-soft:  #224247;
   --series-ar:            #66bb6a;  --series-ar-soft:       #2e4434;  /* AR green dark (design 2026-11-08, 6.40:1) */
   --series-tc:            #b39ddb;  --series-tc-soft:       #3a2f52;  /* TC violet dark: 6.31 on dark paper, 6.98 on the dark map ocean */
+  --series-flood:         #e88bbb;  --series-flood-soft:    #4a2a3c;  /* Flood berry dark: 6.37 on dark paper, 7.66 on the dark map ocean */
   --series-alt:           #78b447;  --series-alt-soft:      #33402a;
   --series-unknown:       #acab9c;  --series-unknown-soft:  #3b3b34;
   --stone-grey:           #acab9c;
@@ -155,6 +165,7 @@ html[data-theme="dark"] {
   --cold-snap: var(--series-cold-snap);
   --ar:     var(--series-ar);
   --tc:     var(--series-tc);
+  --flood:  var(--series-flood);
   --shadow: 0 1px 4px rgba(0, 0, 0, .40);
 
   --warn-ink: #e0b95f;  --warn-bg: #332e1c;  --warn-border: #55492a;
