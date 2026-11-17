@@ -1821,3 +1821,95 @@ reproducible rather than a pile of one-off ssh commands:
 viz count and disk — that is the scoreboard for the rest of Step 3.
 
 — integrator
+
+## [integrator] 2026-11-17 22:55 UTC — /dev/ data build: per-type counts, one lane-bug blocker (midlat_cyclone), promotion notes
+
+**Review site: http://192.168.0.121:8051/** (LAN; `ewb-live-dev-web.service`, tree
+`/opt/ewb-live-dev`). Window 2026-08-19..2026-11-17 (90 d). The lane build
+(`ops/dev_site.sh lanes`) finished detection; the per-event viz pass (39 raster
+events) and the final `--publish-only` (which rewrites `meta.json`) are still
+running as I write — read `bash ops/dev_site.sh status` for the live view.
+
+### Counts (dev, this window) — `events.json` (raw catalogue) → `events_selected.json` (published)
+
+| lane | raw | published | note |
+|---|---|---|---|
+| heat_wave | 142 | **15** | capped at the global 15 |
+| freeze | 11 | **5** | `<=0C`-at-all-four-steps rule in force |
+| cold_snap | 22 | **6** | the freeze-subsumption rule is visible: 22 raw − freeze overlap → 6 |
+| atmospheric_river | 95 | **13** | |
+| tropical_cyclone | 44 | **44** | 49 storms → 44 events (5 under the 3-fix/34 kt floor); the whole season is published, not capped at 15 |
+| midlat_cyclone | **0** | **0** | **lane defect, see below — this zero is NOT trustworthy** |
+| flood | 766 | **40** | quota 40; 766 matches the flood lane's own live 90-day run exactly |
+
+Scorecard/score rows are the live ones re-published (`26,409` rows) — no new
+scoring was run, per the brief.
+
+### BLOCKER for the midlat_cyclone lane (needs mlc-impl, not an integration artifact)
+
+`detect_events midlat_cyclone: scanned 0 events` over the 90-day window (361
+frames, 272 nodes → 3 tracks → 0 after screens), although mlc-impl's PROOF window
+published 71. Reproduced on the dev tree with real ARCO MSLP:
+
+* one frame (2026-10-20 00Z) has **190,414 cells below the 1010 hPa ceiling inside
+  the 25–70° band** and a band minimum of 967 hPa, yet
+  `find_peaks_for_time_slice()` returns **0 nodes**;
+* `_degrees_to_gridpoints(6°)` = 24 cells on the 0.25° grid (correct), so the
+  peak-separation stage is fine;
+* relaxing only the **closed-contour** parameters on that same frame gives
+  `delta_hPa=0.5 → 5 nodes`, `max_gc_distance_contour_degrees=20 → 7`,
+  `0.5 + 30° → 27`. i.e. **100 % of candidate minima are rejected by the
+  `centre + 3 hPa closes within 6°` check on real ARCO MSLP** — a shape that says
+  the contour-distance comparison is mis-scaled (cells vs degrees, or missing the
+  1/cos(lat) widening in longitude), not that Oct 2026 had no lows. Their
+  validation vs TempestExtremes ran on netCDF extracts via a different reader
+  path, so this ARCO path looks untested at full resolution.
+* Second, UI-side consequence (owner-visible): `scan_mlc_events` **fails soft to
+  `[]`**, and the honest-zero mechanism exists only for the TC lane
+  (`meta.ibtracs`). So a failed/defective MLC lane reads in the UI as "No
+  midlatitude cyclones met the criteria this window" — which is a lie today.
+  Recommend generalising to a per-lane `meta.lane_status` (count + ran/failed +
+  source reach) rather than per-lane one-offs; I did not invent that mechanism
+  mid-review.
+
+I did **not** retune mlc's detection parameters — that is their science, and a
+silent retune in an integration branch is worse than an empty tab with a
+diagnosis.
+
+### What promoting to live involves (NOT done, per the brief)
+
+1. `aaTman/ne-integration` → main is a normal merge **except** commit `e4fd539`
+   (`ne-subsets`: MLWP virtual-store-only scoring + subsets-cache removal), which
+   the owner marked DEV-ONLY. Promoting the lanes without it means merging the
+   lane merges individually (ar-debug, coldsnap, tc, flood-detect, mlc-impl) and
+   leaving `e4fd539` out — or reverting it on main after the merge. Decide before
+   merging; it rewrites `ewb_live/sources/*`, `scoring/`, `weekly/`.
+2. Live deploy is the usual `ops/remote.sh sync` (code only; the box owns
+   `data/`) + one full live cycle `python -m ewb_live.weekly --days 90` (or the
+   `ops/events_rebuild.sh` sequence) because freeze/cold_snap/flood/TC/MLC all
+   need scoring, raw frames, per-event viz and region scorecards built for the
+   new lanes — the dev tree deliberately did none of that scoring.
+3. Two shared-file changes in this branch are opinionated and should be looked at
+   by the owner/design before they go live: the midlat_cyclone colour (amber,
+   because the branch's violet was indistinguishable from the TC violet) and
+   `app.js`'s honest-count rule ("no score rows for this lane in this build →
+   count published events in region view, and always say why there is no table").
+4. `tests/e2e` against the dev site: **37 failed / 106 passed**; a live-site
+   baseline is running to separate pre-existing failures (pi-colors' channel
+   entry already documents legend/`#raw-layers` e2e tests that "fail by design")
+   from merge-caused ones — check `/tmp/e2e_live.log` vs the dev run before
+   reading those 37 as regressions.
+
+### Ops notes for whoever picks this up
+
+* `bash ops/dev_site.sh status` = scoreboard; `... watch` = lane log; the tree is
+  idempotent (re-running `init`/`web` is safe; `sync` is code-only).
+* After a code re-sync, rebuild the two derived assets in the dev tree:
+  `.venv/bin/python -m ewb_live.viz.timeline` and
+  `.venv/bin/python -m ewb_live.pipeline --publish-only --days 90`.
+* Only **16 of 30** released events had `events/<id>/viz.json` in the live
+  results copy (same on live, verified) — the dev `viz --all --force` pass is
+  what fills that; expect the dev site to have MORE event viz than live.
+* Handoff doc for a successor: `notes/handoff_integrator_1.md`.
+
+— integrator
