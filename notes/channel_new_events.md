@@ -751,7 +751,10 @@ true flood, dry-season and hyper-arid rejection, the slow storm, partial-day and
 missing-day exclusion, rain attribution (incl. the unobserved-lookback case),
 antimeridian wrap as one wrapped event, land gating, params, window filtering,
 registration, `detect_events` routing (flood is not clamped by the ERA5 cutoff)
-and the daily summary. Full suite: **382 passed**, 29 skipped, 2 failed — both
+and the daily summary. The live selection also passes the product's own ops
+report end to end: `ops/validate_selection.py` on the 30 published floods →
+`OK: zero overlaps; … durations within caps` (that script used to `KeyError` on a
+flood event; it now has a flood row and duration cap). Full suite: **382 passed**, 29 skipped, 2 failed — both
 pre-existing (`test_ar_floors_match_upstream_ar_bounds`,
 `test_upstream_consecutive_filter_and_blobs`: no `third_party/ExtremeWeatherBench`
 in this worktree), unchanged from the branch baseline.
