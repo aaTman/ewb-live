@@ -961,7 +961,12 @@ function renderScorecard() {
     // contract (n_events/by_type, centroid rule owned by ewb_live/regions.py);
     // Global counts the curated catalog (same universe as before this feature).
     const re = regionEntry();
-    const nEv = re ? (re.by_type || {})[etype] || 0
+    /* A track lane has no score rows by design, so the contract's scored-event
+       split can only ever answer 0 for it — in region view count the published
+       storms through the same region map the tables were built from. */
+    const nEv = (re && TYPE_META[etype] && TYPE_META[etype].noScores)
+      ? state.events.filter((e) => e.event_type === etype && inRegion(e)).length
+      : re ? (re.by_type || {})[etype] || 0
       : state.events.filter((e) => e.event_type === etype).length;
 
     const block = el('div', 'sc-block');
