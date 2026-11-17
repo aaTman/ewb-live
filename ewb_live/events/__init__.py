@@ -43,6 +43,12 @@ def _cache_path(cache_dir: Path, event_type: str, start: dt.date, end: dt.date) 
         from .ar import AR_RULE_REV
 
         tag = f"_{AR_RULE_REV}"
+    if event_type == "midlat_cyclone":
+        # bump when a mid-latitude screen or the track mapping changes, so an
+        # old scan cannot resurrect under new rules (mlc lane, 2026-11-17)
+        from .mlc import RULE_REV
+
+        tag = f"_{RULE_REV}"
     return cache_dir / f"{event_type}{tag}_{start:%Y-%m-%d}_{end:%Y-%m-%d}.json"
 
 
@@ -94,6 +100,12 @@ def detect_events(
                 from .temperature import scan_temperature_events
 
                 events = scan_temperature_events(start, det_end, et, **scan_kwargs)
+            elif et == "midlat_cyclone":
+                # track lane: closed MSLP lows tracked in ERA5 (mlc lane) — the
+                # scan streams its own window from ARCO and fails soft to []
+                from .mlc import scan_mlc_events
+
+                events = scan_mlc_events(start, det_end, **scan_kwargs)
             else:
                 from .ar import scan_ar_events
 

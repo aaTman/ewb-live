@@ -27,6 +27,7 @@
   --series-heat:          #c6493c;  --series-heat-soft:     #f1d5d2;
   --series-freeze:        #1a4f96;  --series-freeze-soft:   #cbd7e6;
   --series-ar:            #2e7d32;  --series-ar-soft:       #d0e4d1;  /* AR green (design 2026-11-08, measured 5.13:1) */
+  --series-mlc:           #5f3d99;  --series-mlc-soft:      #ded3ef;  /* mid-latitude low violet (mlc lane): L* 34.1, 8.03:1 on --paper */
   --series-alt:           #4f8c1f;  --series-alt-soft:      #d7e4cb;
   --series-unknown:       #848475;  --series-unknown-soft:  #e2e2de;
   --stone-grey:           #848475;
@@ -74,6 +75,7 @@
   --heat:   var(--series-heat);
   --freeze: var(--series-freeze);
   --ar:     var(--series-ar);
+  --mlc:    var(--series-mlc);
   --shadow: 0 1px 2px rgba(38, 38, 32, .06);
   --mono: var(--font-mono);
 
@@ -108,6 +110,7 @@ html[data-theme="dark"] {
   --series-heat:          #f57160;  --series-heat-soft:     #4a332e;  /* L* 63.4 */
   --series-freeze:        #4d73bf;  --series-freeze-soft:   #2d3c52;  /* L* 49.0 */
   --series-ar:            #66bb6a;  --series-ar-soft:       #2e4434;  /* AR green dark (design 2026-11-08, 6.40:1) */
+  --series-mlc:           #b18ae0;  --series-mlc-soft:      #3b3054;  /* mid-latitude low violet, dark (mlc lane): L* 64.1, 5.46:1 on --paper */
   --series-alt:           #78b447;  --series-alt-soft:      #33402a;
   --series-unknown:       #acab9c;  --series-unknown-soft:  #3b3b34;
   --stone-grey:           #acab9c;
@@ -136,6 +139,7 @@ html[data-theme="dark"] {
   --heat:   var(--series-heat);
   --freeze: var(--series-freeze);
   --ar:     var(--series-ar);
+  --mlc:    var(--series-mlc);
   --shadow: 0 1px 4px rgba(0, 0, 0, .40);
 
   --warn-ink: #e0b95f;  --warn-bg: #332e1c;  --warn-border: #55492a;

@@ -110,4 +110,11 @@ def qualify_events(events, frames_dir: Path | None = None) -> None:
     """Attach e.qualified_at (a plain attribute: not a dataclass field, so
     to_dict/fingerprint/scoring caches are untouched)."""
     for e in events:
-        e.qualified_at = qualified_at(e, frames_dir)
+        # mlc lane (2026-11-17): track lanes have no exceedance raster to
+        # qualify against — the first qualifying fix IS the qualifying instant,
+        # at its own 6-hourly resolution (same rule the tc lane uses for
+        # tropical_cyclone; if that lane's equivalent branch lands, keep one).
+        if e.event_type == "midlat_cyclone":
+            e.qualified_at = f"{e.start:%Y-%m-%dT%H:%M:%SZ}"
+        else:
+            e.qualified_at = qualified_at(e, frames_dir)

@@ -8,11 +8,14 @@ const TYPE_META = {
   heat_wave:          { label: 'Heat waves',         short: 'Heat wave',          color: 'var(--series-heat)' },
   freeze:             { label: 'Freezes',            short: 'Freeze',             color: 'var(--series-freeze)' },
   atmospheric_river:  { label: 'Atmospheric rivers', short: 'Atmospheric river',  color: 'var(--series-ar)' },
+  midlat_cyclone:     { label: 'Midlatitude cyclones', short: 'Midlatitude cyclone',
+                        color: 'var(--series-mlc)',
+                        noScores: true },   // mlc track lane: published, not benchmarked
 };
 /* AR green (design 2026-11-08, owner request): all type colors resolve
    through CSS tokens — dual-theme values, no hardcoded hex in JS. */
 const TYPE_SERIES_VAR = { heat_wave: '--series-heat', freeze: '--series-freeze',
-  atmospheric_river: '--series-ar' };
+  atmospheric_river: '--series-ar', midlat_cyclone: '--series-mlc' };
 function cssVar(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || fallback;
@@ -20,7 +23,7 @@ function cssVar(name, fallback) {
 function typeColor(etype) {
   return cssVar(TYPE_SERIES_VAR[etype] || '--series-unknown', '#848475');
 }
-const TYPE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river'];
+const TYPE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river', 'midlat_cyclone'];
 
 /* Owner 2026-11-07: empty lanes are legitimate (freezes may be empty at p15).
    Criteria wording mirrors ewb_live/events/temperature.py + ar.py thresholds —
@@ -29,6 +32,7 @@ const TYPE_CRITERIA = {
   heat_wave: 'Every 6-hourly step of a UTC day has 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology (per day of year and hour), over land. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). The map shades only cells that reach the same 3-consecutive-day minimum (consecutive COMPLETED days; cells below it are blank because they can never become an event), dithered = today so far on an already-qualifying cell.',
   freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), over land. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). On the map the freeze layer shades cells from their first consecutive COMPLETED day (cold runs are short, so 1–2-day cells stay visible for context; a freeze still needs 3+ days), dithered = today so far on a cell with at least one completed day.',
   atmospheric_river: 'Integrated water-vapour transport peaking at ≥400 kg m⁻¹ s⁻¹ and reaching land.',
+  midlat_cyclone: 'A closed low in 6-hourly ERA5 mean sea level pressure: a centre that is the lowest pressure within 6° with a +3 hPa isobar closing around it inside 6°, tracked forward while it stays within 6° per step (gaps up to 12 h are bridged). It becomes an event when it lives ≥48 h, travels ≥1000 km, reaches ≤990 hPa, was born between 25–70° and under 500 m elevation, and did not start as a tropical cyclone. Peak value is the lowest central pressure (hPa); a bomb tag marks a fall of ≥24 hPa in 24 h at 60° latitude. Tracked from ERA5, so there is no model scorecard for this lane yet.',
 };
 const emptyLaneLine = (t) => t === 'all'
   ? 'No events met the criteria this window'
@@ -1605,6 +1609,11 @@ function storyLabel(ev, viz) {
     // landfall_days can exceed the event length upstream (G-28): print the landfall date instead
     const lf = parseISO(d.landfall_time);
     if (lf) parts.push('landfall ' + lf.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }));
+  } else if (ev.event_type === 'midlat_cyclone') {
+    // track lane (mlc 2026-11-17): depth, not temperature, is the headline
+    if (Number.isFinite(ev.peak_value)) parts.push(Math.round(ev.peak_value) + ' hPa centre');
+    if (Number.isFinite(d.displacement_km)) parts.push(Math.round(d.displacement_km / 111.195) + '\u00b0 travelled');
+    if (d.bomb) parts.push('bomb \u00d7' + (Number.isFinite(d.bomb_ratio) ? d.bomb_ratio.toFixed(1) : '1'));
   } else {
     // peak is the ERA5 daily-mean peak (see About) — say so (G-27)
     if (Number.isFinite(ev.peak_value)) parts.push('peak daily-mean ' + ev.peak_value.toFixed(1) + ' °C');

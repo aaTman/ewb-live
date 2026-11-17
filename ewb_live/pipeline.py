@@ -624,6 +624,13 @@ def run(
         pending = [m for m in models if (e.id, m) not in done]
         if pending:
             todo.append((e, pending))
+    # mlc lane (2026-11-17): midlat_cyclone is published and rendered, never
+    # scored — EWB has no metric set for a tracked pressure minimum (same policy
+    # the tc lane documents for tropical_cyclone). Held aside here so the
+    # pair_status block below can DOCUMENT each pair instead of the lane sitting
+    # as phantom pending work that keeps full_run_complete false forever.
+    unscored_mlc = [t for t in todo if t[0].event_type == "midlat_cyclone"]
+    todo = [t for t in todo if t[0].event_type != "midlat_cyclone"]
     if max_events:
         ids = _select_event_ids(todo, max_events)
         todo = [(e, ms) for e, ms in todo if e.id in ids]
@@ -699,6 +706,22 @@ def run(
 
     def _pair(eid: str, model: str) -> dict:
         return pair_status.get(f"{eid}|{model}", {})
+
+    # mlc lane (2026-11-17): documented zero-row status for the track lane, so
+    # pair_coverage and full_run_complete stay decidable (mirrors how a model
+    # with no 2 m temperature on heat/freeze is documented, not left missing).
+    if unscored_mlc:
+        for e, ms in unscored_mlc:
+            for m in ms:
+                pair_status[f"{e.id}|{m}"] = {
+                    "status": "unsupported", "rows": 0,
+                    "fp": f"{fp_by_event[e.id]}|{truth_by_event[e.id]}",
+                    "reason": "no EWB benchmark for tracked mid-latitude lows "
+                              "(midlat_cyclone is published, not scored)"}
+        logger.info("midlat_cyclone: %d events published without scoring "
+                    "(%d documented 'unsupported' pairs)",
+                    len(unscored_mlc), sum(len(ms) for _e, ms in unscored_mlc))
+        _persist_pair_status()
 
     failed_after_retry: set[str] = set()
     last_sig = ""  # blocker sig from the most recent _write_outputs (untruncated)
@@ -788,7 +811,8 @@ def run(
             "selection_thresholds": _sel_thresholds(),
             "event_counts": {
                 et: sum(1 for e in events if e.event_type == et)
-                for et in ("heat_wave", "freeze", "atmospheric_river")
+                for et in ("heat_wave", "freeze", "atmospheric_river",
+                           "midlat_cyclone")
             },
             "n_score_rows": len(scores),
             "n_scored_pairs": int(len({(r[0], r[1]) for r in zip(scores['event_id'], scores['model'])})),

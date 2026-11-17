@@ -65,6 +65,21 @@ AR_IVT_BASELINE = 400.0  # the EWB mask threshold
 # Dolphin/Isaias/monsoon blobs (1785-2972).
 AR_MAX_PEAK_IVT = float(os.environ.get("EWB_LIVE_AR_IVT_MAX_KGM_S", "1500"))
 
+# --- mid-latitude cyclone (mlc lane, 2026-11-17) ------------------------- #
+# A mid-latitude low is a TRACK event, like a tropical cyclone: one stitched
+# low = one event, it never merges (welding two lows makes a system that never
+# existed and a discontinuous pressure series), and it sits outside the
+# "no two events overlap in time+space" rule — a deep low routinely sits inside
+# a freeze, a heat wave and an atmospheric river, and the overlap rule would
+# delete the most impactful rows in the catalog (the mlc lane is published for
+# context and rendered on the track map, not scored). If the tc lane's
+# TRACK_TYPES set is present after the merge, keep BOTH names working or fold
+# "midlat_cyclone" into that set — the checks below accept either.
+MLC_TRACK_TYPE = "midlat_cyclone"
+# Quota: the global per-type default (15) would truncate a busy window (Nov
+# 2023: 99 stitched lows, ~53 in the genesis band, ~20-40 after all screens).
+MLC_TOP_N = {"midlat_cyclone": int(os.environ.get("EWB_LIVE_TOP_N_MLC", "30"))}
+
 
 @functools.lru_cache(maxsize=2)
 def _climatology_cached(q: float):
@@ -170,11 +185,21 @@ def _severity(e) -> float:
         return _detail(e, "landfall_days") * _detail(e, "peak_land_pixels") * max(
             ivt - AR_IVT_BASELINE, 1.0
         )
+    if e.event_type == MLC_TRACK_TYPE:      # mlc lane: depth x duration x bomb
+        from ewb_live.events.mlc import severity as _mlc_severity
+
+        return _mlc_severity(e)
     return 0.0
 
 
 def _passes_floor(e) -> bool:
     dur = (e.end - e.start).days
+    if e.event_type == MLC_TRACK_TYPE:
+        # the detector already screened it; this re-checks the same floors so a
+        # mutated/merged track cannot slip through (mlc lane)
+        from ewb_live.events.mlc import passes_floor as _mlc_floor
+
+        return _mlc_floor(e)
     if e.event_type == "atmospheric_river":
         # events.yaml AR cases: centroid |lat| >= 22, duration p90 8 d
         centroid = _detail(e, "centroid_lat", 999.0)
@@ -252,6 +277,10 @@ def _bbox_intersects(a_bbox, b_bbox) -> bool:
 
 def _overlaps(a, b) -> bool:
     """True iff the two events share >=1 day of time AND bbox area."""
+    if MLC_TRACK_TYPE in (a.event_type, b.event_type):
+        # track lane, outside the no-overlap rule (see MLC_TRACK_TYPE): a deep
+        # low sits inside freezes, heat waves and ARs as a matter of course
+        return False
     if min(a.end, b.end) - max(a.start, b.start) <= dt.timedelta(0):
         return False
     return _bbox_intersects(a.bbox, b.bbox)
@@ -387,6 +416,9 @@ def merge_same_type(events: list, decisions: list[dict]) -> list:
     _resolve_conflicts (drop, never merge)."""
     pending = sorted(events, key=severity, reverse=True)
     out: list = []
+    if events and events[0].event_type == MLC_TRACK_TYPE:
+        # one low = one event: never weld two lows into one "system"
+        return list(pending)
     while pending:
         seed = pending.pop(0)
         cluster = [seed]
@@ -514,6 +546,11 @@ def rank_and_cap(events, top_n: int | dict[str, int] = DEFAULT_TOP_N,
 
     n_map = ({t: top_n for t in merged_by_type} if not isinstance(top_n, dict)
              else top_n)
+    # mlc lane: the track lane carries its own quota (a busy 90-day window holds
+    # more lows than the global cap); idempotent, so it is safe next to an
+    # equivalent per-lane override from another lane.
+    n_map = {t: max(n_map.get(t, DEFAULT_TOP_N), MLC_TOP_N.get(t, 0))
+             for t in merged_by_type}
     selected = _resolve_conflicts(merged_by_type, n_map, decisions)
     for e in selected:
         e.details = {**(e.details or {}), "severity_rank_score": round(severity(e), 2)}

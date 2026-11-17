@@ -290,6 +290,16 @@
       400&nbsp;kg&nbsp;m⁻¹&nbsp;s⁻¹ with a ridge criterion. The river must start over the ocean and
       reach land — making landfall on at least one day; objects entirely over land are excluded,
       and tropical cyclones are screened out using IBTrACS best tracks.</li>
+      <li><b>Midlatitude cyclone</b> — a closed low in 6-hourly ERA5 mean sea
+      level pressure: the lowest pressure within 6° with a <b>+3&nbsp;hPa</b> isobar
+      closing around it inside 6°, followed while it stays within 6° per 6-hour step
+      (gaps up to 12&nbsp;h are bridged). A low becomes an event when it lives at least
+      <b>48&nbsp;h</b>, travels at least <b>1000&nbsp;km</b>, reaches <b>≤990&nbsp;hPa</b>,
+      was born between <b>25–70°</b> latitude and <b>under 500&nbsp;m</b> elevation
+      (no phantom lows off the Tibetan Plateau or the Andes), and did not begin life as a
+      tropical cyclone. Peak value is the lowest central pressure; a <b>bomb</b> tag marks
+      a fall of ≥24&nbsp;hPa in 24&nbsp;h at 60° latitude. Tracked from ERA5, so this lane
+      has no model scorecard yet — it is drawn as a track, like a tropical cyclone.</li>
       <li>The raw detector map shades each cell by its consecutive <b>completed</b> UTC days
       meeting the daily rule. Heat shades only cells reaching the detector’s 3-day minimum
       (heat ramp 3–7+) — below that a cell can never become a heat wave, so it stays blank —
