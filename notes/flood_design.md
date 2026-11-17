@@ -217,3 +217,48 @@ mean so an incremental run still reports a window mean. 28 offline tests, ~13 s,
 
 CMR gives **no `Size`** for these granules in `umm_json`, so `Granule.size_mb` is 0.0 and the disk
 projection falls back to `EST_RAW_BYTES` (30 MB) — the numbers above are estimates for that reason.
+
+---
+
+## Part 1c — streaming policy + packed daily store (owner directive 2026-11-17, ~11:30 UTC)
+
+Owner: *raw granules must not be persisted; keep state minimal*. Implemented:
+
+* `DEFAULT_KEEP_RAW = 0` — a raw granule is now streaming input: it lands in `raw/` only
+  as an in-flight `.part`, is converted to the daily field, and is rolled immediately
+  (`--keep-raw N` still keeps N days for re-derivation). The daily field is the only
+  state. The disk-headroom guard is unchanged and still gates every fetch.
+* **Packed daily precipitation**: `uint16` at `0.01 mm` steps (`PP_SCALE_MM`) instead of
+  float32 — the producer's own precision, so the packing is lossless w.r.t. the data.
+  65535 is the fill value (decoded to NaN by `load_imerg_daily`), so the ceiling is
+  655.34 mm/day; `ingest_day` **clips** hotter cells explicitly and records
+  `clipped_at_max` in `status.json` (never wraps). `mask_and_scale` is off in
+  `_open_dataset` (granules must be read raw), so `_decode_precip()` unpacks explicitly;
+  legacy float32 daily files pass through unchanged.
+* Measured on an incompressible (pixel-noise) 0.1° global synthetic — a worst case:
+  9.19 MB → **5.15 MB/day (−44 %)**; peak RSS of the real-size `ingest_day` **452 MB**.
+  Real fields compress better; with the conservative 14 MB/day guard estimate a 90-day
+  window still projects ~1.31 GB (peak ~1.47 GB in 18 batches), realistic ~0.4–0.7 GB.
+* Streaming the *half-hourly* granules instead of daily was evaluated and rejected:
+  CMR sizes today `GPM_3IMERGHHL` median 6.60 MB × 48 ≈ 317 MB/day vs one 25.5–26.5 MB
+  daily granule — 12× the bytes, 48× the requests, and no consumer wants sub-daily time
+  (§1: the flood rule is daily/3-day accumulation).
+* Lat-cropping ±60° would save only ~13 % (band area ∝ sin lat); regridding to the ERA5
+  0.25° grid would save another 6.25× but decides flood-detect's join inside the ingest
+  — left to flood-detect/flood-clim as before.
+
+## Part 1d — first live credential run: two account-side gates (2026-11-17)
+
+netrc landed on ewb; login itself works (URS profile → 200; OPeNDAP accepts the Basic
+auth). Two consent steps block the data, both owner-side, now surfaced verbatim in the
+auth errors (`_AUTH_STEPS` step 5, `s3_credentials` hint, `_http_get` body excerpts):
+
+1. GES DISC granule GET → 401 **"Be sure to agree to the EULA."** — the account must
+   accept the data-centre terms once (https://disc.gsfc.nasa.gov/data-use).
+2. s3credentials → HTTP 500 via URS redirect *"Pre authorization required for this
+   application"* → https://urs.earthdata.nasa.gov/approve_app?client_id=e2WVk8Pw6weeLUKZYOxvTQ
+   once authorised, the AWS mirror route unlocks (HTTPS works without it).
+
+Also fixed on the way: the preemptive-auth handler read `req.fullurl` (stdlib attribute is
+`full_url`) — every offline test monkeypatches `_opener`/`_http_get`, so the bug only
+existed against the live endpoint; now covered by a handler-level regression test.
