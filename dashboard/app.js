@@ -998,10 +998,16 @@ function renderScorecard() {
     // contract (n_events/by_type, centroid rule owned by ewb_live/regions.py);
     // Global counts the curated catalog (same universe as before this feature).
     const re = regionEntry();
-    /* A track lane has no score rows by design, so the contract's scored-event
-       split can only ever answer 0 for it — in region view count the published
-       storms through the same region map the tables were built from. */
-    const nEv = (re && TYPE_META[etype] && TYPE_META[etype].noScores)
+    /* Honest counts, two ways. The region contract's n_events/by_type is a
+       SCORED-event split (centroid rule owned by ewb_live/regions.py), so it can
+       only answer 0 for a lane this build has no score rows for — a track lane by
+       design (tc 2026-11-16), and equally a lane the current data release simply
+       never scored (cold_snap in a build made before it existed, or a dev tree
+       that re-publishes live score rows without new scoring). For those the
+       honest number is the published count through the same region map the tables
+       were built from; the block below then says "Not scored — …". Where the lane
+       DOES have score columns, the contract split is the right answer. */
+    const nEv = (re && (!cols || TYPE_META[etype]?.noScores))
       ? state.events.filter((e) => e.event_type === etype && inRegion(e)).length
       : re ? (re.by_type || {})[etype] || 0
       : state.events.filter((e) => e.event_type === etype).length;
@@ -1028,17 +1034,20 @@ function renderScorecard() {
       continue;
     }
     if (!cols) {
-      // track lanes are published without a scorecard (no EWB benchmark for
-      // best-track events): say so instead of dropping the lane silently
-      if (TYPE_META[etype] && TYPE_META[etype].noScores) {
-        const note = el('p', 'lane-empty');
-        note.textContent = (TYPE_META[etype].noScoresNote
-          ? TYPE_META[etype].noScoresNote(nEv)
-          : `Not scored — ${nEv} event${nEv === 1 ? '' : 's'}; no EWB benchmark for this lane yet.`);
-        note.title = TYPE_CRITERIA[etype];
-        block.appendChild(note);
-        host.appendChild(block);
-      }
+      // No score columns for this lane in THIS build. Either it is published
+      // without a scorecard by design (the observation lanes: no EWB benchmark)
+      // or the release simply has no score rows for it (e.g. cold_snap against a
+      // scorecard built before the lane existed). Say which, instead of dropping
+      // the lane silently.
+      const note = el('p', 'lane-empty');
+      note.textContent = TYPE_META[etype]?.noScoresNote
+        ? TYPE_META[etype].noScoresNote(nEv)
+        : TYPE_META[etype]?.noScores
+          ? `Not scored — ${nEv} event${nEv === 1 ? '' : 's'}; no EWB benchmark for this lane yet.`
+          : `Not scored in this data release — ${nEv} published event${nEv === 1 ? '' : 's'}; no score rows for this lane yet.`;
+      note.title = TYPE_CRITERIA[etype];
+      block.appendChild(note);
+      host.appendChild(block);
       continue;
     }
 
