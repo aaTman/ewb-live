@@ -292,3 +292,56 @@ def test_fail_soft_without_data(caplog):
         assert M.scan_mlc_events(dt.date(2023, 1, 1), dt.date(2023, 1, 2),
                                  fields=([[]], np.zeros((0, 0, 0), np.float32),
                                          np.zeros(0), np.zeros(0))) == []
+
+
+# ------------------------------------------------------- orography source
+# ARCO's time axis opens with a 1900-01-01T00 pseudo step that is all NaN for
+# geopotential_at_surface. Reading it (the pre-2026-11-17 behaviour) yields an
+# all-zero elevation field, which silently disables the genesis orography screen
+# — the screen that exists to stop the tracker inventing lows off the Tibetan
+# Plateau. These tests pin the store handling without touching the network.
+def _store(values_by_time, times=("1900-01-01T00", "2000-01-01T00")):
+    import xarray as xr
+
+    return xr.Dataset(
+        {"geopotential_at_surface": (("time", "latitude", "longitude"), values_by_time)},
+        coords={"time": np.array(times, dtype="datetime64[h]"),
+                "latitude": [10.0, 0.0, -10.0], "longitude": [0.0, 120.0, -120.0]})
+
+
+def _patch_store(monkeypatch, ds):
+    from ewb_live.sources import mlc_era5
+
+    monkeypatch.setattr(mlc_era5, "open_arco", lambda *a, **k: ds)
+    return mlc_era5
+
+
+def test_orography_skips_the_all_nan_pseudo_step_and_finds_land(tmp_path, monkeypatch):
+    real = (np.arange(9).reshape(3, 3) * 900.0)            # metres via /9.81
+    ds = _store(np.stack([np.full((3, 3), np.nan), real]))
+    src = _patch_store(monkeypatch, ds)
+    elev, lats, lons = src.load_orography(tmp_path)
+    assert elev.max() > 0.0, "the real step must be used, not the NaN one"
+    assert lats[0] > lats[-1] or lats[0] < lats[-1]        # monotone either way
+    assert set(np.round(lons, 3)) == {-120.0, 0.0, 120.0}  # wrapped to [-180, 180)
+    # and it is cached, so a second call never re-reads the store
+    monkeypatch.setattr(src, "open_arco",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("re-read")))
+    assert src.load_orography(tmp_path)[0].max() > 0.0
+
+
+def test_poisoned_all_zero_orography_cache_is_refetched(tmp_path, monkeypatch):
+    np.savez_compressed(  # what the old code cached: a silent all-zero field
+        (tmp_path / "topo_0p25.npz"), elev=np.zeros((3, 3), np.float32),
+        lats=np.arange(3.0), lons=np.arange(3.0))
+    real = (np.arange(9).reshape(3, 3) * 900.0)
+    src = _patch_store(monkeypatch, _store(np.stack([np.full((3, 3), np.nan), real])))
+    elev = src.load_orography(tmp_path)[0]
+    assert elev.max() > 0.0, "an all-zero cache must not disable the screen"
+
+
+def test_all_nan_orography_fails_soft(tmp_path, monkeypatch):
+    src = _patch_store(monkeypatch, _store(np.full((2, 3, 3), np.nan)))
+    elev, lats, lons = src.load_orography(tmp_path)
+    assert elev.size == 0 and lats.size == 0 and lons.size == 0
+    assert src.elevation_at(elev, lats, lons, 30.0, 90.0) == 0.0  # screen off, lane alive

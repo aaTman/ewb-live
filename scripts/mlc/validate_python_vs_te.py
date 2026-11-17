@@ -299,9 +299,21 @@ def main() -> None:
     t0 = time.perf_counter()
     res = T.generate_mlc_tracks(mslp, lats, lons, times)
     py_s = time.perf_counter() - t0
+    # Pass the orography field EXPLICITLY: scan_mlc_events only loads it itself
+    # when it reads ERA5 itself, and here the fields are injected — so leaving it
+    # out silently disables the orography screen (elevation_at fails open at 0 m)
+    # and the published-event count would not be the production count.
+    try:
+        from ewb_live.sources import mlc_era5
+
+        topo = mlc_era5.load_orography()
+        topo_note = "orography loaded (the genesis elevation screen is live)"
+    except Exception as exc:  # noqa: BLE001
+        topo = None
+        topo_note = f"orography UNAVAILABLE ({exc}) — genesis elevation screen off"
     t0 = time.perf_counter()
     events = MLC.scan_mlc_events(start.date(), end.date(),
-                                 fields=(times, mslp, lats, lons))
+                                 fields=(times, mslp, lats, lons), orography=topo)
     ev_s = time.perf_counter() - t0
     del mslp
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
@@ -385,6 +397,7 @@ def main() -> None:
         lines.append("\n(TempestExtremes not run — `--skip-te` or no TE install.)")
 
     lines.append("\n## Python event screens (tracker output -> published events)\n")
+    lines.append(f"* {topo_note}")
     lines.append(f"* tracks considered: {len(res.tracks)}")
     lines.append(f"* events published: {len(events)}")
     for e in sorted(events, key=lambda e: e.start):

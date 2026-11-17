@@ -122,6 +122,21 @@ def topo_path(cache_dir: str | Path | None = None) -> Path:
     return Path(cache_dir or DEFAULT_CACHE_DIR) / "topo_0p25.npz"
 
 
+# The store reader peaks at ~17 GB of decode buffers for a single (721, 1440)
+# timestep of this variable (measured on the ewb box, both through xarray and by
+# indexing the zarr array directly, ~1.4-2 s). That is a ONE-TIME cost: the field
+# is static and cached as a ~4 MB npz, so every later scan reads the cache. If the
+# box's memory matters, pre-warm it once (see notes/DONE_mlc_impl.md).
+_TOPO_PROBE_TIMES = (np.datetime64("2000-01-01T00"), np.datetime64("1979-06-01T00"),
+                     np.datetime64("2015-01-01T00"))
+
+
+def _read_topo_step(z, time_index: int | None) -> np.ndarray:
+    """One timestep of ``z`` in metres (NaN -> 0, i.e. sea and missing alike)."""
+    sel = z if time_index is None else z.isel(time=time_index)
+    return np.nan_to_num(np.asarray(sel.load(), np.float32), nan=0.0) / G0
+
+
 def load_orography(cache_dir: str | Path | None = None, *, ds=None,
                    time_step: np.datetime64 | None = None,
                    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -132,37 +147,58 @@ def load_orography(cache_dir: str | Path | None = None, *, ds=None,
     with no network (unit tests, offline dev) returns an all-zero field, which
     disables the orography screen instead of failing the lane — the screen is a
     false-positive filter, so a zero field is the safe direction.
+
+    A *cached* all-zero field is not trusted (it is what a pre-2026-11-17 build
+    wrote after reading the all-NaN 1900 pseudo step): it is refetched.
     """
     p = topo_path(cache_dir)
     if p.exists():
         with np.load(p) as z:
-            return z["elev"].astype(np.float32), z["lats"], z["lons"]
+            # read everything inside the with-block: an NpzFile is lazy, so
+            # touching z["lats"] after it closes raises AttributeError (and the
+            # lane would then publish nothing on every run after the first)
+            elev = z["elev"].astype(np.float32)
+            lats, lons = z["lats"], z["lons"]
+        if elev.size and float(np.max(elev)) > 0.0:
+            return elev, lats, lons
+        logger.warning("mlc_era5: cached orography %s is all zero — refetching", p)
     try:
+# ARCO's time axis opens with a 1900-01-01T00 pseudo step that is **all NaN** for
+# geopotential_at_surface (the real record starts 1979-01-01), so "time index 0"
+# silently yields an all-zero orography field and turns the genesis elevation
+# screen off. Probe real dates, and reject a field with no land on it.
         src = open_arco() if ds is None else ds
-        t = time_step if time_step is not None else np.asarray(src.time.values)[0]
         z = src[TOPO_VAR]
-        if "time" in z.dims:
-            idx = int(np.abs(np.asarray(z.time.values, "datetime64[h]")
-                             - np.datetime64(t, "h")).argmin())
-            z = z.isel(time=idx)
-        elev = z.load() / G0
-        if float(elev.latitude.values[0]) < float(elev.latitude.values[-1]):
-            elev = elev.isel(latitude=slice(None, None, -1))
-        elev = elev.assign_coords(
-            longitude=(np.asarray(elev.longitude.values, float) + 180.0) % 360.0 - 180.0)
-        elev = elev.sel(latitude=slice(LAT_LIMIT, -LAT_LIMIT))
-        arr = np.nan_to_num(
-            np.asarray(elev.transpose("latitude", "longitude").values, np.float32),
-            nan=0.0)
-        lats = np.asarray(elev.latitude.values, float)
-        lons = np.asarray(elev.longitude.values, float)
+        times = (np.asarray(z.time.values, "datetime64[h]") if "time" in z.dims
+                 else None)
+        cands = [time_step] if time_step is not None else list(_TOPO_PROBE_TIMES)
+        arr = None
+        for t in cands:
+            idx = (None if times is None else
+                   int(np.abs(times - np.datetime64(t, "h")).argmin()))
+            a = _read_topo_step(z, idx)
+            if float(np.max(a)) > 0.0:      # a real field always has land
+                arr = a
+                break
+        if arr is None:
+            raise ValueError(f"{TOPO_VAR} is all-NaN at every probed time step")
+        lats = np.asarray(z.latitude.values, float)
+        lons = np.asarray(z.longitude.values, float)
+        if lats[0] < lats[-1]:
+            arr, lats = arr[::-1], lats[::-1]
+        lons = (lons + 180.0) % 360.0 - 180.0
+        keep = (lats >= -LAT_LIMIT) & (lats <= LAT_LIMIT)
+        arr, lats = arr[keep], lats[keep]
+        order = np.argsort(lons)
+        arr, lons = arr[:, order], lons[order]
     except Exception as exc:  # noqa: BLE001 - orography is a screen, not a dependency
         logger.warning("mlc_era5: no orography (%s); genesis elevation screen off", exc)
         return np.zeros((0, 0), np.float32), np.zeros(0), np.zeros(0)
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(p, elev=arr, lats=lats, lons=lons)
-        logger.info("mlc_era5: cached orography %s (%.1f MB)", p, p.stat().st_size / 1e6)
+        logger.info("mlc_era5: cached orography %s (%.1f MB, max %.0f m)",
+                    p, p.stat().st_size / 1e6, float(arr.max()))
     except OSError as exc:                       # read-only deploy: run without it
         logger.warning("mlc_era5: could not cache orography: %s", exc)
     return arr, lats, lons
