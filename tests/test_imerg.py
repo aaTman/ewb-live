@@ -395,7 +395,8 @@ def test_roll_window_drops_outside_90_days(cache):
 
     for day in days:                                        # one day at a time, cheap
         ingest(day, day, root=root, granules={day: granules[day]}, workers=1,
-               downloader=copier_simple, keep_raw=99, keep_days=3650, grid_deg=DEG)
+               downloader=copier_simple, keep_raw=99, keep_days=3650, grid_deg=DEG,
+               min_free=0)
     assert len(list((root / "daily").glob("imerg_*.nc"))) == 100
 
     out = roll_window(root=root, keep_days=90, keep_raw=3, now=now)
@@ -411,6 +412,64 @@ def test_roll_window_drops_outside_90_days(cache):
     assert raw_days == ["20261113", "20261114", "20261115", "20261116"]
     dry = roll_window(root=root, keep_days=1, keep_raw=0, now=now, dry_run=True)
     assert dry["removed"] and len(list((root / "daily").glob("imerg_*.nc"))) == 90
+
+
+# ------------------------------------------------------------- disk headroom guard
+
+
+def test_project_window_peaks_per_batch():
+    days = [DAY1 + dt.timedelta(days=i) for i in range(10)]
+    granules = {d: Granule(day=d, granule_ur=f"x{d:%Y%m%d}.nc4", url="u", size_mb=26.5)
+                for d in days}
+    p = imerg.project_window(days, granules, batch_days=5)
+    assert p["batches"] == 2 and p["batch_days"] == 5
+    assert p["peak_raw"] == pytest.approx(5 * 26.5e6)          # one batch, not the window
+    assert p["raw_total"] == pytest.approx(10 * 26.5e6)
+    assert p["net"] == p["peak_raw"] + 10 * imerg.EST_DAILY_BYTES
+
+
+def test_headroom_guard_refuses_before_downloading(cache, monkeypatch):
+    """The ewb LXC root FS is 98-100 % full and hosts the live service: an ingest that
+    cannot fit must fail up front, without writing a single byte to the cache."""
+    monkeypatch.setattr(imerg, "free_bytes",
+                        lambda root=None: imerg.MIN_FREE_BYTES + 10_000_000)
+    with pytest.raises(ImergError, match="not enough free space"):
+        imerg.require_headroom(cache, need=80_000_000)
+    assert imerg.require_headroom(cache, need=1_000_000) > 0
+
+    days = [DAY1, DAY1 + dt.timedelta(days=1)]
+    _, granules = fake_remote(tmp_path=cache, days=days)
+    called = []
+
+    def never(url, dest):
+        called.append(url)
+        return copyfile_downloader(url, dest)
+
+    with pytest.raises(ImergError, match="not enough free space"):
+        ingest(DAY1, days[-1], root=cache / "root", granules=granules, workers=1,
+               downloader=never, grid_deg=DEG)
+    assert called == [] and not (cache / "root").exists()
+
+
+def test_ingest_batches_roll_raw_between_them(cache):
+    """Peak disk use is bounded by one batch of granules, not the window: with
+    ``keep_raw=0`` the raw cache must be empty even though 10 days were fetched."""
+    days = [dt.date(2026, 11, 10) + dt.timedelta(days=i) for i in range(10)]
+    _, granules = fake_remote(tmp_path=cache, days=days)
+    root = cache / "root"
+    calls = []
+
+    def counting(url, dest):
+        calls.append(url)
+        return copyfile_downloader(url, dest)
+
+    out = ingest(days[0], days[-1], root=root, granules=granules, workers=1,
+                 downloader=counting, grid_deg=DEG, keep_raw=0, keep_days=90, batch_days=3,
+                 now=dt.datetime(2026, 11, 20, 12, 0, tzinfo=dt.timezone.utc), min_free=0)
+    assert out["fetch"]["fetched"] == 10
+    assert len(calls) == 10
+    assert len(list((root / "daily").glob("imerg_*.nc"))) == 10
+    assert not list((root / "raw").rglob("*.nc4"))            # rolled between batches
 
 
 # --------------------------------------------------- AWS Open Data S3 transport plumbing

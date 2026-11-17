@@ -52,6 +52,7 @@ import netrc
 import os
 import random
 import re
+import shutil
 import sys
 import threading
 import time
@@ -92,6 +93,16 @@ DEFAULT_PRODUCT = "auto"
 PRODUCT_KEYS = ("auto", "early", "late", "final")
 ROUTES = ("auto", "s3", "https")
 SCREENS = ("none", "cnt", "polid", "cnt+polid")
+
+#: Refuse to start a fetch that would leave less than this free on the cache filesystem.
+#: The ewb LXC root FS runs at 98-100 % (4.5 GB free on 2026-11-17) and hosts the live
+#: service, so an ingest that fills the disk is an outage: measure first, then download.
+MIN_FREE_BYTES = int(os.environ.get("EWB_LIVE_IMERG_MIN_FREE_BYTES", str(2 << 30)))
+#: projection constants (measured: deflate daily field 6-12 MB, raw granule ~26.5 MB)
+EST_DAILY_BYTES = 14 << 20
+EST_RAW_BYTES = 30 << 20
+#: days fetched before ``raw/`` is rolled (one batch of granules is the peak cost)
+DEFAULT_BATCH_DAYS = 5
 
 CMR_SEARCH_URL = "https://cmr.earthdata.nasa.gov/search/granules.umm_json"
 #: AWS Open Data mirror of the same GES DISC collections (registry.opendata.aws
@@ -1094,40 +1105,109 @@ def ingest(start: dt.date, end: dt.date, *, root: str | Path | None = None,
            granules: dict[dt.date, Granule] | None = None,
            downloader: Callable[[str, Path], Path] | None = None,
            route: str = DEFAULT_ROUTE, grid_deg: float = IMERG_GRID_DEG,
+           batch_days: int | None = None, min_free: int = MIN_FREE_BYTES,
            log: Callable[[str], None] | None = None) -> dict:
     """Survey → download → daily mm/day fields + completeness index, then roll the window.
 
     Safe to re-run: existing granules and daily files are reused (``overwrite`` forces a
     re-fetch/rebuild), an interrupted run resumes from its ``.part`` files, and a day that
     a better run has since covered is rebuilt from that run (``product="auto"``).
+
+    The window is fetched in batches of ``batch_days`` days (default ``keep_raw + 2``) with
+    ``raw/`` rolled between them, so peak usage stays at roughly one batch of granules plus
+    the daily store, and :func:`require_headroom` refuses the run up front if even that
+    would eat into the :data:`MIN_FREE_BYTES` the live service needs.
     """
     days = _daterange(start, end)
     if granules is None:
         granules, _ = survey_window(start, end, product=product)
-    got = fetch(days, root=root, product=product, granules=granules, workers=workers,
-                overwrite=overwrite, downloader=downloader, route=route, log=log)
-    entries = []
-    for day in days:
-        gran = granules.get(day)
-        if gran is None:
-            continue
-        src = raw_path(gran, root)
-        if not src.exists():
-            continue
-        try:
-            entries.append(ingest_day(gran, day, root=root, product=gran.product,
-                                      grid_deg=grid_deg, overwrite=overwrite))
-        except ImergError as exc:
-            _status_entry(root, day, status="error", error=str(exc), product=product)
-            if log:
-                log(f"ERROR {day:%Y-%m-%d}: {exc}")
-    rolled = roll_window(root=root, keep_days=keep_days, keep_raw=keep_raw, now=now)
+    batch_days = max(1, keep_raw + 2 if batch_days is None else batch_days)
+    pending = [d for d in days if d in granules and not raw_path(granules[d], root).exists()]
+    if pending:
+        require_headroom(root, project_window(days, granules, batch_days=batch_days)["net"],
+                         min_free=min_free)
+    got = {"fetched": 0, "cached": 0, "missing": [], "errors": {}, "bytes": 0}
+    entries: list[dict] = []
+    rolled: dict = {}
+    for i in range(0, len(days), batch_days):
+        batch = days[i:i + batch_days]
+        one = fetch(batch, root=root, product=product, granules=granules, workers=workers,
+                    overwrite=overwrite, downloader=downloader, route=route, log=log)
+        for key in ("fetched", "cached", "bytes"):
+            got[key] += one[key]
+        got["missing"] += one["missing"]
+        got["errors"].update(one["errors"])
+        for day in batch:
+            gran = granules.get(day)
+            if gran is None:
+                continue
+            src = raw_path(gran, root)
+            if not src.exists():
+                continue
+            try:
+                entries.append(ingest_day(gran, day, root=root, product=gran.product,
+                                          grid_deg=grid_deg, overwrite=overwrite))
+            except ImergError as exc:
+                _status_entry(root, day, status="error", error=str(exc), product=product)
+                if log:
+                    log(f"ERROR {day:%Y-%m-%d}: {exc}")
+        rolled = roll_window(root=root, keep_days=keep_days, keep_raw=keep_raw, now=now)
     means = [e.get("mean_mm_day") for e in entries if e.get("mean_mm_day") is not None]
     return {"window": [f"{start:%Y-%m-%d}", f"{end:%Y-%m-%d}"], "product": product,
             "granules_available": len([d for d in days if d in granules]),
             "fetch": got, "ingested": entries, "rolled": rolled,
             "global_mean_mm_day": round(float(np.mean(means)), 3) if means else None,
             "disk": disk_usage(root)}
+
+
+def free_bytes(root: str | Path | None = None) -> int:
+    """Bytes free on the filesystem that will hold the cache (walks up to an existing dir)."""
+    path = _root(root)
+    while not path.exists() and path != path.parent:
+        path = path.parent
+    return int(shutil.disk_usage(path).free)
+
+
+def project_window(days: Iterable[dt.date], granules: dict[dt.date, Granule], *,
+                   batch_days: int = DEFAULT_BATCH_DAYS) -> dict:
+    """Projected **peak** disk cost of a window (what the headroom guard uses).
+
+    ``ingest`` works in batches of ``batch_days`` days and rolls ``raw/`` between them, so
+    the high-water mark is one batch of granules plus the whole daily store of the window
+    — not the full raw backfill. That is what lets a 90-day backfill fit on a filesystem
+    that is already 98-100 % full.
+    """
+    days = [d for d in sorted(set(days)) if d in granules]
+
+    def size(day: dt.date) -> int:
+        return int(granules[day].size_mb * 1e6) if granules[day].size_mb else EST_RAW_BYTES
+
+    step = max(1, batch_days)
+    batches = [days[i:i + step] for i in range(0, len(days), step)] or [[]]
+    peak_raw = max(sum(size(d) for d in b) for b in batches)
+    daily_new = len(days) * EST_DAILY_BYTES
+    return {"raw_total": sum(size(d) for d in days), "peak_raw": peak_raw,
+            "daily_new": daily_new, "net": peak_raw + daily_new,
+            "batches": len(batches), "batch_days": step}
+
+
+def require_headroom(root: str | Path | None = None, need: int = 0, *,
+                     min_free: int = MIN_FREE_BYTES) -> int:
+    """Raise unless the cache filesystem has ``min_free`` free *after* spending ``need``.
+
+    A full root filesystem takes down the live service, so an ingest that cannot fit is
+    an error, not a surprise: the message states the numbers and the two levers
+    (``--keep-raw 0`` and a smaller ``--min-free-bytes``).
+    """
+    free = free_bytes(root)
+    if free - need < min_free:
+        raise ImergError(
+            f"not enough free space for this fetch on {daily_dir(root).parent}: "
+            f"{free / 1e9:.2f} GB free, this window needs ~{need / 1e9:.2f} GB and "
+            f"{min_free / 1e9:.2f} GB must stay free (live service on the same filesystem). "
+            f"Free space, or shrink the footprint: --keep-raw 0 (no cached granules), "
+            f"fewer --days, or a deliberate --min-free-bytes override.")
+    return free
 
 
 def disk_usage(root: str | Path | None = None) -> dict:
@@ -1383,6 +1463,11 @@ def _days_arg(args) -> tuple[dt.date, dt.date]:
     return start, end
 
 
+def imerg_daily_mb(n_days: int) -> float:
+    """Rough GB of compressed daily fields for ``n_days`` days (for CLI reporting)."""
+    return n_days * EST_DAILY_BYTES / 1e9
+
+
 def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover - CLI
     _require_ewb()
     ap = argparse.ArgumentParser(prog="python -m ewb_live.sources.imerg",
@@ -1403,6 +1488,11 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover - CLI
     up.add_argument("--keep-raw", type=int, default=DEFAULT_KEEP_RAW)
     up.add_argument("--keep-days", type=int, default=DEFAULT_KEEP_DAYS)
     up.add_argument("--overwrite", action="store_true")
+    up.add_argument("--min-free-bytes", type=int, default=MIN_FREE_BYTES,
+                    help="refuse the fetch unless this much space stays free on the cache "
+                         "filesystem after it (the ewb LXC hosts the live service)")
+    up.add_argument("--batch-days", type=int, default=DEFAULT_BATCH_DAYS,
+                    help="days fetched before raw/ is rolled (bounds the peak disk use)")
     up.add_argument("--dry-run", action="store_true",
                     help="survey only: what exists, how much disk it needs (no credentials)")
 
@@ -1435,18 +1525,32 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover - CLI
             runs[gran.product] = runs.get(gran.product, 0) + 1
         log(f"published granules: {len(granules)} of {len(days)} days "
             f"({runs}), {sizes / 1000:.2f} GB raw; gaps: {gaps or 'none'}")
+        need = project_window(days, granules, batch_days=args.batch_days or DEFAULT_BATCH_DAYS)["net"]
+        free = free_bytes(root)
+        fits = free - need >= args.min_free_bytes
         log(f"projected sizes: raw {sizes / 1000:.2f} GB per full backfill "
             f"(kept: last {args.keep_raw} days), daily store "
-            f"~{0.012 * len(granules):.2f} GB for {len(granules)} days "
+            f"~{imerg_daily_mb(len(granules)):.2f} GB for {len(granules)} days "
             f"(~12 MB/day compressed) + status.json")
+        log(f"disk: {free / 1e9:.2f} GB free on {daily_dir(root).parent}, this window needs "
+            f"~{need / 1e9:.2f} GB and {args.min_free_bytes / 1e9:.2f} GB must stay free -> "
+            f"{'fits' if fits else 'WILL NOT FIT'}")
         if args.dry_run:
+            if not fits:
+                log("--keep-raw 0 and/or fewer --days shrink the footprint; "
+                    "--min-free-bytes overrides deliberately")
             return 0
+        if not fits:
+            log(ImergError(f"refusing to fetch: {need / 1e9:.2f} GB needed, only "
+                           f"{free / 1e9:.2f} GB free (floor {args.min_free_bytes / 1e9:.2f} GB)"))
+            return 5
         if earthdata_credentials() is None:
             log(ImergAuthError(_AUTH_STEPS))
             return 3
         summary = ingest(start, end, root=root, product=args.product, workers=args.workers,
                         keep_raw=args.keep_raw, keep_days=args.keep_days,
-                        overwrite=args.overwrite, granules=granules, route=args.route, log=log)
+                        overwrite=args.overwrite, granules=granules, route=args.route,
+                        batch_days=args.batch_days, min_free=args.min_free_bytes, log=log)
         log(json.dumps({k: v for k, v in summary.items() if k != "ingested"}, indent=1))
         means = [e.get("mean_mm_day") for e in summary["ingested"] if e.get("mean_mm_day")]
         if means:
