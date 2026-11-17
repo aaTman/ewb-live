@@ -32,7 +32,13 @@ STEP_DEG = 1.0          # coarsening target for footprints
 SIZE_LIMIT = 2_000_000  # bytes; brief target < 1-2 MB
 OUT_NAME = "global_timeline.json"
 
-TYPES = ("heat_wave", "freeze", "cold_snap", "atmospheric_river")
+# Timeline lanes = the Gantt strip under the merged map. The raster lanes need
+# their per-event viz.json for the footprint bits; flood has none (its evidence
+# is a 0.1° IMERG accumulation, not a v2 sidecar raster), so its entries fall
+# back to bbox+days in build() — enough to populate the lane's bars, which is
+# what mergedmap's LANE_ORDER draws. The cyclone lanes are deliberately absent:
+# a storm/low is a track, drawn in its own detail view (TrackViz).
+TYPES = ("heat_wave", "freeze", "cold_snap", "atmospheric_river", "flood")
 
 
 def _qualified(ev: dict) -> tuple[str, str]:
