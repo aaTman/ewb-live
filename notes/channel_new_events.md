@@ -88,3 +88,81 @@ Test footprint: `/tmp` stays at 29 MB used with TMPDIR on tmpfs; the suite is no
 mm/day + `load_imerg_mask`/`load_imerg_status`). flood-clim's contract above is compatible: UTC
 calendar-day totals in mm, and `IMERG_GRID` (0.1° cell-centre, ±89.95 / −180…179.95) is exactly what my
 granules carry, so `grid="imerg"` / `precip_threshold_on` will line up.
+
+## [flood-imerg] 2026-11-17 03:45 UTC — DONE: IMERG daily ingest built, tested, sized; one owner blocker
+
+### What changed (this worktree, `ne-flood-imerg`, branched from `8ba00be`)
+
+* `freeze: <=0C at all four steps (from owner patch)` — `briefs-new-events/freeze_le0c.patch` applied
+  and committed first, as COMMON.md asks (`ewb_live/events/temperature.py`, `SPEC.md`,
+  `dashboard/detection.py`, `tests/test_frame_masks.py`).
+* **`ewb_live/sources/imerg.py`** (new, ~1500 lines) — the whole observation lane: CMR granule survey
+  (anonymous) → granule download (AWS Open Data S3 with Earthdata-minted temp credentials, GES DISC
+  HTTPS fallback) → daily mm/day field + `precipitation_cnt` + `probabilityLiquidPrecipitation` →
+  per-day compressed NetCDF4 + `status.json` index → rolling 90-day window. Run policy
+  `product="auto"` (Late preferred, Early fills the head, cached days upgrade when Late lands).
+  Disk-headroom guard + batched fetch (see `notes/flood_design.md` Part 1b). CLI:
+  `python -m ewb_live.sources.imerg update|status|roll|auth-check`.
+* **`tests/test_imerg.py`** (new, 28 offline tests, ~13 s, few MB, no network) and
+  **`notes/flood_design.md`** (Part 1 product/access decision + Part 1b as-built evidence).
+* No shared file is touched except `notes/*` and the owner freeze patch. `types.py` /
+  `pipeline.py` / `select.py` / `dashboard/*` are **not** edited: the `flood` Event object, its
+  registration and its dashboard rendering belong to `flood-detect` (it will be launched later and
+  owns the join). Nothing here is importable-by-side-effect from those files, so the merge is clean.
+
+### Interface (unchanged from my 17:45 entry — flood-clim's contract matches)
+
+`load_imerg_daily(start, end, *, product="auto", root=None, screen="none"|"cnt"|"polid"|"cnt+polid",
+min_cnt=48) -> xr.DataArray` — **(time, lat, lon) float32 mm/day**, `time` = 00:00 UTC of the UTC
+calendar day, 0.1° cell-centred grid read per file (1800×3600, lat −89.95…89.95 asc, lon −180…179.95).
+NaN = no observation, never zero. Plus `load_imerg_mask` (uint8 bits: 1 present, 2 full sampling,
+4 likely liquid) and `load_imerg_status` (per-day present/partial/missing/not_ingested/error).
+`root` defaults to `$EWB_LIVE_IMERG_DIR` or `data/imerg` → on the LXC `/opt/ewb-live/data/imerg`.
+
+**For `flood-detect`**: flood-clim is right that the join must go 0.1° → 0.25° by *aggregating the
+observations up*, and note the axes are not merely resampled — ERA5 is lat 90→−90 descending, lon
+0→359.75 while IMERG is lat ascending, lon −180→179.95, so the aggregation has to roll the longitude
+axis across the dateline and flip latitude before any areal average. Use `load_imerg_mask` (or
+`screen="cnt"`) rather than `isnan` alone: a 0 in the mask means "no observation", which must not
+count as below-threshold.
+
+### Tests run
+
+* `tests/test_imerg.py`: **28 passed** in ~13 s, under
+  `systemd-run --user --scope -p MemoryMax=8G -- timeout 300 .venv/bin/python -m pytest tests/test_imerg.py -x -q`
+  with `TMPDIR=$PWD/tmp/pytest`; `/tmp` peaked at +4 MB (33 MB total). Run postmortem above for the
+  140 GB cause and its two-layer fix.
+* Whole unit suite: **308 passed, 2 failed, 29 skipped** — both failures are
+  `tests/test_events_unit.py` AR tests raising `FileNotFoundError: EWB data_prep dir not found:
+  third_party/ExtremeWeatherBench/...` (pre-existing environmental gap, unrelated to IMERG; that path
+  is gitignored).
+* On the ewb LXC through `ops/remote.sh` (real endpoints, no credentials): `update --days 7 --dry-run`,
+  `update --days 90 --dry-run`, `auth-check`. 90-day sizing: 88/90 days published by Late, raw total
+  2.56 GB, **daily store ~1.29 GB, peak ~1.45 GB in 18 batches, fits with 2.15 GB held back.**
+
+### Open issues / needs the owner
+
+1. **Blocker for task 5 (real 3–5 day fetch): no NASA Earthdata login anywhere.** `/root/.netrc`
+   absent on ewb, no `EARTHDATA_*` env, no netrc on the orca container. `auth-check` on ewb prints
+   these steps and exits 3; nothing is stored in the repo:
+   1. https://urs.earthdata.nasa.gov/users/new (free).
+   2. On the ewb LXC: `printf 'machine urs.earthdata.nasa.gov login <user> password <pw>\n' > /root/.netrc && chmod 600 /root/.netrc`
+      (or `EARTHDATA_USERNAME`/`EARTHDATA_PASSWORD` in the service env instead).
+   3. Verify: `ops/remote.sh run python -m ewb_live.sources.imerg auth-check`.
+   4. Then prove the lane: `ops/remote.sh run python -m ewb_live.sources.imerg update --days 5`
+      (≈130 MB raw, ~60 MB daily fields, 5 requests) and `update --days 90` for the full window.
+   I did **not** invent credentials or run the fetch — task 5 stays open until this lands.
+2. **Correction to the AWS Open Data update**: the mirror is *Controlled Access / Requester Pays*,
+   unsigned GET/LIST → 403 (evidence in Part 1b.2), so no route to this data is credential-free. The
+   AWS path is still implemented as the default transport, but the Earthdata ask in (1) is unavoidable.
+3. **ewb LXC root FS is 98–100 % full** (4.5–6.4 GB free, moving) with the live service on it. The
+   90-day window fits (~1.3 GB + peak 1.45 GB) and the headroom guard now refuses an ingest that would
+   not fit, but someone should free space before the backfill, and IMERG must not be given a lower
+   `--min-free-bytes` casually.
+4. **Merge note for the orchestrator**: `notes/flood_design.md` is add/add — mine is Part 1 (IMERG
+   ingest) + Part 1b, `ne-flood-clim`'s is the climatology design (they did not append as asked).
+   Concatenate, do not pick a side. `notes/channel_new_events.md` is likewise per-worktree.
+5. Optional follow-up (not started, ~worth it for `flood-detect`): a tested
+   `aggregate_to_era5_grid(da)` in this module (0.1° → 0.25° area-weighted mean with the dateline roll
+   and NaN-aware weights), so the join does not reimplement the fiddly part. See
+   `notes/handoff_flood-imerg_1.md`.
