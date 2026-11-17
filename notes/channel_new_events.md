@@ -199,3 +199,40 @@ count as below-threshold.
   pre-existing environmental ones in `tests/test_events_unit.py` (`FileNotFoundError: EWB data_prep
   dir not found: third_party/ExtremeWeatherBench/data_prep`; `third_party/` is gitignored, so they
   cannot pass in any fresh checkout) — unrelated to IMERG and unchanged from before the rebase.
+
+## [flood-imerg] 2026-11-17 10:42 UTC — Earthdata still absent after 15 min of polling; fetch NOT run + how to run it safely
+
+Polled `/root/.netrc` on the ewb LXC every ~55 s from **10:25 to 10:39 UTC: absent throughout**, so
+brief task 5 (real 3–5 day fetch) is still not run — no invented credentials, nothing fetched, and
+`data/imerg/` does not exist on the box yet.
+
+### ⚠️ Do NOT run the fetch through `ops/remote.sh run` from my branch
+
+`ops/remote.sh run` rsyncs the **whole tree** first, and my rebased branch no longer carries
+`freeze: <=0C at all four steps` (dropped per owner). The deployed tree at `/opt/ewb-live` **does**
+carry it (3 `FREEZE_MAX_C` hits) and `ewb-live-web.service` runs with `WorkingDirectory=/opt/ewb-live`
+— so a sync from my branch would silently revert the live temperature rule. `/opt/ewb-live/ewb_live/
+sources/imerg.py` is **byte-identical** to my branch copy (`47deea6b…`), so no deploy is needed at all.
+Run it over plain ssh instead (same venv, same cwd):
+
+```bash
+ssh root@192.168.0.121 'cd /opt/ewb-live && . .venv/bin/activate \
+  && python -m ewb_live.sources.imerg auth-check \
+  && python -m ewb_live.sources.imerg update --days 5'
+```
+
+Pre-flight as of 10:41 UTC: `/dev/loop14` **99 % full, 5.9 GB free**. A 5-day window peaks at
+~5 × 26 MB raw + 5 × 14 MiB daily ≈ **0.2 GB**, above the guard's 2.15 GB floor → fits. The 90-day
+backfill needs ~1.3 GB with a ~1.45 GB peak (measured dry run) — it fits too, but only just; run it
+only after the 5-day proof and keep the default `--min-free-bytes`.
+
+What to expect (so the report is checkable): 5 granules ≈ 130 MB raw, ~6–12 MB/day compressed daily
+field (≈30–60 MB), 10 HTTP requests (5 CMR + 5 data), and the CLI's `sanity: global mean … mm/day`
+line should land near the climatological 2–3 mm/day.
+
+### Where the ewb disk actually goes (for infra, not my slice — I changed nothing)
+
+`data/` is 342 GB on that filesystem: **`data/cache/subsets` 231 GB**, `data/cache/truth` 45 GB,
+`data/cache/fc_parts` 41 GB, `data/clim` 26 GB, `data/icechunk` 0.9 GB. If `subsets` is a
+re-derivable cache, trimming it is by far the cheapest way to give the 90-day IMERG window real
+headroom; nobody should lower IMERG's `--min-free-bytes` instead.
