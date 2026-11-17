@@ -1,4 +1,10 @@
-# handoff — flood-imerg (slice essentially DONE), written 2026-11-17 03:50 UTC
+# handoff — flood-imerg (slice essentially DONE), written 2026-11-17 03:50 UTC, rebased 09:20 UTC
+
+**Rebase state**: branch `aaTman/ne-flood-imerg` is rebased onto local `main` (e492a52), 0 behind /
+7 ahead; the `freeze: <=0C at all four steps` commit was **dropped per owner**, so my branch touches
+no shared file. Pre-rebase backup: `backup/pre-rebase-ne-flood-imerg-20261117`. See the channel
+entries at 09:20 and 10:42 UTC — including the warning that `main` itself does not carry
+`FREEZE_MAX_C`, and that `origin/main` (3b1f63c) has diverged from local `main`.
 
 **Goal (brief `briefs-new-events/flood_imerg.md`)**: IMERG/GPM daily precipitation for the last 90 days
 as the `flood` event type's observation lane; `flood-clim` builds the ERA5 climatology,
@@ -33,12 +39,26 @@ otherwise (that was the incident).
 
 ## If/when the owner adds Earthdata credentials on ewb
 
-1. `ops/remote.sh run python -m ewb_live.sources.imerg auth-check`
-2. `ops/remote.sh run python -m ewb_live.sources.imerg update --days 5` → report volume/day + timing
-   (brief task 5: expect ~26 MB/granule raw, ~6–12 MB/day daily field, 5 requests; watch the printed
-   `sanity: global mean … mm/day`, climatological expectation ~2–3).
-3. `update --days 90 --dry-run` then `--days 90` (peak ~1.5 GB; ewb root FS is 98–100 % full — do not
-   lower `--min-free-bytes` without the owner).
+**Use plain ssh, not `ops/remote.sh run`** — that subcommand rsyncs my whole tree first, and since my
+branch no longer carries the freeze commit while `/opt/ewb-live` (WorkingDirectory of the running
+`ewb-live-web.service`) does, it would silently revert the live `FREEZE_MAX_C` rule.
+`/opt/ewb-live/ewb_live/sources/imerg.py` is already byte-identical to my copy, so nothing needs
+deploying:
+
+```bash
+ssh root@192.168.0.121 'cd /opt/ewb-live && . .venv/bin/activate \
+  && python -m ewb_live.sources.imerg auth-check \
+  && python -m ewb_live.sources.imerg update --days 5'
+```
+
+1. `auth-check` must print `OK: Earthdata login works …` (it exits 3 with the setup steps if the
+   netrc is missing/unreadable).
+2. `update --days 5` → report volume/day + timing (brief task 5: ~26 MB/granule raw, ~6–12 MB/day
+   daily field, 10 requests total; watch the printed `sanity: global mean … mm/day`, climatological
+   expectation ~2–3).
+3. `update --days 90 --dry-run` then `--days 90` (peak ~1.45 GB; ewb root FS is 99 % full — 5.9 GB
+   free on 2026-11-17 10:41Z, and `data/cache/subsets` alone is 231 GB). Do not lower
+   `--min-free-bytes` without the owner.
 4. A cron/systemd timer for `update` (daily, after ~14:30Z so the Late Run has landed) is **not**
    installed yet — decide with the owner/infra whether it joins the existing weekly cycle units.
 
