@@ -121,6 +121,8 @@ def _sel_thresholds() -> dict:
     return {
         "heat_wave": {"q_lower": float(clim["heat_wave"]["q_lower"])},
         "freeze": {"q_upper": float(clim["freeze"]["q_upper"])},
+        # cold snap = the freeze p15 rule without the <=0C cap (same quantile)
+        "cold_snap": {"q_upper": float(clim["cold_snap"]["q_upper"])},
         "atmospheric_river": {"q_upper": "p90 ivt (EWB default)"},
     }
 
@@ -788,7 +790,8 @@ def run(
             "selection_thresholds": _sel_thresholds(),
             "event_counts": {
                 et: sum(1 for e in events if e.event_type == et)
-                for et in ("heat_wave", "freeze", "atmospheric_river")
+                for et in ("heat_wave", "freeze", "cold_snap",
+                           "atmospheric_river")
             },
             "n_score_rows": len(scores),
             "n_scored_pairs": int(len({(r[0], r[1]) for r in zip(scores['event_id'], scores['model'])})),

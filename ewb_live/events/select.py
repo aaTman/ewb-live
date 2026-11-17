@@ -20,6 +20,12 @@ heat_wave   keep: max_consecutive_days >= 3 (upstream already enforces)
             anomaly_K = peak daily-mean t2m - mean q0.85 climatology over the
             event bbox across its days/synoptic hours
 freeze      symmetric with q0.15: anomaly_K = mean q0.15 - min daily-mean t2m
+cold_snap   the freeze rule minus the <=0C cap (ewb_live/events/cold_snap.py):
+            same q0.15 anomaly x area x duration severity as freeze. It is NOT
+            merged with freeze (different type); a cold snap that overlaps a
+            freeze in time+space is dropped BEFORE curation in favour of the
+            freeze (detect_events -> cold_snap.subsume_freeze_overlaps), so the
+            two lanes never double-publish the same spell.
 atmospheric_river
             keep: landfall_days >= 1 (owner 2026-11-09; was 3) and peak IVT >= 600 kg/m/s
             severity = landfall_days x peak_land_pixels x (peak_IVT - 400)
@@ -159,8 +165,8 @@ def _severity(e) -> float:
         clim = _bbox_clim_mean(q, e.bbox, e.start, e.end, src)
         anom = (e.peak_value - clim + 273.15) if clim is not None and e.peak_value is not None else 0.0
         return max(anom, 0.0) * area * days
-    if e.event_type == "freeze":
-        q = clips["freeze"]["q_upper"] if owb else 0.15
+    if e.event_type in ("freeze", "cold_snap"):
+        q = clips[e.event_type]["q_upper"] if owb else 0.15
         clim = _bbox_clim_mean(q, e.bbox, e.start, e.end, src)
         mn = (e.details or {}).get("min_temp_c", e.peak_value)
         anom = (clim - 273.15 - mn) if clim is not None and mn is not None else 0.0
@@ -212,6 +218,8 @@ MERGE_CAP_DAYS = {
     "atmospheric_river": float(os.environ.get("EWB_LIVE_MERGE_CAP_AR_DAYS", "9")),
     "heat_wave": float(os.environ.get("EWB_LIVE_MERGE_CAP_HEAT_DAYS", "16")),
     "freeze": float(os.environ.get("EWB_LIVE_MERGE_CAP_FREEZE_DAYS", "16")),
+    # same envelope as freeze: cold snaps are the same tracker on the same mask
+    "cold_snap": float(os.environ.get("EWB_LIVE_MERGE_CAP_FREEZE_DAYS", "16")),
 }
 CAP_LAT_SPAN = 40.0       # merged-union bbox caps; beyond -> refuse absorb
 CAP_LON_SPAN = 60.0
@@ -320,7 +328,7 @@ def _merge_component(members: list, decisions: list[dict]):
         peak = max(peaks) if peaks else core.peak_value
         if _vals("min_temp_c"):
             det["min_temp_c"] = min(_vals("min_temp_c"))
-    elif t == "freeze":
+    elif t in ("freeze", "cold_snap"):   # peak == the coldest value
         mins = _vals("min_temp_c") or peaks
         peak = mn = min(mins) if mins else core.peak_value
         det["min_temp_c"] = mn

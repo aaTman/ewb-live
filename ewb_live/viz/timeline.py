@@ -32,7 +32,7 @@ STEP_DEG = 1.0          # coarsening target for footprints
 SIZE_LIMIT = 2_000_000  # bytes; brief target < 1-2 MB
 OUT_NAME = "global_timeline.json"
 
-TYPES = ("heat_wave", "freeze", "atmospheric_river")
+TYPES = ("heat_wave", "freeze", "cold_snap", "atmospheric_river")
 
 
 def _qualified(ev: dict) -> tuple[str, str]:

@@ -194,7 +194,7 @@
     </div>
     <div class="table-wrap tall">
       <table id="event-table">
-        <thead><tr><th><span class="sr-only">Type</span></th><th>Event</th><th class="num" title="Heat/freeze: ERA5 daily-mean 2 m temperature at the peak day. Atmospheric river: peak IVT.">Peak</th></tr></thead>
+        <thead><tr><th><span class="sr-only">Type</span></th><th>Event</th><th class="num" title="Heat/freeze/cold snap: ERA5 daily-mean 2 m temperature at the peak day. Atmospheric river: peak IVT.">Peak</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -284,8 +284,15 @@
       <li><b>Heat wave</b> — ERA5 2&nbsp;m temperature above the 85th percentile of the
       Operational WeatherBench ERA5 1990–2019 climatology (per day of year and hour) at <em>every</em>
       6-hourly step of a UTC day, over land, tracked into events by the rule set out below.</li>
-      <li><b>Freeze</b> — the same rule below the 15th percentile. A window with no freeze is a
+      <li><b>Freeze</b> — the same rule below the 15th percentile, <em>and</em> 2&nbsp;m temperature
+      at or below 0&nbsp;°C at all four 6-hourly steps (owner 2026-11-16). A window with no freeze is a
       valid result.</li>
+      <li><b>Cold snap</b> — the freeze rule <em>without</em> the 0&nbsp;°C requirement: below the
+      15th percentile at every 6-hourly step of a UTC day, over land, same tracker and same area
+      floors. Because a freeze is always also a cold snap, a cold snap that overlaps a freeze in
+      time and space is dropped in favour of the freeze (the more specific claim), so the two never
+      publish the same spell twice; cold snaps that stayed above 0&nbsp;°C are the part the freeze
+      lane cannot describe.</li>
       <li><b>Atmospheric river</b> — EWB’s AR mask: integrated vapour transport (IVT) of at least
       400&nbsp;kg&nbsp;m⁻¹&nbsp;s⁻¹ with a ridge criterion. The river must start over the ocean and
       reach land — making landfall on at least one day; objects entirely over land are excluded,
@@ -306,11 +313,13 @@
     </ul>
 
     <h3>How a spell becomes an event</h3>
-    <p>Heat waves and freezes are found in two stages. A <b>daily rule</b> picks the pixels:
+    <p>Heat waves, freezes and cold snaps are found in two stages. A <b>daily rule</b> picks the
+    pixels:
     a cell counts on a UTC day when 2&nbsp;m temperature is past the climatology bound (p85 for heat,
-    p15 for freeze) at <em>all four</em> 6-hourly steps and the cell is on land. A <b>tracker</b> then
+    p15 for freeze and cold snap — freeze also needing 0&nbsp;°C or below) at <em>all four</em>
+    6-hourly steps and the cell is on land. A <b>tracker</b> then
     decides which pixels belong to the same event, and when the event is over — the same numbers for
-    both hazards.</p>
+    all three hazards.</p>
     <ol class="method-steps">
       <li><b>Group</b> the counting cells of the day into regions. A cell belongs to a region when it
       is counting, or when it sits in a hole the closing fills (up to 12 cells wide) and at least

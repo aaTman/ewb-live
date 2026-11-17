@@ -52,7 +52,7 @@ for i, e in enumerate(d):
 print(Counter(e["event_type"] for e in d))
 for r in rows:
     print("%-6s %s %-13s %2dd %-32s %s" % r)
-cap = {"atmospheric_river": 19, "heat_wave": 26, "freeze": 26}
+cap = {"atmospheric_river": 19, "heat_wave": 26, "freeze": 26, "cold_snap": 26}
 for e in d:
     dur = (dt.date.fromisoformat(e["end"][:10]) - dt.date.fromisoformat(e["start"][:10])).days
     if dur > cap[e["event_type"]]:

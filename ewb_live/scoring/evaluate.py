@@ -131,7 +131,9 @@ def default_metrics(event_type: str) -> list[ewb_metrics.BaseMetric]:
             ),
             ewb_metrics.MaximumLowestMeanAbsoluteError(),
         ]
-    if event_type == "freeze":
+    if event_type in ("freeze", "cold_snap"):
+        # cold snap is scored exactly like freeze: same target (ERA5 2 m t2m),
+        # same EWB default metrics; only the event SET differs (no <=0C cap).
         return [
             ewb_metrics.MinimumMeanAbsoluteError(),
             ewb_metrics.RootMeanSquaredError(),
@@ -159,6 +161,7 @@ def _le(a, b):
 EVENT_SURFACE_VARS = {
     "heat_wave": ["surface_air_temperature"],
     "freeze": ["surface_air_temperature"],
+    "cold_snap": ["surface_air_temperature"],
 }
 AR_FORECAST_VARS = ["eastward_wind", "northward_wind", "specific_humidity"]
 
