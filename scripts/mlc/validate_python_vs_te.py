@@ -49,19 +49,38 @@ def run(cmd, **kw):
 
 
 def extract(start: dt.datetime, end: dt.datetime, out: Path) -> list[Path]:
+    """Daily MSLP netCDFs from ERA5, via the PROOF's own extractor.
+
+    ONE invocation for the whole window. Slicing it per day and skipping days
+    whose file already exists is a trap: extract_month.py writes the day *after*
+    its range too (with only the 00Z frame), and the skip then keeps that
+    1-frame file — StitchNodes sees a 24 h gap on alternate days, shatters every
+    track against --maxgap 12h, and reports zero tracks.
+    """
     out.mkdir(parents=True, exist_ok=True)
-    day = dt.datetime.combine(start.date(), dt.time())
-    files: list[Path] = []
-    while day <= end:
-        f = out / f"etcc_{day:%Y%m%d}.nc"
-        if not f.exists():
-            run([sys.executable, "scripts/mlc/extract_month.py",
-                 "--start", f"{day:%Y-%m-%dT%H}",
-                 "--end", f"{min(day + dt.timedelta(days=1), end):%Y-%m-%dT%H}",
-                 "--out", str(out), "--nowinds"])
-        files += sorted(Path(p) for p in glob.glob(str(out / f"etcc_{day:%Y%m%d}*.nc")))
-        day += dt.timedelta(days=1)
-    return sorted(set(files))
+    files = sorted(Path(x) for x in glob.glob(str(out / "etcc_*.nc")))
+    # a killed run leaves 0-byte files that glob happily returns
+    for f in files:
+        if f.stat().st_size == 0:
+            f.unlink()
+    files = sorted(Path(x) for x in glob.glob(str(out / "etcc_*.nc")))
+    have = {f.name for f in files}
+    want = {f"etcc_{(start + dt.timedelta(days=i)):%Y%m%d}.nc"
+            for i in range((end - start).days + 1)}
+    if not want <= have:
+        run([sys.executable, "scripts/mlc/extract_month.py",
+             "--start", f"{start:%Y-%m-%dT%H}", "--end", f"{end:%Y-%m-%dT%H}",
+             "--out", str(out), "--nowinds"])
+        files = sorted(Path(x) for x in glob.glob(str(out / "etcc_*.nc")))
+    return files
+
+
+def check_uniform(times: list[dt.datetime]) -> float:
+    """Median step in hours; the trackers are only comparable on a uniform grid."""
+    if len(times) < 2:
+        return float("nan")
+    steps = np.median(np.diff([t.timestamp() for t in times])) / 3600.0
+    return float(steps)
 
 
 def te_track(files: list[Path], work: Path, te_bin: str) -> dict:
@@ -96,33 +115,45 @@ def te_tracks(csv: Path) -> dict[int, list[tuple[dt.datetime, float, float, floa
 
     out: dict[int, list] = {}
     with open(csv) as fh:
-        rows = list(_csv.DictReader(fh))
+        # TE's csv header is "track_id, year, month, ..." — spaces and all
+        rows = list(_csv.DictReader(fh, skipinitialspace=True))
     if not rows:
         return out
     for r in rows:
-        t = dt.datetime(int(r["year"]), int(r["month"]), int(r["day"]),
-                        int(r["hour"]), int(r.get("minute") or 0),
-                        int(r.get("second") or 0))
-        out.setdefault(int(r["track_id"]), []).append(
-            (t, float(r["lat"]), float(r["lon"]), float(r["msl"])))
+        g = lambda k, d=0: (r.get(k) or r.get(f" {k}") or d)  # noqa: E731
+        t = dt.datetime(int(g("year")), int(g("month")), int(g("day")), int(g("hour")))
+        out.setdefault(int(g("track_id")), []).append(
+            (t, float(g("lat")), float(g("lon")), float(g("msl"))))
     return {k: sorted(v) for k, v in out.items()}
 
 
 def read_field(files: list[Path]):
-    """The extracted netCDFs back as one (time, lat, lon) hPa stack + coords."""
+    """The extracted netCDFs back as one (time, lat, lon) hPa stack + coords.
+
+    Read one file at a time, not with ``open_mfdataset``: opening 36 HDF5 files
+    and then lazily loading the concatenated variable raises
+    ``NetCDF: HDF error`` on this box, and a file-at-a-time read is also the
+    smaller memory peak (one day in flight instead of the whole window).
+    """
     import xarray as xr
 
-    ds = xr.open_mfdataset([str(f) for f in files], combine="by_coords")
-    da = ds["msl"].transpose("time", "lat", "lon").load()
-    lats = np.asarray(da.lat.values, float)
-    lons = np.asarray(da.lon.values, float)
+    frames, times, lats, lons = [], [], None, None
+    for f in files:
+        with xr.open_dataset(f) as ds:
+            da = ds["msl"].transpose("time", "lat", "lon")
+            if lats is None:
+                lats = np.asarray(da.lat.values, float)
+                lons = np.asarray(da.lon.values, float)
+            frames.append(np.asarray(da.values, np.float32))
+            times.extend(np.asarray(da.time.values).astype("datetime64[h]")
+                         .astype("datetime64[s]").astype(dt.datetime).tolist())
+    mslp = np.ascontiguousarray(np.concatenate(frames))
     if lats[0] > lats[-1]:
-        da = da.isel(lat=slice(None, None, -1))
+        mslp = mslp[:, ::-1, :]
         lats = lats[::-1]
-    times = [t.astype("datetime64[h]").astype(dt.datetime)
-             for t in np.asarray(da.time.values)]
-    mslp = np.ascontiguousarray(np.asarray(da.values, np.float32))
-    ds.close()
+    order = np.argsort(times)
+    times = [times[i] for i in order]
+    mslp = np.ascontiguousarray(mslp[order])
     return times, mslp, lats, lons
 
 
@@ -219,6 +250,9 @@ def storm_from_te(tr, when, lat, lon, within_h=12, match_deg=8.0):
     class W:  # adapt TE rows to the Track API used by find_storm
         times = None
 
+        def __len__(self):
+            return len(self.times)
+
         def __init__(self, pts):
             self.times = [p[0] for p in pts]
             self.lat = np.array([p[1] for p in pts])
@@ -274,8 +308,10 @@ def main() -> None:
 
     lines: list[str] = []
     lines.append("# mlc lane: pure-Python tracker vs the TempestExtremes PROOF\n")
+    step_h = check_uniform(times)
     lines.append(f"Window `{start:%Y-%m-%d %H}Z .. {end:%Y-%m-%d %H}Z`, "
-                 f"{len(times)} frames of ERA5 MSLP at 0.25 deg, "
+                 f"{len(times)} frames of ERA5 MSLP at 0.25 deg "
+                 f"(median step {step_h:.1f} h), "
                  f"grid {lats.size}x{lons.size}, host `{os.uname().nodename}`, "
                  f"{os.cpu_count()} cores, run {dt.datetime.now(dt.timezone.utc):%Y-%m-%d %H:%M}Z.\n")
     lines.append("## Timing / memory\n")
@@ -295,8 +331,7 @@ def main() -> None:
     pystats = stats(res.tracks)
     lines.append("| quantity | python | TempestExtremes |")
     lines.append("|---|---|---|")
-    if te_info:
-        tr = te_tracks(te_info["csv"])
+    if te_info and (tr := te_tracks(te_info["csv"])):
         tstats = te_stats(tr)
         rows = [("nodes", res.n_nodes, te_info["n_nodes"]),
                 ("tracks >= 48 h", pystats["n"], tstats["n"]),
@@ -339,6 +374,10 @@ def main() -> None:
             tv = fmt(te_c[key]) if te_c else "not found"
             lines.append(f"| {label} | {pv} | {tv} |")
     else:
+        if te_info:
+            lines.append(f"**TempestExtremes produced no tracks** from "
+                         f"`{te_info['csv']}` ({te_info['n_nodes']} nodes) — check the "
+                         f"input time series is uniformly 6-hourly (`check_uniform`).")
         lines.append("| quantity | python |")
         lines.append("|---|---|")
         for k, v in pystats.items():
