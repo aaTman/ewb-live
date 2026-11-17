@@ -84,33 +84,40 @@ AR_IVT_BASELINE = 400.0  # the EWB mask threshold
 # Dolphin/Isaias/monsoon blobs (1785-2972).
 AR_MAX_PEAK_IVT = float(os.environ.get("EWB_LIVE_AR_IVT_MAX_KGM_S", "1500"))
 
-# --- track lanes (tc, 2026-11-16) ---------------------------------------- #
-# A tropical cyclone is a TRACK event, not an area event: it is one IBTrACS
-# storm = one event, it never merges (a merge would weld two storms into a
-# fiction), and it sits outside the "no two events overlap in time+space"
-# rule — a hurricane routinely overlaps a tropical AR and a heat wave, and
-# the overlap rule would delete the most interesting rows in the catalog.
-# Flagged for the owner in notes/channel_new_events.md.
-TRACK_TYPES = {"tropical_cyclone"}
+# --- track lanes (tc 2026-11-16, mlc 2026-11-17) ------------------------- #
+# A cyclone is a TRACK event, not an area event: one storm / one stitched low =
+# one event, it never merges (welding two storms, or two lows caught in one
+# basin, makes an object that never existed and a discontinuous pressure or
+# wind series), and it sits outside the "no two events overlap in time+space"
+# rule — a hurricane routinely overlaps a tropical AR, a deep low sits inside a
+# freeze or a heat wave, and the overlap rule would delete the most impactful
+# rows in the catalog. Flagged for the owner in notes/channel_new_events.md.
+TRACK_TYPES = {"tropical_cyclone", "midlat_cyclone"}
+# --- lanes that read their own source, not the ERA5 rasters ---------------- #
+# tropical_cyclone reads IBTrACS best tracks, flood reads IMERG: both publish
+# with sub-daily / ~1-day latency, so the ERA5 truth-cutoff clamp must not trim
+# their windows (it silently erased the newest week of storms and floods every
+# run). midlat_cyclone is deliberately NOT here — it is tracked in ERA5/ARCO
+# MSLP and can only be detected inside the ERA5-available window.
+SELF_SOURCE_TYPES = {"tropical_cyclone", "flood"}
 # --- published-but-not-scored lanes -------------------------------------- #
-# An event type here is curated, published and rendered, but never sent to
-# EWB scoring: there is no benchmark for its shape, so the pipeline records a
+# An event type here is curated, published and rendered, but never sent to EWB
+# scoring: there is no benchmark for its shape, so the pipeline records a
 # documented ``unsupported`` pair status per (event, model) instead of leaving
-# phantom blockers in pair_coverage. ``flood`` is IMERG accumulation against an
-# ERA5 percentile: EWB ships no precipitation-flood target/metric for it
-# (flood lane, 2026-11-17). Track lanes are observation-backed too, so
-# UNSCORED_TYPES is the union — the set of lanes that read their own source
-# instead of the ERA5 rasters and are not benchmarked.
-UNSCORED_TYPES = {"flood"} | TRACK_TYPES
-# per-type quota overrides: a 90-day window is not 15 storms. Measured on
-# IBTrACS v04r01 on 2026-11-17, the trailing 90 days held 43 qualifying storms
-# (16 NE Pacific, 14 NW Pacific, 7 Atlantic, 3 North Indian, 3 southern), so
-# the TC lane carries its own quota (60 covers a busy window without pretending
-# to be unlimited); the flood lane's live 90-day run publishes 30 (see
-# notes/channel_new_events.md), so it gets 40.
+# phantom blockers in pair_coverage. EWB ships no metric set for best-track
+# storms, for tracked pressure minima, or for IMERG-accumulation floods.
+UNSCORED_TYPES = TRACK_TYPES | {"flood"}
+# per-type quota overrides: a 90-day window is not 15 events.
+#  * tropical_cyclone: measured on IBTrACS v04r01 on 2026-11-17, the trailing
+#    90 days held 43 qualifying storms (16 NE Pacific, 14 NW Pacific, 7
+#    Atlantic, 3 North Indian, 3 southern); 60 covers a busy window.
+#  * flood: the live 90-day IMERG run publishes 30 (notes/channel_new_events.md).
+#  * midlat_cyclone: Nov 2023 held 99 stitched lows, ~53 in the genesis band,
+#    ~20-40 after every screen; the lane's proof window published 71.
 TOP_N_BY_TYPE = {
     "tropical_cyclone": int(os.environ.get("EWB_LIVE_TOP_N_TC", "60")),
     "flood": int(os.environ.get("EWB_LIVE_TOP_N_FLOOD", "40")),
+    "midlat_cyclone": int(os.environ.get("EWB_LIVE_TOP_N_MLC", "80")),
 }
 
 
@@ -229,12 +236,16 @@ def _severity(e) -> float:
         # percentile excess x ground x time (see the module docstring)
         excess = max(_detail(e, "peak_excess_ratio", 1.0) - 1.0, 0.02)
         return excess * area * max(days, 1.0)
+    if e.event_type == "midlat_cyclone":    # mlc lane: depth x duration x bomb
+        from ewb_live.events.mlc import severity as _mlc_severity
+
+        return _mlc_severity(e)
     return 0.0
 
 
 def _passes_floor(e) -> bool:
     dur = (e.end - e.start).days
-    if e.event_type in TRACK_TYPES:
+    if e.event_type == "tropical_cyclone":
         # qualification already happened in events/tc.py (34 kt x 3 fixes x
         # 12 h); here only the physical-sanity tripwires
         from ewb_live.events.tc import MIN_TS_WIND_KT
@@ -254,6 +265,12 @@ def _passes_floor(e) -> bool:
                 and 1 <= dur <= 21
                 and lat_span <= 45.0
                 and lon_span <= 45.0)
+    if e.event_type == "midlat_cyclone":
+        # the detector already screened it; this re-checks the same floors so a
+        # mutated/merged track cannot slip through (mlc lane)
+        from ewb_live.events.mlc import passes_floor as _mlc_floor
+
+        return _mlc_floor(e)
     if e.event_type == "atmospheric_river":
         # events.yaml AR cases: centroid |lat| >= 22, duration p90 8 d
         centroid = _detail(e, "centroid_lat", 999.0)
@@ -337,8 +354,9 @@ def _bbox_intersects(a_bbox, b_bbox) -> bool:
 def _overlaps(a, b) -> bool:
     """True iff the two events share >=1 day of time AND bbox area."""
     if a.event_type in TRACK_TYPES or b.event_type in TRACK_TYPES:
-        # track lanes sit outside the no-overlap rule (see TRACK_TYPES):
-        # a hurricane is routinely inside a tropical AR / a heat wave
+        # track lanes sit outside the no-overlap rule (see TRACK_TYPES): a
+        # hurricane is routinely inside a tropical AR / a heat wave, and a deep
+        # low sits inside freezes, heat waves and ARs as a matter of course
         return False
     if min(a.end, b.end) - max(a.start, b.start) <= dt.timedelta(0):
         return False
@@ -484,8 +502,8 @@ def merge_same_type(events: list, decisions: list[dict]) -> list:
     pending = sorted(events, key=severity, reverse=True)
     out: list = []
     if events and events[0].event_type in TRACK_TYPES:
-        # one storm = one event: never weld fragments (or two storms caught in
-        # one basin) into a single tropical cyclone
+        # one storm / one low = one event: never weld fragments (or two storms
+        # in one basin, or two lows) into a single object
         return list(pending)
     while pending:
         seed = pending.pop(0)

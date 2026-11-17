@@ -32,6 +32,7 @@ _TITLE_LABELS = {
     "cold_snap": "Cold Snap",
     "atmospheric_river": "Atmospheric River",
     "tropical_cyclone": "Tropical Cyclone",   # tc lane, 2026-11-16
+    "midlat_cyclone": "Midlatitude Cyclone",   # mlc lane, 2026-11-17
     "flood": "Flood",                     # flood lane, 2026-11-17
 }
 # physical sanity ranges for peak_value, per type. NOTE freeze is NOT
@@ -48,6 +49,10 @@ _PEAK_RANGE = {
     "tropical_cyclone": (34.0, 200.0),    # kt, 1-min sustained (34 = the
                                           # qualification floor, 200 kt above
                                           # the highest best-track wind on record)
+    # mid-latitude low: peak_value is the minimum central MSLP. 905 hPa is the
+    # lowest ERA5 analysis value in the extratropics (BRA 1966 is ~914 hPa),
+    # 1015 hPa would not be a cyclone worth publishing.
+    "midlat_cyclone": (900.0, 1015.0),    # hPa
     # flood: the peak TRAILING 72 h accumulation in mm (IMERG). The physical
     # world record 72 h total is ~1.8 m, and a 24 h total ~1.2 m, so the range
     # is a Kelvin-misparse / unit-flip tripwire, not a climatological claim.
@@ -193,6 +198,49 @@ def validate_event(e: Event) -> list[str]:
             if bad:
                 problems.append(f"{len(bad)} track row(s) not [time, lat, lon, "
                                 "intensity, pressure] with finite lat/lon")
+    # --- mid-latitude cyclone: track + intensity cross-checks (mlc lane)
+    if e.event_type == "midlat_cyclone":
+        mn = det.get("min_mslp_hPa")
+        if mn is None:
+            problems.append("min_mslp_hPa missing: the event has no depth")
+        elif pv is not None and abs(mn - pv) > 0.11:
+            problems.append(f"min_mslp_hPa {mn} != peak_value {pv} "
+                            "(peak_value is the minimum central MSLP)")
+        life = det.get("lifetime_h")
+        if life is not None and life < 48.0:
+            problems.append(f"lifetime_h {life} below the 48 h floor")
+        disp = det.get("displacement_km")
+        if disp is not None and disp < 1000.0:
+            problems.append(f"displacement_km {disp} below the 1000 km floor")
+        glat = det.get("genesis_lat")
+        if glat is not None and not 25.0 <= abs(glat) <= 70.0:
+            problems.append(f"genesis_lat {glat} outside the 25-70 deg band")
+        if det.get("bomb") and (det.get("bomb_ratio") or 0.0) < 1.0:
+            problems.append(f"bomb tag with bomb_ratio {det.get('bomb_ratio')} < 1")
+        trk = det.get("track")
+        if not trk:
+            problems.append("track empty: the dashboard has nothing to draw")
+        else:
+            bad = [r for r in trk if not (isinstance(r, list) and len(r) == 5
+                                          and r[1] is not None and r[2] is not None
+                                          and isinstance(r[0], str))]
+            if bad:
+                problems.append(f"{len(bad)} track row(s) not [time, lat, lon, "
+                                "intensity, pressure] with finite lat/lon")
+            times = [r[0] for r in trk if isinstance(r[0], str)]
+            if times != sorted(times):
+                problems.append("track rows are not ascending in time")
+            _fmt = "%Y-%m-%dT%H:%M:%SZ"
+            try:
+                t_first = dt.datetime.strptime(times[0], _fmt)
+                t_last = dt.datetime.strptime(times[-1], _fmt)
+            except (ValueError, IndexError):
+                problems.append(f"track times not '{_fmt}': {times[:1]!r}")
+            else:
+                if e.start < t_first or e.start > t_last:
+                    problems.append(f"event start {e.start} outside the track span "
+                                    f"{t_first}..{t_last}")
+
     # --- flood: accumulation, area and provenance cross-checks
     # (flood lane, 2026-11-17). The peak is a TRAILING 72 h accumulation, so it
     # cannot be smaller than the peak daily total, and an event that exceeded

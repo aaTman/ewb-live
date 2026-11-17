@@ -652,6 +652,10 @@ def run(
         if not pending:
             continue
         if e.event_type in UNSCORED_TYPES:
+            # published and rendered, never scored (tropical_cyclone,
+            # midlat_cyclone, flood) — held aside so the pair_status block below
+            # can DOCUMENT each pair instead of the lane sitting as phantom
+            # pending work that keeps full_run_complete false forever
             unscored_obs.append((e, pending))
             continue
         todo.append((e, pending))
@@ -732,13 +736,17 @@ def run(
     def _pair(eid: str, model: str) -> dict:
         return pair_status.get(f"{eid}|{model}", {})
 
-    # Observation lanes (tropical_cyclone 2026-11-16, flood 2026-11-17) have no
-    # EWB metric set: they are published and rendered, never scored. Record a
-    # DOCUMENTED zero-row status per pair so the pair_coverage contract and
-    # full_run_complete stay decidable instead of showing phantom blockers.
+    # Unscored lanes (tropical_cyclone 2026-11-16, flood 2026-11-17,
+    # midlat_cyclone 2026-11-17) have no EWB metric set: they are published and
+    # rendered, never scored. Record a DOCUMENTED zero-row status per pair so
+    # the pair_coverage contract and full_run_complete stay decidable
+    # (mirrors how a model with no 2 m temperature on heat/freeze is documented,
+    # not left missing).
     _UNSCORED_REASON = {
         "tropical_cyclone": "no EWB benchmark for best-track events "
                             "(tropical_cyclone is published, not scored)",
+        "midlat_cyclone": "no EWB benchmark for tracked mid-latitude lows "
+                          "(midlat_cyclone is published, not scored)",
         "flood": "no EWB benchmark for IMERG-accumulation events "
                  "(flood is published, not scored)",
     }
@@ -749,7 +757,7 @@ def run(
                     "status": "unsupported", "rows": 0,
                     "fp": f"{fp_by_event[e.id]}|{truth_by_event[e.id]}",
                     "reason": _UNSCORED_REASON[e.event_type]}
-        logger.info("observation-lane events: %d published without scoring "
+        logger.info("unscored lanes: %d events published without scoring "
                     "(%d documented 'unsupported' pairs)",
                     len(unscored_obs), sum(len(ms) for _e, ms in unscored_obs))
         _persist_pair_status()

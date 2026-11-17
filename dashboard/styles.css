@@ -46,6 +46,15 @@
      light map ocean, L* 36.1. Not a map-fill lane (boxes + Gantt only), so the
      heat < freeze < AR fill ladder is untouched. */
   --series-flood:         #a01e56;  --series-flood-soft:    #f4dbe7;
+  /* Mid-latitude low (mlc lane 2026-11-17). The mlc branch picked violet
+     #5f3d99 — hue 262 deg against the TC lane's #6f42c1 at hue 261 deg, i.e.
+     the two cyclone lanes were the SAME colour and indistinguishable in a
+     seven-lane UI. Re-hued to amber (hue 39 deg), the one clear gap left in the
+     ladder: heat 6 / AR 123 / cold snap 186 / freeze 217 / TC 261 / flood berry
+     333. Measured 6.82:1 on --paper and 6.15:1 on the light map ocean, L* 38.5.
+     Not a map-fill lane (track + box rendering), so the heat < freeze < AR fill
+     ladder is untouched. Easy to reverse: only these two lines. */
+  --series-mlc:           #7d5200;  --series-mlc-soft:      #f2e4c9;
   --series-alt:           #4f8c1f;  --series-alt-soft:      #d7e4cb;
   --series-unknown:       #848475;  --series-unknown-soft:  #e2e2de;
   --stone-grey:           #848475;
@@ -95,7 +104,7 @@
   --cold-snap: var(--series-cold-snap);
   --ar:     var(--series-ar);
   --tc:     var(--series-tc);
-  --flood:  var(--series-flood);
+  --flood:  var(--series-flood);  --mlc:    var(--series-mlc);
   --shadow: 0 1px 2px rgba(38, 38, 32, .06);
   --mono: var(--font-mono);
 
@@ -135,6 +144,7 @@ html[data-theme="dark"] {
   --series-ar:            #66bb6a;  --series-ar-soft:       #2e4434;  /* AR green dark (design 2026-11-08, 6.40:1) */
   --series-tc:            #b39ddb;  --series-tc-soft:       #3a2f52;  /* TC violet dark: 6.31 on dark paper, 6.98 on the dark map ocean */
   --series-flood:         #e88bbb;  --series-flood-soft:    #4a2a3c;  /* Flood berry dark: 6.37 on dark paper, 7.66 on the dark map ocean */
+  --series-mlc:           #d9a441;  --series-mlc-soft:      #4a3a1e;  /* mid-latitude low amber, dark (mlc lane; re-hued off the TC violet, see the light-theme note): 6.73:1 on dark paper, 8.09:1 on the dark map ocean */
   --series-alt:           #78b447;  --series-alt-soft:      #33402a;
   --series-unknown:       #acab9c;  --series-unknown-soft:  #3b3b34;
   --stone-grey:           #acab9c;
@@ -165,7 +175,7 @@ html[data-theme="dark"] {
   --cold-snap: var(--series-cold-snap);
   --ar:     var(--series-ar);
   --tc:     var(--series-tc);
-  --flood:  var(--series-flood);
+  --flood:  var(--series-flood);  --mlc:    var(--series-mlc);
   --shadow: 0 1px 4px rgba(0, 0, 0, .40);
 
   --warn-ink: #e0b95f;  --warn-bg: #332e1c;  --warn-border: #55492a;

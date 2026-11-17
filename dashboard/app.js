@@ -15,12 +15,16 @@ const TYPE_META = {
   flood:              { label: 'Floods',             short: 'Flood',              color: 'var(--series-flood)',
                         noScores: true,      // observation lane (IMERG): published, not benchmarked
                         noScoresNote: (n) => `Not scored — ${n} flood${n === 1 ? '' : 's'} tracked from IMERG rain accumulations; no EWB benchmark for this lane yet.` },
+  midlat_cyclone:     { label: 'Midlatitude cyclones', short: 'Midlatitude cyclone',
+                        color: 'var(--series-mlc)',
+                        noScores: true },   // mlc track lane: published, not benchmarked
 };
 /* AR green (design 2026-11-08, owner request): all type colors resolve
    through CSS tokens — dual-theme values, no hardcoded hex in JS. */
 const TYPE_SERIES_VAR = { heat_wave: '--series-heat', freeze: '--series-freeze',
   cold_snap: '--series-cold-snap', atmospheric_river: '--series-ar',
-  tropical_cyclone: '--series-tc', flood: '--series-flood' };
+  tropical_cyclone: '--series-tc', flood: '--series-flood',
+  midlat_cyclone: '--series-mlc' };
 function cssVar(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || fallback;
@@ -29,7 +33,7 @@ function typeColor(etype) {
   return cssVar(TYPE_SERIES_VAR[etype] || '--series-unknown', '#848475');
 }
 const TYPE_ORDER = ['heat_wave', 'freeze', 'cold_snap', 'atmospheric_river',
-  'tropical_cyclone', 'flood'];
+  'tropical_cyclone', 'midlat_cyclone', 'flood'];
 
 /* Owner 2026-11-07: empty lanes are legitimate (freezes may be empty at p15).
    Criteria wording mirrors ewb_live/events/temperature.py + ar.py thresholds —
@@ -42,6 +46,7 @@ const TYPE_CRITERIA = {
   tropical_cyclone: 'One IBTrACS best-track storm = one event: at least 3 track fixes at tropical-storm force (≥34 kt sustained) spanning at least 12 hours, extratropical/mixed fixes excluded. Peak value is the strongest sustained wind in the tropical-storm window (kt); the detail view draws the full track, coloured by intensity. Best-track observations, so there is no model scorecard for this lane yet.',
   // observation lane (IMERG, not ERA5): published, never scored — EWB has no flood benchmark
   flood: 'IMERG half-hourly rain summed to a daily total and averaged up onto the ERA5 0.25° land lattice. A cell exceeds when its daily total or its trailing 72 h accumulation reaches the 95th percentile of that calendar day in the ERA5 1990–2019 wet-day climatology AND at least 20 mm/day (or 50 mm per 72 h) — the floor is mandatory because IMERG and ERA5 are different instruments. Cells with no ERA5 percentile (hyper-arid) can never exceed, ocean cells are excluded, and a day whose sampling is incomplete is dropped rather than read as dry. A region ≥10,000 km² becomes an event once its footprint reaches 50,000 km² and ends under 10,000 km². There is no EWB benchmark for flood, so floods are published and mapped but no model is scored on them.',
+  midlat_cyclone: 'A closed low in 6-hourly ERA5 mean sea level pressure: a centre that is the lowest pressure within 6° with a +3 hPa isobar closing around it inside 6°, tracked forward while it stays within 6° per step (gaps up to 12 h are bridged). It becomes an event when it lives ≥48 h, travels ≥1000 km, reaches ≤990 hPa, was born between 25–70° and under 500 m elevation, and did not start as a tropical cyclone. Peak value is the lowest central pressure (hPa); a bomb tag marks a fall of ≥24 hPa in 24 h at 60° latitude. Tracked from ERA5, so there is no model scorecard for this lane yet.',
 };
 const emptyLaneLine = (t) => t === 'all'
   ? 'No events met the criteria this window'
@@ -1671,6 +1676,11 @@ function storyLabel(ev, viz) {
     if (Number.isFinite(ev.peak_value)) parts.push('peak 72 h ' + Math.round(ev.peak_value) + ' mm');
     if (Number.isFinite(d.peak_daily_mm)) parts.push('peak day ' + Math.round(d.peak_daily_mm) + ' mm');
     if (Number.isFinite(d.peak_area_km2)) parts.push(Math.round(d.peak_area_km2).toLocaleString('en-US') + ' km² at peak');
+  } else if (ev.event_type === 'midlat_cyclone') {
+    // track lane (mlc 2026-11-17): depth, not temperature, is the headline
+    if (Number.isFinite(ev.peak_value)) parts.push(Math.round(ev.peak_value) + ' hPa centre');
+    if (Number.isFinite(d.displacement_km)) parts.push(Math.round(d.displacement_km / 111.195) + '\u00b0 travelled');
+    if (d.bomb) parts.push('bomb \u00d7' + (Number.isFinite(d.bomb_ratio) ? d.bomb_ratio.toFixed(1) : '1'));
   } else {
     // peak is the ERA5 daily-mean peak (see About) — say so (G-27)
     if (Number.isFinite(ev.peak_value)) parts.push('peak daily-mean ' + ev.peak_value.toFixed(1) + ' °C');

@@ -58,6 +58,12 @@ def _cache_path(cache_dir: Path, event_type: str, start: dt.date, end: dt.date) 
                f"{''.join(str(w) for w in WINDOWS)}"
                f"-a{int(FLOOD_PARAMS.qualify_area_km2 // 1000)}k"
                f"-d{FLOOD_PARAMS.min_days}")
+    if event_type == "midlat_cyclone":
+        # bump when a mid-latitude screen or the track mapping changes, so an
+        # old scan cannot resurrect under new rules (mlc lane, 2026-11-17)
+        from .mlc import RULE_REV
+
+        tag = f"_{RULE_REV}"
     return cache_dir / f"{event_type}{tag}_{start:%Y-%m-%d}_{end:%Y-%m-%d}.json"
 
 
@@ -98,17 +104,17 @@ def detect_events(
     cutoff = truth_cutoff()
     det_end = min(end, cutoff.date())
 
-    from .select import UNSCORED_TYPES   # lazy: select pulls in the raster lanes
+    from .select import SELF_SOURCE_TYPES   # lazy: select pulls in the raster lanes
 
     by_id: dict[str, Event] = {}
     for et in types:
-        # Observation-backed lanes (UNSCORED_TYPES: tropical_cyclone from
-        # IBTrACS best tracks, flood from IMERG) read their own source, not the
-        # ERA5 rasters, so the truth-cutoff clamp must not trim them — it
-        # silently erased the last ~6 days of storms from the "90-day" TC
-        # window every week (2026-11-17), and the newest days are exactly where
-        # a fresh flood or cyclone lives.
-        lane_end = end if et in UNSCORED_TYPES else det_end
+        # Lanes that read their own source (SELF_SOURCE_TYPES: tropical_cyclone
+        # from IBTrACS best tracks, flood from IMERG) are not bound by the ERA5
+        # truth cutoff, so the clamp must not trim them — it silently erased the
+        # last ~6 days of storms from the "90-day" TC window every week
+        # (2026-11-17), and the newest days are exactly where a fresh flood or
+        # cyclone lives. midlat_cyclone is NOT exempt: it is tracked in ERA5.
+        lane_end = end if et in SELF_SOURCE_TYPES else det_end
         if lane_end < start:
             logger.warning("detect_events %s: window %s..%s fully beyond the "
                            "ERA5 cutoff %s; lane skipped", et, start, end, cutoff)
@@ -132,6 +138,14 @@ def detect_events(
                 from .flood import scan_flood_events
 
                 events = scan_flood_events(start, lane_end)
+            elif et == "midlat_cyclone":
+                # track lane: closed MSLP lows tracked in ERA5 (mlc lane) — the
+                # scan streams its own window from ARCO and fails soft to [].
+                # lane_end is the ERA5-clamped end here: midlat_cyclone IS an
+                # ERA5 lane (SELF_SOURCE_TYPES), it just streams its own fields.
+                from .mlc import scan_mlc_events
+
+                events = scan_mlc_events(start, lane_end, **scan_kwargs)
             else:
                 from .ar import scan_ar_events
 

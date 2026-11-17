@@ -304,6 +304,16 @@
       first to the last storm-force fix; the detail view draws the storm’s whole track, coloured
       by wind. These are best-track <em>observations</em>, so the lane carries no model scorecard
       — it is published for context, not benchmarked.</li>
+      <li><b>Midlatitude cyclone</b> — a closed low in 6-hourly ERA5 mean sea
+      level pressure: the lowest pressure within 6° with a <b>+3&nbsp;hPa</b> isobar
+      closing around it inside 6°, followed while it stays within 6° per 6-hour step
+      (gaps up to 12&nbsp;h are bridged). A low becomes an event when it lives at least
+      <b>48&nbsp;h</b>, travels at least <b>1000&nbsp;km</b>, reaches <b>≤990&nbsp;hPa</b>,
+      was born between <b>25–70°</b> latitude and <b>under 500&nbsp;m</b> elevation
+      (no phantom lows off the Tibetan Plateau or the Andes), and did not begin life as a
+      tropical cyclone. Peak value is the lowest central pressure; a <b>bomb</b> tag marks
+      a fall of ≥24&nbsp;hPa in 24&nbsp;h at 60° latitude. Tracked from ERA5, so this lane
+      has no model scorecard yet — it is drawn as a track, like a tropical cyclone.</li>
       <li><b>Flood</b> — an <em>observation</em> lane, not an ERA5 lane: GPM IMERG rain
       summed to a daily total and averaged <b>up</b> onto the ERA5 0.25&deg; land lattice.
       A cell exceeds when its daily total <em>or</em> its trailing 72&nbsp;h accumulation
@@ -327,9 +337,9 @@
       threshold for one 6-hour step keeps its id; that step shows its previous footprint with a
       lighter fill (bridged — display only, the river was not physically detected there).</li>
       <li>Parts of one system are merged, no two events overlap in time and space, and each type
-      is capped at 15 events — except the observation lanes, whose 90-day windows hold more
-      objects: tropical cyclones are capped at 60 (a storm is a single object that is never
-      merged and a whole season must fit) and floods at 40.</li>
+      is capped at 15 events — except the lanes whose 90-day windows hold many more objects:
+      tropical cyclones 60 (a storm is a single object that is never merged and a whole season
+      must fit), midlatitude cyclones 80 and floods 40.</li>
     </ul>
 
     <h3>How a spell becomes an event</h3>
