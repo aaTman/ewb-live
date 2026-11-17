@@ -163,3 +163,81 @@ def test_registry_matches_ewb_names():
     names = set(ewb_defaults.DEFAULT_VARIABLE_NAMES)
     for m in models().values():
         assert set(m.variables) <= names, m.name
+
+
+# ------------------------------------------------ open_forecast_nearest_init
+def _fake_archive(monkeypatch, cadence, published):
+    """api.open_forecast / api.available_inits backed by in-memory sets.
+
+    `cadence`  = the inits available_inits reports (inclusive of both ends)
+    `published`= {(init, leads)} the fake archive can actually serve
+    Returns the list of (init, leads) open_forecast was called with.
+    """
+    from ewb_live.sources import api
+
+    calls: list[tuple[dt.datetime, tuple[int, ...]]] = []
+
+    def fake_open(model, init, variables, lead_hours=None, bbox=None,
+                  use_cache=True):
+        leads = tuple(lead_hours or ())
+        calls.append((init, leads))
+        if (init, leads) not in published:
+            raise FileNotFoundError(f"no archive for {init} {list(leads)}")
+        return {"init": init, "leads": leads}
+
+    monkeypatch.setattr(api, "open_forecast", fake_open)
+    monkeypatch.setattr(api, "available_inits",
+                        lambda model, start, end: [i for i in cadence
+                                                   if start <= i <= end])
+    return calls
+
+
+def test_nearest_init_falls_back_to_the_nearest_earlier_init(monkeypatch):
+    """The fallback must actually try EARLIER inits (AR-view regression).
+
+    AIWP archives publish 00Z/12Z only; AR anchors are 6-hourly, so an AR event
+    page asks for a 06Z/18Z init and can only be served by the earlier run. The
+    guard around the fallback's `return` read `if cand >= init:` — and since
+    available_inits is inclusive of the requested init, that fired only for the
+    init that had just 404'd, so every earlier candidate was skipped and the
+    loop raised. Every model panel on the AR view read "unavailable (archive
+    missing for this run)": 49 of 121 ok on the served set, 2026-11-17.
+    """
+    from ewb_live.sources import api
+
+    day = dt.datetime(2026, 8, 28)
+    calls = _fake_archive(monkeypatch, [day, day + dt.timedelta(hours=12)],
+                          {(day, (30,))})
+    ds, off = api.open_forecast_nearest_init(
+        "aurora", day + dt.timedelta(hours=6), ["specific_humidity"],
+        lead_hours=[24], window_h=6)
+    assert off == 6                      # 06Z served by the 00Z run
+    assert ds["init"] == day
+    assert calls[-1] == (day, (30,))     # lead + offset => the SAME valid time
+
+
+def test_nearest_init_prefers_the_exact_init(monkeypatch):
+    from ewb_live.sources import api
+
+    day = dt.datetime(2026, 8, 28)
+    calls = _fake_archive(monkeypatch, [day, day + dt.timedelta(hours=12)],
+                          {(day, (24,)), (day - dt.timedelta(hours=6), (30,))})
+    ds, off = api.open_forecast_nearest_init(
+        "aurora", day, ["specific_humidity"], lead_hours=[24], window_h=6)
+    assert (off, ds["init"]) == (0, day)
+    assert calls == [(day, (24,))]       # no fallback when the run exists
+
+
+def test_nearest_init_raises_when_nothing_earlier_is_published(monkeypatch):
+    from ewb_live.sources import api
+
+    day = dt.datetime(2026, 8, 28)
+    # the requested init 404s and the only earlier cadence slot is outside the
+    # 6 h window: the original FileNotFoundError must surface unchanged
+    calls = _fake_archive(monkeypatch,
+                          [day - dt.timedelta(hours=12), day],
+                          {(day - dt.timedelta(hours=12), (36,))})
+    with pytest.raises(FileNotFoundError):
+        api.open_forecast_nearest_init("aurora", day, ["specific_humidity"],
+                                       lead_hours=[24], window_h=6)
+    assert calls == [(day, (24,))]

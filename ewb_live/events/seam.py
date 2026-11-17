@@ -169,12 +169,22 @@ def mask_arc(mask2d: np.ndarray,
 
 def mask_lat_span(mask2d: np.ndarray,
                   lats: np.ndarray) -> tuple[float, float] | None:
-    """(lat_min, lat_max) of the True cells of a (lat, lon) mask, or None."""
+    """(lat_min, lat_max) of the True cells of a (lat, lon) mask, or None.
+
+    Array-order agnostic and span-true: it takes the min/max over the rows
+    that actually hold cells. Returning (lats[rows[0]], lats[rows[-1]]) looked
+    right on an ascending axis and silently inverted every one built from a
+    DESCENDING axis — which is what ERA5 ARCO/the mirror and every model
+    archive here are (latitude 90..-90). events/ar.py publishes the AR-object
+    extent as the event bbox, so each such AR came back with lat_min > lat_max
+    (or, once padded, a narrow wrong band) and the publish gate dropped 9 of
+    the 15 curated ARs on the 2026-11-16 weekly.
+    """
     rows = np.flatnonzero(np.asarray(mask2d, bool).any(axis=1))
     if rows.size == 0:
         return None
-    l = np.asarray(lats, float)
-    return float(l[rows[0]]), float(l[rows[-1]])
+    v = np.asarray(lats, float)[rows]
+    return float(v.min()), float(v.max())
 
 
 def pad_bbox_180(bbox: tuple[float, float, float, float], dlat: float,

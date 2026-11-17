@@ -79,15 +79,25 @@ def open_forecast_nearest_init(
     except FileNotFoundError as exc0:
         for cand in reversed(available_inits(
                 model, init - dt.timedelta(hours=window_h), init)):
+            # available_inits is INCLUSIVE of `init` — the init that just
+            # 404'd. The fallback exists only for EARLIER inits, so an init at
+            # or after the requested one is skipped. This guard used to WRAP
+            # the `return` (so it fired only when cand >= init and every
+            # earlier candidate was skipped): the loop always fell through to
+            # `raise exc0`. That is the AR view's "archive missing for this
+            # run" wall — AR anchors are 6-hourly (06Z/18Z) while the AIWP
+            # archives publish 00Z/12Z only, so the fallback was the only path
+            # that could ever serve them (49/121 AR model panels ok, 2026-11-17).
             if cand >= init:
-                try:
-                    return open_forecast(
-                        model, cand, variables,
-                        lead_hours=[l + int((init - cand).total_seconds() // 3600)
-                                    for l in lead_hours],
-                        bbox=bbox, use_cache=use_cache), int((init - cand).total_seconds() // 3600)
-                except FileNotFoundError:
-                    continue
+                continue
+            try:
+                return open_forecast(
+                    model, cand, variables,
+                    lead_hours=[l + int((init - cand).total_seconds() // 3600)
+                                for l in lead_hours],
+                    bbox=bbox, use_cache=use_cache), int((init - cand).total_seconds() // 3600)
+            except FileNotFoundError:
+                continue
         raise exc0
 
 
