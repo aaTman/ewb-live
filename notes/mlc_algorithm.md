@@ -46,7 +46,8 @@ the PROOF did: Storm Ciaran, 2 Nov 2023.
 PROOF result. **Ciaran is found by every variant tested.** The detailed track below is the one the
 report prints in full (the vorticity-gated `vor3v` run): one continuous track 2023-10-31 06Z →
 2023-11-05 18Z (132 h), deepest **954.0 hPa** at 2023-11-02 06Z 50.5°N 1.5°E — landfall in
-Finistère at 00Z 2 Nov within one 6-hourly step of the documented position — displacement 3138 km,
+Finistère inside the 00–06Z step of 2 Nov (the 00Z fix is ~175 km west of the documented landfall
+point, the 06Z fix already inland) — displacement 3138 km,
 24 h fall 32.2 hPa = **1.52× the bomb threshold**. That 954.0 hPa equals the ERA5 field minimum in
 a 45–58°N / 25°W–5°E box over those days, i.e. the tracker's central pressure is the raw field
 minimum, not an artefact. The recommended MSLP-only variant (`vor3`) finds the same storm as a
@@ -152,8 +153,9 @@ New modules (all logic here):
 
 ## 8. Open issues / owner
 
-1. **Disk** — ewb root at 99 % (6.0 G free). My PROOF scratch is deleted (freed 1.6 G); scratch
-   must stay on `/dev/shm` for every future run. `data/cache/subsets` is still the big lever.
+1. **Disk** — ewb root at 99 % (6.0 G free); `data/cache/subsets` is **231 G** of it (verified
+   2026-11-17; `fc_parts` 41 G, `truth` 45 G). My PROOF scratch is deleted (freed 1.6 G); scratch
+   must stay on `/dev/shm` for every future run. Pruning `subsets` is an owner/orchestrator call.
 2. **Orogeny crossing tracks** — the genesis gate does not stop a real low that later crosses the
    Plateau/Andes, nor a false low that *starts* below 500 m and is then carried over land. If
    false events appear, add "≥2 consecutive 6-hourly fixes inside the gate" before touching the
