@@ -118,3 +118,126 @@ and no frontend change in my lane.
    to revisit after one live month, not the first lever.
 6. **tc overlap rule** needs confirming by the `tc` lane (see the PROOF entry) so a post-tropical
    system like Ciaran is published once.
+
+## [mlc-impl] 2026-11-17 13:20 UTC — the lane is implemented in pure Python and validated against TempestExtremes
+
+**What landed** (`aaTman/ne-mlc-impl`, nothing pushed, nothing promoted):
+
+* `ewb_live/events/mlc_track.py` — the tracker. Pure numpy/scipy/scikit-image, no
+  TempestExtremes, no conda. Structured function-for-function against upstream
+  ExtremeWeatherBench `events/tropical_cyclone.py` v1.1.1 (`_find_peaks_for_time_slice`
+  → `find_peaks_for_time_slice`, `find_contours_from_point_specified_field`
+  → `find_contours_from_point`, `find_valid_contour_from_point` +
+  `find_furthest_contour_from_point` → `find_valid_contour`, `find_valid_candidates`
+  → `find_valid_candidates`, `_create_spatial_mask` → the latitude band + pressure
+  threshold, `_fill_track_gaps_from_fields` → `fill_track_gaps_from_fields`,
+  `generate_tc_tracks_by_init_time` → `generate_mlc_tracks`). The mapping is written
+  out in the module docstring.
+* `ewb_live/events/mlc.py` — Events, the §4 qualification rule from
+  `notes/mlc_algorithm.md`, `details["track"]` in the shared 5-slot schema, severity,
+  floor, dedupe, core window, wrap-aware bbox, IBTrACS tropical-origin screen.
+* `ewb_live/sources/mlc_era5.py` — MSLP streamed from ARCO in 24 h chunks (the ewb
+  root disk is at 99 %, so nothing is mirrored); orography cached once as a 4 MB npz;
+  fails soft when the network is down.
+* `scripts/mlc/validate_python_vs_te.py` — the harness (extract once → TE with the
+  PROOF recipe → the Python tracker on the *same* files → counts, agreement, Ciaran,
+  timing/RSS). Its report is committed at `notes/mlc_python_validation.md`.
+* `tests/test_mlc_track.py` — 15 tests on synthetic global fields (node/track
+  detection, position accuracy, bomb tag, static-low rejection, each screen on its
+  own, lifetime/depth floors, dedupe, core window, gap filling, full event + schema
+  validation, tropical-origin rejection, antimeridian convention, genesis-window
+  ownership, fail-soft). 313 passed / 29 skipped / **2 failed** for the whole repo —
+  both are the known `third_party/ExtremeWeatherBench/data_prep` failures the other
+  lanes already documented on `main`.
+* Shared files, additive only: `events/types.py` (`+ "midlat_cyclone"`),
+  `events/__init__.py` (id tag + scan dispatch), `events/validate.py` (title label,
+  900–1015 hPa peak bounds, mlc cross-checks: min MSLP vs `peak_value`, lifetime,
+  displacement, genesis latitude, bomb consistency, track schema), `events/select.py`
+  (severity, floor, the track lane outside the no-overlap rule, own quota 30),
+  `events/qualification.py` (track lanes qualify at their first fix),
+  `pipeline.py` (published-unscored lane + documented `pair_status: unsupported`),
+  `dashboard/{app.js,styles.css,index.html}` (label, `--series-mlc` violet at 8.03:1
+  light / 5.46:1 dark, criteria + About bullet, story line "954 hPa centre · 31°
+  travelled · bomb ×1.5"), `pyproject.toml` + `uv.lock` (declare `scikit-image`,
+  already installed transitively → 2-line lock diff).
+
+**Validation vs TempestExtremes** (ewb LXC, 144 frames of ERA5 0.25° MSLP, Oct 26 –
+Nov 30 2023, TE `--closedcontourcmd msl,3.0,6.0 --mergedist 6.0 --minabslat 5
+--range 6 --mintime 48h --maxgap 12h`, both trackers on the identical netCDFs):
+
+| | python | TempestExtremes |
+|---|---|---|
+| nodes | 3199 | 4006 |
+| tracks ≥ 48 h | **138** | **145** |
+| median lifetime / min MSLP / displacement | 66 h / 975.1 hPa / 1693 km | 72 h / 977.3 hPa / 1700 km |
+| deepest | 926.7 hPa | 926.7 hPa |
+| bombs | 17 | 18 |
+| TE tracks matched by a python track | **133 / 145** | — |
+| position error over 1771 matched fixes | median **0.00°** (identical grid cell), p90 0.00° | — |
+| Ciaran | 954.0 hPa at 2023-11-02 06Z, 156 h, 3456 km, −32.2 hPa/24 h, bomb ×1.52 | identical, field by field |
+| wall time | 26.9 s detect+stitch (0.19 s/frame) | 17.9 s + 0.01 s |
+| peak RSS (whole python process, 144 frames resident) | 2.0 GB | — |
+
+Read honestly: the two trackers agree on **which lows exist and where they are**
+(median error exactly zero because both snap to the grid cell minimum), differ by
+5 % on track counts (python keeps a few TE breaks up, TE keeps a few I split), and
+recover Ciaran identically to the last decimal the PROOF quoted. The 17.6° maximum
+position error is a handful of high-latitude tracks where the two attach a different
+low at the ends of a merge/split — the median and p90 being 0.00° is the honest
+summary, the max is a tail, not a drift. 138 tracks → **77 published events** after
+the §4 screens (14 tagged bomb). Python costs ~1.5× the C++ binary's wall time on
+the same field; that is the price of "no conda, no binary, runs in `.venv`", and it
+is ~27 s per 36-day window.
+
+**Where I diverged from upstream's TC tracker, and why** (the brief asked me to say
+so explicitly): no warm-core geopotential-thickness contour (extratropical lows are
+cold-core aloft — it would reject every one of them); no 10 m wind gate and no
+IBTrACS genesis prior (an MLC has no prior best track at genesis, which is the whole
+point); great-circle instead of index-space distances (a 0.25° grid is not isotropic
+in longitude); MSLP in hPa so the contour delta reads `3.0` like the PROOF recipe;
+merge keeps the **deepest** low (TE `--mergedist` semantics); contour and gap-fill
+searches restricted to a window around the low (see the upstream PR — this is the
+same fix).
+
+**Upstream PR (kept out of this lane's commits).** `notes/upstream_pr_1.md`, branch
+`perf/tc-locality-search` in a clone at `~/scratch/ExtremeWeatherBench` (v1.1.1 @
+`c6467f4`). **Not pushed, no PR opened** — needs the owner's fork. It ports the
+locality idea back: TE's `_create_spatial_mask` builds a
+`(n_track_points, nlat, nlon)` global distance field and
+`find_contours_from_point_specified_field` contours the whole globe per peak, for
+results that are local by construction. Windowed (Clairaut bound, antimeridian and
+degenerate grids fall back): **504 ms → 3 ms** mask, **760 ms → 24 ms** per timestep
+peak search, a 20-init × 120-lead forecast eval from ~30 min to ~1 min. 69 new
+equivalence tests against reference implementations of the replaced code, existing
+43 TC tests pass, ruff clean, `benchmarks/tc_detection_profile.py` included. I did
+not open a second PR: after this change the per-step profile is flat (windowed
+`find_contours`, scipy's max filter, xarray `DataArray` churn per peak) — nothing
+else is big enough to be worth a PR, and `calc.haversine_distance`'s re-evaluated
+`np.cos` is now noise next to the mask win.
+
+**Open issues / needs the owner or orchestrator**
+
+1. **Scoring**: `midlat_cyclone` is published and drawn, never scored (EWB has no
+   metric set for a pressure-minimum track). The pipeline documents each pair as
+   `unsupported` so `pair_coverage` / `full_run_complete` stay decidable — same
+   policy the `tc` lane needs for `tropical_cyclone`. Confirm, or tell me to score
+   it against something.
+2. **Merge conflicts with the `tc` lane** in `select.py`, `pipeline.py`,
+   `events/__init__.py`, `events/validate.py`, `events/qualification.py`,
+   `dashboard/app.js`. Every edit is additive and commented `mlc lane`; the
+   `MLC_TRACK_TYPE` / `MLC_TOP_N` names are chosen so folding them into a shared
+   `TRACK_TYPES` after the merge is a one-line change. I did not touch `tc.py` or
+   `ibtracs.py`, but `mlc.py` imports the `tc` lane's IBTrACS reader **lazily and
+   fail-soft** for the tropical-origin screen — if that lane's reader is renamed,
+   the screen silently stays off (the event still qualifies on its other four
+   screens), so please keep the import path in mind at merge time.
+3. **The screen set is a knob, not a law.** 990 hPa depth floor and the 25–70°
+   genesis band are `QualifyParams` fields. Nov 2023 gives 77 events / 90 days; the
+   `select.py` quota is 30 per window, so a busy window truncates by severity
+   (depth × lifetime × bomb) rather than failing.
+4. **ARCO reachability is a hard dependency** for the scan (the lane streams; the
+   mirror has no `mean_sea_level_pressure`). Offline, `scan_mlc_events` returns `[]`
+   and the lane simply publishes nothing.
+5. **Intensity is pressure only** (no wind column in `details["track"]`), as the
+   5-slot schema says. If the owner wants a wind series, that is a schema change
+   first, not a tracker change.
