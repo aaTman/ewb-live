@@ -868,7 +868,12 @@ def daily_from_granule(path: str | Path, *, hours: float = HOURS_PER_DAY,
       plausibility band (0.05-25 mm/day, world-average ~2.6) then turns a mislabelled
       ``units`` attribute — a 24x error — into a refused ingest instead of a silently
       corrupt record;
-    * non-positive (producer fill, e.g. −9999) and non-finite cells → NaN, never 0;
+    * **0 mm/day is an observation (dry), not missing data.** Only the producer's fill —
+      the variable's own ``_FillValue``/``missing_value`` attribute, or any negative /
+      non-finite stored value (e.g. −9999.9) — becomes NaN; a dry cell must never be
+      indistinguishable from "no observation" (measured live 2026-11-17: ~60 % of the
+      globe is 0 on a given day, and treating it as missing inflated the global mean
+      to a wet-only 5.4 mm/day and stored 3.9 M cells as fill);
     * ``precipitation_cnt`` (uint8, how many of the 48 half-hourly estimates the daily
       mean is based on; 255 = not published) and ``probabilityLiquidPrecipitation``
       (uint8 %: 0 missing, 1 likely solid, 100 likely liquid *or* no precipitation) are
@@ -895,8 +900,20 @@ def daily_from_granule(path: str | Path, *, hours: float = HOURS_PER_DAY,
             pol = np.where((pol >= 0) & np.isfinite(pol), pol, 0.0).astype("uint8")
         else:
             pol = np.zeros(shape, dtype="uint8")
+        fill_values: list[float] = []
+        for f in (ds["precipitation"].attrs.get("_FillValue"),
+                  ds["precipitation"].attrs.get("missing_value"),
+                  ds["precipitation"].encoding.get("fill_value")):
+            try:
+                if f is not None and np.isfinite(float(f)):
+                    fill_values.append(float(f))
+            except (TypeError, ValueError):
+                pass
 
-    values = np.where(np.isfinite(rate) & (rate > 0.0), rate, np.nan).astype("float32") * np.float32(factor)
+    valid = np.isfinite(rate) & (rate >= 0.0)   # 0 is dry, not missing (see docstring)
+    for f in fill_values:
+        valid &= rate != f
+    values = np.where(valid, rate, np.nan).astype("float32") * np.float32(factor)
     peak = float(np.nanmax(values)) if values.size else 0.0
     mean = float(np.nanmean(values)) if np.isfinite(values).any() else float("nan")
     lo, hi = MEAN_MM_DAY_BOUNDS

@@ -445,6 +445,32 @@ def test_daily_store_packs_precipitation_to_uint16(tmp_path):
     assert np.allclose(wet, 12.0, atol=imerg.PP_SCALE_MM)
 
 
+def test_zero_precipitation_is_dry_not_missing(tmp_path):
+    """Dry cells (0 mm/day) are observations; only the producer's fill — a negative
+    value or the variable's own ``_FillValue`` — is "no data". Every offline granule
+    had all non-fill cells raining, so the bug was invisible until the live run: 60 %
+    of the globe (dry ground) was stored as missing and the global mean became a
+    wet-only 5.4 mm/day instead of ~2."""
+    day = DAY1
+    src = tmp_path / granule_name(day)
+    write_granule(src, day, rate=0.5, fill_cells=((1, 2),))
+    with xr.open_dataset(src, engine="h5netcdf", mask_and_scale=False) as ds:
+        ds = ds.load()
+    v = ds["precipitation"].values
+    v[0, 2, 2] = 0.0            # dry ground: a real observation
+    v[0, 3, 3] = 9999.0         # a POSITIVE fill, named only by the attribute
+    ds["precipitation"].values = v
+    ds["precipitation"].attrs["_FillValue"] = 9999.0
+    ds.to_netcdf(src, engine="h5netcdf", mode="w", format="NETCDF4")
+    ds.close()
+    out = imerg.daily_from_granule(src, grid_deg=DEG)
+    p = out["precipitation"].values[0]
+    assert p[2, 2] == 0.0                       # dry, not NaN
+    assert np.isnan(p[1, 2])                    # negative fill → NaN
+    assert np.isnan(p[3, 3])                    # attribute-named positive fill → NaN
+    assert p[0, 0] == pytest.approx(12.0)
+
+
 def test_ingest_clips_precipitation_at_packing_ceiling(tmp_path):
     """Packed uint16 tops out at 655.34 mm/day: a hotter cell must clip (recorded in
     status) rather than wrap or corrupt the file."""
