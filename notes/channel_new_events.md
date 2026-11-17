@@ -207,3 +207,42 @@ on an arbitrary lattice · `wet_sample_count` · `scale=` · the two error paths
   revert that live rule. I update the box by `scp`-ing only
   `ewb_live/climatology/precip_clim.py`. Land the freeze patch on `main` first.
 - Rebuild runbook (and the exact commands): `notes/flood_design.md` §7.
+
+---
+
+## [flood-clim] 2026-11-17 04:35 UTC — climatology closed + fully tested; my slice is DONE (2 owner asks open)
+
+Closing my slice so the orchestrator can integrate. `aaTman/ne-flood-clim` = `main`
+(e492a52) + 5 commits, **diff vs main is additive only** (`ewb_live/climatology/precip_clim.py`,
+`tests/test_precip_clim.py`, `notes/flood_design.md`, `notes/flood_regions.json`,
+`notes/flood_maps/*.png`, `notes/channel_new_events.md`, `tmp/*` probes). Nothing in
+`types.py`/`pipeline.py`/`select.py`/`dashboard/*` — registering the `flood` Event type
+and the About text is still **flood-detect's**, and `climatology_meta()` + `FLOOR_MM`
+are the two things it should read from me rather than restate.
+
+Tests: `tests/test_precip_clim.py` **26 passed**; whole offline suite **324 passed,
+2 failed** — those 2 (`tests/test_events_unit.py::test_ar_floors_match_upstream_ar_bounds`,
+`::test_upstream_consecutive_filter_and_blobs`) fail identically on `main` here because
+`third_party/ExtremeWeatherBench/data_prep` is not cloned in this container
+(`EWB_DATA_PREP_DIR` unset). Not caused by me or by the rebase.
+
+The store on ewb is verified closed: `.done` + `precip_era5_pooled_1990_2019.zarr.meta.json`
+present, `status` → chunk coverage 3072+1536, missing 0, `finalize` → 1.52 × 10⁹ cells,
+0 invariant violations. `/opt/ewb-live/ewb_live/climatology/precip_clim.py` is
+byte-identical to my branch (md5 `79701cb3…`). Sanity maps: `notes/flood_maps/`.
+Also fixed `write_maps`: the world panel must rotate the **field** with its longitudes
+(store is 0…359.75) and must not use `pcolormesh` on 1 M quads — it was drawing fake
+zonal stripes over the open ocean. If you have already looked at those figures, look
+at the current files.
+
+**Two open items for the owner (both blocking, neither mine to decide):**
+1. **Disk** — the ewb root FS is at **99 %, 6.0 GB free** (my store is 4.5 GB of it).
+   Rebuilding the climatology needs `MIN_FREE_GB = 6.0`, so we are at the exact edge:
+   any new 90-day IMERG cache from `flood-imerg` and the rebuild fight each other.
+   `/opt/ewb-live/data/cache` is **330 GB**, `/opt/ewb-owb/data/clim2` 106 GB. I delete
+   nothing without a name from you.
+2. **Deploy order** — `/opt/ewb-live` currently runs my pre-rebase tree **plus the
+   owner's `freeze <= 0 °C` patch**, which my rebased branch hands to `ne-mlc-research`.
+   A `ops/remote.sh sync` from any of my worktrees now would silently revert that live
+   rule. Land the freeze patch on `main` (or re-apply it) before letting my branch sync;
+   until then I only `scp` `ewb_live/climatology/precip_clim.py`.
