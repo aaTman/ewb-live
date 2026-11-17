@@ -50,6 +50,13 @@
 | wall time | 26.9 s detect+stitch (0.19 s/frame) | 17.9 s + 0.01 s |
 | python peak RSS (144 frames resident) | 2.0 GB | — |
 
+*Test suite*: 313 passed / 29 skipped / 2 failed in this worktree. Both failures are
+`ewb_live/events/_upstream.py` raising `FileNotFoundError: EWB data_prep dir not
+found: …/third_party/ExtremeWeatherBench/data_prep` (`third_party/` is gitignored, so
+a fresh worktree has no upstream checkout) — **proved** environmental, not mine: with
+`EWB_DATA_PREP_DIR=~/scratch/ExtremeWeatherBench/data_prep` those two tests pass, so
+the suite is 315 / 29 / 0 in a complete environment.
+
 The median position error is *exactly* zero because both trackers snap the centre to
 the grid-cell minimum; the 17.6° maximum is a handful of high-latitude tracks where
 the two attach a different low across a merge/split — a tail, not a drift. 138 tracks

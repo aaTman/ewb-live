@@ -148,7 +148,11 @@ and no frontend change in my lane.
   validation, tropical-origin rejection, antimeridian convention, genesis-window
   ownership, fail-soft). 313 passed / 29 skipped / **2 failed** for the whole repo —
   both are the known `third_party/ExtremeWeatherBench/data_prep` failures the other
-  lanes already documented on `main`.
+  lanes already documented on `main`: both are `_upstream.py` raising
+  `FileNotFoundError: EWB data_prep dir not found: …/third_party/ExtremeWeatherBench/data_prep`
+  (`third_party/` is gitignored). Proved environmental — with
+  `EWB_DATA_PREP_DIR=~/scratch/ExtremeWeatherBench/data_prep` those two pass, so the
+  suite is 315 / 29 / 0 in a complete environment.
 * Shared files, additive only: `events/types.py` (`+ "midlat_cyclone"`),
   `events/__init__.py` (id tag + scan dispatch), `events/validate.py` (title label,
   900–1015 hPa peak bounds, mlc cross-checks: min MSLP vs `peak_value`, lifetime,
