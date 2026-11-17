@@ -166,3 +166,36 @@ count as below-threshold.
    `aggregate_to_era5_grid(da)` in this module (0.1° → 0.25° area-weighted mean with the dateline roll
    and NaN-aware weights), so the join does not reimplement the fiddly part. See
    `notes/handoff_flood-imerg_1.md`.
+
+## [flood-imerg] 2026-11-17 09:20 UTC — rebased onto local main (e492a52), freeze commit dropped per owner
+
+* `git rebase --onto main 30150ba` → branch `aaTman/ne-flood-imerg` is now **0 behind / 6 ahead of
+  `main` (e492a52)**; pre-rebase state kept at `backup/pre-rebase-ne-flood-imerg-20261117`
+  (`06a32c3`). Nothing pushed.
+* **Dropped** `30150ba freeze: <=0C at all four steps (from owner patch)`, as instructed: `main` has
+  not touched `ewb_live/events/temperature.py` since the old base (`git diff 8ba00be main -- …` is
+  empty), so the identical file is what every new-events branch carries. My branch now touches **no
+  shared file at all** — `temperature.py`, `SPEC.md`, `dashboard/detection.py` and
+  `tests/test_frame_masks.py` are byte-identical to `main` on my branch, and the diff is purely
+  `ewb_live/sources/imerg.py` + `tests/test_imerg.py` + `notes/*`. Merge should be conflict-free.
+* ⚠️ **For the owner, one caveat on "if main carries it"**: as of `e492a52`, `main` does **not**
+  contain the rule — `git show main:ewb_live/events/temperature.py | grep FREEZE_MAX_C` → 0 hits.
+  It is carried by `aaTman/ne-coldsnap`, `aaTman/ne-tc` and the flood-clim chain visible in
+  `backup/pre-rebase-main-20261117` (`abc2c90 freeze: <=0C at all four steps`), so dropping it here is
+  safe **only if one of those lands**. Confirm, or the freeze rule quietly never merges.
+* ⚠️ Second, unrelated: `origin/main` has **diverged** from local `main` (I fetched during this work:
+  `origin/main = 3b1f63c "Merge pull request #2 from aaTman/reconcile-live"`, `bd0cbab..3b1f63c`, and
+  `main` is *not* an ancestor of it — 68 local-only vs 2 remote-only commits). I rebased onto **local
+  `main` (e492a52)** as told, not onto `origin/main`; someone should decide which lineage is
+  authoritative before anything is pushed. `origin/main` also has no `FREEZE_MAX_C` and no
+  `ewb_live/sources/imerg.py`.
+
+### Tests after the rebase (same capped recipe)
+
+* `TMPDIR=$PWD/tmp/pytest systemd-run --user --scope -p MemoryMax=8G -- timeout 300
+   .venv/bin/python -m pytest tests/test_imerg.py -x -q` → **28 passed** in 12.4 s; `/tmp` watched
+   every 3 s, flat at 82 MB (the run itself stays off tmpfs); peak scratch 12 MB in `tmp/pytest`.
+* Whole suite `pytest tests -q` → **326 passed, 2 failed, 29 skipped** in 101 s. Both failures are the
+  pre-existing environmental ones in `tests/test_events_unit.py` (`FileNotFoundError: EWB data_prep
+  dir not found: third_party/ExtremeWeatherBench/data_prep`; `third_party/` is gitignored, so they
+  cannot pass in any fresh checkout) — unrelated to IMERG and unchanged from before the rebase.
