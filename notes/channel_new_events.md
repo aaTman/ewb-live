@@ -152,3 +152,98 @@ pressure in slot 4, which needs no change at all).
 3. Quota 60 (a busy 90-day window fits); the dashboard list shows them all.
 4. The best-track map is the full Equal Earth globe, on purpose (parity with the site's other
    maps) — the design pass may want a zoom-to-track inset; the geometry is all in `TrackViz`.
+
+## [tc] 2026-11-17 12:20 UTC — owner report: live site says "0 tropical cyclones in the last 90 days" — diagnosis + honest-zero fix (NOT promoted)
+
+**Verdict: the 0 is not a true zero — it is a data-vs-deploy ordering artifact, and the
+UI had no way to say so.** The served data genuinely contains no TC events, the
+frontend counts correctly, and IBTrACS HAS storms (true count 43). Detail:
+
+**(1) What is deployed on the box (`/opt/ewb-live`).** Read-only audit over ssh:
+box `ewb_live/events/tc.py`, `ewb_live/sources/ibtracs.py`, `dashboard/app.js`,
+`dashboard/trackviz.js` are **md5-identical to this branch** (synced 04:32Z 2026-11-17,
+the weekly-idle sync from the DONE entry). `types.py` registers `tropical_cyclone`;
+`pipeline.py` carries the unscored-track block. So the live TREE has the lane.
+But the served **data** predates it:
+- `data/results/events_selected.json` (Nov 17 03:02, 30 events) → 15 heat / 11 AR / 4 freeze, **0 TC** (also confirmed via https://ewb.espr.ai/data/results/events_selected.json).
+- `data/results/events.json` (raw catalogue, Nov 17 03:01, 217 events) → **0 TC** too.
+- `data/results/meta.json` `event_counts` has **no `tropical_cyclone` key at all** →
+  written by pre-lane code (my build loops all four types; the key can never be absent
+  when the lane exists). `logs/weekly-2026-11-16.log` line 311 confirms the 16th's
+  07:00 scan: `raw {'heat_wave': 149, 'freeze': 22, 'atmospheric_river': 98}` —
+  three types, no TC key → the weekly that built this window also ran pre-lane code.
+- The last writer was `ewb-live-pipeline.service` (journal: started ~02:50Z, finished
+  03:08:59Z, "blocker set unchanged … exiting 0"), run from the tree AS IT WAS AT
+  03:00Z — my TC code only landed at 04:32Z. Frontend + data were out of order by
+  92 minutes: the UI has the lane, the release does not, so the tab prints 0.
+
+**(2) Frontend counting logic.** The number the owner saw is the per-type tab badge,
+`renderControls()` in `app.js`: `state.events.filter(e => e.event_type === t).length`
+where `state.events` = `events_selected.json` (`loadData`, with `events.json` only as
+fallback). `#gm-count` (mergedmap.js `updateCount`) counts the merged timeline, not
+per type. No date window is computed in the browser — the 90-day window is the
+pipeline's published window (`meta.window` 2026-08-19..2026-11-17). The count is NOT
+filtered by selection/publish gate or by pair_status: `pair_status.json` "unsupported"
+reasons render as n/a rows in the scorecard only; nothing drops events from the list
+or the badge. Nothing in the frontend dropped a TC event — there was nothing to drop.
+Backend gates re-checked on real data (below): none of curation/floor/quota/
+validate-publish-gate/qualification drops the lane.
+
+**(3) IBTrACS freshness — the 0 is a real defect, not an honest zero.** Live cache
+`data/cache/ibtracs/fixes_ibtracs.ALL.list.v04r01.parquet` (refreshed 04:12Z): latest
+fix **2026-11-12 12:00Z ≈ 5 days behind real time** — normal IBTrACS publication lag,
+not staleness (24 h refresh policy, mtime healthy). The trailing 90 days contain
+47 storms / 43 qualifying events (≥34 kt ×3 fixes ×12 h rule) — matches the DONE-entry
+sanity run; last named storms PENA (ended 11-12), CEMPAKA (11-11). **True count ≈ 43,
+so 0 is wrong either way.** Re-ran the lane end-to-end ON THE BOX (scratch copy,
+scratch caches; live files untouched): 43 events, publish gate rejects 0, quota 60
+keeps all, `qualified_at` fallback set — no backend gate drops the lane.
+
+**Bonus defect found while probing (fixed):** `detect_events` clamps every lane to
+the ERA5 truth cutoff (ARCO lag ~6 d) — correct for the raster lanes, wrong for a
+track lane that never reads ERA5: every week it silently erased the last ~6 days of
+the "90-day" TC window, exactly where the newest cyclone lives. PENA's tail (11-11/12)
+was outside the clamped scan (11-10 cutoff, probe run 1: window ..11-10).
+
+**Fixes on this branch — commit `429c8ab`, live box untouched, nothing promoted:**
+1. `ewb_live/sources/ibtracs.py::source_status()` — reads the cache parquet's time
+   column ONLY (never downloads, fail-soft to None) → `{latest_fix, lag_days,
+   cache_age_h, note}`.
+2. `ewb_live/pipeline.py` publishes it as **`meta.ibtracs`** every run (`_ibtracs_meta`,
+   fail-soft). Three honest states: dict = archive reach + lag; null = lane ran but the
+   archive was unreachable; **key absent = release built by pre-lane code** (today's
+   live case) — the UI can now tell "no cyclones" from "no data".
+3. `ewb_live/events/__init__.py`: track lanes skip the truth-cutoff clamp (raster
+   lanes unchanged; a fully-past-cutoff raster window still returns empty).
+4. `dashboard/app.js`: when the TC lane shows zero, the empty-lane line and the tab
+   badge tooltip carry the reason (3 states above; with `latest_fix`/`lag_days` quoted,
+   e.g. "…archive through 2026-11-12 — ~5 days behind today"). `mergedmap.js`
+   `layersForTab` no longer turns ALL raw layers on when a track tab is clicked
+   (the lane has no raw layer — keep the user's choice).
+
+**Tests**: `tests/test_ibtracs_source.py` +4 (archive reach, no cache, torn cache,
+never-downloads); `tests/test_tc_events.py` +4 (clamp skip for track lanes, track lane
+survives an all-past-cutoff window, rasters still clamped/empty, meta glue fail-soft);
+`tests/e2e/test_tracklane_fe.py` +3 honest-zero FE states against meta variants.
+Suites: `pytest tests -q --ignore=tests/e2e` → **346 passed, 2 failed** (the same two
+upstream-ar-bounds environmental failures as `main`); `-m e2e` tracklane+trackviz → all
+pass; `test_dashboard_fe.py` fails **identically on `main`** (verified by stashing my
+diff AND by running the tests in the main worktree — pre-existing, other lanes' area).
+`scripts/public_scrub_check.sh .` CLEAN.
+
+**Box verification of the fix** (computation on the LXC from a /root scratch copy with
+the live venv, scratch caches; deleted after): TC scan window now runs to the full
+end date (2026-08-19..2026-11-17, no clamp), 43 events, PENA window complete
+(11-06 15:00 → 11-12 06:00), `source_status` → latest_fix 2026-11-12T12:00Z, lag 5.0 d.
+
+**Healing + one thing the orchestrator/owner must decide.** The site self-heals at the
+next weekly (**Mon 2026-11-23 07:00Z**) IF the box tree still carries this branch at
+that moment. It might not: `ops/remote.sh sync` is a whole-tree rsync, the other lanes'
+worktrees still have pre-TC `types.py`/`select.py`/`pipeline.py`/`events/__init__.py`/
+`app.js`, and whoever syncs last wins on Monday morning — a stale sync would silently
+run a lane-less weekly and print… 0 (with the honest note, at least, once `app.js` is
+also stale-but-paired — actually worse: a pre-lane app.js shows NO note at all).
+**The durable fix is landing `aaTman/ne-tc` to `main` before the 23rd**; that promote is
+the owner's/orchestrator's call, deliberately not taken here. If the owner wants the
+lane live sooner: run one weekly-window pipeline from a tree that includes the lane
+(`ops/events_rebuild.sh` shape) — also a promote-class action, awaiting instruction.
