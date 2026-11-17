@@ -1,0 +1,101 @@
+.......F.F..F.........                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_ingest_load_and_idempotence _______________________
+
+cache = PosixPath('/home/orca/orca/workspaces/ewb-live/ne-flood-imerg/tmp/pytest/pytest-of-orca/pytest-3/test_ingest_load_and_idempoten0/imerg')
+
+    def test_ingest_load_and_idempotence(cache):
+        days = [DAY1, DAY1 + dt.timedelta(days=1), DAY1 + dt.timedelta(days=2)]
+        remote, granules = fake_remote(tmp_path=cache, days=days[:2])     # day 3 unpublished
+        root = cache / "root"
+    
+        summary = ingest(days[0], days[2], root=root, granules=granules, workers=1,
+                         downloader=copier(remote), keep_raw=99, grid_deg=DEG)
+        assert summary["fetch"]["fetched"] == 2
+        assert summary["fetch"]["missing"] == [f"{days[2]:%Y-%m-%d}"]
+        assert (root / "daily" / f"imerg_{days[0]:%Y%m%d}.nc").exists()
+        assert not (root / "daily" / f"imerg_{days[2]:%Y%m%d}.nc").exists()
+    
+        da = load_imerg_daily(days[0], days[2], root=root)
+        assert da.dims == ("time", "lat", "lon")
+        assert da.attrs["units"] == imerg.UNITS
+        assert da.shape[0] == 3                                       # regular daily time axis
+        assert da.attrs["days_present"] == 2
+        assert da.attrs["missing_days"] == [f"{days[2]:%Y-%m-%d}"]
+        assert np.allclose(da.values[0], 12.0)
+        assert np.isnan(da.values[2]).all()                           # missing day: NaN, not 0
+    
+        mask = load_imerg_mask(days[0], days[2], root=root)
+        assert mask.dtype == np.uint8
+        assert (mask.values[0] == (MASK_PRESENT | MASK_FULL_SAMPLING | 4)).all()
+>       assert (mask.values[2] == 0).all()
+E       assert np.False_
+E        +  where np.False_ = <built-in method all of numpy.ndarray object at 0x725c05cd7750>()
+E        +    where <built-in method all of numpy.ndarray object at 0x725c05cd7750> = array([[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],\n       [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],\n       [2, 2, 2, 2, 2, 2, 2,...2, 2, 2, 2, 2],\n       [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],\n       [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]], dtype=uint8) == 0.all
+
+tests/test_imerg.py:248: AssertionError
+____________ test_fetch_reports_missing_and_survives_a_bad_download ____________
+
+cache = PosixPath('/home/orca/orca/workspaces/ewb-live/ne-flood-imerg/tmp/pytest/pytest-of-orca/pytest-3/test_fetch_reports_missing_and0/imerg')
+
+    def test_fetch_reports_missing_and_survives_a_bad_download(cache):
+        days = [DAY1, DAY1 + dt.timedelta(days=1)]
+        remote, granules = fake_remote(tmp_path=cache, days=[days[0]])
+        granules[days[1]] = Granule(day=days[1], granule_ur="missing.nc4", url="/nope/missing.nc4")
+    
+        def broken(url, dest):
+            raise ImergError("boom")
+    
+        out = fetch(days, root=cache / "root", granules=granules, workers=1, downloader=broken)
+        assert out["fetched"] == 0
+        assert "boom" in out["errors"][f"{days[0]:%Y-%m-%d}"]
+        status = load_imerg_status(days[1], days[1], root=cache / "root")
+>       assert status["status"].iloc[0] == "missing"
+E       AssertionError: assert 'not_ingested' == 'missing'
+E         
+E         - missing
+E         + not_ingested
+
+tests/test_imerg.py:313: AssertionError
+____________________ test_roll_window_drops_outside_90_days ____________________
+
+cache = PosixPath('/home/orca/orca/workspaces/ewb-live/ne-flood-imerg/tmp/pytest/pytest-of-orca/pytest-3/test_roll_window_drops_outside0/imerg')
+
+    def test_roll_window_drops_outside_90_days(cache):
+        root = cache / "root"
+        now = dt.datetime(2026, 11, 16, 12, 0, tzinfo=dt.timezone.utc)
+        days = [dt.date(2026, 8, 1) + dt.timedelta(days=i) for i in range(100)]
+        remote, granules = fake_remote(tmp_path=cache, days=days)
+    
+        def copier_simple(url, dest):
+            return copyfile_downloader(url, dest)
+    
+        for day in days:                                        # one day at a time, cheap
+            ingest(day, day, root=root, granules={day: granules[day]}, workers=1,
+                   downloader=copier_simple, keep_raw=99, keep_days=3650, grid_deg=DEG)
+        assert len(list((root / "daily").glob("imerg_*.nc"))) == 100
+    
+        out = roll_window(root=root, keep_days=90, keep_raw=3, now=now)
+        assert out["cutoff"] == "2026-08-19"
+        kept = sorted(p.stem for p in (root / "daily").glob("imerg_*.nc"))
+>       assert len(kept) == 90 and kept[-1] == "imerg_20261108"
+E       AssertionError: assert (82 == 90)
+E        +  where 82 = len(['imerg_20260819', 'imerg_20260820', 'imerg_20260821', 'imerg_20260822', 'imerg_20260823', 'imerg_20260824', ...])
+
+tests/test_imerg.py:385: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/gribapi/__init__.py:23
+  /home/orca/orca/workspaces/ewb-live/ne-flood-imerg/.venv/lib/python3.12/site-packages/gribapi/__init__.py:23: UserWarning: ecCodes 2.42.0 or higher is recommended. You are running version 2.41.0
+    warnings.warn(
+
+tests/test_imerg.py::test_accumulate_half_hourly_uses_the_utc_day_boundary
+tests/test_imerg.py::test_accumulate_half_hourly_uses_the_utc_day_boundary
+  /home/orca/orca/workspaces/ewb-live/ne-flood-imerg/.venv/lib/python3.12/site-packages/flox/xrdtypes.py:68: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+    NAT_TYPES = {np.datetime64("NaT").dtype, np.timedelta64("NaT").dtype}
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_imerg.py::test_ingest_load_and_idempotence - assert np.False_
+FAILED tests/test_imerg.py::test_fetch_reports_missing_and_survives_a_bad_download
+FAILED tests/test_imerg.py::test_roll_window_drops_outside_90_days - Assertio...
+3 failed, 19 passed, 3 warnings in 11.36s

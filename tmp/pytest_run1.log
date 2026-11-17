@@ -1,0 +1,40 @@
+Running as unit: run-p7182-i272044.scope; invocation ID: 7b189bf0ba7b4282a29c8e78e8665f93
+.F
+=================================== FAILURES ===================================
+_________________ test_daily_from_granule_rate_to_accumulation _________________
+
+tmp_path = PosixPath('/home/orca/orca/workspaces/ewb-live/ne-flood-imerg/tmp/pytest/pytest-of-orca/pytest-0/test_daily_from_granule_rate_t0')
+
+    def test_daily_from_granule_rate_to_accumulation(tmp_path):
+        day = DAY1
+        src = write_granule(tmp_path / granule_name(day), day, rate=0.5, units="mm/hr")
+        out = daily_from_granule(src, grid_deg=DEG)
+        assert out["precipitation"].dims == ("time", "lat", "lon")
+        assert out["precipitation"].attrs["units"] == imerg.UNITS
+        assert float(out["precipitation"][0, 0, 0]) == pytest.approx(12.0)      # 0.5 mm/hr x 24
+        assert out.attrs["producer_units"] == "mm/hr"
+        assert out["precipitation_cnt"].dtype == np.uint8
+        assert out["precipitation_cnt"].values.max() == imerg.STEPS_PER_DAY
+>       assert pd.Timestamp(out.time.values).to_pydatetime().date() == day
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_imerg.py:137: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+pandas/_libs/tslibs/timestamps.pyx:1865: in pandas._libs.tslibs.timestamps.Timestamp.__new__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   ???
+E   TypeError: Cannot convert input [['2026-11-10T00:00:00.000000000']] of type <class 'numpy.ndarray'> to Timestamp
+
+pandas/_libs/tslibs/conversion.pyx:425: TypeError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/gribapi/__init__.py:23
+  /home/orca/orca/workspaces/ewb-live/ne-flood-imerg/.venv/lib/python3.12/site-packages/gribapi/__init__.py:23: UserWarning: ecCodes 2.42.0 or higher is recommended. You are running version 2.41.0
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_imerg.py::test_daily_from_granule_rate_to_accumulation - Ty...
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 1 passed, 1 warning in 1.67s

@@ -1,0 +1,14 @@
+Running as unit: run-p8128-i337319.scope; invocation ID: 1747c81b9b53477c90d116eed430351d
+.......................                                                  [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/gribapi/__init__.py:23
+  /home/orca/orca/workspaces/ewb-live/ne-flood-imerg/.venv/lib/python3.12/site-packages/gribapi/__init__.py:23: UserWarning: ecCodes 2.42.0 or higher is recommended. You are running version 2.41.0
+    warnings.warn(
+
+tests/test_imerg.py::test_accumulate_half_hourly_uses_the_utc_day_boundary
+tests/test_imerg.py::test_accumulate_half_hourly_uses_the_utc_day_boundary
+  /home/orca/orca/workspaces/ewb-live/ne-flood-imerg/.venv/lib/python3.12/site-packages/flox/xrdtypes.py:68: DeprecationWarning: The 'generic' unit for NumPy timedelta is deprecated, and will raise an error in the future. This includes implicit conversion of bare integers (e.g. `+ 1`). Please use a specific unit instead.
+    NAT_TYPES = {np.datetime64("NaT").dtype, np.timedelta64("NaT").dtype}
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+23 passed, 3 warnings in 11.33s

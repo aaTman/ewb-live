@@ -822,7 +822,11 @@ def daily_from_granule(path: str | Path, *, hours: float = HOURS_PER_DAY,
         coords={"time": pd.to_datetime([dt.datetime.combine(day, dt.time())]),
                 "lat": ("lat", lat), "lon": ("lon", lon)},
         attrs={"source": src.name, "day": f"{day:%Y-%m-%d}", "units": UNITS,
-               "producer_units": units, "grid_deg": grid_deg, "grid": grid,
+               "producer_units": units, "grid_deg": grid_deg,
+               # netCDF attributes must be scalars/strings — a dict here made every daily
+               # write fail (h5netcdf refuses non-serialisable attrs), so the grid summary
+               # travels as JSON and is parsed back with json.loads.
+               "grid": json.dumps(grid, sort_keys=True),
                "global_mean_mm_day": round(mean, 4) if np.isfinite(mean) else None,
                "schema_version": SCHEMA_VERSION},
     )
@@ -931,6 +935,15 @@ def _status_entry(root: str | Path | None, day: dt.date, **fields) -> None:
     _write_status(root, status=status)
 
 
+def _netcdf_attrs(ds: xr.Dataset) -> xr.Dataset:
+    """Copy of ``ds`` whose global attrs are all netCDF-serialisable (dicts -> JSON)."""
+    out = ds.copy()
+    for key, value in out.attrs.items():
+        if isinstance(value, dict):
+            out.attrs[key] = json.dumps(value, sort_keys=True)
+    return out
+
+
 def _write_netcdf(day: dt.date, ds: xr.Dataset, path: Path) -> int:
     """Compressed per-day NetCDF4, written atomically (``.part`` + rename)."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -948,7 +961,7 @@ def _write_netcdf(day: dt.date, ds: xr.Dataset, path: Path) -> int:
     last: Exception | None = None
     for engine in ("h5netcdf", "netcdf4"):
         try:
-            ds.to_netcdf(part, engine=engine, encoding=encoding, mode="w")
+            _netcdf_attrs(ds).to_netcdf(part, engine=engine, encoding=encoding, mode="w")
             os.replace(part, path)
             return path.stat().st_size
         except Exception as exc:  # noqa: BLE001 - try the other engine
@@ -972,13 +985,13 @@ def ingest_day(src: str | Path | Granule, day: dt.date | None = None, *,
     day = day or _granule_day(src_path, _open_dataset(src_path))
     out = daily_path(day, root)
     if out.exists() and not overwrite:
-        if not upgrade:
-            return {"day": f"{day:%Y-%m-%d}", "status": "already", "product": run,
-                    "bytes": out.stat().st_size}
-        cached_run = (_read_status(root)["days"].get(f"{day:%Y-%m-%d}", {}) or {}).get("product")
-        if cached_run in (None, run):
-            return {"day": f"{day:%Y-%m-%d}", "status": "already", "product": run,
-                    "bytes": out.stat().st_size}
+        cached = (_read_status(root)["days"].get(f"{day:%Y-%m-%d}", {}) or {})
+        if not upgrade or cached.get("product") in (None, run):
+            # carry the cached numbers so an incremental run still reports a window mean
+            return {"day": f"{day:%Y-%m-%d}", "status": "already",
+                    "product": cached.get("product") or run, "bytes": out.stat().st_size,
+                    "mean_mm_day": cached.get("mean_mm_day"),
+                    "max_mm_day": cached.get("max_mm_day")}
     ds = daily_from_granule(src_path, hours=hours, grid_deg=grid_deg)
     values = ds["precipitation"].values
     cnt = ds["precipitation_cnt"].values
@@ -1309,8 +1322,11 @@ def load_imerg_mask(start: dt.date, end: dt.date, *, root: str | Path | None = N
     """
     fields = _load_fields(start, end, root=root, product=product)
     present = np.isfinite(fields["precip"])
-    full = (fields["cnt"] >= STEPS_PER_DAY) | (fields["cnt"] == CNT_UNKNOWN)
-    liquid = fields["pol"] >= 100
+    # an absent day has no observation anywhere: it must read as mask 0, so the sampling
+    # and liquid bits are only ever set where something is actually present (the fill
+    # value for unknown sampling, CNT_UNKNOWN, would otherwise light bit 1 on empty days)
+    full = present & ((fields["cnt"] >= STEPS_PER_DAY) | (fields["cnt"] == CNT_UNKNOWN))
+    liquid = present & (fields["pol"] >= 100)
     mask = (MASK_PRESENT * present + MASK_FULL_SAMPLING * full + MASK_LIKELY_LIQUID * liquid
             ).astype("uint8")
     return xr.DataArray(

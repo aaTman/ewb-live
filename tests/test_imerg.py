@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -66,9 +67,9 @@ def write_granule(path, day: dt.date, *, rate=0.5, units="mm/hr", cnt=imerg.STEP
                                                        dtype="uint8"),
                                                {"units": "%"}),
         },
-        coords={"time": [0.0], "lat": ("lat", lat), "lon": ("lon", lon)},
+        coords={"time": [(day - EPOCH).days + 0.0], "lat": ("lat", lat), "lon": ("lon", lon)},
     )
-    ds["time"].attrs["units"] = "days since 1980-01-01 00:00:00"
+    ds["time"].attrs["units"] = f"days since {EPOCH:%Y-%m-%d %H:%M:%S}"
     path.parent.mkdir(parents=True, exist_ok=True)
     ds.to_netcdf(path, engine="h5netcdf", format="NETCDF4")
     return str(path)
@@ -78,11 +79,14 @@ def granule_name(day: dt.date) -> str:
     return f"3B-DAY-E.MS.MRG.3IMERG.{day:%Y%m%d}-S000000-E235959.V07C.nc4"
 
 
-def fake_remote(tmp, days, **kw) -> tuple[dict, dict[dt.date, Granule]]:
+EPOCH = dt.date(1980, 1, 1)      # the producer's reference time for the 'time' variable
+
+
+def fake_remote(tmp_path, days, **kw) -> tuple[dict, dict[dt.date, Granule]]:
     """A 'GES DISC' of synthetic granules plus the survey map that points at it."""
     remote, granules = {}, {}
     for day in days:
-        path = tmp / "remote" / granule_name(day)
+        path = Path(tmp_path) / "remote" / granule_name(day)
         write_granule(path, day, **kw)
         remote[day] = path
         granules[day] = Granule(day=day, granule_ur=f"GPM_3IMERGDE.07:{path.name}",
@@ -134,8 +138,9 @@ def test_daily_from_granule_rate_to_accumulation(tmp_path):
     assert out.attrs["producer_units"] == "mm/hr"
     assert out["precipitation_cnt"].dtype == np.uint8
     assert out["precipitation_cnt"].values.max() == imerg.STEPS_PER_DAY
-    assert pd.Timestamp(out.time.values).to_pydatetime().date() == day
-    assert pd.Timestamp(out.time.values).hour == 0                          # 00:00 UTC
+    stamp = pd.Timestamp(out["time"].values[0])
+    assert stamp.to_pydatetime().date() == day
+    assert stamp.hour == 0                                                  # 00:00 UTC
 
 
 def test_daily_from_granule_passes_accumulated_units_through(tmp_path):
@@ -182,13 +187,13 @@ def test_accumulate_half_hourly_uses_the_utc_day_boundary():
     steps = np.ones(len(times))
     steps[-1] = 4.0                                    # the 12th's first step, alone
     accum, n_steps = accumulate_half_hourly(_half_hourly(times, steps))
-    assert [str(t.date()) for t in accum.time.values] == ["2026-11-10", "2026-11-11",
-                                                          "2026-11-12"]
+    assert [pd.Timestamp(t).date().isoformat() for t in accum.time.values] == [
+        "2026-11-10", "2026-11-11", "2026-11-12"]
     assert accum.values[0, 0, 0] == pytest.approx(24.0)          # 48 x 0.5 h x 1 mm/hr
     assert accum.values[1, 0, 0] == pytest.approx(24.0)
     assert accum.values[2, 0, 0] == pytest.approx(2.0)           # one step of 4 mm/hr
-    assert n_steps.values[0] == imerg.STEPS_PER_DAY
-    assert n_steps.values[2] == 1
+    assert n_steps.values[0, 0, 0] == imerg.STEPS_PER_DAY
+    assert n_steps.values[2, 0, 0] == 1
 
 
 def test_accumulate_half_hourly_never_zero_fills_a_gap():
@@ -222,7 +227,7 @@ def test_ingest_load_and_idempotence(cache):
     root = cache / "root"
 
     summary = ingest(days[0], days[2], root=root, granules=granules, workers=1,
-                     downloader=copier(remote), keep_raw=99)
+                     downloader=copier(remote), keep_raw=99, grid_deg=DEG)
     assert summary["fetch"]["fetched"] == 2
     assert summary["fetch"]["missing"] == [f"{days[2]:%Y-%m-%d}"]
     assert (root / "daily" / f"imerg_{days[0]:%Y%m%d}.nc").exists()
@@ -246,7 +251,7 @@ def test_ingest_load_and_idempotence(cache):
     assert list(status["status"]) == ["present", "present", "missing"]
 
     again = ingest(days[0], days[2], root=root, granules=granules, workers=1,
-                   downloader=copier(remote), keep_raw=99)
+                   downloader=copier(remote), keep_raw=99, grid_deg=DEG)
     assert again["fetch"]["fetched"] == 0 and again["fetch"]["cached"] == 2
     assert [e["status"] for e in again["ingested"]] == ["already", "already"]
     assert again["global_mean_mm_day"] == pytest.approx(12.0)
@@ -260,8 +265,8 @@ def test_ingest_flags_partial_granule_and_screens(cache):
     path = tmp_path_granule(cache, day, cnt=cnt, rate=1.0)
     granules = {day: Granule(day=day, granule_ur=path.name, url=str(path), size_mb=26.5)}
     root = cache / "root"
-    ingest(day, day, root=root, granules=granules, workers=1,
-           downloader=copyfile_downloader)
+    ingest(day, day, root=root, granules=granules, workers=1, downloader=copyfile_downloader,
+           grid_deg=DEG)
 
     da = load_imerg_daily(day, day, root=root)
     assert da.values[0, 3, 5] == pytest.approx(24.0)          # kept with screen="none"
@@ -295,17 +300,19 @@ def copyfile_downloader(url, dest):
 
 def test_fetch_reports_missing_and_survives_a_bad_download(cache):
     days = [DAY1, DAY1 + dt.timedelta(days=1)]
-    remote, granules = fake_remote(tmp_path=cache, days=[days[0]])
-    granules[days[1]] = Granule(day=days[1], granule_ur="missing.nc4", url="/nope/missing.nc4")
+    remote, granules = fake_remote(tmp_path=cache, days=[days[0]])    # days[1]: no granule
 
     def broken(url, dest):
         raise ImergError("boom")
 
     out = fetch(days, root=cache / "root", granules=granules, workers=1, downloader=broken)
     assert out["fetched"] == 0
-    assert "boom" in out["errors"][f"{days[0]:%Y-%m-%d}"]
+    assert "boom" in out["errors"][f"{days[0]:%Y-%m-%d}"]              # a failed download is
+    assert out["missing"] == [f"{days[1]:%Y-%m-%d}"]                   # not a survey gap
     status = load_imerg_status(days[1], days[1], root=cache / "root")
     assert status["status"].iloc[0] == "missing"
+    assert load_imerg_status(days[0], days[0], root=cache / "root")["status"].iloc[0] \
+        == "not_ingested"
 
 
 def test_resumable_download_reuses_the_partial_file(cache):
@@ -341,7 +348,8 @@ def test_load_rejects_mixed_grids_and_empty_window(cache):
     day = DAY1
     remote, granules = fake_remote(tmp_path=cache, days=[day])
     root = cache / "root" / "mixed"
-    ingest(day, day, root=root, granules=granules, workers=1, downloader=copyfile_downloader)
+    ingest(day, day, root=root, granules=granules, workers=1, downloader=copyfile_downloader,
+           grid_deg=DEG)
     other = root / "daily" / f"imerg_{day + dt.timedelta(days=1):%Y%m%d}.nc"
     ds = xr.open_dataset(root / "daily" / f"imerg_{day:%Y%m%d}.nc").load()
     ds = ds.assign_coords(lat=ds.lat.values + 0.5)          # same shape, different lattice
@@ -359,10 +367,27 @@ def test_load_rejects_mixed_grids_and_empty_window(cache):
 # ------------------------------------------------------------------ rolling window
 
 
+def test_daily_file_round_trips_grid_attr(tmp_path):
+    """Regression: the per-file grid summary was a dict, which h5netcdf refuses to write,
+    so *no* daily file could be produced. It must write, reopen and stay parseable."""
+    day = DAY1
+    src = write_granule(tmp_path / granule_name(day), day, rate=0.5)
+    gran = Granule(day=day, granule_ur=Path(src).name, url=src, size_mb=26.5)
+    out = imerg.ingest_day(gran, day, root=tmp_path / "root", grid_deg=DEG)
+    assert out["status"] == "present"
+    path = imerg.daily_path(day, tmp_path / "root")
+    assert path.exists() and path.stat().st_size > 0
+    with xr.open_dataset(path) as ds:
+        assert ds["precipitation"].attrs["units"] == imerg.UNITS
+        grid = json.loads(ds.attrs["grid"])
+        assert grid["nlat"] == _shape()[0] and grid["nlon"] == _shape()[1]
+        assert ds["precipitation"].values[0, 0, 0] == pytest.approx(12.0)
+
+
 def test_roll_window_drops_outside_90_days(cache):
     root = cache / "root"
     now = dt.datetime(2026, 11, 16, 12, 0, tzinfo=dt.timezone.utc)
-    days = [dt.date(2026, 8, 1) + dt.timedelta(days=i) for i in range(100)]
+    days = [now.date() - dt.timedelta(days=i) for i in range(99, -1, -1)]   # 100 days, ends today
     remote, granules = fake_remote(tmp_path=cache, days=days)
 
     def copier_simple(url, dest):
@@ -370,19 +395,20 @@ def test_roll_window_drops_outside_90_days(cache):
 
     for day in days:                                        # one day at a time, cheap
         ingest(day, day, root=root, granules={day: granules[day]}, workers=1,
-               downloader=copier_simple, keep_raw=99, keep_days=3650)
+               downloader=copier_simple, keep_raw=99, keep_days=3650, grid_deg=DEG)
     assert len(list((root / "daily").glob("imerg_*.nc"))) == 100
 
     out = roll_window(root=root, keep_days=90, keep_raw=3, now=now)
     assert out["cutoff"] == "2026-08-19"
     kept = sorted(p.stem for p in (root / "daily").glob("imerg_*.nc"))
-    assert len(kept) == 90 and kept[-1] == "imerg_20261108"
+    assert len(kept) == 90 and kept[-1] == "imerg_20261116"
+    assert kept[0] == "imerg_20260819" and "imerg_20260818" not in kept
     assert out["freed_bytes"] > 0
     status = load_imerg_status(days[0], days[0], root=root)          # entry pruned away
     assert status["status"].iloc[0] == "not_ingested"
-    raw_kept = [p.name for p in (root / "raw").rglob("*.nc4")]
-    assert all("202611" in n or "20261106" <= n.split(".")[2][len("3B-DAY-E.MS.MRG.3IMERG."):]
-               for n in raw_kept)
+    raw_days = sorted(imerg._DAY_IN_NAME.search(p.name).group(1)
+                      for p in (root / "raw").rglob("*.nc4"))
+    assert raw_days == ["20261113", "20261114", "20261115", "20261116"]
     dry = roll_window(root=root, keep_days=1, keep_raw=0, now=now, dry_run=True)
     assert dry["removed"] and len(list((root / "daily").glob("imerg_*.nc"))) == 90
 
@@ -440,8 +466,10 @@ def test_download_route_prefers_s3_and_falls_back(monkeypatch, tmp_path):
         tried.append("https")
         import shutil
 
+        dest = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(good, dest)
-        return tmp_path / Path(dest).name
+        return dest
 
     monkeypatch.setattr(imerg, "_get_s3", s3_fail)
     monkeypatch.setattr(imerg, "_get_https", https_ok)
@@ -549,6 +577,11 @@ def test_read_capped_bounds_a_response_body():
 
 
 def test_survey_window_prefers_late_and_fills_the_head(monkeypatch):
+    # 'auto' is a run policy, not a collection: survey() must refuse it (checked on the
+    # real function, before it is replaced below)
+    with pytest.raises(ImergError, match="run policy"):
+        imerg.survey(DAY1, DAY1, product="auto")
+
     late = {DAY1: Granule(day=DAY1, granule_ur="l1.nc4", url="s/l1.nc4", product="late")}
     early = {DAY1: Granule(day=DAY1, granule_ur="e1.nc4", url="s/e1.nc4", product="early"),
              DAY1 + dt.timedelta(days=1): Granule(day=DAY1 + dt.timedelta(days=1),
@@ -563,8 +596,6 @@ def test_survey_window_prefers_late_and_fills_the_head(monkeypatch):
     assert chosen[DAY1].product == "late" and chosen[DAY1].granule_ur == "l1.nc4"
     assert chosen[DAY1 + dt.timedelta(days=1)].product == "early"
     assert [f"{d:%Y-%m-%d}" for d in missing] == [f"{DAY1 + dt.timedelta(days=2):%Y-%m-%d}"]
-    with pytest.raises(ImergError, match="run policy"):
-        imerg.survey(DAY1, DAY1, product="auto")
 
 
 def test_auto_policy_upgrades_an_early_head_day_to_late(cache):
@@ -577,7 +608,7 @@ def test_auto_policy_upgrades_an_early_head_day_to_late(cache):
         def dl(url, dest):
             return copyfile_downloader(url, dest)
         ingest(day, day, root=root, granules={day: granule}, workers=1, downloader=dl,
-               keep_raw=99, keep_days=3650)
+               keep_raw=99, keep_days=3650, grid_deg=DEG)
 
     run(Granule(day=day, granule_ur=early_remote.name, url=str(early_remote), product="early"))
     assert load_imerg_daily(day, day, root=root).values[0, 0, 0] == pytest.approx(4.8)
