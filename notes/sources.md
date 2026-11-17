@@ -289,3 +289,19 @@ Post-switch test results (2026-11-06 06:20 UTC):
 (13 permanently-truncated IFS objects; store ledger retried every 14 days) — those inits
 fail on BOTH read paths, so they must not be offered. Verified zero leakage over
 2026-09-01..10-31 for all 4 IFS-forced models; unit 12 passed, AIWP network tests 9 passed.
+
+---
+
+## UPDATE 2026-11-17 (agent `drop-subsets`) — SUPERSEDES the subset-cache statements above
+
+- The materialised subset cache under the retired subsets tree and its
+  eviction (`ewb_live.sources.cache`) are REMOVED (owner ruling: all CIRA MLWP
+  evaluation via the virtual store; tree deleted on ewb, 231 G freed).
+- AIWP/MLWP reads are now virtual-store-ONLY through the single choke point
+  `ewb_live.sources.aiwp.open_mlwp_forecast` (Icechunk refs, lazy bbox/lead
+  cut in memory, bounded 2 concurrent sessions); the direct HDF5 fallback is
+  gone. `open_forecast` repeat calls are memoised in-process (bounded LRU,
+  `EWB_LIVE_MEM_CACHE_MB`), nothing is written to disk.
+- ECMWF/AIGFS backends unchanged (byte-range GRIB). Full inventory +
+  enforcement: `notes/mlwp_virtual_store_audit.md`,
+  `tests/test_mlwp_store_guard.py`.
