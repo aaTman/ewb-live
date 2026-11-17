@@ -1706,3 +1706,78 @@ cd /opt/ewb-live && .venv/bin/python -c \
 
 so the 17 GB spike never lands next to a scoring run. Validation peak RSS 18.9 GB
 total, of which the 144-frame MSLP field is 0.6 GB.
+
+## [integrator] 2026-11-17 21:35 UTC — all 8 lanes merged on aaTman/ne-integration, suite green
+
+Merged in order, one commit each, full suite after every merge (`EWB_DATA_PREP_DIR=$PWD/third_party/ExtremeWeatherBench/data_prep .venv/bin/python -m pytest tests -q`; third_party is gitignored — clone ExtremeWeatherBench there or those 2 upstream-rule tests fail with FileNotFoundError, as mlc-impl already documented):
+
+| merge | commit | suite after |
+|---|---|---|
+| ne-ar-debug | 38768de | 304 passed |
+| ne-subsets (MLWP virtual-store-only — **dev only**) | e4fd539 | 311 |
+| ne-coldsnap (incl. the owner `<=0C` freeze patch, deduped) | 1816b34 | 323 |
+| ne-tc | 32c4b9b | 371 |
+| ne-flood-detect (⊃ ne-flood-clim, ne-flood-imerg — verified ancestors, so one merge covered three) | 8841183 | 456 |
+| ne-mlc-impl (⊃ ne-mlc-research) | 6555f32 | **474 passed, 29 skipped** |
+
+`aaTman/ne-integration` is now the eight-lane tree: heat_wave, freeze, cold_snap,
+atmospheric_river, tropical_cyclone, midlat_cyclone, flood (+ the freeze `<=0C` rule).
+
+### Shared registrations, as unified (the merge-conflict decisions)
+
+* `events/types.py EVENT_TYPES` = the seven types, in that order; every
+  registration derives from it where possible (pipeline `meta.event_counts` now
+  iterates `EVENT_TYPES` instead of a hardcoded tuple — that tuple conflicted in
+  three merges).
+* `events/select.py` is the single place the lane policies live:
+  * `TRACK_TYPES = {"tropical_cyclone", "midlat_cyclone"}` — one storm / one low
+    = one event, never merged, outside the owner's no-overlap rule (mlc's own
+    `MLC_TRACK_TYPE` folded into it, as its comment requested).
+  * **new** `SELF_SOURCE_TYPES = {"tropical_cyclone", "flood"}` — lanes that read
+    their own source (IBTrACS / IMERG) and must NOT be trimmed by the ERA5 truth
+    cutoff. Split from UNSCORED_TYPES because mlc is an *unscored* lane that IS
+    ERA5-based; reusing UNSCORED_TYPES for the clamp would have asked ARCO for
+    days it does not have.
+  * `UNSCORED_TYPES = TRACK_TYPES | {"flood"}`; `TOP_N_BY_TYPE` = TC 60, flood 40,
+    mlc 80.
+* `pipeline.py`: one `unscored_obs` bucket + a per-type `unsupported`
+  `pair_status` reason (was: two parallel track/observation blocks, and mlc's own
+  post-hoc filter).
+* `dashboard/app.js`: `TYPE_META` carries all seven with colours; unscored lanes
+  carry a per-type `noScoresNote` (flood had no `noScores` flag and would have
+  rendered a dash table); `TYPE_ORDER` = heat, freeze, cold snap, AR, TC, MLC, flood.
+* `mergedmap.js`: `TYPES`/`LANE_ORDER` include flood (boxes + Gantt row); TC and
+  MLC stay out of the Gantt on purpose (tracks, drawn in the detail view).
+  `layersForTab` — flood had been mapped to a raw layer key `'l'` that does not
+  exist, which switched **every** raster off when the Flood tab was clicked; the
+  observation lanes now keep the user's layer choice (tc's behaviour).
+* `events/__init__.py`: dispatch covers all lanes; per-type cache-key tags coexist.
+
+### Bugs found while integrating (fixed here, not upstream-branch problems I left alone)
+
+1. **flood had no colour**: `--series-flood` was *referenced* in `styles.css`
+   (`--flood: var(--series-flood)`) and in `app.js`, never defined → the lane
+   would have rendered in the `--series-unknown` grey. Defined berry `#a01e56`
+   light (7.75:1 paper / 6.73:1 light ocean) and `#e88bbb` dark (6.37 / 7.66).
+2. **the two cyclone lanes were the same colour**: mlc violet `#5f3d99` is hue
+   262, tc violet `#6f42c1` is hue 261 — indistinguishable in a seven-lane UI.
+   Re-hued midlat_cyclone to amber `#7d5200` / `#d9a441` (contrast above).
+   Two lines in `styles.css`, commented — trivially reversible if the design
+   pass wants cyclones in one family.
+3. **subsets guard vs the IMERG store**: `tests/test_mlwp_store_guard.py`
+   forbids `.to_netcdf(` anywhere in `ewb_live/sources/*`; `sources/imerg.py`
+   legitimately writes its own packed-uint16 daily store. Exempted *by name*
+   with the reason; the MLWP-bucket guard still scans every file.
+
+### Now / next (Step 3-4)
+
+Dev site per the pattern in my kickoff entry: `/opt/ewb-live-dev` tree + own
+`data/results`, served on **:8051**, live `/opt/ewb-live` untouched. Next:
+rsync this tree there, symlink the heavy read-only stores, pull IBTrACS, then run
+the combined lane passes (freeze `<=0C`, cold_snap, AR, TC, mlc — MSLP streams
+from ARCO, flood from the IMERG store) into the dev results dir, then e2e +
+screenshots. **Reminder for whoever promotes: ne-subsets (virtual-store-only
+scoring, subsets cache removal) is DEV ONLY per the owner's update — promoting
+means merging the lane branches and NOT that commit.**
+
+— integrator
