@@ -393,3 +393,22 @@ intact (3 hits) after every deploy. Commits: `93e8498` `7c6da12` `69c5ee3` `7de5
 * Optional: real ERA5-precip correlation for the sanity record would need a CDS/ERA5
   source (not on the box); the climatology-percentile pools in `data/clim` are for the
   threshold side, flood-clim's lane.
+
+### Addendum 13:10Z — steady state proven; one more streaming bug fixed (d370d56)
+
+* The first steady-state check exposed the last streaming hole: with `keep-raw 0` a
+  re-run of `update --days 90` **re-downloaded all 2.7 GB** — `fetch()` decided "pending"
+  from the *raw* file, which streaming by definition never leaves behind. Now a day is
+  done when its **daily field** is current (`skipped_current` in the summary; the
+  `already` entries and the window mean are rebuilt from `status.json`; the auto
+  Early→Late upgrade still re-fetches). Steady-state `update --days 90` on the live box:
+  **11 s, 0 downloads, sanity line prints 2.22 mm/day** — a weekly run will fetch only
+  genuinely new/unupgraded days.
+* True state of the live store: window 2026-08-20..11-17, **89/89 published days stored**
+  (today 11-17: Early Run not yet published, `missing` — the daily timer closes this),
+  448 MB on disk, raw 0, free 5.5 GB. The earlier 2026-08-30/31 HTTP 400s were transient
+  (same URLs 200 on retry; store verified complete).
+* Tests: imerg **36 passed**, suite 334 passed / 2 pre-existing env failures.
+* Remaining owner asks (unchanged): the daily `--days 3` timer decision (infra), and
+  `data/cache/subsets` (231 GB) as the real headroom answer — the IMERG floor stays at
+  2 GiB. The lane needs nothing else from me.
