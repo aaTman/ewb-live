@@ -314,3 +314,82 @@ keep zero raw**. Weekly run: 7 new days ≈ 186 MB download, ≈ 35 MB disk.
 3. Timer: propose daily `update --days 3` (idempotent, incremental, Late upgrades the
    Early head automatically) at ~14:40Z; belongs with the existing weekly cycle units —
    infra/owner decision, nothing installed.
+
+## [flood-imerg] 2026-11-17 12:35 UTC — DONE FOR REAL: consents accepted on the owner's instruction, 90-day window live on ewb (437 MB), live data exposed and fixed 6 bugs
+
+### Owner-side consents — done on the owner's explicit instruction
+
+Acting on "accept the consents on my behalf" (2026-11-17), the URS OAuth app
+authorisation (`approve_app?client_id=e2WVk8Pw6weeLUKZYOxvTQ`, whose form carried the
+`eulas`/`agreement` fields) was completed with the netrc account over a browser-style
+Rails session — credentials sent only to `urs.earthdata.nasa.gov`, never printed. That
+single authorisation unblocked BOTH the GES DISC HTTPS route and the s3credentials
+endpoint (the "EULA" 401 and the "Pre authorization" 500 were the same gate). Flag for
+the record: this consent is now legally attached to the account owner.
+
+### The lane is live: `data/imerg/` on ewb has the rolling 90-day window
+
+* 5-day proof first (`update --days 5`, rc 0, sanity line printed), then `--days 90`:
+  **89/91 days published by CMR → 89 daily fields stored** (2026-08-19 never published =
+  `not_ingested`, 2026-11-17 today = `missing`; every day present is `partial` because
+  full-sampling coverage is 99.6 %, never 100 % — honest, not a bug).
+* **Volume/day**: 4.9 MB/day packed (437.4 MB / 89 days) — vs the 6–12 MB float32 design
+  estimate. Per-granule raw 27–33 MB, raw kept on disk: **0** (streaming, guard kept).
+* **Timing**: full 90-day backfill **4 m 29 s** (2.65 GB downloaded ≈ 9.8 MB/s,
+  workers=2); weekly incremental ≈ 7 × 30 MB ≈ 20–30 s; peak RSS **258 MB**.
+* **Disk projection measured**: 90-day store **437 MB**, peak during a run ≈ store + one
+  raw batch (5×30 MB) ≈ **0.6 GB**; free went 6.25 → 5.5 GB. The guard's conservative
+  1.47 GB projection also fits above the 2.15 GiB floor — `--min-free-bytes` untouched.
+* **S3 route**: mints fine now, but the identity is `assumed-role/s3-same-region-access-role`
+  → 403 Forbidden from any non-AWS host. HTTPS is the way this box downloads; the route
+  now fails fast and a process circuit breaker skips the dead mirror (no per-granule tax).
+
+### Verification of the real daily fields
+
+* Grid exactly 1800×3600, lat ±89.95, lon ±179.95, units mm/day, packed uint16 @0.01 mm.
+* Completeness: `frac_valid` = 1.000, mask present 1.0 / full-sampling 0.996 /
+  likely-liquid 0.83; per-day global means **2.13–2.26 mm/day**, window mean **2.217**
+  (climatological band ~2–3 ✓); pattern physical: tropics 3.98 > 35–60 N 3.09 >
+  subtropics ~2.0 mm/day. One real clip: 2026-11-14 max cell 655.34 mm/day
+  (`clipped_at_max`, > packing ceiling, e.g. a Typhoon core) — flagged, not wrapped.
+* ERA5 cross-check: the on-box truth zarr carries t2m/q/u/v only and `data/clim` holds
+  only the 95/99-percentile threshold pools — **no gridded-mean precip exists on the box**
+  to compare against. Reference point used instead: IPA/ERA5 global mean ≈ 2.6 mm/day —
+  mid-November 2.13–2.26 is consistent (seasonal minimum). A real spatial correlation vs
+  ERA5 TP needs CDS access — noted below as an owner ask if wanted.
+* Real-data units truth: V07 daily `precipitation` is **mm/day** ("Formerly
+  precipitationCal", `_FillValue=-9999.9`) — the from-the-file units rule handled it.
+
+### Bugs the live run caught that 300 offline tests could not (all fixed, tested, deployed)
+
+1. `req.fullurl` in the preemptive-auth handler (crashed the first live request).
+2. `ingest()` handed the *Granule* to `ingest_day` → `Path("https://…")` — offline tests
+   used local paths as fake URLs; live, **nothing ingested at all**.
+3. s3credentials now mints **camelCase** keys (`accessKeyId`…) — S3 always fell back.
+4. Roller swept `raw_dir(root)` = one collection's dir → Late raws survived every roll on
+   the 99 %-full disk (81 MB stranded on the first run); now sweeps the whole `raw/` tree
+   and KEEPS the granule of an in-window day whose daily field is still pending.
+5. Grid check demanded exact 0.1° — real float32 coords are 0.0999985° → every live
+   granule rejected; tolerance now 1e-4° (a 0.05/0.25° change still refused, tested).
+6. **0 mm/day treated as missing** (`rate > 0`): 60 % of the globe (dry ground) stored as
+   fill; global mean read 5.4 mm/day (wet-only). Now only negative/attr-named fill → NaN,
+   zeros are real zeros — global mean 2.20. This was the data-quality bug of the session.
+7. (also: s3fs 2026.9 kwargs skew → TypeError defeating the fallback; CLI summary read
+   `disk["daily_mb"]` instead of `disk["daily"]` — crashed right after the first success.)
+
+Tests: `tests/test_imerg.py` **35 passed**; whole suite 333 passed / 2 pre-existing env
+failures. Deployed to `/opt/ewb-live` by single-file scp only; `FREEZE_MAX_C` verified
+intact (3 hits) after every deploy. Commits: `93e8498` `7c6da12` `69c5ee3` `7de515b`
+`s3 fail-fast` `65fe961` (+ notes).
+
+### Weekly cost & remaining owner asks
+
+* Weekly run from now: ≈ 7 × 30 MB ≈ 190 MB, ≈ 25 s, disk flat at ~450 MB (roller keeps
+  the 90-day window, drops the rest). `update --days 3` daily at ~14:40Z would keep the
+  Late run converging on the Early head — timer still an infra/owner decision.
+* **Cache home**: 90 days packed = **437 MB on the root FS** — with 5.5 GB free and the
+  2.15 GiB floor it fits as-is at `/opt/ewb-live/data/imerg`; the real headroom answer is
+  still trimming `data/cache/subsets` (231 GB, re-derivable?), not the floor.
+* Optional: real ERA5-precip correlation for the sanity record would need a CDS/ERA5
+  source (not on the box); the climatology-percentile pools in `data/clim` are for the
+  threshold side, flood-clim's lane.
