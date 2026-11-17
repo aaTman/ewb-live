@@ -142,17 +142,17 @@ and no frontend change in my lane.
 * `scripts/mlc/validate_python_vs_te.py` — the harness (extract once → TE with the
   PROOF recipe → the Python tracker on the *same* files → counts, agreement, Ciaran,
   timing/RSS). Its report is committed at `notes/mlc_python_validation.md`.
-* `tests/test_mlc_track.py` — 15 tests on synthetic global fields (node/track
+* `tests/test_mlc_track.py` — 18 tests on synthetic global fields (node/track
   detection, position accuracy, bomb tag, static-low rejection, each screen on its
   own, lifetime/depth floors, dedupe, core window, gap filling, full event + schema
   validation, tropical-origin rejection, antimeridian convention, genesis-window
-  ownership, fail-soft). 313 passed / 29 skipped / **2 failed** for the whole repo —
+  ownership, fail-soft). 313 passed / 29 skipped / **2 failed** for the whole repo (318 / 29 / 0 with `EWB_DATA_PREP_DIR` set) —
   both are the known `third_party/ExtremeWeatherBench/data_prep` failures the other
   lanes already documented on `main`: both are `_upstream.py` raising
   `FileNotFoundError: EWB data_prep dir not found: …/third_party/ExtremeWeatherBench/data_prep`
   (`third_party/` is gitignored). Proved environmental — with
   `EWB_DATA_PREP_DIR=~/scratch/ExtremeWeatherBench/data_prep` those two pass, so the
-  suite is 315 / 29 / 0 in a complete environment.
+  suite is **318 passed / 29 skipped / 0 failed** in a complete environment (measured).
 * Shared files, additive only: `events/types.py` (`+ "midlat_cyclone"`),
   `events/__init__.py` (id tag + scan dispatch), `events/validate.py` (title label,
   900–1015 hPa peak bounds, mlc cross-checks: min MSLP vs `peak_value`, lifetime,

@@ -10,7 +10,7 @@
 | `ewb_live/events/mlc_track.py` | the tracker: pure numpy/scipy/skimage port of DetectNodes + StitchNodes, structured function-for-function against upstream ExtremeWeatherBench `events/tropical_cyclone.py` (v1.1.1) — see the module docstring for the mapping |
 | `ewb_live/events/mlc.py` | `midlat_cyclone` Events: qualification rule, `details["track"]` 5-slot rows, severity, floor, dedupe, core window, wrap-aware bbox, IBTrACS tropical-origin screen (lazy import of the `tc` lane's reader, fail-soft) |
 | `ewb_live/sources/mlc_era5.py` | ERA5 MSLP from ARCO (0.25°, 6-hourly, streamed in 24 h chunks — the ewb root disk is 99 % full so nothing is mirrored), orography cached once as a ~4 MB npz, fails soft when offline |
-| `tests/test_mlc_track.py` | 15 tests on synthetic global fields |
+| `tests/test_mlc_track.py` | 18 tests on synthetic global fields (detector, screens, schema, orography source) |
 | `scripts/mlc/validate_python_vs_te.py` | the validation harness: extracts the same MSLP netCDFs, runs TempestExtremes with the PROOF recipe *and* the Python tracker on them, reports counts / position error / Ciaran / timing+RSS |
 | shared files | `events/types.py` (+`"midlat_cyclone"`), `events/__init__.py` (id tag + scan dispatch), `events/validate.py` (label, 900–1015 hPa peak bounds, mlc cross-checks), `events/select.py` (severity, floor, track lane outside the no-overlap rule, own quota), `events/qualification.py` (track lanes qualify at their first fix), `pipeline.py` (published-unscored lane with documented `pair_status`), `dashboard/{app.js,styles.css,index.html}` (label, `--series-mlc` 8.03:1 / 5.46:1, criteria + About text, story line), `pyproject.toml`+`uv.lock` (declare `scikit-image`, already present transitively → 2-line lock diff) |
 
@@ -75,7 +75,7 @@ cd /opt/ewb-live && .venv/bin/python -c \
 found: …/third_party/ExtremeWeatherBench/data_prep` (`third_party/` is gitignored, so
 a fresh worktree has no upstream checkout) — **proved** environmental, not mine: with
 `EWB_DATA_PREP_DIR=~/scratch/ExtremeWeatherBench/data_prep` those two tests pass, so
-the suite is 315 / 29 / 0 in a complete environment.
+**318 passed / 29 skipped / 0 failed** in a complete environment (measured 2026-11-17).
 
 The median position error is *exactly* zero because both trackers snap the centre to
 the grid-cell minimum; the 17.6° maximum is a handful of high-latitude tracks where
