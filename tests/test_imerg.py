@@ -495,21 +495,50 @@ def test_roll_window_drops_outside_90_days(cache):
     assert dry["removed"] and len(list((root / "daily").glob("imerg_*.nc"))) == 90
 
 
+def test_check_grid_tolerates_float32_lattices():
+    """Regression (live fetch 2026-11-17): the producer stores coordinates as float32,
+    so the real 0.1° lattice arrives as 0.09999847°-ish steps — the 1e-6° tolerance
+    rejected *every* real granule while synthetic float64 grids passed. A genuinely
+    different lattice (0.2° here) must still be refused."""
+    lat = np.linspace(-89.95, 89.95, 1800).astype("float32").astype("float64")
+    lon = np.linspace(-179.95, 179.95, 3600).astype("float32").astype("float64")
+    ds = xr.Dataset(coords={"lat": ("lat", lat), "lon": ("lon", lon)})
+    grid = imerg._check_grid(ds, "synthetic")
+    assert grid["nlat"] == 1800 and grid["nlon"] == 3600
+    bad = xr.Dataset(coords={"lat": ("lat", lat[::2]), "lon": ("lon", lon)})
+    with pytest.raises(imerg.ImergError, match="spacing"):
+        imerg._check_grid(bad, "synthetic")
+
+
 def test_roll_window_sweeps_every_collection(cache):
     """Regression (first live run 2026-11-17): the roller swept ``raw_dir(root)`` — which
     is one collection's directory (the early one) — so with keep-raw 0 the *Late* raw
     granules survived every roll and stranded on the disk it was meant to protect.
-    The sweep must cover the whole ``raw/`` tree."""
+    The sweep must cover the whole ``raw/`` tree — but must KEEP raw of an in-window day
+    whose daily file is missing (that granule is what the retry needs)."""
     root = cache / "root"
     now = dt.datetime(2026, 11, 17, 12, 0, tzinfo=dt.timezone.utc)
-    for prod, name in (("late", "3B-DAY-L.MS.MRG.3IMERG.20261113-S000000-E235959.V07C.nc4"),
-                       ("late", "3B-DAY-L.MS.MRG.3IMERG.20261115-S000000-E235959.V07C.nc4"),
-                       ("early", "3B-DAY-E.MS.MRG.3IMERG.20261116-S000000-E235959.V07C.nc4")):
+    entries = [("late", "3B-DAY-L.MS.MRG.3IMERG.20261113-S000000-E235959.V07C.nc4", True),
+               ("late", "3B-DAY-L.MS.MRG.3IMERG.20261114-S000000-E235959.V07C.nc4", False),
+               ("late", "3B-DAY-L.MS.MRG.3IMERG.20261115-S000000-E235959.V07C.nc4", True),
+               ("early", "3B-DAY-E.MS.MRG.3IMERG.20261116-S000000-E235959.V07C.nc4", True),
+               ("late", "3B-DAY-L.MS.MRG.3IMERG.20260801-S000000-E235959.V07C.nc4", False)]
+    for prod, name, has_daily in entries:
         p = imerg.raw_dir(root, prod) / "2026-11" / name
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(b"x" * 100)
+        if has_daily:
+            day = dt.datetime.strptime(imerg._DAY_IN_NAME.search(name).group(1), "%Y%m%d").date()
+            dpath = imerg.daily_path(day, root)
+            dpath.parent.mkdir(parents=True, exist_ok=True)
+            dpath.write_bytes(b"x")
     out = roll_window(root=root, keep_days=90, keep_raw=0, now=now)
-    assert len(out["removed_raw"]) == 3
+    kept = sorted(p.name for p in (root / "raw").rglob("*.nc4"))
+    assert len(out["removed_raw"]) == 4   # 3 ingested + 1 out-of-window; pending kept
+    assert kept == ["3B-DAY-L.MS.MRG.3IMERG.20261114-S000000-E235959.V07C.nc4"]
+    # the pending 20261114 becomes deletable once its daily file lands
+    imerg.daily_path(dt.date(2026, 11, 14), root).write_bytes(b"x")
+    roll_window(root=root, keep_days=90, keep_raw=0, now=now)
     assert not list((root / "raw").rglob("*.nc4"))
 
 

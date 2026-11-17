@@ -516,6 +516,9 @@ def download_granule(url: str, dest: Path, *, creds: tuple[str, str] | None = No
             raise                      # a login problem is not a transport problem
         except (ImergError, OSError) as exc:
             last = exc
+        except Exception as exc:       # transport-library blowups (e.g. an s3fs/botocore
+            last = exc                 # version skew raising TypeError mid-download):
+                                       # the route is a preference, not a requirement
             if len(order) > 1 and log:
                 log(f"{name} route failed for {Path(url).name}: "
                     f"{type(exc).__name__}: {exc}" + (" — trying the next route" if name != order[-1] else ""))
@@ -661,7 +664,7 @@ def _s3_filesystem(tmp_creds: dict):
         key=tmp_creds["access_key_id"], secret=tmp_creds["secret_access_key"],
         token=tmp_creds["session_token"], anon=False,
         client_kwargs={"region_name": tmp_creds.get("region") or S3_REGION},
-        use_threads=False, block_size=8 << 20, cache_type="none", config_kwargs=_botocore_timeouts(),
+        block_size=8 << 20, cache_type="none", config_kwargs=_botocore_timeouts(),
     )
     with _S3_LOCK:
         _S3_CACHE["fs"] = fs
@@ -756,11 +759,16 @@ def _check_grid(ds: xr.Dataset, src: str | Path, *, deg: float = IMERG_GRID_DEG)
     lon = np.asarray(ds[lon_name].values, dtype="float64")
     if lat.size < 2 or lon.size < 2:
         raise ImergError(f"{src}: degenerate grid {lat.size}x{lon.size}")
+    #: tolerance for spacing/lattice regularity. Real IMERG coordinates are float32:
+    #: measured live 2026-11-17 the 0.1° lattice arrives as 0.09999847° steps. 1e-4°
+    #: is 0.1 % of a cell — far tighter than any grid the producer could switch to
+    #: (0.05/0.25 would be a 0.05°/0.15° jump), far looser than float32 round-off.
+    tol = max(1e-4, deg * 1e-3)
     for name, arr in (("lat", lat), ("lon", lon)):
         step = float(np.median(np.diff(arr)))
-        if abs(abs(step) - deg) > 1e-6:
+        if abs(abs(step) - deg) > tol:
             raise ImergError(f"{src}: {name} spacing {step} deg, expected {deg}")
-        if not np.allclose(np.diff(arr), step, atol=1e-6):
+        if not np.allclose(np.diff(arr), step, atol=tol):
             raise ImergError(f"{src}: {name} is not a regular lattice")
     if lat.min() > -90.0 + deg or lat.max() < 90.0 - deg \
             or lon.min() > -180.0 + deg or lon.max() < 180.0 - deg:
@@ -1324,6 +1332,9 @@ def roll_window(*, root: str | Path | None = None, keep_days: int = DEFAULT_KEEP
         except AttributeError:
             continue
         if day < raw_cutoff:
+            if day >= cutoff and not daily_path(day, root).exists():
+                continue   # ingest still pending for an in-window day: the granule is
+                           # what the retry needs — the next successful roll deletes it
             freed += path.stat().st_size
             raw_removed.append(str(path))
             if not dry_run:
