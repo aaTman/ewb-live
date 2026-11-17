@@ -8,8 +8,10 @@ download step is injected. Network fetches are exercised by
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime as dt
 import json
+import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -499,6 +501,30 @@ def test_survey_query_is_one_cmr_accepts(monkeypatch):
     assert imerg.survey(DAY1, DAY1, product="late") == {}
     assert len(seen) == 1 and "sortable" not in seen[0]
     assert "short_name=GPM_3IMERGDL" in seen[0] and "temporal=" in seen[0]
+
+
+def test_preemptive_auth_handler_only_targets_the_auth_hosts():
+    """Regression: the first *real* request (auth-check on the LXC) died with
+    ``AttributeError: 'Request' object has no attribute 'fullurl'`` — the stdlib
+    attribute is ``full_url``. Every offline test monkeypatches ``_opener``/``_http_get``,
+    so this handler only ever runs against live Earthdata; exercise it here directly."""
+    op = imerg._opener(("user", "pw"))
+    handler = next(h for h in op.handlers
+                   if hasattr(h, "https_request")
+                   and type(h).__module__ == imerg.__name__)
+
+    req = handler.https_request(urllib.request.Request(
+        "https://gpm1.gesdisc.eosdis.nasa.gov/data/GPM_L3/x.nc4"))
+    assert req.headers["Authorization"] == "Basic " + base64.b64encode(
+        b"user:pw").decode()
+
+    away = handler.https_request(urllib.request.Request("https://example.com/x.nc4"))
+    assert "Authorization" not in away.headers
+
+    kept = handler.https_request(urllib.request.Request(
+        "https://data.gesdisc.earthdata.nasa.gov/s3credentials",
+        headers={"Authorization": "Bearer x"}))
+    assert kept.headers["Authorization"] == "Bearer x"   # never overwrite an existing one
 
 
 def test_s3_key_maps_a_gesdisc_url_to_the_mirror_key():

@@ -396,7 +396,7 @@ def _opener(creds: tuple[str, str]) -> urllib.request.OpenerDirector:
 
     class _PreemptiveAuth(urllib.request.BaseHandler):
         def https_request(self, req):  # noqa: N802 - urllib handler naming
-            host = urllib.parse.urlsplit(req.fullurl).hostname or ""
+            host = urllib.parse.urlsplit(req.full_url).hostname or ""
             if host in AUTH_HOSTS and "Authorization" not in req.headers:
                 req.add_header("Authorization", f"Basic {token}")
             return req
