@@ -177,7 +177,8 @@
     const { W, H } = fit;
     mapHost.innerHTML = '';
 
-    const svg = mk('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': data.aria });
+    const svg = mk('svg', { class: 'tv-svg', width: W, height: H,
+      viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': data.aria });
     const clip = mk('clipPath', { id: 'tv-globe-clip' }, mk('defs', {}, svg));
     mk('path', { d: path({ type: 'Sphere' }) }, clip);
 
