@@ -236,3 +236,81 @@ line should land near the climatological 2–3 mm/day.
 `data/cache/fc_parts` 41 GB, `data/clim` 26 GB, `data/icechunk` 0.9 GB. If `subsets` is a
 re-derivable cache, trimming it is by far the cheapest way to give the 90-day IMERG window real
 headroom; nobody should lower IMERG's `--min-free-bytes` instead.
+
+## [flood-imerg] 2026-11-17 11:45 UTC — DONE except the fetch: netrc landed, login works, but two NASA *consent* gates block the data (URLs for the owner); daily store now packed uint16, raw is streaming-only
+
+### What ran (plain ssh per the handoff; single-file scp to deploy; never `ops/remote.sh run` from this branch)
+
+* `/root/.netrc` on ewb: present, mode 600, one `urs.earthdata.nasa.gov` entry (contents
+  never printed or logged).
+* First live `auth-check` → `AttributeError: 'Request' object has no attribute 'fullurl'`
+  in the preemptive Basic-auth handler — real stdlib-name bug, invisible to all offline
+  tests because they monkeypatch `_opener`/`_http_get`. Fixed to `req.full_url` + a
+  handler-level regression test that hits the real code path (`93e8498`).
+* Deploy: single-file `scp` of `imerg.py` (md5 `3ed3dcd9…` on the box = my tree);
+  live `FREEZE_MAX_C` untouched (3 hits before/after).
+* `update --days 5/90 --dry-run` re-run with the new code: 5 d = 4 granules, peak 0.16 GB;
+  90 d = 89 granules, raw 2.59 GB, projected daily store 1.31 GB, **peak 1.47 GB, fits**
+  (6.25 GB free, 2.15 GB floor — guard unchanged).
+
+### The blocker is account consent, not code and not credentials (measured)
+
+* Login works: `curl -n https://urs.earthdata.nasa.gov/users/profile -L` → **200**;
+  OPeNDAP accepts the Basic auth (404, not 401).
+* GES DISC granule GET → **401** with body *“Be sure to agree to the EULA.”*
+* s3credentials mint → HTTP 500 via URS redirect: *“Pre authorization required for this
+  application… resolution_url=…/approve_app?client_id=e2WVk8Pw6weeLUKZYOxvTQ”*.
+* **Owner asks (one-time, browser, account-side — I do not accept legal/OAuth consents on
+  the owner’s behalf):**
+  1. sign in at urs.earthdata.nasa.gov, then accept the GES DISC data terms —
+     https://disc.gsfc.nasa.gov/data-use (unlocks the HTTPS route);
+  2. open https://urs.earthdata.nasa.gov/approve_app?client_id=e2WVk8Pw6weeLUKZYOxvTQ
+     while signed in → *Authorize* (unlocks the AWS/S3 route).
+* The module now prints both URLs inside its auth failures (401 body sniff, s3_credentials
+  hint, `_http_get` body excerpts) — nobody re-diagnoses this by hand again.
+* When both are done, the proof is two commands:
+  `ssh root@192.168.0.121 'cd /opt/ewb-live && . .venv/bin/activate && python -m
+  ewb_live.sources.imerg auth-check && python -m ewb_live.sources.imerg update --days 5'`.
+
+### Owner streaming directive — evaluated + implemented (guard kept)
+
+(a) **Sizes/timing/RSS** — CMR (anonymous, measured 11:15Z): Early-daily 26.51 MB,
+Late-daily 25.52 MB (median/7 d), half-hourly **6.60 MB × 48 ≈ 317 MB/day**. Per-day
+fetch+accumulate peak RSS, real 0.1° global grid: **452 MB** (`ingest_day` under
+`MemoryMax`). Per-day wall time stays unmeasured until the consent gates open (one GET
+≈ 26 MB + local math is the expected shape).
+(b) **Options for 90 days** — fully stateless (re-stream every weekly run): **2.6 GB and
+~90 downloads per run, forever**, vs ~186 MB incremental with a daily cache; rejected.
+**Persist only the finished daily fields, packed**: implemented — `uint16` @ 0.01 mm
+(the producer’s own precision; NaN fill = 65535; 655.34 mm/day ceiling clipped explicitly
+with `clipped_at_max` in status) + the existing uint8 cnt/polid/mask, `keep-raw 0` by
+default: measured on an *incompressible* 0.1° synthetic (worst case) **9.19 → 5.15 MB/day
+(−44 %)**; realistic 3.5–7 MB/day → **90 d ≈ 0.35–0.65 GB** (guard still projects a
+conservative 1.31 GB / peak 1.47 GB). Lat-crop ±60° saves only ~13 % (area ∝ sin lat).
+Regrid to ERA5 0.25° would be another 6.25× (≈ 60–100 MB/90 d) but decides the join
+inside the ingest — **flood-detect/flood-clim’s call, unchanged**.
+(c) **Does the detector need gridded daily fields beyond a rolling window?** The flood
+rule consumes daily + 3-day accumulations, so *detection* would survive on ~3 days — but
+the live system scores a rolling **90-day** window (other obs lanes keep up to
+`MAX_AGE_DAYS=120`) and detection must be re-runnable when the climatology changes, so
+flags-only state would strand rescoring. Verdict: **keep 90 days of packed daily fields;
+keep zero raw**. Weekly run: 7 new days ≈ 186 MB download, ≈ 35 MB disk.
+
+### Tests
+
+* `tests/test_imerg.py` **31 passed** (new: live auth-handler, packed round-trip incl.
+  fill→NaN + 0.01 mm accuracy, clip-at-ceiling); whole suite **329 passed / 2 failed / 29
+  skipped** — both failures the pre-existing `third_party/ExtremeWeatherBench` env gap.
+  Safe recipe (`TMPDIR=tmp/pytest`, memory-capped scope); `/tmp` flat at 75 MB.
+
+### Still for the owner
+
+1. The two consent links above, then the two-command proof run.
+2. **90-day cache home**: the LXC has exactly one filesystem (492 GB `/dev/loop14`, 99 %
+   full, 5.9 GB free, live service on it) — nowhere else to mount. The packed store fits
+   (≤ 0.65 GB realistic, 1.47 GB guard-projected) with the 2 GiB floor intact; the cheap
+   real fix is still trimming `data/cache/subsets` (231 GB, re-derivable?) — the floor
+   must not be lowered instead.
+3. Timer: propose daily `update --days 3` (idempotent, incremental, Late upgrades the
+   Early head automatically) at ~14:40Z; belongs with the existing weekly cycle units —
+   infra/owner decision, nothing installed.
