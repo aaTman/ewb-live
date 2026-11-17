@@ -48,7 +48,27 @@
 | position error, 1771 matched fixes | median **0.00°**, p90 0.00°, max 17.6° | — |
 | Storm Ciaran | 954.0 hPa @ 2023-11-02 06Z, 156 h, 3456 km, −32.2 hPa/24 h, bomb ×1.52 | **identical, field by field** |
 | wall time | 26.9 s detect+stitch (0.19 s/frame) | 17.9 s + 0.01 s |
-| python peak RSS (144 frames resident) | 2.0 GB | — |
+| python peak RSS (144 frames resident) | 18.9 GB — 17 GB of it is the one-time ARCO read of the static orography field (see below) | — |
+
+**Two real bugs came out of validating** (both in `ewb_live/sources/mlc_era5.py`,
+both fixed with tests): ARCO's time axis opens with an all-NaN `1900-01-01T00`
+pseudo step for `geopotential_at_surface`, which my `load_orography` used by default
+— an all-zero elevation field that left the genesis orography screen **silently
+inert** (and a 7 KB all-zero npz cached in its place); and the warm-cache read
+touched a closed `NpzFile` (`AttributeError`), which the lane's fail-soft `try`
+turned into "publish nothing" on every run after the first. With the screen genuinely
+live: 138 tracks → **71 events** (not 77), 13 bombs — the screen removes ~8 % of
+genesis points, matching the PROOF's orography false-positive rate.
+
+**Ops note**: that static field costs **~17 GB RSS for ~2 s** the one time it is read
+(store-reader behaviour, measured through both xarray and direct zarr indexing; strip
+reads are 150x slower for the same peak). Pre-warm a fresh box so the spike does not
+land next to a scoring run:
+
+```bash
+cd /opt/ewb-live && .venv/bin/python -c \
+  'from ewb_live.sources import mlc_era5; print(mlc_era5.load_orography()[0].max())'
+```
 
 *Test suite*: 313 passed / 29 skipped / 2 failed in this worktree. Both failures are
 `ewb_live/events/_upstream.py` raising `FileNotFoundError: EWB data_prep dir not
@@ -60,7 +80,7 @@ the suite is 315 / 29 / 0 in a complete environment.
 The median position error is *exactly* zero because both trackers snap the centre to
 the grid-cell minimum; the 17.6° maximum is a handful of high-latitude tracks where
 the two attach a different low across a merge/split — a tail, not a drift. 138 tracks
-→ 77 published events after the §4 screens, 14 tagged bomb.
+→ 71 published events after the §4 screens, 13 tagged bomb (see the bug note above — 77 was the count with the orography screen inert).
 
 Re-run it with (scratch on tmpfs, nothing written to the 99 %-full root disk; the
 scratch and the code copy were deleted after the run of 2026-11-17):

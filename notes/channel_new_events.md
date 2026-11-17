@@ -245,3 +245,49 @@ else is big enough to be worth a PR, and `calc.haversine_distance`'s re-evaluate
 5. **Intensity is pressure only** (no wind column in `details["track"]`), as the
    5-slot schema says. If the owner wants a wind series, that is a schema change
    first, not a tracker change.
+
+## [mlc-impl] 2026-11-17 13:45 UTC — two real bugs found by validating, both in the orography source
+
+Wiring `scan_mlc_events(fields=...)` into the harness forced the question "is the
+genesis elevation screen actually live?" It was not, twice over:
+
+1. **ARCO's time axis opens with a `1900-01-01T00` pseudo step that is all-NaN for
+   `geopotential_at_surface`** (the record itself starts 1979-01-01). My
+   `load_orography()` defaulted to time index 0 → `nan_to_num` → an all-zero field
+   → `elevation_at` answers 0 m everywhere → the screen that exists to stop the
+   tracker inventing lows off the Tibetan Plateau / Andes / Rockies was silently
+   **off**, and the poisoned 7 KB all-zero npz was cached as if it were the field.
+   `fetch_topo.py` (mlc-research) picked a real date explicitly, so the PROOF's
+   orography numbers are fine — the bug was mine, introduced when I moved the read
+   into the lane.
+   Now: probe `2000-01-01 / 1979-06-01 / 2015-01-01`, **reject a field with no land
+   on it**, and treat a cached all-zero field as a miss and refetch. Verified on the
+   box: max 5859 m, 17.5 % of cells above 500 m, Everest 5340 m, North Atlantic 0 m.
+2. **`np.load` on a warm cache raised `AttributeError: 'NoneType' object has no
+   attribute 'open'`.** An `NpzFile` is lazy; I read `elev` inside the `with`
+   block but `z["lats"] / z["lons"]` after it closed. The exception escapes
+   `load_orography` and lands in `scan_mlc_events`' ERA5 `try`, which logs
+   "read failed — no events" → **the lane would have published nothing on every run
+   after the first**. Fixed by reading all three arrays inside the `with`.
+
+Effect on the validated numbers: 138 tracks → **71 events** (was 77 with the screen
+inert), 13 bombs; the screen removes ~8 % of genesis points, i.e. exactly the
+orography false positives the PROOF measured. Everything else is unchanged (nodes
+3199, tracks 138 vs TE 145, 133/145 matched, median position error 0.00 deg, Ciaran
+identical). Three new tests in `tests/test_mlc_track.py` pin all three behaviours
+offline with a fake store (18 mlc tests pass; whole repo 315 / 29 / 0 with
+`EWB_DATA_PREP_DIR` set).
+
+**Memory note for ops**: reading that one static timestep costs **~17 GB of RSS for
+~2 s** on the ewb box (measured through xarray *and* by indexing the zarr array
+directly — it is the store reader, not my code; latitude-strip reads are 150× slower
+for the same peak, so they are not the answer). It is a **one-time** cost: the field
+is cached as a ~4 MB npz and every later scan reads that. Pre-warm a fresh box with
+
+```bash
+cd /opt/ewb-live && .venv/bin/python -c \
+  'from ewb_live.sources import mlc_era5; print(mlc_era5.load_orography()[0].max())'
+```
+
+so the 17 GB spike never lands next to a scoring run. Validation peak RSS 18.9 GB
+total, of which the 144-frame MSLP field is 0.6 GB.
