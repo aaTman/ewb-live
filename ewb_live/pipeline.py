@@ -116,12 +116,16 @@ def _heartbeat(**fields) -> None:
 def _sel_thresholds() -> dict:
     """Effective selection quantiles for the current run (meta record)."""
     from .events.temperature import _mode_clim
+    from .events import flood as flood_clim
 
     clim = _mode_clim()
     return {
         "heat_wave": {"q_lower": float(clim["heat_wave"]["q_lower"])},
         "freeze": {"q_upper": float(clim["freeze"]["q_upper"])},
         "atmospheric_river": {"q_upper": "p90 ivt (EWB default)"},
+        # flood: ERA5 wet-day percentile of the daily total and of the trailing
+        # 72 h, plus the absolute plausibility floor (events/flood.py)
+        "flood": {"q_upper": flood_clim.p95, "floor_mm": flood_clim.FLOOR_MM},
     }
 
 
@@ -597,6 +601,8 @@ def run(
     if BASELINE not in models:
         logger.warning("baseline model %s not in sources; scorecard skill will be null", BASELINE)
 
+    from .events.select import UNSCORED_TYPES   # observation lanes are published, not scored
+
     # 2. incremental bookkeeping
     scores_path = RESULTS / "scores.parquet"
     old = pd.read_parquet(scores_path) if scores_path.exists() and not force else pd.DataFrame(
@@ -620,10 +626,15 @@ def run(
     logger.info("cached scores: %d rows; done pairs: %d", len(cached), len(done))
 
     todo = []
+    unscored_obs: list = []   # observation lanes (flood): published, never scored
     for e in events:
         pending = [m for m in models if (e.id, m) not in done]
-        if pending:
-            todo.append((e, pending))
+        if not pending:
+            continue
+        if e.event_type in UNSCORED_TYPES:
+            unscored_obs.append((e, pending))
+            continue
+        todo.append((e, pending))
     if max_events:
         ids = _select_event_ids(todo, max_events)
         todo = [(e, ms) for e, ms in todo if e.id in ids]
@@ -675,6 +686,7 @@ def run(
     # prune to the live universe (ids churn across selection rebuilds) and
     # sweep orphaned atomic-write temps from SIGKILLed writers
     pair_status = _prune_pair_status(pair_status, events, models)
+
     # sidecars of churned-out events are dead weight: every run re-parses
     # every file ever written (ponytail 2026-11-08 SHOULD: unbounded growth)
     if not force:
@@ -699,6 +711,23 @@ def run(
 
     def _pair(eid: str, model: str) -> dict:
         return pair_status.get(f"{eid}|{model}", {})
+
+    # Observation lanes (flood, 2026-11-17) have no EWB metric set: they are
+    # published and rendered, never scored. Record a DOCUMENTED zero-row status
+    # per pair so the pair_coverage contract and full_run_complete stay
+    # decidable instead of showing phantom blockers.
+    if unscored_obs:
+        for e, ms in unscored_obs:
+            for m in ms:
+                pair_status[f"{e.id}|{m}"] = {
+                    "status": "unsupported", "rows": 0,
+                    "fp": f"{fp_by_event[e.id]}|{truth_by_event[e.id]}",
+                    "reason": "no EWB benchmark for IMERG-accumulation events "
+                              "(flood is published, not scored)"}
+        logger.info("observation-lane events: %d published without scoring "
+                    "(%d documented 'unsupported' pairs)",
+                    len(unscored_obs), sum(len(ms) for _e, ms in unscored_obs))
+        _persist_pair_status()
 
     failed_after_retry: set[str] = set()
     last_sig = ""  # blocker sig from the most recent _write_outputs (untruncated)
@@ -788,7 +817,7 @@ def run(
             "selection_thresholds": _sel_thresholds(),
             "event_counts": {
                 et: sum(1 for e in events if e.event_type == et)
-                for et in ("heat_wave", "freeze", "atmospheric_river")
+                for et in ("heat_wave", "freeze", "atmospheric_river", "flood")
             },
             "n_score_rows": len(scores),
             "n_scored_pairs": int(len({(r[0], r[1]) for r in zip(scores['event_id'], scores['model'])})),

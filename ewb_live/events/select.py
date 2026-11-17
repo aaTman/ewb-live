@@ -23,6 +23,19 @@ freeze      symmetric with q0.15: anomaly_K = mean q0.15 - min daily-mean t2m
 atmospheric_river
             keep: landfall_days >= 1 (owner 2026-11-09; was 3) and peak IVT >= 600 kg/m/s
             severity = landfall_days x peak_land_pixels x (peak_IVT - 400)
+flood       keep: peak 72 h accumulation >= 50 mm over >= 10,000 km2 (the
+            detector already enforces the percentile + floor rule, so here only
+            the case-shape envelope: duration and bbox span).
+            severity = (peak_excess_ratio - 1) x peak_area_km2 x days, i.e. how
+            far above its OWN percentile the peak ran x how much ground it
+            covered x how long it lasted — the same anomaly x area x duration
+            shape as heat/freeze, with the percentile ratio in place of the
+            temperature anomaly because a mm of rain is not comparable across
+            climates (a 60 mm day that is p99 in Provence beats a 150 mm day
+            that is p96 in the monsoon trough).
+            NOT SCORED: EWB has no flood benchmark, so the pipeline publishes
+            these events with a documented "unsupported" pair status
+            (UNSCORED_TYPES below; same treatment as the tropical-cyclone lane).
 
 PRODUCT RULE (owner, 2026-11-06, revised same day): NO two events may
 overlap in BOTH time and space in the final selection, and mega-merges of
@@ -64,6 +77,21 @@ AR_IVT_BASELINE = 400.0  # the EWB mask threshold
 # 1500 kg/m/s is above every legit selected event (max 1435) and below
 # Dolphin/Isaias/monsoon blobs (1785-2972).
 AR_MAX_PEAK_IVT = float(os.environ.get("EWB_LIVE_AR_IVT_MAX_KGM_S", "1500"))
+
+# --- published-but-not-scored lanes -------------------------------------- #
+# An event type here is curated, published and rendered, but never sent to
+# EWB scoring: there is no benchmark for its shape, so the pipeline records a
+# documented ``unsupported`` pair status per (event, model) instead of leaving
+# phantom blockers in pair_coverage. ``flood`` is IMERG accumulation against an
+# ERA5 percentile: EWB ships no precipitation-flood target/metric for it
+# (flood lane, 2026-11-17). A track-lane type (tropical_cyclone) belongs in the
+# same set - the tc lane keeps its own TRACK_TYPES name, so integrate as the
+# union of both.
+UNSCORED_TYPES = {"flood"}
+# per-type quota overrides (season-scale lanes would be truncated by the
+# global default of 15; the flood lane's live count is reported in
+# notes/channel_new_events.md and 30 covers a busy 90-day window)
+TOP_N_BY_TYPE = {"flood": int(os.environ.get("EWB_LIVE_TOP_N_FLOOD", "30"))}
 
 
 @functools.lru_cache(maxsize=2)
@@ -170,11 +198,26 @@ def _severity(e) -> float:
         return _detail(e, "landfall_days") * _detail(e, "peak_land_pixels") * max(
             ivt - AR_IVT_BASELINE, 1.0
         )
+    if e.event_type == "flood":
+        # percentile excess x ground x time (see the module docstring)
+        excess = max(_detail(e, "peak_excess_ratio", 1.0) - 1.0, 0.02)
+        return excess * area * max(days, 1.0)
     return 0.0
 
 
 def _passes_floor(e) -> bool:
     dur = (e.end - e.start).days
+    if e.event_type == "flood":
+        # the physical rule (percentile + floor + area + land + completeness)
+        # is enforced in events/flood.py; here only the case-shape envelope,
+        # so a fragment that is not a flood-shaped object cannot be published.
+        lat_span = e.bbox[1] - e.bbox[0]
+        lon_span = (e.bbox[3] - e.bbox[2]) % 360.0
+        return (_detail(e, "peak_3day_mm", 0.0) >= 50.0
+                and _detail(e, "peak_area_km2", 0.0) >= 1.0e4
+                and 1 <= dur <= 21
+                and lat_span <= 45.0
+                and lon_span <= 45.0)
     if e.event_type == "atmospheric_river":
         # events.yaml AR cases: centroid |lat| >= 22, duration p90 8 d
         centroid = _detail(e, "centroid_lat", 999.0)
@@ -212,6 +255,9 @@ MERGE_CAP_DAYS = {
     "atmospheric_river": float(os.environ.get("EWB_LIVE_MERGE_CAP_AR_DAYS", "9")),
     "heat_wave": float(os.environ.get("EWB_LIVE_MERGE_CAP_HEAT_DAYS", "16")),
     "freeze": float(os.environ.get("EWB_LIVE_MERGE_CAP_FREEZE_DAYS", "16")),
+    # a rain-flood spell is short: the upstream events.yaml envelope for a
+    # precipitative event is days, not the two weeks a heat wave gets
+    "flood": float(os.environ.get("EWB_LIVE_MERGE_CAP_FLOOD_DAYS", "9")),
 }
 CAP_LAT_SPAN = 40.0       # merged-union bbox caps; beyond -> refuse absorb
 CAP_LON_SPAN = 60.0
@@ -324,6 +370,14 @@ def _merge_component(members: list, decisions: list[dict]):
         mins = _vals("min_temp_c") or peaks
         peak = mn = min(mins) if mins else core.peak_value
         det["min_temp_c"] = mn
+    elif t == "flood":
+        # the peak of a merged fragment set is the worst accumulation, and the
+        # percentile excess that goes with it (both lanes, kept consistent)
+        peak = max(peaks) if peaks else core.peak_value
+        for key in ("peak_3day_mm", "peak_daily_mm", "peak_excess_ratio",
+                    "peak_excess_ratio_3day", "peak_excess_ratio_daily"):
+            if _vals(key):
+                det[key] = max(_vals(key))
     else:  # atmospheric_river: core keeps its consistent pixel/threshold pair
         peak = max(peaks) if peaks else core.peak_value
         if _vals("landfall_days"):
@@ -514,6 +568,10 @@ def rank_and_cap(events, top_n: int | dict[str, int] = DEFAULT_TOP_N,
 
     n_map = ({t: top_n for t in merged_by_type} if not isinstance(top_n, dict)
              else top_n)
+    # per-type quota overrides (season-scale lanes carry their own count;
+    # see TOP_N_BY_TYPE)
+    n_map = {t: max(n_map.get(t, DEFAULT_TOP_N), TOP_N_BY_TYPE.get(t, 0))
+             for t in merged_by_type}
     selected = _resolve_conflicts(merged_by_type, n_map, decisions)
     for e in selected:
         e.details = {**(e.details or {}), "severity_rank_score": round(severity(e), 2)}

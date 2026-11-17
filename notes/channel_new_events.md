@@ -657,3 +657,109 @@ intact (3 hits) after every deploy. Commits: `93e8498` `7c6da12` `69c5ee3` `7de5
 * Remaining owner asks (unchanged): the daily `--days 3` timer decision (infra), and
   `data/cache/subsets` (231 GB) as the real headroom answer — the IMERG floor stays at
   2 GiB. The lane needs nothing else from me.
+
+## [flood-detect] 2026-11-17 18:15 UTC — flood lane BUILT and run on the live 90-day window: 766 events, 0 invalid, 30 published, 3 bugs the live data caught
+
+### What exists now
+
+`ewb_live/events/flood.py` (detection) + `tests/test_flood.py` (23 tests) + the
+registration the lane needs to be a real product lane: `EVENT_TYPES`, validate
+labels/ranges + flood cross-checks, `select` severity/floor/merge/cap, the lane
+dispatch in `detect_events`, the non-raster `qualified_at` path, the pipeline
+`unsupported` pair status, and the dashboard (label/colour/criteria/About, a
+fourth Gantt lane, `--series-flood` in both themes). Rule: a cell exceeds when its
+daily total **or** its trailing 72 h accumulation reaches the ERA5 1990–2019 wet-day
+**p95** for that cell and day of year **and** 20 mm/day (50 mm/72 h), land only.
+IMERG is aggregated **up** to the ERA5 0.25° grid, never the reverse. Design
+decisions and their reasons: `notes/flood_design.md` Part 3.
+
+### The real run on ewb (nothing in the live tree was touched)
+
+```
+ssh root@192.168.0.121 'cd /opt/ewb-preview-flood && .venv/bin/python -m ewb_live.events.flood --days 90'
+```
+Preview tree at `/opt/ewb-preview-flood` (`.venv` and `data/{imerg,clim,results,cache}`
+symlinked to the live ones) — the live `/opt/ewb-live` code and data were not
+written, and the root FS is unchanged at 5.4 GB free.
+
+* Window **2026-08-20 → 2026-11-17**, 89/94 days observed (4 lookback days before
+  the store + today), runs 88 Late / 1 Early. Lane 1 d: **335,607** exceedant
+  cell-days; lane 3 d: **241,414**; union **477,610** → **766 valid events**.
+  **659 s**, peak RSS **4.4 GB**, no scratch files.
+* Shapes are sane: duration 1 d ×159, 2 ×161, 3 ×308, 4 ×87, 5 ×38, 6–8 ×13;
+  peak area p10/p50/p90 = **27.4k / 81.4k / 226.7k km²**. `validate_event` returns
+  **[] for all 766**.
+* Curation (floor → merge → zero-overlap resolve → cap): **766 → 30 published**.
+  Top severity: Flood 2026-11-04→12 [11.8,24.0]×[96.5,108.8] (Myanmar/Chao Phraya,
+  472,663 km², 349 mm/72 h, 9 d); then Ecuador/Peru 10-24→30, India/Odisha
+  09-21→26, Veracruz 10-02→08.
+* Largest accumulations: **western Cuba 11-12→15, 982 mm per 72 h**
+  ([19.5,22.8]×[-81.2,-74.2], 81,397 km², 32× its own p95) — brute-forced from the
+  raw daily granule at (20.0, -75.0): 421.9 mm/day on 11-13 and 480.9 mm/day on
+  11-14, 72 h sums 904.9/982.0, matching the lane exactly, with neighbouring 0.1°
+  cells at 346–611 mm/day (a coherent wet area, not a spike) and the granule's
+  global mean normal (2.26 mm/day). **Ask:** that is at/above the Cuban 48-h
+  record — worth a human check against a station report before it is quoted.
+  Then Bay of Bengal/Myanmar 606, **NZ Southern Alps 576** (-43.75, 169.5 — which
+  is land, see below), Gulf of Tonkin 565, Jamaica 489, Odisha 469.
+* **All 766 are provisional** and that is structural: at 90 days back IMERG only
+  has the Late/Early runs (the Final science-grade run lags ~30 d), so a 90-day
+  flood window can never be settled. `details.provisional` + the reason are on
+  every event; the owner may want the dashboard to say this once per window
+  instead of per event.
+
+### Three things only the live data caught
+
+1. **The tracker must be fed the calendar-complete sequence.** Feeding it only the
+   observed days (what I had) makes `lag=3` mean "3 *observed* days" — one missing
+   granule silently turns the 72 h accumulation into a 4-day sum — and the core,
+   measured in calendar days against a per-step streak, decays by arithmetic and
+   lets an event run through a day it cannot see. Fixed structurally in
+   `build_scan`: every calendar day is present, unobserved days are NaN with an
+   all-False mask. Two honest consequences: a gap poisons the 72 h windows that
+   contain it, and an outage **ends** the open events — which is what makes "no
+   published interval may claim an unobserved day" a guarantee rather than a
+   check. Cost: a real flood can be split by an outage (chosen: conservative).
+2. **A validation rule I wrote was wrong.** "peak daily < 2 mm is not credible"
+   fired on two real events. A slow 18 mm/day storm legitimately exceeds the 72 h
+   lane without ever reaching the 20 mm/day daily floor, so the rule is now the
+   true invariant (at least one lane reached its floor) — with a synthetic test
+   for exactly that storm.
+3. **A NaN in the new rain-attribution look-back wins an `argmax`.** The 72 h lane
+   flags the day an extreme accumulation *ends*, and because the threshold moves
+   with the day of year the flag day can land after the rain: 143 of 766 live
+   events have their heaviest rain up to two days before the flagged day (one was
+   titled "Flood 2026-08-30 to 2026-08-30" with 1.04 mm of in-window rain while
+   121.69 mm fell on the 28th). Events now carry `rain_peak_daily_mm` /
+   `rain_peak_day`; the NaN-argmax that made it report "no rain" is fixed and
+   regression-tested (test fails before the fix, passes after).
+
+I also spent a scare on ocean floods: the #3 event sits at (-43.75, 169.5), which
+is not the Tasman Sea but New Zealand's Southern Alps. Cross-checked the shared
+Natural Earth 110 m mask against ERA5's own `land_sea_mask` on the same grid:
+order-agnostic, land fractions 0.332 vs 0.339, 31 % of cells differ purely on
+coastline detail, spot points agree. The lane keeps the product's existing mask
+(consistency with heat/freeze); if the owner wants the stricter ERA5 definition,
+all lanes should move together.
+
+### Tests and state
+
+`tests/test_flood.py`: 23 tests — the join (brute-force comparison on a 0.5°→1.25°
+pair, the seam column, constant-field exactness, NaN propagation, refusal on a
+non-covering lattice), trailing accumulation, the floor/percentile AND rule, a
+true flood, dry-season and hyper-arid rejection, the slow storm, partial-day and
+missing-day exclusion, rain attribution (incl. the unobserved-lookback case),
+antimeridian wrap as one wrapped event, land gating, params, window filtering,
+registration, `detect_events` routing (flood is not clamped by the ERA5 cutoff)
+and the daily summary. Full suite: **382 passed**, 29 skipped, 2 failed — both
+pre-existing (`test_ar_floors_match_upstream_ar_bounds`,
+`test_upstream_consecutive_filter_and_blobs`: no `third_party/ExtremeWeatherBench`
+in this worktree), unchanged from the branch baseline.
+
+Open for the owner: (1) deploy order — the flood lane only runs where
+`data/imerg` + `data/clim/precip_era5_pooled_1990_2019.zarr` exist, so the lane
+and the dashboard change should land together, after the freeze patch is on
+`main` (flood-clim's warning still stands); (2) publish floods while every event
+is provisional; (3) the Cuba 11-13/14 check above; (4) the box's 5.4 GB free is
+still the blocker for a real pipeline run — this lane adds no disk need (its
+events are JSON, its inputs already exist).

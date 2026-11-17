@@ -67,8 +67,12 @@
     heat_wave:          { css: 'heat',   short: 'Heat' },
     freeze:             { css: 'freeze', short: 'Freeze' },
     atmospheric_river:  { css: 'ar',     short: 'AR' },
+    // no raw exceedance layer exists for the flood lane (its evidence is a
+    // 0.1 deg IMERG accumulation, not a raster published with the v2 sidecars):
+    // flood events are drawn as boxes and Gantt rows only
+    flood:              { css: 'flood',  short: 'Flood' },
   };
-  const LANE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river'];
+  const LANE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river', 'flood'];
   const SPEEDS = [2, 5, 10];               // fps choices
 
   let raw = null;                          // raw_exceedance index.json
@@ -621,10 +625,12 @@
     const nHeat = active.filter((e) => e.type === 'heat_wave').length;
     const nFrz = active.filter((e) => e.type === 'freeze').length;
     const nAr = active.filter((e) => e.type === 'atmospheric_river').length;
+    const nFl = active.filter((e) => e.type === 'flood').length;
     const parts = [];
     if (nHeat) parts.push(`${nHeat} heat`);
     if (nFrz) parts.push(`${nFrz} freeze`);
     if (nAr) parts.push(`${nAr} AR`);
+    if (nFl) parts.push(`${nFl} flood`);
     $('#raw-canvas').setAttribute('aria-label',
       `Equal Earth world map — raw detector layers and event boxes: `
       + `${active.length} event${active.length === 1 ? '' : 's'} visible`
@@ -641,7 +647,7 @@
     renderBoxes(); renderGantt();
   }
   function layersForTab(tab) {                 // the page's type filter narrows the raw layers too
-    const key = { heat_wave: 'h', freeze: 'f', atmospheric_river: 'a' }[tab];
+    const key = { heat_wave: 'h', freeze: 'f', atmospheric_river: 'a', flood: 'l' }[tab];
     for (const L of LAYERS) on[L.key] = !key || L.key === key;
   }
 
@@ -652,7 +658,7 @@
     if (!tl) return;
     const W = Math.max(320, $('#raw-map-wrap').clientWidth);
     const LANE_H = 12, GAP = 4, LAB = 44, TOP = 2, AX = 16;
-    const H = TOP + LANE_H * 3 + GAP * 2 + AX;
+    const H = TOP + LANE_H * LANE_ORDER.length + GAP * (LANE_ORDER.length - 1) + AX;
     svg.setAttribute('width', W); svg.setAttribute('height', H);
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     const t0 = tsToDate(raw.frames[0]).getTime();

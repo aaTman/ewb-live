@@ -625,3 +625,99 @@ ssh root@192.168.0.121 'cd /opt/ewb-live && . .venv/bin/activate && python -' < 
 build config, whose tiles are unaccounted for, or which violates the product
 invariants — so the gate can never be opened on a partial product.
 
+---
+
+# Part 3 — the detection lane (`flood-detect`): decisions the brief left open
+
+`ewb_live/events/flood.py`. IMERG daily rain aggregated **up** onto the ERA5
+0.25° lattice, compared against Part 2's wet-day percentiles plus an absolute
+floor, land-only, tracked by the shared footprint/core tracker. The points below
+were genuinely ambiguous; each is decided here with the reason, because each one
+is a place where a plausible implementation gives a wrong answer.
+
+## 1. The join is a segmented sum in float64, never a cumsum
+
+`aggregate_to_era5_grid()` assigns every 0.1° source centre to the 0.25° target
+cell that contains it (nearest-centre on a circle, so the ONE target column whose
+box wraps the antimeridian is handled by the same arithmetic as every other),
+then sums with `np.bincount(..., weights=…, minlength=…)` per band. The first
+implementation used a 2-D cumsum with corner subtraction and was **silently
+wrong by ~1 mm on a global field** — float32 cancellation over 12×13-cell sums.
+Sums now accumulate in float64 and the result is cast to float32 once; a constant
+field must come back exactly, and `test_aggregate_handles_the_seam_column_and_a_
+constant_field` pins that. The mean excludes NaN source cells and a target cell
+with **any** unobserved contributor becomes NaN (`require_all`): a partly-missing
+cell is not a lighter rain rate.
+
+## 2. Land gate = the mask the rest of the product already uses
+
+`ewb_live/viz/build.land_mask` (Natural Earth 110 m through EWB's
+`regionmask_land_110`, "0 is land"). Verified rather than assumed:
+
+* it is order-agnostic (descending lat == flipped ascending, 0 cells differ);
+* against ERA5's own `land_sea_mask` on the same 721×1440 grid the two differ in
+  321k of 1.04 M cells (31 %) — pure coastline-resolution difference (110 m
+  vectors vs a ~40 km Gaussian grid), with land fractions 0.332 vs 0.339;
+* spot points agree, including the one that looks like an ocean false positive
+  at first sight: (-43.75, 169.5) is **not** the Tasman Sea, it is New Zealand's
+  Southern Alps — one of the wettest places on Earth (the lane's #3 event,
+  576 mm per 72 h on 2026-08-26, is real orography).
+
+A marine-tighter mask would be a defensible product choice, but the flood lane
+must not be the only hazard using a different definition of "land"; if the owner
+switches to ERA5's `land_sea_mask`, every lane should move together.
+
+## 3. The tracker is fed the CALENDAR-complete sequence
+
+`track_events()` documents "one date per day … complete days only", and its core
+is measured in **calendar** days (`age = (day − start).days + 1` vs a per-step
+streak). Handing it only the observed days makes both halves of the lane lie:
+
+* `lag=N` on a compacted stack means "N *observed* days", so one IMERG outage
+  silently turns a 72 h accumulation into a 4-day one;
+* the core decays by arithmetic alone, and an event runs on through a day the
+  lane knows nothing about.
+
+So `build_scan` keeps every calendar day of the window, with unobserved days as
+NaN rows and an all-False mask. Consequences, both intended: a gap **poisons**
+every 72 h window that contains it, and an outage **ends** the open events, which
+is what makes the brief's hard requirement a structural guarantee rather than a
+check — *no published interval can contain an unobserved day*. The cost is
+stated plainly: a genuine 5-day flood with one missing granule becomes two
+events. That is the conservative direction, and `details.unobserved_days` is kept
+as a tripwire (it must be empty; the test asserts it).
+
+## 4. A flood names the rain that caused it
+
+The 72 h lane flags the day an extreme accumulation **ends**, and the threshold
+moves with the day of year — so an accumulation can stop being extreme, then
+become extreme again when the percentile steps down, and the flag day can land
+two days after the rain. On the live window that is 162 of 766 events, including
+one titled "Flood 2026-08-30 to 2026-08-30" whose only in-window rain was 1.04 mm
+while 121.69 mm had fallen on the 28th. The interval stays the tracker's, but the
+event now carries `rain_peak_daily_mm` / `rain_peak_day` (max daily total, over
+the same footprint, across the two days of look-back). `peak_daily_mm` remains the
+in-window number, so `peak_3day_mm ≥ peak_daily_mm` stays a strict invariant.
+(Argmax detail that only live data showed: NaN must be excluded *before* the
+`np.where`, or a NaN in the look-back wins the argmax and the attribution
+reports "no rain" — see `test_attribution_survives_an_unobserved_day_in_its_lookback`.)
+
+## 5. Severity is percentile-relative, not millimetres
+
+`(peak_excess_ratio − 1) × peak_area_km2 × days`, mirroring heat/freeze's
+"anomaly × area × duration". `peak_excess_ratio` is the largest `obs / p95` over
+the event's footprint, with the threshold read on the event's own box (a few zarr
+reads per event) instead of holding two global threshold fields in memory. A raw
+millimetre ranking would put a p96 day in the monsoon trough above a p99 day in
+Provence; the ratio is what makes 60 mm in the Cévennes and 150 mm in Bangladesh
+comparable at all.
+
+## 6. Published, never scored
+
+`select.UNSCORED_TYPES = {"flood"}`: EWB has no precipitation-flood benchmark, so
+the pipeline records a documented `unsupported` pair status per (event, model)
+instead of leaving phantom blockers in `pair_coverage`, and the flood window is
+not clamped by the ERA5 truth cutoff (its observations are IMERG, ~1 day from
+real time, and the newest days are exactly where a flood lives). `TOP_N_BY_TYPE`
+gives flood 30 rather than 15: the 90-day window carries many short-lived events
+(live: 766 detected → 30 published).

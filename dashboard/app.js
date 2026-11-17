@@ -8,11 +8,12 @@ const TYPE_META = {
   heat_wave:          { label: 'Heat waves',         short: 'Heat wave',          color: 'var(--series-heat)' },
   freeze:             { label: 'Freezes',            short: 'Freeze',             color: 'var(--series-freeze)' },
   atmospheric_river:  { label: 'Atmospheric rivers', short: 'Atmospheric river',  color: 'var(--series-ar)' },
+  flood:              { label: 'Floods',             short: 'Flood',             color: 'var(--series-flood)' },
 };
 /* AR green (design 2026-11-08, owner request): all type colors resolve
    through CSS tokens — dual-theme values, no hardcoded hex in JS. */
 const TYPE_SERIES_VAR = { heat_wave: '--series-heat', freeze: '--series-freeze',
-  atmospheric_river: '--series-ar' };
+  atmospheric_river: '--series-ar', flood: '--series-flood' };
 function cssVar(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || fallback;
@@ -20,7 +21,7 @@ function cssVar(name, fallback) {
 function typeColor(etype) {
   return cssVar(TYPE_SERIES_VAR[etype] || '--series-unknown', '#848475');
 }
-const TYPE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river'];
+const TYPE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river', 'flood'];
 
 /* Owner 2026-11-07: empty lanes are legitimate (freezes may be empty at p15).
    Criteria wording mirrors ewb_live/events/temperature.py + ar.py thresholds —
@@ -29,6 +30,8 @@ const TYPE_CRITERIA = {
   heat_wave: 'Every 6-hourly step of a UTC day has 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology (per day of year and hour), over land. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). The map shades only cells that reach the same 3-consecutive-day minimum (consecutive COMPLETED days; cells below it are blank because they can never become an event), dithered = today so far on an already-qualifying cell.',
   freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), over land. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). On the map the freeze layer shades cells from their first consecutive COMPLETED day (cold runs are short, so 1–2-day cells stay visible for context; a freeze still needs 3+ days), dithered = today so far on a cell with at least one completed day.',
   atmospheric_river: 'Integrated water-vapour transport peaking at ≥400 kg m⁻¹ s⁻¹ and reaching land.',
+  // observation lane (IMERG, not ERA5): published, never scored — EWB has no flood benchmark
+  flood: 'IMERG half-hourly rain summed to a daily total and averaged up onto the ERA5 0.25° land lattice. A cell exceeds when its daily total or its trailing 72 h accumulation reaches the 95th percentile of that calendar day in the ERA5 1990–2019 wet-day climatology AND at least 20 mm/day (or 50 mm per 72 h) — the floor is mandatory because IMERG and ERA5 are different instruments. Cells with no ERA5 percentile (hyper-arid) can never exceed, ocean cells are excluded, and a day whose sampling is incomplete is dropped rather than read as dry. A region ≥10,000 km² becomes an event once its footprint reaches 50,000 km² and ends under 10,000 km². There is no EWB benchmark for flood, so floods are published and mapped but no model is scored on them.',
 };
 const emptyLaneLine = (t) => t === 'all'
   ? 'No events met the criteria this window'
@@ -1605,6 +1608,11 @@ function storyLabel(ev, viz) {
     // landfall_days can exceed the event length upstream (G-28): print the landfall date instead
     const lf = parseISO(d.landfall_time);
     if (lf) parts.push('landfall ' + lf.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }));
+  } else if (ev.event_type === 'flood') {
+    // the flood peak is a TRAILING 72 h accumulation in mm (details.peak_value_units)
+    if (Number.isFinite(ev.peak_value)) parts.push('peak 72 h ' + Math.round(ev.peak_value) + ' mm');
+    if (Number.isFinite(d.peak_daily_mm)) parts.push('peak day ' + Math.round(d.peak_daily_mm) + ' mm');
+    if (Number.isFinite(d.peak_area_km2)) parts.push(Math.round(d.peak_area_km2).toLocaleString('en-US') + ' km² at peak');
   } else {
     // peak is the ERA5 daily-mean peak (see About) — say so (G-27)
     if (Number.isFinite(ev.peak_value)) parts.push('peak daily-mean ' + ev.peak_value.toFixed(1) + ' °C');

@@ -1,8 +1,8 @@
 """Event detection for EWB Live (SPEC section 2).
 
-``detect_events`` finds heat_wave / freeze / atmospheric_river events over a
-date range using EWB's defaults and thresholds, with a persistent per-window
-cache so re-runs don't redo completed scans.
+``detect_events`` finds heat_wave / freeze / atmospheric_river / flood events
+over a date range using EWB's defaults and thresholds, with a persistent
+per-window cache so re-runs don't redo completed scans.
 """
 
 from __future__ import annotations
@@ -43,6 +43,15 @@ def _cache_path(cache_dir: Path, event_type: str, start: dt.date, end: dt.date) 
         from .ar import AR_RULE_REV
 
         tag = f"_{AR_RULE_REV}"
+    if event_type == "flood":
+        # bump when the flood rule changes (quantile / accumulation lanes /
+        # tracker floors) so an old scan can't resurrect under new code
+        from .flood import DEFAULT_QUANTILE, FLOOD_PARAMS, WINDOWS
+
+        tag = (f"_v1-q{int(round(DEFAULT_QUANTILE * 100))}-w"
+               f"{''.join(str(w) for w in WINDOWS)}"
+               f"-a{int(FLOOD_PARAMS.qualify_area_km2 // 1000)}k"
+               f"-d{FLOOD_PARAMS.min_days}")
     return cache_dir / f"{event_type}{tag}_{start:%Y-%m-%d}_{end:%Y-%m-%d}.json"
 
 
@@ -79,13 +88,22 @@ def detect_events(
 
     cutoff = truth_cutoff()
     det_end = min(end, cutoff.date())
-    if det_end < start:
-        logger.warning("window %s..%s fully beyond ERA5 cutoff %s", start, end, cutoff)
-        return []
+
+    from .select import UNSCORED_TYPES   # lazy: select pulls in the raster lanes
 
     by_id: dict[str, Event] = {}
     for et in types:
-        path = _cache_path(cache_dir, et, start, det_end)
+        # Observation lanes read their own source, not the ERA5 rasters: the
+        # truth-cutoff clamp must not trim them (flood reads IMERG, ~1 day from
+        # real time, and the newest days are exactly where a flood lives).
+        # `UNSCORED_TYPES` is the set of non-ERA5-lane types here; the tc lane's
+        # TRACK_TYPES (tropical_cyclone) integrates as the union of the two.
+        lane_end = end if et in UNSCORED_TYPES else det_end
+        if lane_end < start:
+            logger.warning("detect_events %s: window %s..%s fully beyond the "
+                           "ERA5 cutoff %s; lane skipped", et, start, end, cutoff)
+            continue
+        path = _cache_path(cache_dir, et, start, lane_end)
         if use_cache and not force and path.exists():
             events = [Event.from_dict(d) for d in json.loads(path.read_text())]
             logger.info("detect_events %s: cache hit (%d events)", et, len(events))
@@ -93,11 +111,16 @@ def detect_events(
             if et in ("heat_wave", "freeze"):
                 from .temperature import scan_temperature_events
 
-                events = scan_temperature_events(start, det_end, et, **scan_kwargs)
+                events = scan_temperature_events(start, lane_end, et, **scan_kwargs)
+            elif et == "flood":
+                # observation lane: IMERG daily rain vs the ERA5 percentile
+                from .flood import scan_flood_events
+
+                events = scan_flood_events(start, lane_end)
             else:
                 from .ar import scan_ar_events
 
-                events = scan_ar_events(start, det_end, **scan_kwargs)
+                events = scan_ar_events(start, lane_end, **scan_kwargs)
             tmp = path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps([e.to_dict() for e in events], indent=1))
             tmp.replace(path)

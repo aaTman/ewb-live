@@ -30,6 +30,7 @@ _TITLE_LABELS = {
     "heat_wave": "Heat Wave",
     "freeze": "Freeze",
     "atmospheric_river": "Atmospheric River",
+    "flood": "Flood",                     # flood lane, 2026-11-17
 }
 # physical sanity ranges for peak_value, per type. NOTE freeze is NOT
 # "sub-zero": per SPEC it mirrors EWB's climatology-percentile definition
@@ -41,6 +42,10 @@ _PEAK_RANGE = {
     "heat_wave": (-20.0, 60.0),      # degC
     "freeze": (-90.0, 45.0),         # degC (percentile-relative, see above)
     "atmospheric_river": (0.0, 10000.0),  # IVT kg m-1 s-1
+    # flood: the peak TRAILING 72 h accumulation in mm (IMERG). The physical
+    # world record 72 h total is ~1.8 m, and a 24 h total ~1.2 m, so the range
+    # is a Kelvin-misparse / unit-flip tripwire, not a climatological claim.
+    "flood": (0.5, 2000.0),
 }
 # Duration ceiling for a published event. The footprint/core tracker (SPEC §2)
 # closes events on their own core, so long spells are physical rather than an
@@ -148,6 +153,40 @@ def validate_event(e: Event) -> list[str]:
             problems.append(
                 f"centroid_lat {clat} outside bbox lat {lat0}..{lat1} (+2.5 deg tol)"
             )
+
+    # --- flood: accumulation, area and provenance cross-checks
+    # (flood lane, 2026-11-17). The peak is a TRAILING 72 h accumulation, so it
+    # cannot be smaller than the peak daily total, and an event that exceeded
+    # nothing must not exist.
+    if e.event_type == "flood":
+        p3, p1 = det.get("peak_3day_mm"), det.get("peak_daily_mm")
+        if p3 is not None and p1 is not None and p3 + 0.01 < p1:
+            problems.append(
+                f"flood peak_3day_mm {p3} < peak_daily_mm {p1} (a 72 h "
+                "accumulation cannot be below its own peak day)")
+        if p3 is not None and pv is not None and abs(pv - p3) > 0.05:
+            problems.append(f"flood peak_value {pv} != peak_3day_mm {p3}")
+        # The rule is "percentile AND absolute floor" PER LANE, so the event must
+        # have reached a floor in at least one lane. A LOW daily peak is not a
+        # contradiction: the 72 h lane fires on the day an extreme accumulation
+        # ends, so a slow 15 mm/day storm exceeds it without ever reaching the
+        # 20 mm/day daily floor (rain_peak_day says where the rain fell).
+        from .flood import FLOOR_MM as _FLOOR
+
+        if not ((p3 is not None and p3 >= _FLOOR[3] - 0.01)
+                or (p1 is not None and p1 >= _FLOOR[1] - 0.01)):
+            problems.append(
+                f"flood reached no lane floor: peak_3day_mm {p3} < "
+                f"{_FLOOR[3]} and peak_daily_mm {p1} < {_FLOOR[1]}")
+        if int(det.get("peak_area_km2") or 0) <= 0:
+            problems.append(f"flood peak_area_km2 {det.get('peak_area_km2')} <= 0")
+        ratio = det.get("peak_excess_ratio")
+        if ratio is not None and ratio < 1.0:
+            problems.append(f"flood peak_excess_ratio {ratio} < 1: nothing exceeded")
+        if not (det.get("data_source") or {}).get("days_present"):
+            problems.append("flood data_source has no observed days")
+        if "provisional" not in det:
+            problems.append("flood event does not say whether it is provisional")
 
     return problems
 

@@ -74,6 +74,7 @@
   --heat:   var(--series-heat);
   --freeze: var(--series-freeze);
   --ar:     var(--series-ar);
+  --flood:  var(--series-flood);
   --shadow: 0 1px 2px rgba(38, 38, 32, .06);
   --mono: var(--font-mono);
 
@@ -136,6 +137,7 @@ html[data-theme="dark"] {
   --heat:   var(--series-heat);
   --freeze: var(--series-freeze);
   --ar:     var(--series-ar);
+  --flood:  var(--series-flood);
   --shadow: 0 1px 4px rgba(0, 0, 0, .40);
 
   --warn-ink: #e0b95f;  --warn-bg: #332e1c;  --warn-border: #55492a;
