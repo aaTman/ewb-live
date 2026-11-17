@@ -75,6 +75,35 @@ def main() -> int:
                           count: ((document.querySelector('#event-count')||{}).textContent||'').trim()};
                 }""")
                 report[f"{vname}/{tab}"] = state
+                # open the first event of the lane: the detail panel is where the
+                # track/footprint rendering either exists or does not
+                rows = page.query_selector_all("#event-table tbody tr")
+                if rows:
+                    try:
+                        rows[0].click(timeout=3000)
+                        page.wait_for_timeout(2600)   # viz.json fetch + render
+                        detail = page.evaluate("""() => {
+                          const sec = document.querySelector('#detail-sec');
+                          const title = document.querySelector('#detail-title');
+                          const viz = document.querySelector('#detail-viz');
+                          const txt = (e) => e ? e.innerText.trim().replace(/\\s*\\n+\\s*/g, ' | ') : null;
+                          return {open: sec ? !sec.classList.contains('hidden') : false,
+                                  title: title ? title.textContent.trim() : null,
+                                  chips: txt(document.querySelector('#detail-chips')),
+                                  tvTrack: !!(viz && viz.querySelector('svg.tv-svg')),
+                                  plotly: !!(viz && viz.querySelector('.js-plotly-plot, .plotly-graph-div')),
+                                  vizChildren: viz ? viz.children.length : 0,
+                                  vizTags: viz ? [...viz.children].map((n) => n.tagName.toLowerCase() + (n.className && typeof n.className === 'string' ? '.' + n.className : '')).join(',') : null,
+                                  story: txt(document.querySelector('#detail-story'))};
+                        }""")
+                        report[f"{vname}/{tab}/event"] = detail
+                        page.screenshot(path=str(out / f"{vname}-{tab}-event.png"))
+                        page.keyboard.press("Escape")
+                        page.wait_for_timeout(300)
+                        page.goto(url, wait_until="networkidle")
+                        page.wait_for_timeout(400)
+                    except Exception as exc:
+                        report[f"{vname}/{tab}/event"] = f"click failed: {exc}"
                 for theme in ("light", "dark"):
                     page.evaluate("""(t) => { document.documentElement.dataset.theme = t;
                                                 localStorage.setItem('ewb-theme', t); }""", theme)
