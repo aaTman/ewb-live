@@ -77,7 +77,10 @@
   };
   // Gantt lanes. tropical_cyclone is deliberately absent: a storm is a track,
   // drawn in its own detail view (TrackViz), not a raster lane here.
-  const LANE_ORDER = ['heat_wave', 'freeze', 'cold_snap', 'atmospheric_river',
+  // Grouped in the chips' order (Temperature | Water): the lane adjacency is
+  // part of what the identity palette was validated against — if this order
+  // changes, re-run the palette check (notes/chips_design.md).
+  const LANE_ORDER = ['heat_wave', 'cold_snap', 'freeze', 'atmospheric_river',
     'flood'];
   const SPEEDS = [2, 5, 10];               // fps choices
 

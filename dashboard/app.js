@@ -5,18 +5,24 @@
 /* constants                                                           */
 /* ------------------------------------------------------------------ */
 const TYPE_META = {
-  heat_wave:          { label: 'Heat waves',         short: 'Heat wave',          color: 'var(--series-heat)' },
-  freeze:             { label: 'Freezes',            short: 'Freeze',             color: 'var(--series-freeze)' },
-  cold_snap:          { label: 'Cold snaps',         short: 'Cold snap',          color: 'var(--series-cold-snap)' },
-  atmospheric_river:  { label: 'Atmospheric rivers', short: 'Atmospheric river',  color: 'var(--series-ar)' },
-  tropical_cyclone:   { label: 'Tropical cyclones',  short: 'Tropical cyclone',   color: 'var(--series-tc)',
+  heat_wave:          { label: 'Heat waves',         short: 'Heat wave',
+                        rule: 'ERA5 2 m temperature above the p85 climatology at every 6-hourly step of a UTC day, over land.' },
+  freeze:             { label: 'Freezes',            short: 'Freeze',
+                        rule: 'Below the p15 climatology and at or below 0 °C at every 6-hourly step of a UTC day, over land.' },
+  cold_snap:          { label: 'Cold snaps',         short: 'Cold snap',
+                        rule: 'Below the p15 climatology at every 6-hourly step of a UTC day, over land — the freeze rule without its 0 °C cap.' },
+  atmospheric_river:  { label: 'Atmospheric rivers', short: 'Atmospheric river',
+                        rule: 'IVT peaking at ≥400 kg m⁻¹ s⁻¹ with a ridge criterion; starts over ocean and makes landfall.' },
+  tropical_cyclone:   { label: 'Tropical cyclones',  short: 'Tropical cyclone',
+                        rule: 'One IBTrACS storm: ≥3 fixes at tropical-storm force (≥34 kt) spanning ≥12 h. Published, not scored.',
                         noScores: true,      // observation lane: published, not benchmarked
                         noScoresNote: (n) => `Not scored — ${n} storm${n === 1 ? '' : 's'} tracked from IBTrACS best tracks; no EWB benchmark for this lane yet.` },
-  flood:              { label: 'Floods',             short: 'Flood',              color: 'var(--series-flood)',
+  flood:              { label: 'Floods',             short: 'Flood',
+                        rule: 'IMERG daily or 72 h rain past the ERA5 p95 wet-day climatology AND ≥20 mm/day. Published, not scored.',
                         noScores: true,      // observation lane (IMERG): published, not benchmarked
                         noScoresNote: (n) => `Not scored — ${n} flood${n === 1 ? '' : 's'} tracked from IMERG rain accumulations; no EWB benchmark for this lane yet.` },
   midlat_cyclone:     { label: 'Midlatitude cyclones', short: 'Midlatitude cyclone',
-                        color: 'var(--series-mlc)',
+                        rule: 'A closed ERA5 MSLP low ≤990 hPa living ≥48 h and travelling ≥1000 km, born between 25° and 70°. Track lane — no scorecard yet.',
                         noScores: true },   // mlc track lane: published, not benchmarked
 };
 /* AR green (design 2026-11-08, owner request): all type colors resolve
@@ -32,8 +38,44 @@ function cssVar(name, fallback) {
 function typeColor(etype) {
   return cssVar(TYPE_SERIES_VAR[etype] || '--series-unknown', '#848475');
 }
-const TYPE_ORDER = ['heat_wave', 'freeze', 'cold_snap', 'atmospheric_river',
-  'tropical_cyclone', 'midlat_cyclone', 'flood'];
+/* Chips order + Gantt lanes group related types (owner 2026-11-17):
+   Temperature (heat, cold snap, freeze) | Water (AR, flood) | Storms
+   (tropical, midlatitude). The same order is the palette's fixed hue order —
+   the identity colours were validated against THIS adjacency (both themes,
+   notes/chips_design.md), so re-ordering them is a palette change, not a
+   cosmetic one. */
+const TYPE_ORDER = ['heat_wave', 'cold_snap', 'freeze', 'atmospheric_river',
+  'flood', 'tropical_cyclone', 'midlat_cyclone'];
+const TYPE_GROUP_START = new Set(['atmospheric_river', 'tropical_cyclone']);   // quiet dividers
+/* chip labels are short (one line at phone width); the full label + the
+   one-line detection rule ride in aria-label/title (About-dialog copy) */
+const TYPE_TAB_LABEL = { heat_wave: 'Heat wave', cold_snap: 'Cold snap', freeze: 'Freeze',
+  atmospheric_river: 'Atmospheric river', flood: 'Flood', tropical_cyclone: 'Tropical cyclone',
+  midlat_cyclone: 'Midlat. cyclone' };
+/* monoline glyphs — identity never colour alone (dataviz): every lane reads
+   by shape at 15 px, the series hue is only the third channel */
+const TYPE_ICONS = {
+  all: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 9.5h17M3.5 14.5h17"/><path d="M12 3.5a13 13 0 0 1 0 17M12 3.5a13 13 0 0 0 0 17"/>',
+  heat_wave: '<circle cx="12" cy="12" r="4"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7"/>',
+  cold_snap: '<path d="M12 3v9.5"/><path d="m8.4 8.6 3.6 3.9 3.6-3.9"/><path d="M4.5 18h15"/>',
+  freeze: '<path d="M12 3v18"/><path d="m4.2 7.5 15.6 9"/><path d="m19.8 7.5-15.6 9"/><path d="m9.6 5.2 2.4 2 2.4-2"/><path d="m9.6 18.8 2.4-2 2.4 2"/>',
+  atmospheric_river: '<path d="M2.5 7c2.8-2.8 5.6 2.4 8.4.2s5.6 2.4 8.4-.2"/><path d="M3.5 17.5h12"/><path d="m12.6 14.4 3.5 3.1-3.5 3.1"/>',
+  flood: '<path d="M3 8c2.3-2.2 4.7 2 7 0s4.7 2.2 7 0"/><path d="M3 12.7c2.3-2.2 4.7 2 7 0s4.7 2.2 7 0"/><path d="M3 17.4c2.3-2.2 4.7 2 7 0s4.7 2.2 7 0"/>',
+  tropical_cyclone: '<path d="M3 8h10a3 3 0 1 0-3-3"/><path d="M3 12h14a3 3 0 1 1-3 3"/><path d="M3 16h7"/>',
+  midlat_cyclone: '<circle cx="12" cy="12" r="8.5"/><path d="M10 8v7.5h5"/>',
+};
+function typeIcon(etype) {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"'
+    + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + (TYPE_ICONS[etype] || '') + '</svg>';
+}
+/* one chip component for every static type tag (lane headers, verdict strip,
+   chart captions): soft lane ground + ink text + lane glyph. */
+function typeChipHtml(etype) {
+  const tm = TYPE_META[etype] || {};
+  return `<span class="type-chip" data-etype="${esc(etype)}">${typeIcon(etype)}`
+    + `<span>${esc(tm.short || etype)}</span></span>`;
+}
 
 /* Owner 2026-11-07: empty lanes are legitimate (freezes may be empty at p15).
    Criteria wording mirrors ewb_live/events/temperature.py + ar.py thresholds —
@@ -603,31 +645,82 @@ function saveState() {
 function setTab(id) {
   state.tab = id; saveState(); renderControls(); renderAll();
   if (window.MergedMap) MergedMap.onTabChange(id);
+  syncUrl(false);   // the type filter is URL state, like Region and the date (2026-11-17)
+}
+
+/* tablist keyboard: roving tabindex, Arrow/Home/End move focus (manual
+   activation — Enter/Space/click select; arrows alone never re-render) */
+function tabsKeyNav(e) {
+  const tabsEl = $('#type-tabs');
+  if (!tabsEl.contains(e.target) || e.target.getAttribute('role') !== 'tab') return;
+  const list = [...tabsEl.querySelectorAll('[role=tab]')];
+  const i = list.indexOf(e.target);
+  let j = null;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') j = (i + 1) % list.length;
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') j = (i - 1 + list.length) % list.length;
+  else if (e.key === 'Home') j = 0;
+  else if (e.key === 'End') j = list.length - 1;
+  if (j === null) return;
+  e.preventDefault();
+  list[j].focus();
+  const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  list[j].scrollIntoView({ block: 'nearest', inline: 'nearest', behavior });
+}
+
+/* edge fades on the scrollable tab row (same discovery pattern as the scorecard
+   tables): a fade only on the side that actually has more content */
+function tabsToggleFade() {
+  const t = $('#type-tabs');
+  const over = t.scrollWidth - t.clientWidth > 4;
+  t.classList.toggle('fade-l', over && t.scrollLeft > 4);
+  t.classList.toggle('fade-r', over && t.scrollLeft < t.scrollWidth - t.clientWidth - 4);
 }
 
 function renderControls() {
   const tabs = $('#type-tabs');
+  /* The event-type filter is the one page-wide control: it narrows the map
+     (layers + boxes), the timeline, the event list and the scorecard together.
+     A real tablist (owner 2026-11-17): aria-selected + aria-controls naming
+     what it changes, roving tabindex, Arrow/Home/End move focus and Enter/
+     Space select — manual activation, because arrows must not re-render the
+     whole page. A zero tab stays selectable and says why in its tooltip. */
+  const wasFocus = tabs.contains(document.activeElement);
   tabs.innerHTML = '';
-  /* Toggle buttons, not tabs: the choice narrows the map layers, the timeline,
-     the event list and the scorecard all at once, so there is no single panel a
-     tab could control (APG tabs would need one tabpanel + aria-controls + a
-     roving tabindex for a filter that acts on four regions of the page).
-     aria-pressed on a labelled group says exactly what this is. */
-  const mkTab = (id, label, tip) => {
-    const b = el('button', state.tab === id ? 'on' : '', label);
+  const inReg = (e) => state.region === 'global' || inRegion(e);
+  const mkTab = (id, tabLabel, n, iconKey) => {
+    const b = el('button', 'etype-tab' + (iconKey === 'all' ? ' is-all' : '')
+      + (n === 0 ? ' zero' : ''),
+      typeIcon(iconKey) + `<span class="t-label">${esc(tabLabel)}</span>`
+      + `<span class="n">${n}</span>`);
     b.type = 'button';
-    b.setAttribute('aria-pressed', String(state.tab === id));
-    if (tip) b.title = tip;
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-controls', 'explore scorecard-sec');
+    b.setAttribute('aria-selected', String(state.tab === id));
+    b.tabIndex = state.tab === id ? 0 : -1;
+    /* accessible name = the visible text ("Heat wave 15"): the count rides the
+       name, and axe's label-content-name-mismatch stays honest. The long label
+       and the one-line detection rule (About copy) ride the tooltip. */
+    const rule = id === 'all'
+      ? 'Every event published this window, all types.' : (TYPE_META[id].rule || '');
+    const why = n === 0 ? (id === 'tropical_cyclone' ? tcEmptyNote() + ' '
+      : `No ${TYPE_META[id] ? TYPE_META[id].label.toLowerCase() : tabLabel.toLowerCase()}`
+        + ' met the criteria this window. ') : '';
+    b.title = (id === 'all' ? '' : (TYPE_META[id].label + ' — ')) + why + rule;
+    if (TYPE_GROUP_START.has(id)) b.dataset.div = '1';
+    b.dataset.tab = id;
+    b.dataset.etype = id;   // CSS maps the lane hue onto the glyph ("all" stays neutral)
     b.onclick = () => setTab(id);
     tabs.appendChild(b);
   };
-  const inReg = (e) => state.region === 'global' || inRegion(e);
-  mkTab('all', `All <span class="n">${state.events.filter(inReg).length}</span>`);
+  mkTab('all', 'All', state.events.filter(inReg).length, 'all');
   for (const t of TYPE_ORDER) {
     const n = state.events.filter((e) => e.event_type === t && inReg(e)).length;
-    /* a zero badge on the TC lane carries the honest-zero note as a tooltip */
-    const tip = (t === 'tropical_cyclone' && n === 0) ? tcEmptyNote() : '';
-    mkTab(t, `<i class="type-dot" style="background:${TYPE_META[t].color}"></i>${TYPE_META[t].label} <span class="n">${n}</span>`, tip);
+    mkTab(t, TYPE_TAB_LABEL[t] || TYPE_META[t].short, n, t);
+  }
+  tabsToggleFade();
+  if (wasFocus) {   // keyboard focus must survive a re-render (tab click, region switch)
+    const sel = tabs.querySelector('[aria-selected="true"]');
+    if (sel) sel.focus();
   }
 
   const pills = $('#model-pills');
@@ -909,7 +1002,7 @@ function renderVerdictStrip(idx) {
   if (!parts.length) { host.hidden = true; host.innerHTML = ''; return; }
   host.hidden = false;
   host.innerHTML = parts.map((p) => {
-    const chip = `<span class="type-chip" style="background:${TYPE_META[p.etype].color}">${esc(TYPE_META[p.etype].short)}</span>`;
+    const chip = typeChipHtml(p.etype);
     const sign = p.meanRel >= 0 ? '+' : '';
     const txt = `<b>${esc(p.model)}</b> best · ${sign}${p.meanRel.toFixed(1)}% vs ${esc(B)}` +
       ` · won ${p.cells}/${p.total} cells`;
@@ -1015,7 +1108,7 @@ function renderScorecard() {
     const block = el('div', 'sc-block');
     const smallLane = nEv > 1 && nEv < minSample();
     block.appendChild(el('h3', '',
-      `<span class="type-chip" style="background:${TYPE_META[etype].color}">${esc(TYPE_META[etype].short)}</span>` +
+      typeChipHtml(etype) +
       `${nEv} event${nEv === 1 ? '' : 's'}` +
       (nEv === 1 ? ' · indicative' : smallLane ? ' · small sample' : '')));
 
@@ -1415,7 +1508,7 @@ function renderSkillCharts() {
     if (!metrics.length) continue;
     const block = el('div', 'etype-block');
     block.appendChild(el('h3', '',
-      `<span class="type-chip" style="background:${TYPE_META[etype].color}">${esc(TYPE_META[etype].short)}</span>mean over events`));
+      typeChipHtml(etype) + 'mean over events'));
     const grid = el('div', '');
     grid.id = 'skill-grid-' + etype;
     block.appendChild(grid);
@@ -1767,6 +1860,7 @@ function syncUrl(push) {
   if (state.detailLayers) params.lyr = state.detailLayers;
   if (state.detailDay != null) params.day = state.detailDay;
   if (state.region && state.region !== 'global') params.region = state.region;
+  if (state.tab && state.tab !== 'all') params.tab = state.tab;   // type filter is shareable state
   // the merged global map's #map/#layers/#sel ride along so Back from a
   // detail restores the slider/selection state (URL is the source of truth)
   if (window.MergedMap) Object.assign(params, MergedMap.urlParams());
@@ -1844,7 +1938,6 @@ function renderEventTable() {
     n += 1;
     if (drawn >= EVENT_TABLE_MAX_ROWS) continue;   // count all, render a bounded prefix
     drawn += 1;
-    const tm = TYPE_META[ev.event_type] || { color: '#999' };
     const peakUnitFull = ev.details?.peak_value_units
       || (ev.event_type === 'atmospheric_river' ? 'kg m⁻¹ s⁻¹' : '°C');
     // DR2 minor: column-abbreviated unit so Peak isn't clipped at 1440; full unit in title
@@ -1873,7 +1966,7 @@ function renderEventTable() {
     const short = (iso) => fmtDate(iso).replace(/, \d{4}$/, '');
     const days = eventDurationDays(ev);
     tr.innerHTML =
-      `<td><span class="type-dot" style="background:${tm.color}" title="${esc(ev.event_type.replace('_', ' '))}"></span></td>` +
+      `<td><span class="type-ic" data-etype="${esc(ev.event_type)}" title="${esc(ev.event_type.replace('_', ' '))}">${typeIcon(ev.event_type)}</span></td>` +
       `<td><span class="ev-name">${esc(eventName(ev))}</span>` +
       `<span class="ev-sub">${short(ev.start)} \u2013 ${short(eventLastDay(ev))}${days ? ` \u00b7 ${days} day${days === 1 ? '' : 's'}` : ''}` +
       `<span class="ev-live" hidden> \u00b7 on map now</span></span></td>` +
@@ -2482,6 +2575,17 @@ async function boot() {
   window.addEventListener('scroll', syncRailSoon, { passive: true });
   window.addEventListener('resize', syncRailSoon);
   syncRailSoon();
+  /* Show-tabs: tablist keyboard + wheel-over-row horizontal scroll + edge fades
+     (the row never wraps: one tidy scrollable line beats a ragged grid) */
+  $('#type-tabs').addEventListener('keydown', tabsKeyNav);
+  $('#type-tabs').addEventListener('scroll', tabsToggleFade, { passive: true });
+  $('#type-tabs').addEventListener('wheel', (e) => {
+    const t = e.currentTarget;
+    if (t.scrollWidth - t.clientWidth > 4 && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      t.scrollLeft += e.deltaY; e.preventDefault();
+    }
+  }, { passive: false });
+  window.addEventListener('resize', tabsToggleFade, { passive: true });
   /* RAIL (after owb.brightband.com): one toggle button, two jobs — it collapses the
      220 px column to a 58 px glyph rail on desktop and closes the drawer below 1100px,
      which is the width where the column becomes a drawer (a CSS breakpoint). */
@@ -2632,6 +2736,15 @@ async function boot() {
       setHashParam('lead', null);
       pendingNote = 'That event is not in the current 90-day window (events roll over weekly) — showing the catalog.';
     }
+    /* Type filter from the URL (#tab=): the URL wins over the stored
+       preference; an unknown value never survives in the address bar. */
+    {
+      const urlTab = hashParams().tab;
+      if (urlTab != null) {
+        if (urlTab === 'all' || TYPE_META[urlTab]) state.tab = urlTab;
+        else setHashParam('tab', null);
+      }
+    }
     /* Region from the URL (#region=), validated against the data contract: a deep
        link restores the region view; an unknown key is dropped from the URL and
        never silently kept (URL/state must agree after boot). The region file is
@@ -2671,6 +2784,20 @@ async function boot() {
      (popstate) and a pasted/edited #event=… link (hashchange). App-initiated
      pushState/replaceState fire neither, so this never echoes. */
   const syncFromLocation = () => {
+    /* The Show tab follows the URL on Back/Forward (and pasted #tab= links).
+       syncUrl writes the tab from state, so an invalid value rewrites itself
+       out via the next state write; here it just falls back to All. */
+    const tabP = hashParams().tab;
+    if (tabP !== undefined) {
+      const valid = tabP === 'all' || TYPE_META[tabP];
+      if (!valid) setHashParam('tab', null);   // an unknown value never survives the address bar
+      const want = valid ? tabP : 'all';
+      if (want !== state.tab) {
+        state.tab = want; saveState();
+        renderControls(); renderAll();
+        if (window.MergedMap) MergedMap.onTabChange(want);
+      }
+    }
     /* Region follows the URL on Back/Forward (and pasted #region= links) without
        writing back; an unknown or dropped key falls back to Global. */
     const reg = hashParams().region || 'global';
