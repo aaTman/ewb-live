@@ -12,9 +12,11 @@ Product / run policy
     run with ``product="early"|"late"|"final"`` (Final lags ~3.5 months, so it cannot cover a
     rolling window). Granules are one per UTC day, ~26 MB each:
     ``3B-DAY-{E,L}.MS.MRG.3IMERG.<YYYYMMDD>-S000000-E235959.V07C.nc4``. Measured latencies
-    (CMR ``ProviderDates``, 2026-11-16): Early daily D+1 04:29Z, Late daily D+1 14:29Z, Late
-    half-hourly was ~2.5 days behind at the head — so the daily products are the ones that
-    can carry a rolling 90-day window.
+    (CMR ``ProviderDates``, re-checked 2026-11-17): Early daily D+1 04:29Z, Late daily
+    D+1 14:29Z, and both runs published through D-2 at the time of writing, so ``auto``
+    rarely pays for the Early run. Final daily has no granules for the recent window at all
+    (0 CMR hits for 2026-11-04..11-18), as its ~3.5-month latency implies — so the daily
+    products are the ones that can carry a rolling 90-day window.
 
 Grid / units
     0.1° cell-centred global grid exactly as carried by the granule (1800 lat −89.95…89.95
@@ -327,7 +329,9 @@ def survey(start: dt.date, end: dt.date, *, product: str = DEFAULT_PRODUCT,
             "temporal": f"{start:%Y-%m-%dT%H:%M:%SZ},{end:%Y-%m-%dT%H:%M:%SZ}",
             "page_size": page_size,
             "page_num": page,
-            "sortable": "start_date,K",
+            # NOTE: no `sortable` — CMR answers HTTP 400 "Parameter [sortable] was not
+            # recognized" for these collections, which failed every survey. The result is
+            # keyed by day below, so the order does not matter.
         }
         payload = json.loads(_http_get(CMR_SEARCH_URL + "?" + urllib.parse.urlencode(params),
                                        tries=DOWNLOAD_TRIES))
@@ -351,6 +355,8 @@ def survey(start: dt.date, end: dt.date, *, product: str = DEFAULT_PRODUCT,
         if not url:
             continue
         archive = ((u.get("DataGranule") or {}).get("ArchiveAndDistributionInformation") or [{}])
+        # CMR's umm_json does not populate Size for these granules (measured 2026-11-17),
+        # so 0.0 means "unknown" and the disk projection falls back to EST_RAW_BYTES.
         produced = next((p.get("Date", "") for p in u.get("ProviderDates", [])
                          if p.get("Type") == "Update"), "")
         out[day] = Granule(day=day, granule_ur=u.get("GranuleUR") or Path(url).name, url=url,
@@ -1451,21 +1457,18 @@ def _require_ewb() -> None:  # pragma: no cover - trivial
     require_ewb_host()
 
 
-def _days_arg(args) -> tuple[dt.date, dt.date]:
+def _days_arg(args, now: dt.datetime | None = None) -> tuple[dt.date, dt.date]:
+    """--start/--end, or the last ``--days`` UTC days (inclusive of today)."""
+    today = (now or dt.datetime.now(dt.timezone.utc)).date()
     if getattr(args, "start", None):
         start = dt.date.fromisoformat(args.start)
     else:
-        start = dt.date.fromtimestamp(time.time(), dt.timezone.utc) - dt.timedelta(days=args.days - 1)
+        start = today - dt.timedelta(days=args.days - 1)
     if getattr(args, "end", None):
         end = dt.date.fromisoformat(args.end)
     else:
-        end = dt.date.fromtimestamp(time.time(), dt.timezone.utc)
+        end = today
     return start, end
-
-
-def imerg_daily_mb(n_days: int) -> float:
-    """Rough GB of compressed daily fields for ``n_days`` days (for CLI reporting)."""
-    return n_days * EST_DAILY_BYTES / 1e9
 
 
 def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover - CLI
@@ -1519,21 +1522,21 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover - CLI
             f"(route={args.route})")
         granules, gaps = survey_window(start, end, product=args.product)
         days = _daterange(start, end)
-        sizes = sum(g.size_mb for g in granules.values())
         runs: dict[str, int] = {}
         for gran in granules.values():
             runs[gran.product] = runs.get(gran.product, 0) + 1
-        log(f"published granules: {len(granules)} of {len(days)} days "
-            f"({runs}), {sizes / 1000:.2f} GB raw; gaps: {gaps or 'none'}")
-        need = project_window(days, granules, batch_days=args.batch_days or DEFAULT_BATCH_DAYS)["net"]
+        proj = project_window(days, granules, batch_days=args.batch_days or DEFAULT_BATCH_DAYS)
         free = free_bytes(root)
-        fits = free - need >= args.min_free_bytes
-        log(f"projected sizes: raw {sizes / 1000:.2f} GB per full backfill "
+        fits = free - proj["net"] >= args.min_free_bytes
+        log(f"published granules: {len(granules)} of {len(days)} days "
+            f"({runs}); gaps: {gaps or 'none'}")
+        log(f"projected sizes: raw total {proj['raw_total'] / 1e9:.2f} GB "
             f"(kept: last {args.keep_raw} days), daily store "
-            f"~{imerg_daily_mb(len(granules)):.2f} GB for {len(granules)} days "
-            f"(~12 MB/day compressed) + status.json")
+            f"~{proj['daily_new'] / 1e9:.2f} GB for {len(granules)} days "
+            f"(~12 MB/day compressed) + status.json; peak during the run "
+            f"~{proj['net'] / 1e9:.2f} GB in {proj['batches']} batch(es) of {proj['batch_days']} days")
         log(f"disk: {free / 1e9:.2f} GB free on {daily_dir(root).parent}, this window needs "
-            f"~{need / 1e9:.2f} GB and {args.min_free_bytes / 1e9:.2f} GB must stay free -> "
+            f"~{proj['net'] / 1e9:.2f} GB and {args.min_free_bytes / 1e9:.2f} GB must stay free -> "
             f"{'fits' if fits else 'WILL NOT FIT'}")
         if args.dry_run:
             if not fits:
@@ -1541,7 +1544,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover - CLI
                     "--min-free-bytes overrides deliberately")
             return 0
         if not fits:
-            log(ImergError(f"refusing to fetch: {need / 1e9:.2f} GB needed, only "
+            log(ImergError(f"refusing to fetch: {proj['net'] / 1e9:.2f} GB needed, only "
                            f"{free / 1e9:.2f} GB free (floor {args.min_free_bytes / 1e9:.2f} GB)"))
             return 5
         if earthdata_credentials() is None:
@@ -1578,7 +1581,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover - CLI
     if creds is None:
         print(ImergAuthError(_AUTH_STEPS))
         return 3
-    end = dt.date.fromtimestamp(time.time(), dt.timezone.utc)
+    end = dt.datetime.now(dt.timezone.utc).date()
     granules, _ = survey_window(end - dt.timedelta(days=3), end)
     if not granules:
         print("credentials found, but CMR reports no recent granules — unexpected")

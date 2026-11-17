@@ -7,6 +7,7 @@ download step is injected. Network fetches are exercised by
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import json
 from pathlib import Path
@@ -367,6 +368,16 @@ def test_load_rejects_mixed_grids_and_empty_window(cache):
 # ------------------------------------------------------------------ rolling window
 
 
+def test_days_arg_window_math():
+    """Regression: the CLI used ``date.fromtimestamp(ts, tz)``, which does not exist
+    (only ``datetime.fromtimestamp`` takes a tz) — every CLI invocation died on it."""
+    now = dt.datetime(2026, 11, 17, 3, 30, tzinfo=dt.timezone.utc)
+    assert imerg._days_arg(argparse.Namespace(days=7, start=None, end=None), now) \
+        == (dt.date(2026, 11, 11), dt.date(2026, 11, 17))
+    assert imerg._days_arg(argparse.Namespace(days=90, start="2026-01-01", end="2026-01-05"),
+                           now) == (dt.date(2026, 1, 1), dt.date(2026, 1, 5))
+
+
 def test_daily_file_round_trips_grid_attr(tmp_path):
     """Regression: the per-file grid summary was a dict, which h5netcdf refuses to write,
     so *no* daily file could be produced. It must write, reopen and stay parseable."""
@@ -473,6 +484,21 @@ def test_ingest_batches_roll_raw_between_them(cache):
 
 
 # --------------------------------------------------- AWS Open Data S3 transport plumbing
+
+
+def test_survey_query_is_one_cmr_accepts(monkeypatch):
+    """Regression: CMR answers HTTP 400 "Parameter [sortable] was not recognized" for the
+    IMERG daily collections, which made every survey fail before a single granule list."""
+    seen = []
+
+    def fake_get(url, opener=None, **kw):
+        seen.append(url)
+        return json.dumps({"hits": 0, "items": []}).encode()
+
+    monkeypatch.setattr(imerg, "_http_get", fake_get)
+    assert imerg.survey(DAY1, DAY1, product="late") == {}
+    assert len(seen) == 1 and "sortable" not in seen[0]
+    assert "short_name=GPM_3IMERGDL" in seen[0] and "temporal=" in seen[0]
 
 
 def test_s3_key_maps_a_gesdisc_url_to_the_mirror_key():
