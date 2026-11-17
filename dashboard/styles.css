@@ -27,6 +27,12 @@
   --series-heat:          #c6493c;  --series-heat-soft:     #f1d5d2;
   --series-freeze:        #1a4f96;  --series-freeze-soft:   #cbd7e6;
   --series-ar:            #2e7d32;  --series-ar-soft:       #d0e4d1;  /* AR green (design 2026-11-08, measured 5.13:1) */
+  /* TC violet (tc lane 2026-11-16): 6.51:1 on paper. Chosen so the four lane
+     hues stay separated by BOTH hue and lightness — freeze L* 34.0 < TC 39.8
+     < AR 46.3 ≈ heat 48.4. Violet reads apart from red/green/blue for every
+     common CVD type. Not a map-fill lane, so the AR < freeze < heat fill
+     ladder is untouched. */
+  --series-tc:            #6f42c1;  --series-tc-soft:       #e0d5f2;
   --series-alt:           #4f8c1f;  --series-alt-soft:      #d7e4cb;
   --series-unknown:       #848475;  --series-unknown-soft:  #e2e2de;
   --stone-grey:           #848475;
@@ -74,6 +80,7 @@
   --heat:   var(--series-heat);
   --freeze: var(--series-freeze);
   --ar:     var(--series-ar);
+  --tc:     var(--series-tc);
   --shadow: 0 1px 2px rgba(38, 38, 32, .06);
   --mono: var(--font-mono);
 
@@ -108,6 +115,7 @@ html[data-theme="dark"] {
   --series-heat:          #f57160;  --series-heat-soft:     #4a332e;  /* L* 63.4 */
   --series-freeze:        #4d73bf;  --series-freeze-soft:   #2d3c52;  /* L* 49.0 */
   --series-ar:            #66bb6a;  --series-ar-soft:       #2e4434;  /* AR green dark (design 2026-11-08, 6.40:1) */
+  --series-tc:            #b39ddb;  --series-tc-soft:       #3a2f52;  /* TC violet dark: 6.31 on dark paper, 6.98 on the dark map ocean */
   --series-alt:           #78b447;  --series-alt-soft:      #33402a;
   --series-unknown:       #acab9c;  --series-unknown-soft:  #3b3b34;
   --stone-grey:           #acab9c;
@@ -136,6 +144,7 @@ html[data-theme="dark"] {
   --heat:   var(--series-heat);
   --freeze: var(--series-freeze);
   --ar:     var(--series-ar);
+  --tc:     var(--series-tc);
   --shadow: 0 1px 4px rgba(0, 0, 0, .40);
 
   --warn-ink: #e0b95f;  --warn-bg: #332e1c;  --warn-border: #55492a;
@@ -1077,3 +1086,53 @@ header.top { min-height: 78px; }        /* measured settled height: 24 pad + 26/
 .deeplink .explore { margin: 0; }
 .detail-open .explore { margin: 0; gap: 0; }
 .deeplink main { min-height: 100vh; }
+
+/* ==========================================================================
+   tc lane (2026-11-16): best-track panel in the event detail view
+   (dashboard/trackviz.js). The TC lane has no viz.json asset — it carries its
+   own geometry in details.track — so it gets its own small map. It reuses the
+   merged-map grounds (--map-ocean / --paper / --map-line) so it reads as the
+   same product, and the violet ramp tokens below are the lane's single hue
+   (darker = stronger wind in light, brighter = stronger in dark, the same
+   direction rule as the duration ramps).
+   ========================================================================== */
+:root {
+  /* intensity bins (kt): <34 depression · 34-63 TS · 64-83 CAT1 · 84-112 CAT2-3 · 113+ CAT4-5
+     measured on the light map grounds (#eef4f8 ocean / #ffffff land):
+     3.49 4.64 6.72 10.46 15.69 — every bin clears the 3:1 non-text floor */
+  --tc-bin-1: #9371c6;  --tc-bin-2: #8763ba;  --tc-bin-3: #5f35a3;  --tc-bin-4: #45227f;  --tc-bin-5: #2b0f55;
+}
+html[data-theme="dark"] {
+  /* dark mirrors the direction (extremes brightest); measured on #0e1620 ocean / #262626 land:
+     3.22 4.28 6.59 9.27 13.35 */
+  --tc-bin-1: #7a55ab;  --tc-bin-2: #9670c8;  --tc-bin-3: #b18cd8;  --tc-bin-4: #c9aee8;  --tc-bin-5: #e7d6fb;
+}
+.tv-root { margin: 0; }
+.tv-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  font-size: var(--text-sm); color: var(--text-dim); margin-bottom: 6px; }
+.tv-head b { font-size: var(--text-base); font-weight: 500; color: var(--text); }
+.tv-map-wrap { position: relative; background: var(--map-ocean); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden; }
+.tv-map-wrap svg { display: block; max-width: 100%; }
+.tv-sphere { fill: var(--map-ocean); stroke: var(--map-line); stroke-width: 1; }
+.tv-land { fill: var(--paper); stroke: var(--map-line); stroke-width: .6; }
+.tv-grat { fill: none; stroke: var(--map-line); stroke-width: .4; opacity: .35; }
+/* the track polyline itself is stroked in the lane colour (fixed by TrackViz);
+   the faded under-draw is the pre/post-qualifying life */
+.tv-line-qual { fill: none; stroke: var(--series-tc); stroke-width: 1.6; stroke-linejoin: round; opacity: .95; }
+.tv-line-pre { fill: none; stroke: var(--series-tc); stroke-width: 1.2; stroke-dasharray: 3 3; opacity: .45; }
+.tv-fix { stroke: var(--paper); stroke-width: .8; cursor: crosshair; }
+.tv-fix-out { stroke: var(--paper); stroke-width: .6; opacity: .5; }
+.tv-fix-peak { stroke: var(--paper); stroke-width: 1.6; }
+.tv-lab { font-family: var(--font-mono); font-size: 11px; fill: var(--text); paint-order: stroke;
+  stroke: var(--paper); stroke-width: 2.5px; stroke-linejoin: round; }
+.tv-tip { position: absolute; pointer-events: none; z-index: 3; max-width: 240px;
+  background: var(--paper); color: var(--text); border: 1px solid var(--border-strong);
+  border-radius: 6px; padding: 6px 8px; font-size: var(--text-xs); line-height: 1.45;
+  box-shadow: var(--shadow); transform: translate(-50%, -100%); }
+.tv-tip[hidden] { display: none; }
+.tv-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px;
+  font-size: var(--text-xs); color: var(--text-dim); }
+.tv-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.tv-sw { width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--border); }
+.tv-note { font-size: var(--text-xs); color: var(--ink-muted); margin: 6px 0 0; }

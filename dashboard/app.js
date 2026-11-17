@@ -2086,7 +2086,7 @@ function selectEvent(id, fromMap, nav) {
 
   const vizHost = $('#detail-viz');
   /* Track lanes (tropical_cyclone, tc 2026-11-16) carry their own geometry in
-     details.track (shared 5-slot row schema, see notes/channel_new_events.md)
+     details.track (shared 5-slot row schema, documented in the tc lane module)
      and have no viz.json asset: draw the best-track map instead of loading an
      event visual. One renderer serves every lane that publishes a track. */
   if (vizHost && window.TrackViz && Array.isArray(ev.details?.track) && ev.details.track.length) {
