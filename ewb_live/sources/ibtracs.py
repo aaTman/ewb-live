@@ -270,6 +270,46 @@ def load_tracks(start: dt.date | dt.datetime, end: dt.date | dt.datetime,
     return fill_basin(df).sort_values(["sid", "time"]).reset_index(drop=True)
 
 
+def source_status(as_of: dt.datetime | None = None) -> dict | None:
+    """Coverage of the cached archive for the UI's honest zero (2026-11-17).
+
+    IBTrACS publication lags real time by days-to-weeks, so an empty
+    tropical-cyclone lane must be distinguishable from "no cyclones
+    happened": the pipeline publishes this block into meta.json and the
+    dashboard quotes the archive's reach (latest fix + lag) whenever the
+    lane prints zero. Reads ONLY the parquet time column (fail-soft) — this
+    must never trigger a download or fail a publish.
+
+    Returns ``{"latest_fix", "lag_days", "cache_age_h", "note"}`` or None
+    when no readable cache exists (the publish records the null explicitly,
+    so "lane ran but archive unreachable" stays visible to the UI).
+    """
+    p = cache_path()
+    if not p.exists():
+        return None
+    try:
+        import pyarrow.parquet as pq
+
+        times = pq.read_table(p, columns=["time"]).column("time").to_pandas()
+        latest = pd.to_datetime(times, errors="coerce", utc=True).max()
+        if pd.isna(latest):
+            return None
+        mtime = dt.datetime.fromtimestamp(p.stat().st_mtime, dt.timezone.utc)
+    except Exception as exc:  # noqa: BLE001 — honesty note, not a dependency
+        logger.warning("ibtracs: source_status unreadable (%s)", exc)
+        return None
+    now = as_of or dt.datetime.now(dt.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=dt.timezone.utc)
+    latest = latest.to_pydatetime()
+    return {
+        "latest_fix": latest.astimezone(dt.timezone.utc).isoformat(),
+        "lag_days": round(max(0.0, (now - latest).total_seconds() / 86400.0), 1),
+        "cache_age_h": round((now - mtime).total_seconds() / 3600.0, 1),
+        "note": "IBTrACS best-track publication lags real time by days to weeks",
+    }
+
+
 def basin_name(code: str) -> str:
     return BASIN_NAMES.get((code or "").strip().upper(),
                            (code or "unassigned basin").strip() or "unassigned basin")

@@ -175,6 +175,53 @@ def test_basin_name_known_and_unknown():
     assert ibtracs.basin_name("ZZ") == "ZZ"
 
 
+# ------------------------------------------------------- source_status ----
+# (honest zero, 2026-11-17: an empty TC lane must be explainable by the
+# archive's own reach — meta.json quotes these fields; the UI prints them.)
+def _cache_with(tmp_path, monkeypatch, df):
+    monkeypatch.setenv("EWB_LIVE_IBTRACS_CACHE", str(tmp_path))
+    p = ibtracs.cache_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(p, index=False)
+    return p
+
+
+def test_source_status_reports_the_archive_reach(tmp_path, monkeypatch):
+    df = ibtracs.parse_csv(csv_bytes([
+        row(i=0, ISO_TIME="2026-11-11 18:00:00"),
+        row(i=1, ISO_TIME="2026-11-12 12:00:00")]))
+    _cache_with(tmp_path, monkeypatch, df)
+    st = ibtracs.source_status(as_of=dt.datetime(2026, 11, 17, 12,
+                                                 tzinfo=dt.timezone.utc))
+    assert st is not None
+    assert st["latest_fix"].startswith("2026-11-12T12:00")
+    assert st["lag_days"] == 5.0          # 2026-11-12 12:00 -> 2026-11-17 12:00
+    assert "lags" in st["note"]
+
+
+def test_source_status_none_without_cache(tmp_path, monkeypatch):
+    monkeypatch.setenv("EWB_LIVE_IBTRACS_CACHE", str(tmp_path / "none"))
+    assert ibtracs.source_status() is None
+
+
+def test_source_status_none_on_a_torn_cache(tmp_path, monkeypatch):
+    monkeypatch.setenv("EWB_LIVE_IBTRACS_CACHE", str(tmp_path))
+    ibtracs.cache_path().write_bytes(b"not a parquet")
+    assert ibtracs.source_status() is None
+
+
+def test_source_status_never_downloads(tmp_path, monkeypatch):
+    """The freshness probe is read-only: a cache hit must not touch urllib."""
+    df = ibtracs.parse_csv(csv_bytes([row(i=0)]))
+    _cache_with(tmp_path, monkeypatch, df)
+
+    def boom(*a, **k):
+        raise AssertionError("source_status must not download")
+
+    monkeypatch.setattr(ibtracs.urllib.request, "urlopen", boom)
+    assert ibtracs.source_status() is not None
+
+
 def test_atlantic_basin_is_derived_from_the_genesis_fix():
     """v04r01 ships BASIN EMPTY for the whole North Atlantic. Without a
     fallback a third of the season prints "unassigned basin" in the UI; the

@@ -642,6 +642,7 @@
   }
   function layersForTab(tab) {                 // the page's type filter narrows the raw layers too
     const key = { heat_wave: 'h', freeze: 'f', atmospheric_river: 'a' }[tab];
+    if (!key && tab !== 'all') return;         // track lanes have no raw layer: keep the user's choice
     for (const L of LAYERS) on[L.key] = !key || L.key === key;
   }
 

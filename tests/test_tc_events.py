@@ -294,3 +294,78 @@ def test_recurling_storm_keeps_its_modal_basin():
     ev = storm_to_event(SID, f)
     assert ev.details["basin"] == "NA"
     assert ev.details["basin_name"] == "North Atlantic"
+
+
+# ------------------------------------------------------- window clamping --
+# (2026-11-17: detect_events clamps rasters to the ERA5 truth cutoff; the TC
+# lane reads IBTrACS, not ERA5 — the clamp was silently erasing the last ~6
+# days of storms from the "90-day" window every week.)
+def test_tc_window_is_not_clamped_by_the_truth_cutoff(tmp_path, monkeypatch):
+    import ewb_live.events as ev_pkg
+    from ewb_live.events import temperature
+
+    ev = storm_to_event(SID, fixes())
+    calls = {}
+
+    def fake_tc(s, e):
+        calls["tc"] = (s, e)
+        return [ev]
+
+    def fake_temp(s, e, et, **k):
+        calls["temp"] = (s, e)
+        return []
+    monkeypatch.setattr(tc, "scan_tc_events", fake_tc)
+    monkeypatch.setattr(temperature, "scan_temperature_events", fake_temp)
+    cut = dt.datetime(2026, 9, 30, 23, tzinfo=dt.timezone.utc)
+    monkeypatch.setattr(ev_pkg, "truth_cutoff", lambda: cut)
+
+    start, end = dt.date(2026, 8, 1), dt.date(2026, 10, 15)
+    out = ev_pkg.detect_events(start, end,
+                               types=("heat_wave", "tropical_cyclone"),
+                               cache_dir=tmp_path, top_n=None)
+    assert calls["tc"] == (start, end)                     # track lane: full window
+    assert calls["temp"] == (start, dt.date(2026, 9, 30))  # raster: still clamped
+    assert any(e.event_type == "tropical_cyclone" for e in out)
+
+
+def test_track_lane_survives_a_window_entirely_past_the_cutoff(tmp_path, monkeypatch):
+    """ARCO lags ~6 days; a window that starts beyond the cutoff used to
+    return [] for EVERY lane — a live storm could never be published."""
+    import ewb_live.events as ev_pkg
+
+    ev = storm_to_event(SID, fixes())
+    monkeypatch.setattr(tc, "scan_tc_events", lambda s, e: [ev])
+    monkeypatch.setattr(ev_pkg, "truth_cutoff",
+                        lambda: dt.datetime(2026, 7, 1, tzinfo=dt.timezone.utc))
+    out = ev_pkg.detect_events(dt.date(2026, 8, 1), dt.date(2026, 10, 15),
+                               types=("tropical_cyclone",),
+                               cache_dir=tmp_path, top_n=None)
+    assert [e.id for e in out] == [ev.id]
+
+
+def test_raster_only_window_past_the_cutoff_still_returns_empty(tmp_path, monkeypatch):
+    import ewb_live.events as ev_pkg
+
+    def never():
+        raise AssertionError("raster scan must not run beyond the cutoff")
+    monkeypatch.setattr("ewb_live.events.temperature.scan_temperature_events", never)
+    monkeypatch.setattr(ev_pkg, "truth_cutoff",
+                        lambda: dt.datetime(2026, 7, 1, tzinfo=dt.timezone.utc))
+    out = ev_pkg.detect_events(dt.date(2026, 8, 1), dt.date(2026, 10, 15),
+                               types=("heat_wave",), cache_dir=tmp_path, top_n=None)
+    assert out == []
+
+
+# ------------------------------------------------ meta honesty glue -------
+def test_meta_ibtracs_block_is_fail_soft(monkeypatch):
+    from ewb_live import pipeline
+
+    monkeypatch.setattr("ewb_live.sources.ibtracs.source_status",
+                        lambda: {"latest_fix": "2026-11-12T12:00:00+00:00",
+                                 "lag_days": 5.2})
+    assert pipeline._ibtracs_meta()["lag_days"] == 5.2
+
+    def boom():
+        raise RuntimeError("noaa down")
+    monkeypatch.setattr("ewb_live.sources.ibtracs.source_status", boom)
+    assert pipeline._ibtracs_meta() is None    # null, never a failed publish

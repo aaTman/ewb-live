@@ -137,3 +137,75 @@ def test_screenshot(page):
     os.makedirs(SHOTS, exist_ok=True)
     page.screenshot(path=os.path.join(SHOTS, "fe-tc-detail.png"), full_page=True)
     assert page._errs == [], page._errs
+
+
+# ------------------------------------------------ honest zero (tc lane) --
+# Owner rule 2026-11-17 (from the live "0 tropical cyclones" report): an
+# empty tropical-cyclone lane must never print a bare 0. The three honest
+# states come from meta.json (pipeline.py): key absent = release predates
+# the lane; null = archive unreachable; dict = quote the archive's reach.
+def _zero_fixture(root, mutate_meta):
+    web = _fixture(root)
+    out = os.path.join(web, "data", "results")
+    p = os.path.join(out, "events_selected.json")
+    evs = [e for e in json.load(open(p)) if e["event_type"] != "tropical_cyclone"]
+    json.dump(evs, open(p, "w"))
+    mp = os.path.join(out, "meta.json")
+    meta = json.load(open(mp))
+    mutate_meta(meta)
+    json.dump(meta, open(mp, "w"))
+    return web
+
+
+@pytest.fixture()
+def zero_page(tmp_path_factory):
+    """Factory: dashboard with zero published TCs and a chosen meta.json."""
+    opened = []
+
+    def make(mutate_meta):
+        web = _zero_fixture(str(tmp_path_factory.mktemp("tz")), mutate_meta)
+        handler = lambda *a, **k: _Quiet(*a, directory=web, **k)  # noqa: E731
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        pw = sync_playwright().start()
+        b = pw.chromium.launch()
+        pg = b.new_page(viewport={"width": 1100, "height": 950})
+        errs: list[str] = []
+        pg.on("pageerror", lambda e: errs.append(str(e)))
+        pg.goto(f"http://127.0.0.1:{srv.server_address[1]}/index.html")
+        pg.wait_for_selector("#event-table tbody tr", timeout=20000)
+        pg.click('#type-tabs button:has-text("Tropical cyclones")')
+        pg.wait_for_selector("#event-table .lane-empty", timeout=20000)
+        opened.append((pw, pg, srv))
+        return pg
+
+    yield make
+    for pw, pg, srv in opened:
+        pg.close()
+        pw.stop()
+        srv.shutdown()
+
+
+def test_honest_zero_when_lane_absent_from_release(zero_page):
+    pg = zero_page(lambda m: m.pop("ibtracs", None))
+    assert "not published in this data release" in pg.inner_text("#event-table")
+    tip = pg.get_attribute('#type-tabs button:has-text("Tropical cyclones")', "title")
+    assert tip and "not published" in tip, "the 0 badge carries the reason"
+
+
+def test_honest_zero_reports_the_archive_reach(zero_page):
+    def mut(m):
+        m["ibtracs"] = {"latest_fix": "2026-11-12T12:00:00+00:00",
+                        "lag_days": 5.2, "cache_age_h": 1.0,
+                        "note": "IBTrACS best-track publication lags real time "
+                                "by days to weeks"}
+    pg = zero_page(mut)
+    body = pg.inner_text("#event-table")
+    assert "IBTrACS" in body and "2026-11-12" in body, body
+    tip = pg.get_attribute('#type-tabs button:has-text("Tropical cyclones")', "title")
+    assert tip and "IBTrACS" in tip
+
+
+def test_honest_zero_when_archive_unreachable(zero_page):
+    pg = zero_page(lambda m: m.update(ibtracs=None))
+    assert "unreachable" in pg.inner_text("#event-table")

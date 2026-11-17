@@ -35,7 +35,25 @@ const TYPE_CRITERIA = {
 };
 const emptyLaneLine = (t) => t === 'all'
   ? 'No events met the criteria this window'
+  : t === 'tropical_cyclone' ? tcEmptyNote()
   : `No ${TYPE_META[t].label.toLowerCase()} met the criteria this window`;
+
+/* Honest zero for the tropical-cyclone lane (owner rule 2026-11-17): a bare
+   "0" reads as "the sky was empty", but IBTrACS publishes with a lag of days
+   to weeks, and a data release can also predate the lane itself. meta.json
+   carries the truth (pipeline.py: meta.ibtracs) — say which it is. */
+function tcEmptyNote() {
+  const m = state.meta || {};
+  const ib = m.ibtracs;
+  if (!('ibtracs' in m)) {
+    return 'Tropical cyclones are not published in this data release yet — the IBTrACS lane goes live with a future weekly build.';
+  }
+  if (!ib) {
+    return 'The IBTrACS best-track archive was unreachable when this data was built, so tropical cyclones could not be checked this window.';
+  }
+  const d = String(ib.latest_fix || '').slice(0, 10);
+  return `No qualifying storm in the IBTrACS archive through ${d} — best-track publication lags real time (the archive runs ~${ib.lag_days} days behind today).`;
+}
 
 const MODEL_COLORS = {
   ifs_hres: '#8f9bb3', graphcast: '#4f8ff7', pangu_weather: '#21b8a0',
@@ -580,10 +598,11 @@ function renderControls() {
      tab could control (APG tabs would need one tabpanel + aria-controls + a
      roving tabindex for a filter that acts on four regions of the page).
      aria-pressed on a labelled group says exactly what this is. */
-  const mkTab = (id, label) => {
+  const mkTab = (id, label, tip) => {
     const b = el('button', state.tab === id ? 'on' : '', label);
     b.type = 'button';
     b.setAttribute('aria-pressed', String(state.tab === id));
+    if (tip) b.title = tip;
     b.onclick = () => setTab(id);
     tabs.appendChild(b);
   };
@@ -591,7 +610,9 @@ function renderControls() {
   mkTab('all', `All <span class="n">${state.events.filter(inReg).length}</span>`);
   for (const t of TYPE_ORDER) {
     const n = state.events.filter((e) => e.event_type === t && inReg(e)).length;
-    mkTab(t, `<i class="type-dot" style="background:${TYPE_META[t].color}"></i>${TYPE_META[t].label} <span class="n">${n}</span>`);
+    /* a zero badge on the TC lane carries the honest-zero note as a tooltip */
+    const tip = (t === 'tropical_cyclone' && n === 0) ? tcEmptyNote() : '';
+    mkTab(t, `<i class="type-dot" style="background:${TYPE_META[t].color}"></i>${TYPE_META[t].label} <span class="n">${n}</span>`, tip);
   }
 
   const pills = $('#model-pills');

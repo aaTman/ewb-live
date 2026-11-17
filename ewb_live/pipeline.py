@@ -38,6 +38,21 @@ RESULTS = Path("data/results")
 PUBLIC_META_DROP = ("perf", "host", "hostname")
 
 
+def _ibtracs_meta() -> "dict | None":
+    """TC-lane source freshness for meta.json (see run(): meta.ibtracs).
+
+    Fail-soft: a freshness note must never fail a publish; None is itself
+    the honest "archive unreachable" marker.
+    """
+    try:
+        from .sources.ibtracs import source_status
+
+        return source_status()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ibtracs source_status failed (meta.ibtracs=null): %s", exc)
+        return None
+
+
 def public_meta(meta: dict) -> dict:
     """meta.json payload with private-infrastructure keys removed (G-31)."""
     return {k: v for k, v in meta.items() if k not in PUBLIC_META_DROP}
@@ -728,6 +743,15 @@ def run(
     failed_after_retry: set[str] = set()
     last_sig = ""  # blocker sig from the most recent _write_outputs (untruncated)
 
+    # TC-lane source freshness for the UI's honest zero (owner rule
+    # 2026-11-17): an empty tropical_cyclone lane must be distinguishable
+    # from "no cyclones happened" — IBTrACS publication lags real time by
+    # days. Published in meta as `ibtracs`: a dict = the archive's reach;
+    # null = lane ran but the archive was unreachable; the KEY ABSENT means
+    # the release was built by pre-lane code (the UI says so instead of
+    # printing an unqualified 0).
+    ibtracs_meta = _ibtracs_meta()
+
     def _write_outputs(frames: list) -> int:
         """Concat + (re)write scores/scorecard/meta atomically. Called
         periodically during long runs so the dashboard updates progressively."""
@@ -789,6 +813,7 @@ def run(
                 "fallback": "ifs_hres_analysis",
                 "note": "ARCO lags ~6 days; events ending after the cutoff are scored against IFS HRES 0-h analysis",
             },
+            "ibtracs": ibtracs_meta,
             "climatology": _clim_meta(),
             # owner decision 2026-11-08 (G-40): documented deviation — the AR
             # lane keeps the upstream EWB mask filters verbatim and ADDS an
