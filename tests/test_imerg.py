@@ -329,6 +329,40 @@ def test_ingest_survives_real_https_urls(tmp_path):
     assert not list((tmp_path / "root" / "raw").rglob("*.nc4"))   # streaming, keep-raw 0
 
 
+def test_ingest_does_not_refetch_days_already_ingested(tmp_path):
+    """With keep-raw 0 nothing raw is on disk between runs, so "is this day done?" MUST
+    be answered from the daily file — the first steady-state check re-downloaded the
+    whole 90-day window (2.7 GB) to conclude every day was already stored. A day a
+    *better* run has since covered must still be re-fetched and upgraded."""
+    import dataclasses
+    days = [DAY1, DAY1 + dt.timedelta(days=1)]
+    remote, granules = fake_remote(tmp_path, days)
+    calls: list[str] = []
+
+    def counting(url, dest):
+        calls.append(url)
+        dest = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(Path(url).read_bytes())
+        return dest
+
+    root = tmp_path / "root3"
+    ingest(DAY1, days[-1], root=root, granules=granules, downloader=counting,
+           keep_raw=0, grid_deg=DEG, min_free=0)
+    assert len(calls) == 2
+    out = ingest(DAY1, days[-1], root=root, granules=granules, downloader=counting,
+                 keep_raw=0, grid_deg=DEG, min_free=0)
+    assert len(calls) == 2, "stored days must not be re-downloaded"
+    assert out["fetch"]["fetched"] == 0 and out["skipped_current"] == 2
+    assert [e["status"] for e in out["ingested"]] == ["already", "already"]
+    assert out["global_mean_mm_day"] == pytest.approx(12.0)
+    late = {d: dataclasses.replace(g, product="late") for d, g in granules.items()}
+    out = ingest(DAY1, days[-1], root=root, granules=late, downloader=counting,
+                 keep_raw=0, grid_deg=DEG, min_free=0)
+    assert out["fetch"]["fetched"] == 2          # Early → Late upgrade re-fetches
+    assert out["skipped_current"] == 0
+
+
 def test_fetch_reports_missing_and_survives_a_bad_download(cache):
     days = [DAY1, DAY1 + dt.timedelta(days=1)]
     remote, granules = fake_remote(tmp_path=cache, days=[days[0]])    # days[1]: no granule

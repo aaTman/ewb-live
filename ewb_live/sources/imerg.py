@@ -1233,9 +1233,11 @@ def ingest(start: dt.date, end: dt.date, *, root: str | Path | None = None,
            log: Callable[[str], None] | None = None) -> dict:
     """Survey → download → daily mm/day fields + completeness index, then roll the window.
 
-    Safe to re-run: existing granules and daily files are reused (``overwrite`` forces a
-    re-fetch/rebuild), an interrupted run resumes from its ``.part`` files, and a day that
-    a better run has since covered is rebuilt from that run (``product="auto"``).
+    Safe to re-run: a day whose daily field is already current is skipped outright (no
+    re-download — with ``keep_raw=0`` the raw granule is *never* the evidence that a day
+    is done), ``overwrite`` forces a re-fetch/rebuild, an interrupted run resumes from
+    its ``.part`` files, and a day a better run has since covered is rebuilt from that
+    run (``product="auto"``).
 
     The window is fetched in batches of ``batch_days`` days (default ``keep_raw + 2``) with
     ``raw/`` rolled between them, so peak usage stays at roughly one batch of granules plus
@@ -1246,15 +1248,49 @@ def ingest(start: dt.date, end: dt.date, *, root: str | Path | None = None,
     if granules is None:
         granules, _ = survey_window(start, end, product=product)
     batch_days = max(1, keep_raw + 2 if batch_days is None else batch_days)
-    pending = [d for d in days if d in granules and not raw_path(granules[d], root).exists()]
+    # A day only needs work when its daily field is absent, forced (--overwrite), or a
+    # better run has since been published (auto: the Early head becomes Late). Without
+    # this, keep-raw 0 made every re-run re-download the WHOLE window's raw (measured
+    # 2026-11-17: 2.7 GB re-fetched for a steady-state window that stores nothing raw).
+    status_days = _read_status(root)["days"]
+
+    def needs(day: dt.date) -> bool:
+        if day not in granules:
+            return False
+        if overwrite or not daily_path(day, root).exists():
+            return True
+        cached = (status_days.get(f"{day:%Y-%m-%d}") or {}).get("product")
+        return product == "auto" and cached not in (None, granules[day].product)
+
+    work = [d for d in days if needs(d) or d not in granules]   # unpublished days ride
+    # along so fetch() still records them as `missing` in status.json
+    needs_set = {d for d in work if d in granules}
+    pending = [d for d in work if d in granules and not raw_path(granules[d], root).exists()]
     if pending:
-        require_headroom(root, project_window(days, granules, batch_days=batch_days)["net"],
+        require_headroom(root, project_window(work, granules, batch_days=batch_days)["net"],
                          min_free=min_free)
     got = {"fetched": 0, "cached": 0, "missing": [], "errors": {}, "bytes": 0}
     entries: list[dict] = []
     rolled: dict = {}
-    for i in range(0, len(days), batch_days):
-        batch = days[i:i + batch_days]
+    # days that are current (not in `work`) still report an "already" entry from the
+    # status cache, so an incremental run still prints a truthful window mean
+    for day in days:
+        gran = granules.get(day)
+        if gran is None or day in needs_set:
+            continue
+        cached = status_days.get(f"{day:%Y-%m-%d}") or {}
+        out_path = daily_path(day, root)
+        if not out_path.exists():
+            continue
+        if raw_path(gran, root).exists():
+            got["cached"] += 1
+        entries.append({"day": f"{day:%Y-%m-%d}", "status": "already",
+                        "product": cached.get("product") or gran.product,
+                        "bytes": int(cached.get("bytes") or out_path.stat().st_size),
+                        "mean_mm_day": cached.get("mean_mm_day"),
+                        "max_mm_day": cached.get("max_mm_day")})
+    for i in range(0, len(work), batch_days):
+        batch = work[i:i + batch_days]
         one = fetch(batch, root=root, product=product, granules=granules, workers=workers,
                     overwrite=overwrite, downloader=downloader, route=route, log=log)
         for key in ("fetched", "cached", "bytes"):
@@ -1282,6 +1318,7 @@ def ingest(start: dt.date, end: dt.date, *, root: str | Path | None = None,
     means = [e.get("mean_mm_day") for e in entries if e.get("mean_mm_day") is not None]
     return {"window": [f"{start:%Y-%m-%d}", f"{end:%Y-%m-%d}"], "product": product,
             "granules_available": len([d for d in days if d in granules]),
+            "skipped_current": len([d for d in days if d in granules]) - len(work),
             "fetch": got, "ingested": entries, "rolled": rolled,
             "global_mean_mm_day": round(float(np.mean(means)), 3) if means else None,
             "disk": disk_usage(root)}
