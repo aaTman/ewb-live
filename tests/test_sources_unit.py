@@ -96,19 +96,16 @@ def test_assemble_level_dim():
     assert ds.level.attrs["units"] == "hPa"
 
 
-def test_prune_cache(tmp_path):
+def test_prune_cache_is_noop(tmp_path):
+    """Subset eviction is retired (virtual-store era): prune never touches disk."""
     root = tmp_path / "subsets"
     old = root / "graphcast" / "2026010100Z" / "abc"
-    new = root / "graphcast" / "2026102000Z" / "def"
     old.mkdir(parents=True)
-    new.mkdir(parents=True)
     (old / "x.bin").write_bytes(b"0" * 100)
-    (new / "x.bin").write_bytes(b"0" * 100)
     res = cache.prune_cache(120, now=dt.datetime(2026, 11, 6), cache_root=str(root))
-    assert not old.exists()
-    assert new.exists()
-    assert res["freed_bytes"] == 100
-    assert len(res["removed"]) == 1
+    assert res == {"removed": [], "freed_bytes": 0}
+    assert old.exists()  # retired: nothing is removed, nothing is written
+    assert cache.maybe_prune_daily() is None
 
 
 def test_prune_cache_missing_root(tmp_path):
@@ -116,7 +113,7 @@ def test_prune_cache_missing_root(tmp_path):
 
 
 def test_open_forecast_cache_roundtrip(tmp_path, monkeypatch):
-    """Zarr cache write + hit path, with a fake backend (no network)."""
+    """In-process LRU memo + exact bypass, with a fake backend (no network)."""
     import numpy as np
     import xarray as xr
 
@@ -146,7 +143,8 @@ def test_open_forecast_cache_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setitem(api._BACKENDS, "aiwp", type("B", (), {"open_forecast": staticmethod(fake_open), "available_inits": staticmethod(lambda s, a, b: [])})())
     monkeypatch.setattr(_net, "CACHE_ROOT", str(tmp_path))
     monkeypatch.setattr(api, "_cache_key", lambda *a: "k")
-    # cache_path() reads _net.CACHE_ROOT at call time, so patching it redirects the cache
+    api._mem_cache.clear()
+    api._mem_bytes = 0
     init = dt.datetime(2026, 11, 1)
     ds1 = api.open_forecast("graphcast", init, ["surface_air_temperature"], [0, 6], None)
     assert calls["n"] == 1

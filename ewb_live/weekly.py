@@ -52,7 +52,7 @@ def update_mlwp_icechunk(timeout: int = 3 * 3600) -> bool:
     """Run the CIRA MLWP Icechunk store update; skip cleanly if unavailable.
 
     Preferred path is the in-repo store module `ewb_live.stores.mlwp_icechunk`
-    (virtual Icechunk store over s3://noaa-oar-mlwp-data, FULL archive, updated
+    (virtual Icechunk store over the full CIRA MLWP archive, updated
     daily by ewb-live-store.timer at 05:30 UTC). This weekly call is a harmless
     catch-up: `update` appends only inits missing since the last commit and is
     flock-guarded, so while the daily update runs it exits 0 having done nothing.
