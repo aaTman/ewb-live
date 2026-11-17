@@ -397,6 +397,46 @@ def test_daily_file_round_trips_grid_attr(tmp_path):
         assert ds["precipitation"].values[0, 0, 0] == pytest.approx(12.0)
 
 
+def test_daily_store_packs_precipitation_to_uint16(tmp_path):
+    """The daily field is the only persisted state (keep-raw 0 by default), so it must be
+    packed uint16 @ 0.01 mm — half the float32 footprint on a 99 %-full root FS — and the
+    loader must undo the packing exactly (to the quantisation step) with fill → NaN."""
+    day = DAY1
+    src = write_granule(tmp_path / granule_name(day), day, rate=0.5, fill_cells=((1, 2),))
+    imerg.ingest_day(Granule(day=day, granule_ur=Path(src).name, url=src), day,
+                     root=tmp_path / "root", grid_deg=DEG)
+    with xr.open_dataset(imerg.daily_path(day, tmp_path / "root"),
+                         mask_and_scale=False) as ds:
+        v = ds["precipitation"]
+        assert str(v.dtype) == "uint16"
+        assert float(v.attrs["scale_factor"]) == pytest.approx(imerg.PP_SCALE_MM)
+        assert int(v.attrs["_FillValue"]) == imerg.PP_FILL
+    arr = imerg.load_imerg_daily(day, day, root=tmp_path / "root").values
+    assert np.isnan(arr[0, 1, 2])                       # fill → NaN, never a silent 0
+    wet = arr[~np.isnan(arr)]
+    assert np.allclose(wet, 12.0, atol=imerg.PP_SCALE_MM)
+
+
+def test_ingest_clips_precipitation_at_packing_ceiling(tmp_path):
+    """Packed uint16 tops out at 655.34 mm/day: a hotter cell must clip (recorded in
+    status) rather than wrap or corrupt the file."""
+    day = DAY1
+    src = tmp_path / granule_name(day)
+    write_granule(src, day, rate=0.2)
+    with xr.open_dataset(src, engine="h5netcdf", mask_and_scale=False) as ds:
+        ds = ds.load()
+    v = ds["precipitation"].values
+    v[0, 1, 1] = 40.0                                    # 960 mm/day > PP_MAX_MM
+    ds["precipitation"].values = v
+    ds.to_netcdf(src, engine="h5netcdf", mode="w", format="NETCDF4")
+    ds.close()
+    out = imerg.ingest_day(Granule(day=day, granule_ur=src.name, url=str(src)), day,
+                           root=tmp_path / "root", grid_deg=DEG)
+    assert out["clipped_at_max"] is True
+    da = imerg.load_imerg_daily(day, day, root=tmp_path / "root")
+    assert float(da.values[0, 1, 1]) == pytest.approx(imerg.PP_MAX_MM, abs=imerg.PP_SCALE_MM)
+
+
 def test_roll_window_drops_outside_90_days(cache):
     root = cache / "root"
     now = dt.datetime(2026, 11, 16, 12, 0, tzinfo=dt.timezone.utc)

@@ -87,7 +87,10 @@ MASK_BITS = {MASK_PRESENT: "present", MASK_FULL_SAMPLING: "full_sampling",
 CNT_UNKNOWN = 255           # producer did not publish sampling counts
 
 DEFAULT_KEEP_DAYS = 90
-DEFAULT_KEEP_RAW = 3
+#: raw granules are streaming input, not state: the daily field is the cache of record
+#: (owner directive 2026-11-17), so nothing is persisted by default. ``--keep-raw N``
+#: still keeps N days of granules when someone wants re-derivation without re-download.
+DEFAULT_KEEP_RAW = 0
 #: ``auto`` = Late Run where it exists (the owner's preferred run), Early Run only for
 #: the ~15 h head the Late Run has not reached yet. Pin one run with ``product="early"`` /
 #: ``"late"`` / ``"final"`` for a strictly homogeneous series.
@@ -105,6 +108,13 @@ EST_DAILY_BYTES = 14 << 20
 EST_RAW_BYTES = 30 << 20
 #: days fetched before ``raw/`` is rolled (one batch of granules is the peak cost)
 DEFAULT_BATCH_DAYS = 5
+#: Daily precipitation is stored **packed** — uint16 at 0.01 mm steps (the producer's own
+#: precision), not float32: roughly halves the compressed daily field on a 99 %-full FS.
+#: 65535 is the fill value, so the ceiling is 655.34 mm/day; ingest clips explicitly and
+#: records ``clipped_at_max`` in status.json rather than silently wrapping.
+PP_SCALE_MM = 0.01
+PP_FILL = 65535
+PP_MAX_MM = (PP_FILL - 1) * PP_SCALE_MM
 
 CMR_SEARCH_URL = "https://cmr.earthdata.nasa.gov/search/granules.umm_json"
 #: AWS Open Data mirror of the same GES DISC collections (registry.opendata.aws
@@ -115,6 +125,11 @@ CMR_SEARCH_URL = "https://cmr.earthdata.nasa.gov/search/granules.umm_json"
 #: no Apache redirect, no requester-pays surprise).
 S3_CREDENTIALS_URL = os.environ.get("EWB_LIVE_IMERG_S3_CREDENTIALS",
                                     "https://data.gesdisc.earthdata.nasa.gov/s3credentials")
+#: One-time URS authorisation page for the AWS-mirror credential-vending app (the client
+#: id is published by URS itself in the s3credentials redirect error for accounts that
+#: have not authorised it: "Pre authorization required for this application").
+S3_APP_AUTHORIZE_URL = ("https://urs.earthdata.nasa.gov/approve_app"
+                        "?client_id=e2WVk8Pw6weeLUKZYOxvTQ")
 S3_BUCKET = os.environ.get("EWB_LIVE_IMERG_BUCKET", "gesdisc-cumulus-prod-protected")
 S3_REGION = os.environ.get("EWB_LIVE_IMERG_S3_REGION", "us-west-2")
 DEFAULT_ROUTE = os.environ.get("EWB_LIVE_IMERG_ROUTE", "auto")
@@ -202,7 +217,15 @@ _AUTH_STEPS = (
     "     (or export EARTHDATA_USERNAME / EARTHDATA_PASSWORD for the service env)\n"
     "  3. Keep them out of the repo — nothing here stores them; they are read at\n"
     "     runtime from the netrc/env only.\n"
-    "  4. Verify:  ops/remote.sh run python -m ewb_live.sources.imerg auth-check\n"
+    "  4. Verify (plain ssh — NOT ops/remote.sh run, which rsyncs the whole tree and\n"
+    "     can revert rules in the live deployment):\n"
+    "       ssh root@192.168.0.121 'cd /opt/ewb-live && . .venv/bin/activate && \\\n"
+    "         python -m ewb_live.sources.imerg auth-check'\n"
+    "  5. If the login itself works but data requests 401 with 'Be sure to agree to the\n"
+    "     EULA', the account owner must accept the data-centre terms once (GES DISC:\n"
+    "     https://disc.gsfc.nasa.gov/data-use); the S3 route additionally needs a\n"
+    "     one-time app authorisation at " + S3_APP_AUTHORIZE_URL + " while signed\n"
+    "     in to https://urs.earthdata.nasa.gov — both are owner actions, not secrets.\n"
 )
 
 
@@ -275,6 +298,7 @@ def _http_get(url: str, opener: urllib.request.OpenerDirector | None = None, *,
     """GET with pacing, retries and exponential backoff on 429/5xx."""
     op = opener or urllib.request.build_opener()
     last: Exception | None = None
+    last_body = ""
     for attempt in range(tries):
         _GATE.wait()
         req = urllib.request.Request(url, headers={"User-Agent": "ewb-live/imerg",
@@ -286,10 +310,15 @@ def _http_get(url: str, opener: urllib.request.OpenerDirector | None = None, *,
             last = exc
             if exc.code not in _RETRY_CODES:
                 raise
+            try:   # keep the server's stated reason (e.g. URS "Pre authorization
+                last_body = " ".join(exc.read(400).decode("utf-8", "replace").split())[:200]
+            except Exception:  # noqa: BLE001 - the body is best-effort context only
+                last_body = ""
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last = exc
         time.sleep(min(60.0, 2.0 ** attempt) + random.uniform(0.0, 0.5))
-    raise ImergError(f"GET failed after {tries} tries: {url} ({last})")
+    raise ImergError(f"GET failed after {tries} tries: {url} ({last})"
+                     + (f" — last body: {last_body}" if last_body else ""))
 
 
 @dataclass(frozen=True)
@@ -529,9 +558,19 @@ def _get_https(url: str, dest: Path, creds: tuple[str, str], *,
         except urllib.error.HTTPError as exc:
             last = exc
             if exc.code in (401, 403):
+                why = ""
+                try:      # GES DISC names the reason (e.g. "Be sure to agree to the EULA")
+                    body = exc.read(4000).decode("utf-8", "replace")
+                except Exception:  # noqa: BLE001
+                    body = ""
+                if "EULA" in body:
+                    why = ("\nThe data centre says the account has not agreed to the required "
+                           "end-user agreement. The account owner must accept it once in a "
+                           "browser (GES DISC: https://disc.gsfc.nasa.gov/data-use), then "
+                           "retry — no code change fixes this.")
                 raise ImergAuthError(
                     f"GES DISC rejected the Earthdata credentials for {url} (HTTP {exc.code}).\n"
-                    + _AUTH_STEPS) from exc
+                    + _AUTH_STEPS + why) from exc
             if exc.code == 416:                      # .part already complete/corrupt
                 part.unlink(missing_ok=True)
                 offset = 0
@@ -574,6 +613,15 @@ def s3_credentials(creds: tuple[str, str] | None = None, *, force: bool = False,
             raise ImergAuthError(
                 f"{S3_CREDENTIALS_URL} rejected the Earthdata credentials (HTTP {exc.code}).\n"
                 + _AUTH_STEPS) from exc
+        raise
+    except ImergError as exc:
+        msg = str(exc)
+        if "Pre authorization" in msg or "access_denied" in msg or "HTTP Error 500" in msg:
+            raise ImergError(
+                f"{msg}\n  The AWS-mirror credential app needs a one-time authorisation by "
+                f"the account owner: open {S3_APP_AUTHORIZE_URL} while signed in to "
+                "https://urs.earthdata.nasa.gov, then retry. (The GES DISC HTTPS route "
+                "works without it once the data EULA is agreed.)") from exc
         raise
     data = json.loads(raw)
     if not {"access_key_id", "secret_access_key", "session_token"} <= set(data):
@@ -968,8 +1016,9 @@ def _write_netcdf(day: dt.date, ds: xr.Dataset, path: Path) -> int:
     nlat, nlon = ds.sizes["lat"], ds.sizes["lon"]
     chunks = (1, max(1, min(180, nlat)), max(1, min(360, nlon)))
     encoding = {
-        "precipitation": {"dtype": "float32", "zlib": True, "complevel": 4, "chunksizes": chunks,
-                          "_FillValue": np.float32(np.nan)},
+        "precipitation": {"dtype": "uint16", "scale_factor": PP_SCALE_MM, "add_offset": 0.0,
+                          "_FillValue": np.uint16(PP_FILL), "zlib": True, "complevel": 4,
+                          "chunksizes": chunks},
         "precipitation_cnt": {"dtype": "uint8", "zlib": True, "complevel": 4,
                              "chunksizes": chunks},
         "probabilityLiquidPrecipitation": {"dtype": "uint8", "zlib": True, "complevel": 4,
@@ -1014,6 +1063,10 @@ def ingest_day(src: str | Path | Granule, day: dt.date | None = None, *,
     cnt = ds["precipitation_cnt"].values
     valid = np.isfinite(values)
     full = (cnt == STEPS_PER_DAY) | (cnt == CNT_UNKNOWN)
+    clipped = bool(valid.any() and float(np.nanmax(values)) > PP_MAX_MM)
+    if clipped:      # packed uint16 tops out at PP_MAX_MM: clip loudly, never wrap
+        values = np.where(valid & (values > PP_MAX_MM), np.float32(PP_MAX_MM), values)
+        ds["precipitation"] = ds["precipitation"].copy(data=values)
     nbytes = _write_netcdf(day, ds, out)
     known = cnt != CNT_UNKNOWN
     status = ("present" if valid.all() and (full.all() or not known.any()) else "partial")
@@ -1025,6 +1078,7 @@ def ingest_day(src: str | Path | Granule, day: dt.date | None = None, *,
         "bytes": int(nbytes),
         "mean_mm_day": round(float(np.nanmean(values)) if valid.any() else float("nan"), 4),
         "max_mm_day": round(float(np.nanmax(values)) if valid.any() else float("nan"), 3),
+        "clipped_at_max": clipped,
         "frac_valid": round(float(valid.mean()), 6),
         "frac_full_sampling": round(float(full.mean()), 6),
         "cnt_min": int(cnt[known].min()) if known.any() else None,
@@ -1289,6 +1343,25 @@ def _normalize_screens(screen: str | Sequence[str]) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _decode_precip(var: xr.DataArray) -> np.ndarray:
+    """Unpack a stored precipitation variable to float32 mm/day.
+
+    Daily files quantise precipitation to :data:`PP_SCALE_MM` (packed uint16);
+    ``_open_dataset`` deliberately disables xarray's auto-decoding — granules must be
+    read raw — so the daily loader unpacks explicitly here. Legacy float32 daily files
+    (no ``scale_factor`` on the variable) pass through unchanged.
+    """
+    raw = np.squeeze(np.asarray(var.values))
+    sf = var.attrs.get("scale_factor", var.encoding.get("scale_factor"))
+    if sf is None:
+        return raw.astype("float32")
+    fill = var.attrs.get("_FillValue", var.encoding.get("fill_value"))
+    out = raw.astype("float32") * np.float32(sf)
+    if fill is not None:
+        out = np.where(raw == fill, np.float32(np.nan), out)
+    return out
+
+
 def _load_fields(start: dt.date, end: dt.date, *, root: str | Path | None = None,
                  product: str = DEFAULT_PRODUCT) -> dict:
     """Stack the daily files of a window into (day, lat, lon) arrays.
@@ -1308,7 +1381,7 @@ def _load_fields(start: dt.date, end: dt.date, *, root: str | Path | None = None
         if not path.exists():
             continue
         with _open_dataset(path) as ds:
-            v = np.squeeze(np.asarray(ds["precipitation"].values, dtype="float32"))
+            v = _decode_precip(ds["precipitation"])
             c = (np.squeeze(np.asarray(ds["precipitation_cnt"].values, dtype="uint8"))
                  if "precipitation_cnt" in ds.variables
                  else np.full(v.shape, CNT_UNKNOWN, dtype="uint8"))
