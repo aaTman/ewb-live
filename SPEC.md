@@ -21,8 +21,8 @@ dashboard (research it on the web: brightband.com, github.com/brightbandtech).
   `orca agent launch --agent pi --surface terminal --prompt "You are agent '<agent>' (successor <n+1>). Read SPEC.md, then notes/handoff_<agent>_<n>.md, and continue the work from there." --json`;
   (3) post the new terminal handle at the top of your handoff file and in any channel files you use; (4) stop working.
 - **Portability (product goal).** EWB Live will be handed to Brightband to run on a cloud container or GCP
-  instance of their choosing. Don't hardcode hosts, IPs or absolute paths (/opt/ewb-live, <ewb-host>,
-  /opt/ewb-owb, user home dirs). All locations come from one config (env vars + `ewb_live/config.py`) with
+  instance of their choosing. Don't hardcode hosts, IPs or absolute paths (/opt/ewb-live, 192.168.0.121,
+  /opt/ewb-owb, /home/orca). All locations come from one config (env vars + `ewb_live/config.py`) with
   sensible defaults. Storage paths must accept local paths or gs://, s3:// URLs (fsspec/obstore; Icechunk
   local or GCS/S3 storage). Everything runs headless from a container. See notes/portability_plan.md.
 - **Public site hygiene.** https://ewb.espr.ai is public. Nothing it serves may reveal the owner's infrastructure
@@ -34,14 +34,14 @@ dashboard (research it on the web: brightband.com, github.com/brightbandtech).
 ## Where code runs (hard rule, product owner 2026-11-06)
 - **Edit here, run on `ewb`.** No EWB compute may run on this container
   (hostname `orca`, where Orca and the agents live). All execution happens on the
-  dedicated EWB LXC: `ssh "$EWB_LIVE_HOST"` (hostname `ewb`),
+  dedicated EWB LXC: `ssh root@192.168.0.121` (hostname `ewb`, 16 cores, 128 GB RAM),
   deployment dir `/opt/ewb-live`.
 - Use the wrapper: `ops/remote.sh run <cmd...>` (sync + foreground run with `.venv`),
   `ops/remote.sh bg <name> <cmd...>` (detached, log `logs/<name>.log`),
   `ops/remote.sh logs <name>`, `ops/remote.sh status`, `ops/remote.sh pull-results`.
 - Heavy CLI entry points call `ewb_live._guard.require_ewb_host()` and exit unless on
   `ewb` (override: `EWB_LIVE_ALLOW_LOCAL=1`). Offline unit tests are unaffected.
-- Dashboard: served by `ewb-live-web.service` on the box — **http://localhost:8050/**.
+- Dashboard: served by `ewb-live-web.service` on the box — **http://192.168.0.121:8050/**.
 - Everything runs headless; cache under `data/cache/` (on `ewb`).
 - Anonymous S3 access (`s3fs`/`fsspec` with `anon=True`). No credentials.
 - Write tests in `tests/` (pytest), keep them fast (mark network tests `@pytest.mark.network`).

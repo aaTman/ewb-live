@@ -16,7 +16,7 @@
 #
 # Deploying to the box and running this there:
 #   ops/remote.sh sync && \
-#   ssh "$EWB_LIVE_HOST" 'cd /opt/ewb-live && ./ops/install.sh'
+#   ssh root@192.168.0.121 'cd /opt/ewb-live && ./ops/install.sh'
 set -euo pipefail
 
 OPS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,7 +32,7 @@ require_ewb_root() {
     cat >&2 <<EOF
 EWB services install only on the ewb LXC as root (host is '$(hostname)', user '$(whoami)').
 Copy the repo with ops/remote.sh sync, then run:
-  ssh "$EWB_LIVE_HOST" 'cd /opt/ewb-live && ./ops/install.sh'
+  ssh root@192.168.0.121 'cd /opt/ewb-live && ./ops/install.sh'
 (The local ewb-live-context-watchdog.service is managed separately; it is
 agent management, not EWB compute, and stays on this container.)
 EOF
@@ -93,7 +93,7 @@ case "${1:-install}" in
   install)
     install_units
     echo
-    echo "verify: curl -s http://localhost:8050/ -o /dev/null -w '%{http_code}\n'"
+    echo "verify: curl -s http://192.168.0.121:8050/ -o /dev/null -w '%{http_code}\n'"
     ;;
   --status|status) status ;;
   --uninstall|uninstall) uninstall ;;

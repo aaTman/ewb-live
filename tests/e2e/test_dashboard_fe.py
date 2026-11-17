@@ -1,7 +1,7 @@
 """Frontend e2e tests (owner feedback 2026-11-07, A1-A5 + B).
 
 Playwright (sync API) against the deployed dashboard:
-  EWB_LIVE_URL, default http://localhost:8050.
+  EWB_LIVE_URL, default http://192.168.0.121:8050.
 Run:  .venv/bin/python -m pytest tests/e2e -m e2e
 Skips cleanly when the box is unreachable. Screenshots land in
 notes/screenshots/fe-*.png (desktop + mobile) for the owner review.
@@ -25,7 +25,7 @@ import pytest
 pytestmark = pytest.mark.e2e
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-LIVE_URL = os.environ.get("EWB_LIVE_URL", "http://localhost:8050")
+LIVE_URL = os.environ.get("EWB_LIVE_URL", "http://192.168.0.121:8050")
 SHOTS = os.path.join(ROOT, "notes", "screenshots")
 
 # event ids rotate with weekly runs — tests resolve live ids via fixtures

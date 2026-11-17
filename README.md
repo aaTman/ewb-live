@@ -103,10 +103,10 @@ this worktree, on the box:
 
 ```bash
 ./ops/remote.sh sync
-ssh "$EWB_LIVE_HOST" 'cd /opt/ewb-live && ./ops/install.sh'   # installs /etc/systemd/system units
+ssh root@192.168.0.121 'cd /opt/ewb-live && ./ops/install.sh'   # installs /etc/systemd/system units
 ```
 
-- `ewb-live-web.service` — dashboard at **http://localhost:8050/** (`0.0.0.0:8050`,
+- `ewb-live-web.service` — dashboard at **http://192.168.0.121:8050/** (`0.0.0.0:8050`,
   `Restart=always`, logs `/opt/ewb-live/logs/web.log`).
 - `ewb-live-weekly.timer` → `ewb-live-weekly.service` — `python -m ewb_live.weekly`,
   Mondays 07:00 UTC, `Persistent=true` (catches up missed runs), logs `logs/weekly.log`.
@@ -133,9 +133,9 @@ systemctl --user start ewb-live-ponytail-review.service  # review once now
 Useful checks:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8050/   # 200 (from anywhere on the LAN)
+curl -s -o /dev/null -w '%{http_code}\n' http://192.168.0.121:8050/   # 200 (from anywhere on the LAN)
 ./ops/remote.sh status                                                # units, timer, ports, disk, logs
-ssh "$EWB_LIVE_HOST" 'journalctl -u ewb-live-weekly.service -n 50'  # last weekly run
+ssh root@192.168.0.121 'journalctl -u ewb-live-weekly.service -n 50'  # last weekly run
 ```
 
 ### Public URL (https://ewb.espr.ai)
@@ -151,21 +151,21 @@ tunnel unit) — all portable via `EWB_PUBLIC_HOSTNAME` / `EWB_TUNNEL_NAME` /
 `EWB_WEB_PORT` / `EWB_PROXY_PORT` / `EWB_PROXY_LISTEN`.
 
 Live wiring (owner decision 2026-11-07, option C): the tunnel connector runs
-on a separate host, so the front binds the LAN
+on CT108 (shared with `fronts.espr.ai`), so the front binds the LAN
 interface — re-render with `EWB_PROXY_LISTEN=0.0.0.0` (loopback-only default
 otherwise).
 
 ```bash
 ./ops/remote.sh sync
-ssh "$EWB_LIVE_HOST" 'cd /opt/ewb-live && EWB_PROXY_LISTEN=0.0.0.0 ./ops/setup-public.sh install'
-ssh "$EWB_LIVE_HOST" 'cd /opt/ewb-live && ./ops/setup-public.sh status'    # front + tunnel health
+ssh root@192.168.0.121 'cd /opt/ewb-live && EWB_PROXY_LISTEN=0.0.0.0 ./ops/setup-public.sh install'
+ssh root@192.168.0.121 'cd /opt/ewb-live && ./ops/setup-public.sh status'    # front + tunnel health
 ```
 
 One-time owner authorisation (see `notes/infra_domain.md` § OWNER ACTION
 NEEDED — Cloudflare API token or a browser click on `cloudflared tunnel
 login`), then:
 ```bash
-ssh "$EWB_LIVE_HOST" 'cd /opt/ewb-live && ./ops/setup-public.sh finish-tunnel'
+ssh root@192.168.0.121 'cd /opt/ewb-live && ./ops/setup-public.sh finish-tunnel'
 ```
 
 `finish-tunnel` creates the tunnel, repoints the `ewb.espr.ai` DNS record at

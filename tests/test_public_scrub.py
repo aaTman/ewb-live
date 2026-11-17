@@ -17,7 +17,7 @@ def test_gate_detects_planted_leaks(tmp_path):
     for rel in ["dashboard/x.html", "data/results/evil.json"]:
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("see <ewb-host> and /opt/ewb-live and example-host and CT999 "
+        p.write_text("see 192.168.0.121 and /opt/ewb-live and mandelhub and CT214 "
                      "and python -m ewb_live.serve --port 8050\n")
     r = subprocess.run(["bash", str(SCRIPT), str(tmp_path)],
                        capture_output=True, text=True)

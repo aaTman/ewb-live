@@ -15,7 +15,7 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PATTERNS='192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|(^|[^0-9.])10\.[0-9]+\.[0-9]+\.[0-9]+([^0-9]|$)|127\.0\.0\.1|localhost:[0-9]|:8050|:8080|:8479|--port|python -m|ewb_live\.serve|/home/orca|/opt/ewb|/root/\.venv|example-host|[Pp]roxmox|\borca\b|/opt/ewb-owb|ewb-live-web|ewb-live-weekly|ewb-live-store|remote\.sh|ssh root@|EWB_LIVE_SKIP|notes/ewb\.md|notes/channel|\bLXC\b|\bCT[0-9]+\b|16 cores|128 GB RAM|peak_total_rss_gb|"perf":|peak_rss|cpu_count|load_avg'
+PATTERNS='192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|(^|[^0-9.])10\.[0-9]+\.[0-9]+\.[0-9]+([^0-9]|$)|127\.0\.0\.1|localhost:[0-9]|:8050|:8080|:8479|--port|python -m|ewb_live\.serve|/home/orca|/opt/ewb|/root/\.venv|mandelhub|[Pp]roxmox|\borca\b|/opt/ewb-owb|ewb-live-web|ewb-live-weekly|ewb-live-store|remote\.sh|ssh root@|EWB_LIVE_SKIP|notes/ewb\.md|notes/channel|\bLXC\b|\bCT[0-9]+\b|16 cores|128 GB RAM|peak_total_rss_gb|"perf":|peak_rss|cpu_count|load_avg'
 
 fail=0
 scan() { # label  root-subdir

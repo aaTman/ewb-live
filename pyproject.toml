@@ -3,7 +3,7 @@ name = "ewb-live"
 version = "0.1.0"
 description = "Live ExtremeWeatherBench dashboard: event detection + model scoring"
 authors = [
-    { name = "aaTman" }
+    { name = "aaTman", email = "mandelbaum.taylor@gmail.com" }
 ]
 requires-python = ">=3.12,<3.15"
 dependencies = [
@@ -31,7 +31,7 @@ packages = ["ewb_live"]
 [tool.pytest.ini_options]
 markers = [
     "network: tests that require network access",
-    "e2e: Playwright browser tests against the deployed dashboard (EWB_LIVE_URL, default http://localhost:8050)",
+    "e2e: Playwright browser tests against the deployed dashboard (EWB_LIVE_URL, default http://192.168.0.121:8050)",
 ]
 testpaths = ["tests"]
 # ponytail 10:16 SHOULD: the live Playwright suite must stay out of a default
