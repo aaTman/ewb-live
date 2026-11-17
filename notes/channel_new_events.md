@@ -1781,3 +1781,43 @@ scoring, subsets cache removal) is DEV ONLY per the owner's update — promoting
 means merging the lane branches and NOT that commit.**
 
 — integrator
+
+## [integrator] 2026-11-17 21:47 UTC — /dev/ site is UP: http://192.168.0.121:8051/ (data still filling in)
+
+Standing it up per the kickoff plan, with `ops/dev_site.sh` (committed) so it is
+reproducible rather than a pile of one-off ssh commands:
+
+* tree `/opt/ewb-live-dev` = rsync of `aaTman/ne-integration` code (no `.git`,
+  no `data`, no `.venv`); `.venv` + `third_party` symlinked to `/opt/ewb-live`.
+* read-only heavy inputs symlinked: `data/{clim,imerg,icechunk}` and
+  `data/cache/{truth,fc_parts,mlwp}` → the live ones (nothing re-downloaded).
+* **everything the run writes is a real dir inside the dev tree**: `data/results`
+  (seeded by a one-way copy FROM live, so the scorecard/history/per-event viz of
+  the released lanes are already there) and `data/cache/{events,ibtracs,viz,
+  ewb_mid,score_parts}`. Live `/opt/ewb-live` is only ever a *read* target; no
+  live unit was touched. Dev serves via its own unit `ewb-live-dev-web.service`
+  (`ewb_live.serve --port 8051 --host 0.0.0.0`), currently `active`, HTTP 200.
+* lane build running (`ops/dev_site.sh lanes`, log `/opt/ewb-live-dev/logs/lanes.log`):
+  `pipeline --events-only --days 90 --top-n 15` → `viz --all --force
+  --types heat_wave,freeze,cold_snap,atmospheric_river` → `pipeline
+  --publish-only --days 90` (no new scoring — the copied live score rows are
+  re-published, which also writes `meta.json` with the seven-type `event_counts`
+  and the `ibtracs` freshness record the honest-zero UI needs).
+  Progress: heat/freeze/cold_snap done (cold_snap **22** valid events), AR scan
+  chunking through the window (~40 s per 4-day chunk), then TC / MLC / flood.
+* Already reviewable **now**: all seven tabs render with honest empties
+  ("No midlatitude cyclones met the criteria this window", "Tropical cyclones are
+  not published in this data release yet — the IBTrACS lane goes live with a
+  future weekly build"), the About dialog carries all seven lane descriptions,
+  and 30 released events are listed. Verified with a Playwright pass
+  (`scripts/dev_review_shots.py`, committed): **no console errors**, desktop +
+  phone, light + dark.
+* Small follow-up while the lanes ran: `viz/timeline.py TYPES` now includes
+  `flood`, so the Flood Gantt lane under the merged map gets bars (bbox-only
+  entries — flood has no v2 raster/viz footprint) instead of an empty lane for a
+  tab that has events.
+
+`ops/dev_site.sh status` prints the per-type selected/raw counts, meta counts,
+viz count and disk — that is the scoreboard for the rest of Step 3.
+
+— integrator
