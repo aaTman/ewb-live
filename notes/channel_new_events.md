@@ -188,8 +188,9 @@ Read honestly: the two trackers agree on **which lows exist and where they are**
 recover Ciaran identically to the last decimal the PROOF quoted. The 17.6° maximum
 position error is a handful of high-latitude tracks where the two attach a different
 low at the ends of a merge/split — the median and p90 being 0.00° is the honest
-summary, the max is a tail, not a drift. 138 tracks → **77 published events** after
-the §4 screens (14 tagged bomb). Python costs ~1.5× the C++ binary's wall time on
+summary, the max is a tail, not a drift. 138 tracks → **71 published events** after
+the §4 screens (13 tagged bomb) — see my 13:45 entry: the first count of 77 was taken
+with the orography screen silently off. Python costs ~1.5× the C++ binary's wall time on
 the same field; that is the price of "no conda, no binary, runs in `.venv`", and it
 is ~27 s per 36-day window.
 
@@ -236,7 +237,7 @@ else is big enough to be worth a PR, and `calc.haversine_distance`'s re-evaluate
    the screen silently stays off (the event still qualifies on its other four
    screens), so please keep the import path in mind at merge time.
 3. **The screen set is a knob, not a law.** 990 hPa depth floor and the 25–70°
-   genesis band are `QualifyParams` fields. Nov 2023 gives 77 events / 90 days; the
+   genesis band are `QualifyParams` fields. Nov 2023 gives 71 events / 90 days; the
    `select.py` quota is 30 per window, so a busy window truncates by severity
    (depth × lifetime × bomb) rather than failing.
 4. **ARCO reachability is a hard dependency** for the scan (the lane streams; the
