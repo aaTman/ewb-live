@@ -64,12 +64,14 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import itertools
 import json
 import logging
 import os
 import pathlib
 import shutil
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -206,6 +208,20 @@ class Config:
 
     def state_path(self) -> pathlib.Path:
         return self.out.parent / (self.out.name + ".tile_state.json")
+
+    @property
+    def tiles_dir(self) -> pathlib.Path:
+        """Per-tile completion markers — the durable record of what was written.
+
+        One small file per tile, written by the worker that wrote it, so the
+        record survives a kill of the parent process (a single JSON state file
+        written by the parent did not: on 2026-11-16 the build wrote every
+        chunk and still came back as "0 already done").
+        """
+        return self.out.parent / (self.out.name + ".tiles")
+
+    def tile_marker(self, lat_pass: int, tile_id: int, j: int) -> pathlib.Path:
+        return self.tiles_dir / f"p{lat_pass}_t{tile_id}_x{j}.done"
 
     def fingerprint(self) -> dict:
         return {"source": f"{self.source_uri}#{self.source_var}",
@@ -526,6 +542,10 @@ def _tile(cfg: Config, lat_pass: int, tile_id: int, j: int,
                                 "accumulation": slice(None),
                                 "dayofyear": slice(None),
                                 "latitude": ilat, "longitude": ilon})
+    # durable per-tile record, written by the process that did the write
+    cfg.tiles_dir.mkdir(parents=True, exist_ok=True)
+    cfg.tile_marker(lat_pass, tile_id, j).write_text(
+        f"rows {r0}:{r1} cols {j0}:{j1}\n")
     log.info("tile pass%d lat%d lon%d done (rows %d:%d, cols %d:%d)",
              lat_pass, tile_id, j, r0, r1, j0, j1)
     return [lat_pass, tile_id, j]
@@ -562,7 +582,18 @@ def write_template(cfg: Config, lat: np.ndarray, lon: np.ndarray) -> None:
     # (zarr v3 on disk, the same format the live t2m climatology uses; the
     #  writer is xarray/zarr-python, so no format encoding override here)
     cfg.out.parent.mkdir(parents=True, exist_ok=True)
+    # a fresh store invalidates any per-tile record of the one it replaces
+    shutil.rmtree(cfg.tiles_dir, ignore_errors=True)
     tmpl.to_zarr(cfg.out, mode="w", compute=False)
+
+
+def write_provenance(cfg: Config, *, tiles: int) -> None:
+    """Sidecar build provenance (kept OUTSIDE the store, like ``owb_clim``)."""
+    cfg.meta_path().parent.mkdir(parents=True, exist_ok=True)
+    cfg.meta_path().write_text(json.dumps(
+        {**cfg.fingerprint(), "estimator": cfg.estimator_text(),
+         "generated": dt.datetime.now(dt.timezone.utc).isoformat(),
+         "tiles": int(tiles)}, indent=1))
 
 
 def compute(cfg: Config, *, workers: int = 8, nlat_pass: int = 1,
@@ -590,6 +621,7 @@ def compute(cfg: Config, *, workers: int = 8, nlat_pass: int = 1,
     state = ({"done": [], "nlat_pass": nlat_pass, "fingerprint": cfg.fingerprint()}
              if not cfg.state_path().exists() else
              json.loads(cfg.state_path().read_text()))
+    t0 = time.monotonic()
     if state.get("fingerprint") != cfg.fingerprint():
         raise SystemExit("precip_clim: the partial build on disk has a "
                          "different configuration; delete the store, its "
@@ -608,23 +640,26 @@ def compute(cfg: Config, *, workers: int = 8, nlat_pass: int = 1,
         p, i, j = args
         return _tile(cfg, p, i, j, pools, lat, lon)
 
+    # Progress is logged HERE, in the parent, not inside ``_tile``: a tile runs
+    # in a joblib/loky worker whose logging does not reach the runner's log
+    # file, which made a healthy 2-hour build look frozen (2026-11-16).
     for done in joblib.Parallel(n_jobs=workers)(
             joblib.delayed(_one)(a) for a in todo):
         state["done"].append(done)
         tmp = cfg.state_path().with_name(cfg.state_path().name + ".tmp")
         tmp.write_text(json.dumps(state))
         tmp.replace(cfg.state_path())
-        if free_gb(cfg.out) < STOP_FREE_GB:
+        free = free_gb(cfg.out)
+        log.info("compute: %d/%d tiles done (%.0f s, %.1f GB free)",
+                 len(state["done"]), len(todo), time.monotonic() - t0, free)
+        if free < STOP_FREE_GB:
             raise SystemExit("precip_clim: aborted, filesystem below "
                              f"{STOP_FREE_GB} GB free (live box protection)")
 
     complete = (limit_tiles is None and len(jobs) > 0
                 and len(state["done"]) >= len(jobs))
     if complete:
-        cfg.meta_path().write_text(json.dumps(
-            {**cfg.fingerprint(), "estimator": cfg.estimator_text(),
-             "generated": dt.datetime.now(dt.timezone.utc).isoformat(),
-             "tiles": len(state["done"])}, indent=1))
+        write_provenance(cfg, tiles=len(state["done"]))
         (cfg.out / DONE_NAME).write_text("ok\n")
         cfg.state_path().unlink(missing_ok=True)
         if not keep_scratch:
@@ -720,8 +755,13 @@ def _target_indices(lats: np.ndarray, lons: np.ndarray, src_lat: np.ndarray,
         raise ValueError(f"target latitudes {lats.min()}..{lats.max()} outside "
                          f"the climatology grid {src_lat.min()}.."
                          f"{src_lat.max()}")
-    if lons.min() < -180.0 - 1e-6 or lons.max() >= 180.0 + 1e-6:
-        raise ValueError("target longitudes must be in [-180, 180)")
+    if lons.min() < -180.0 - 1e-6 or lons.max() > 360.0 + 1e-6:
+        # BOTH longitude conventions are accepted (and the store itself is
+        # 0..359.75, so refusing >180 would reject the native grid — found on
+        # the box 2026-11-17 when the documented default grid="era5" call
+        # raised). The mapping below reduces longitudes mod 360 either way.
+        raise ValueError("target longitudes must lie in [-180, 360] "
+                         "(-180..180 or 0..360, either is fine)")
     step_y = float(np.median(np.diff(src_lat)))              # negative: desc
     step_x = float(np.median(np.diff(src_lon)))
     fy = (lats - src_lat[0]) / step_y
@@ -745,6 +785,10 @@ def precip_threshold_on(lats, lons, dates, quantile: float = 0.95,
 
     Returns ``(latitude, longitude)`` for a single date and
     ``(time, latitude, longitude)`` for several dates, in mm.
+
+    ``lons`` may be given in either convention (-180..180 or 0..360); the
+    lookup is modulo 360, and the returned coordinates are the ones you asked
+    for. Latitudes must fall inside the store's range (±90).
 
     ``method='nearest'`` (default) keeps the field piecewise constant:
     interpolating a 0.25 deg threshold field onto, say, IMERG's 0.1 deg lattice
@@ -933,6 +977,46 @@ def region_stats(doy_pair: tuple[int, ...] = (15, 200),
     return out
 
 
+#: Map panels for the sanity figures (world + three flood-relevant zooms)
+MAP_ZOOMS = {"world": (-80.0, 80.0, None, None),
+             "amazon": (-12.0, 3.0, -76.0, -49.0),
+             "sahara_and_sahel": (11.0, 33.0, -12.0, 35.0),
+             "monsoon_india": (6.0, 30.0, 65.0, 96.0)}
+
+
+def _plot_window(v: xr.DataArray, d: int, box: tuple[float, float, float, float],
+                 lat_all: np.ndarray, lon_all: np.ndarray):
+    """``(field, x, y)`` of one map panel, on a strictly ascending -180..180 axis.
+
+    The store's lattice is 0..359.75, so the world window is *rotated*: the
+    rotation must be applied to the field and the coordinate together (roll the
+    array with numpy — relying on ``DataArray.roll`` to keep them in step was
+    the bug that made the world panel blank/sheared).
+    """
+    la0, la1, lo0, lo1 = box
+    if lo0 is None:                                   # whole globe
+        n = int(lon_all.size)
+        # rotate so the lattice starts at 180E: (lon + 180) % 360 - 180 is then
+        # ascending -180..180. searchsorted (not n // 2) keeps this correct for
+        # a lattice that does not span the whole globe.
+        k = int(np.searchsorted(lon_all, 180.0)) % n
+        field = np.roll(np.asarray(v.isel(dayofyear=int(d) - 1).values,
+                                   dtype="float32"), -k, axis=-1)
+        x = (np.roll(lon_all, -k) + 180.0) % 360.0 - 180.0
+        y = lat_all
+    else:
+        iy = np.flatnonzero((lat_all <= la1) & (lat_all >= la0))
+        ix = _lon_index(lon_all, lo0, lo1)
+        # a box straddling the antimeridian indexes non-contiguously into the
+        # 0..360 store: sort it onto ascending -180..180
+        ix = ix[np.argsort((lon_all[ix] + 180.0) % 360.0 - 180.0)]
+        field = np.asarray(v.isel(dayofyear=int(d) - 1, latitude=iy,
+                                  longitude=ix).values, dtype="float32")
+        x = (lon_all[ix] + 180.0) % 360.0 - 180.0
+        y = lat_all[iy]
+    return field, x, y
+
+
 def write_maps(outdir: pathlib.Path | str, doys: tuple[int, ...] = (15, 200),
                store: pathlib.Path | str | None = None,
                quantile: float = 0.99) -> list[pathlib.Path]:
@@ -945,10 +1029,7 @@ def write_maps(outdir: pathlib.Path | str, doys: tuple[int, ...] = (15, 200),
     ds = open_climatology(store)
     out = pathlib.Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
-    zooms = {"world": (-80.0, 80.0, None, None),
-             "amazon": (-12.0, 3.0, -76.0, -49.0),
-             "sahara_and_sahel": (11.0, 33.0, -12.0, 35.0),
-             "monsoon_india": (6.0, 30.0, 65.0, 96.0)}
+    zooms = MAP_ZOOMS
     files: list[pathlib.Path] = []
     for d in doys:
         for w in [int(x) for x in ds["accumulation"].values]:
@@ -956,20 +1037,25 @@ def write_maps(outdir: pathlib.Path | str, doys: tuple[int, ...] = (15, 200),
             for ax, (zname, (la0, la1, lo0, lo1)) in zip(axes.ravel(),
                                                           zooms.items()):
                 v = ds[VAR].sel(quantile=float(quantile), accumulation=int(w))
-                if lo0 is None:
-                    sub = v.isel(dayofyear=int(d) - 1)
-                else:
-                    lat = np.asarray(ds.latitude.values, dtype="float64")
-                    ix = _lon_index(np.asarray(ds.longitude.values), lo0, lo1)
-                    iy = np.flatnonzero((lat <= la1) & (lat >= la0))
-                    sub = v.isel(dayofyear=int(d) - 1, latitude=iy, longitude=ix)
-                hi = float(np.nanpercentile(sub.values, 99.5)) or 1.0
-                im = ax.pcolormesh(sub.longitude, sub.latitude, sub.values,
-                                   vmin=0, vmax=hi, cmap="magma",
-                                   shading="nearest")
+                field, x, lat_v = _plot_window(
+                    v, int(d), (la0, la1, lo0, lo1),
+                    np.asarray(ds.latitude.values, dtype="float64"),
+                    np.asarray(ds.longitude.values, dtype="float64"))
+                hi = float(np.nanpercentile(field, 99.5)) or 1.0
+                # imshow, NOT pcolormesh: the world panel is 721 x 1440 = 1 M
+                # quads, and at figure size the seams between them rasterise as
+                # fake zonal stripes.
+                im = ax.imshow(field, cmap="magma", vmin=0.0, vmax=hi,
+                               origin="upper",
+                               extent=(float(x[0]), float(x[-1]),
+                                       float(lat_v[-1]), float(lat_v[0])),
+                               aspect="auto", interpolation="nearest")
+                ax.set_xlim(float(x[0]), float(x[-1]))
+                ax.set_ylim(float(lat_v[-1]), float(lat_v[0]))
+                ax.set_xticks(np.linspace(-180, 180, 7) if lo0 is None
+                              else np.linspace(float(x[0]), float(x[-1]), 5))
                 ax.set_title(f"p{int(quantile * 100)} {w}-day threshold, "
                              f"doy {d} — {zname} (mm)")
-                ax.set_xticks(np.linspace(-180, 180, 7))
                 fig.colorbar(im, ax=ax, fraction=0.046)
             f = out / f"precip_p{int(quantile * 100)}_{w}day_doy{d}.png"
             fig.tight_layout()
@@ -978,6 +1064,186 @@ def write_maps(outdir: pathlib.Path | str, doys: tuple[int, ...] = (15, 200),
             files.append(f)
     return files
 
+
+# --------------------------------------------------------------------------
+# store verification / finalisation
+# --------------------------------------------------------------------------
+
+def chunk_keys(shape: tuple[int, ...],
+               chunks: tuple[int, ...]) -> list[tuple[int, ...]]:
+    """Every chunk index a zarr array of ``shape``/``chunks`` must contain."""
+    return list(itertools.product(*[range(int(np.ceil(s / c)))
+                                     for s, c in zip(shape, chunks)]))
+
+
+def chunk_coverage(out: pathlib.Path) -> dict:
+    """Chunk-on-disk coverage per variable (cheap: a directory listing)."""
+    import zarr
+
+    root = zarr.open_group(str(out), mode="r")
+    out_rep: dict = {}
+    for name in (VAR, COUNT_VAR):
+        a = root[name]
+        keys = chunk_keys(a.shape, a.chunks)
+        d = out / name / "c"
+        missing = ["/".join(map(str, k)) for k in keys
+                   if not (d / "/".join(map(str, k))).exists()]
+        out_rep[name] = {"shape": list(a.shape), "chunks": list(a.chunks),
+                         "expected": len(keys), "missing": len(missing),
+                         "missing_examples": missing[:6]}
+    return out_rep
+
+
+def tiles_expected(cfg: Config, nlat_pass: int = 1) -> list[list[int]]:
+    """Every ``[lat_pass, lat_tile, lon_tile]`` the store must contain, using
+    the store's OWN coordinate lengths (no source access)."""
+    import zarr
+
+    root = zarr.open_group(str(cfg.out), mode="r")
+    nlat = int(root["latitude"].shape[0])
+    nlon = int(root["longitude"].shape[0])
+    out: list[list[int]] = []
+    for p in range(nlat_pass):
+        _, _, ids = pass_rows(cfg, nlat_pass, p, nlat)
+        out += [[p, i, j] for i in ids
+                for j in range(-(-nlon // cfg.tile[1]))]
+    return out
+
+
+def tiles_missing(cfg: Config, *, nlat_pass: int = 1) -> list[list[int]]:
+    """Tiles that are neither marked done nor complete on disk.
+
+    A tile counts as written if its per-tile marker exists (the record the
+    writing worker left) **or** every chunk it owns is present in both
+    variables. The second branch certifies a store built before the markers
+    existed; note that zarr omits all-fill chunks, so on a coarse test grid a
+    legitimately all-NaN tile can fail it — the markers are the authoritative
+    record, and full chunk coverage is the fallback for stores that predate
+    them.
+    """
+    n_doy = int(np.ceil(366 / 31))
+    miss: list[list[int]] = []
+    for p, i, j in tiles_expected(cfg, nlat_pass):
+        if cfg.tile_marker(p, i, j).exists():
+            continue
+        full = all((cfg.out / VAR / "c" / f"{qi}/{ai}/{d}/{i}/{j}").exists()
+                   for qi in range(len(cfg.quantiles))
+                   for ai in range(len(cfg.accums)) for d in range(n_doy))
+        full = full and all(
+            (cfg.out / COUNT_VAR / "c" / f"{ai}/{d}/{i}/{j}").exists()
+            for ai in range(len(cfg.accums)) for d in range(n_doy))
+        if not full:
+            miss.append([p, i, j])
+    return miss
+
+
+def _fingerprint_matches(attrs: dict, fp: dict) -> list[str]:
+    """Keys of ``fp`` whose stored value disagrees with the build config."""
+    def norm(v):
+        if isinstance(v, (list, tuple)):
+            return [norm(x) for x in v]
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, (int, float)):
+            return round(float(v), 6)
+        return v
+
+    bad = []
+    for k, want in fp.items():
+        if k not in attrs:
+            bad.append(k)
+        elif norm(attrs[k]) != norm(want):
+            bad.append(k)
+    return bad
+
+
+def verify_store(cfg: Config, *, decode: bool = True,
+                 nlat_pass: int = 1) -> dict:
+    """Prove a store is complete and self-consistent, or raise SystemExit.
+
+    Checks, in order: the store exists; its fingerprint attrs are exactly this
+    build configuration; every tile is accounted for (``tiles_missing``); and
+    (with ``decode``) every slice decodes and satisfies the product invariants
+    — no negative amounts, a threshold at or above the wet-day floor,
+    ``p99 >= p95`` wherever both exist, and NaN exactly where the pooled
+    wet-sample count is below ``min_samples``.
+
+    This is what makes a build that died *after* its tile writes recoverable:
+    completeness is a property of the store, not of the run that made it.
+    """
+    import zarr
+
+    if not cfg.out.exists():
+        raise SystemExit(f"precip_clim: no store at {cfg.out}")
+    root = zarr.open_group(str(cfg.out), mode="r")
+    bad = _fingerprint_matches(dict(root.attrs), cfg.fingerprint())
+    if bad:
+        raise SystemExit(f"precip_clim: {cfg.out} was not built with this "
+                         f"configuration; attrs differ for {bad}")
+    rep: dict = {"store": str(cfg.out), "coverage": chunk_coverage(cfg.out)}
+    miss = tiles_missing(cfg, nlat_pass=nlat_pass)
+    if miss:
+        raise SystemExit(f"precip_clim: incomplete store — {len(miss)} of "
+                         f"{len(tiles_expected(cfg, nlat_pass))} tiles are not "
+                         f"written (e.g. {miss[:6]}); re-run the build phase "
+                         "(it resumes per tile)")
+    if not decode:
+        rep["decoded"] = False
+        return rep
+
+    n_doy_chunk = int(np.ceil(366 / 31))
+    stats = {"slices_read": 0, "negatives": 0, "below_wet_min": 0,
+             "p99_below_p95": 0, "nan_vs_reliability": 0, "nan": 0,
+             "finite": 0, "min_mm": float("inf"), "max_mm": float("-inf")}
+    for ai in range(len(cfg.accums)):
+        for di in range(n_doy_chunk):
+            sl = (slice(None), ai, slice(di * 31, (di + 1) * 31))
+            v = np.asarray(root[VAR][sl], dtype="float32")     # (q, doy, lat, lon)
+            c = np.asarray(root[COUNT_VAR][(ai,) + sl[2:]], dtype="uint8")
+            stats["slices_read"] += len(v)
+            finite = np.isfinite(v)
+            stats["finite"] += int(finite.sum())
+            stats["nan"] += int((~finite).sum())
+            stats["negatives"] += int(np.count_nonzero(v < 0.0))
+            stats["below_wet_min"] += int(np.count_nonzero(finite & (v < cfg.wet_min)))
+            if len(v) == 2:
+                both = finite[0] & finite[1]
+                stats["p99_below_p95"] += int(np.count_nonzero(both & (v[1] < v[0])))
+            want_nan = c < cfg.min_samples
+            stats["nan_vs_reliability"] += int(np.count_nonzero(~finite != want_nan))
+            if finite.any():
+                stats["min_mm"] = min(stats["min_mm"], float(v[finite].min()))
+                stats["max_mm"] = max(stats["max_mm"], float(v[finite].max()))
+            del v, c
+    rep["decode"] = stats
+    fails = {k: stats[k] for k in ("negatives", "below_wet_min",
+                                   "p99_below_p95", "nan_vs_reliability")
+             if stats[k]}
+    if fails:
+        raise SystemExit(f"precip_clim: {cfg.out} violates product invariants: "
+                         f"{fails} — delete the store, its tile state and the "
+                         "scratch, and rebuild")
+    rep["decoded"] = True
+    return rep
+
+
+def finalize(cfg: Config, *, decode: bool = True,
+             nlat_pass: int = 1) -> dict:
+    """Close a store whose tile writes are complete (see ``verify_store``).
+
+    Recovery path for the failure mode seen on the box on 2026-11-16: the tile
+    workers had written every chunk, but the parent was stopped before it could
+    write the provenance sidecar and the ``.done`` gate, so the loader refused
+    the store. Verify first, so this can never certify a partial product — a
+    ``.done`` marker is a promise to flood-detect that every cell is a real
+    threshold.
+    """
+    rep = verify_store(cfg, decode=decode, nlat_pass=nlat_pass)
+    write_provenance(cfg, tiles=int(rep["coverage"][VAR]["expected"]))
+    (cfg.out / DONE_NAME).write_text("ok\n")
+    cfg.state_path().unlink(missing_ok=True)
+    rep["finalized"] = True
+    return rep
 
 # --------------------------------------------------------------------------
 # CLI
@@ -1016,6 +1282,22 @@ def main(argv=None) -> int:
 
     s = sub.add_parser("status", help="is the store built? what is in it?")
     s.add_argument("--out", default=None)
+    f = sub.add_parser("finalize",
+                       help="verify a fully-written store, then write its "
+                            ".done gate and provenance sidecar")
+    f.add_argument("--out", default=None)
+    f.add_argument("--start", type=int, default=YEARS[0])
+    f.add_argument("--end", type=int, default=YEARS[1])
+    f.add_argument("--pool", type=int, default=POOL_HALF_WINDOW_DAYS)
+    f.add_argument("--wet-min", type=float, default=WET_DAY_MIN_MM)
+    f.add_argument("--min-samples", type=int, default=MIN_WET_SAMPLES)
+    f.add_argument("--quantiles",
+                   default=",".join(str(q) for q in DEFAULT_QUANTILES))
+    f.add_argument("--accums", default=",".join(str(w) for w in DEFAULT_ACCUMS))
+    f.add_argument("--lat-passes", type=int, default=1,
+                   help="latitude passes the build was run with")
+    f.add_argument("--no-decode", action="store_true",
+                   help="check fingerprint + tile coverage only (no full read)")
     r = sub.add_parser("regions", help="sanity numbers per region (JSON)")
     r.add_argument("--out", default=None)
     r.add_argument("--doys", default="15,200")
@@ -1023,12 +1305,15 @@ def main(argv=None) -> int:
     m.add_argument("--out", default=None)
     m.add_argument("--dir", default="notes/flood_maps")
     m.add_argument("--doys", default="15,200")
+    m.add_argument("--quantile", type=float, default=0.99)
     a = p.parse_args(argv)
 
     if a.cmd != "build":
         if a.cmd == "status":
             path = default_out_path() if a.out is None else pathlib.Path(a.out)
             info = climatology_meta(path)
+            if path.exists():
+                info["chunk_coverage"] = chunk_coverage(path)
             if (path / DONE_NAME).exists():
                 ds = open_climatology(path)
                 info["sizes"] = {k: int(v) for k, v in ds.sizes.items()}
@@ -1043,12 +1328,20 @@ def main(argv=None) -> int:
                     for w in [int(x) for x in ds["accumulation"].values]
                     for q in [float(x) for x in ds["quantile"].values]}
             print(json.dumps(info, indent=1))
+        elif a.cmd == "finalize":
+            cfg = Config(years=(a.start, a.end),
+                         quantiles=tuple(float(x) for x in a.quantiles.split(",")),
+                         accums=tuple(int(x) for x in a.accums.split(",")),
+                         pool=a.pool, wet_min=a.wet_min,
+                         min_samples=a.min_samples, out=a.out)
+            print(json.dumps(finalize(cfg, decode=not a.no_decode,
+                                      nlat_pass=a.lat_passes), indent=1))
         elif a.cmd == "regions":
             print(json.dumps(region_stats(tuple(int(x) for x in a.doys.split(",")),
                                           a.out), indent=1))
         else:
             for f in write_maps(a.dir, tuple(int(x) for x in a.doys.split(",")),
-                                a.out):
+                                a.out, quantile=a.quantile):
                 print(f)
         return 0
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import pathlib
+import shutil
 
 import numpy as np
 import pytest
@@ -295,6 +296,158 @@ def test_region_stats_and_meta(built, monkeypatch):
     assert meta["percentiles"] == [0.95, 0.99]
     assert meta["units"] == "mm" and meta["path"].endswith(".zarr")
     assert "15-day" in meta["estimator"]
+
+
+def test_target_indices_accept_both_longitude_frames():
+    """The store's own longitudes are 0..359.75, so the documented default
+    ``grid='era5'`` path must not be rejected for being '>180' (box bug,
+    2026-11-17). Either frame maps; nonsense still raises."""
+    src_lat = 90.0 - 0.25 * np.arange(721)
+    src_lon = 0.25 * np.arange(1440)
+    # the native lattice maps to itself exactly
+    iy, ix, wy, wx = pc._target_indices(src_lat, src_lon, src_lat, src_lon,
+                                        "nearest")
+    assert np.array_equal(iy, np.arange(721))
+    assert np.array_equal(ix, np.arange(1440))
+    assert wy is None and wx is None
+    # a -180..180 lattice maps to the same columns as the equivalent 0..360 one
+    lons_w = np.linspace(-179.95, 179.95, 9)
+    lons_e = np.mod(lons_w, 360.0)
+    (_, ixw, _, _), (_, ixe, _, _) = (pc._target_indices(np.array([0.0]), l,
+                                                         src_lat, src_lon,
+                                                         "nearest")
+                                      for l in (lons_w, lons_e))
+    assert np.array_equal(ixw, ixe)
+    with pytest.raises(ValueError, match=r"\[-180, 360\]"):
+        pc._target_indices(np.array([0.0]), np.array([0.0, 400.0]),
+                           src_lat, src_lon, "nearest")
+
+
+def test_plot_window_rotates_the_lattice_onto_minus_180_to_180():
+    """The store is 0..359.75; every map panel must come out on a strictly
+    ascending -180..180 axis with the FIELD rotated along with the coordinates
+    (a sheared/blank world panel was the symptom of getting this wrong)."""
+    lat = np.array([50.0, 0.0, -50.0])
+    lon = np.arange(0.0, 360.0, 15.0)               # 0, 15, ..., 345
+    raw = np.zeros((2, lat.size, lon.size), "float32")
+    raw[1] = np.arange(lon.size)[None, :]           # day 2 encodes the column
+    v = xr.DataArray(raw, dims=("dayofyear", "latitude", "longitude"),
+                     coords={"dayofyear": [1, 2], "latitude": lat,
+                             "longitude": lon})
+
+    f, x, y = pc._plot_window(v, 2, (-80.0, 80.0, None, None), lat, lon)
+    assert np.all(np.diff(x) > 0) and x[0] == -180.0 and x[-1] == 165.0
+    assert np.array_equal(y, lat)
+    # the rotated column k holds the store's own column (x[k] mod 360)
+    for k in range(lon.size):
+        j = int(np.argmin(np.abs(lon - np.mod(x[k], 360.0))))
+        assert np.array_equal(f[:, k], raw[1][:, j])
+
+    # a box straddling the antimeridian: -60..45 E, sorted ascending
+    f2, x2, y2 = pc._plot_window(v, 2, (10.0, 60.0, -45.0, 45.0), lat, lon)
+    assert np.array_equal(x2, [-45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0])
+    assert np.array_equal(y2, [50.0])
+    cols = [21, 22, 23, 0, 1, 2, 3]                # lon 315..345, 0..45
+    assert np.array_equal(f2, raw[1][[0]][:, cols])
+
+
+def test_write_maps_renders_every_panel(built, tmp_path, monkeypatch):
+    cfg, _, _ = built
+    monkeypatch.setattr(pc, "MAP_ZOOMS",
+                        {"world": (-80.0, 80.0, None, None),
+                         "tiny": (89.0, 90.0, 0.0, 0.75)})
+    files = pc.write_maps(tmp_path / "maps", (15,), cfg.out, quantile=0.95)
+    assert len(files) == 2                           # 1-day + 3-day
+    for f in files:
+        assert f.exists() and f.stat().st_size > 10_000
+
+
+# --------------------------------------------------------------------------
+# verification / finalisation: a run that died after its writes is recoverable
+# --------------------------------------------------------------------------
+
+def _copy(built, tmp_path, name="precip_copy.zarr", markers=True):
+    """Copy a finished tiny store, gate closed, as its own Config.
+
+    ``markers=False`` simulates a store built before per-tile markers existed,
+    where completeness has to be proved from the chunk files alone.
+    """
+    cfg, _, _ = built
+    dst = tmp_path / name
+    shutil.copytree(cfg.out, dst)
+    (dst / pc.DONE_NAME).unlink(missing_ok=True)
+    if markers and cfg.tiles_dir.exists():
+        shutil.copytree(cfg.tiles_dir, tmp_path / (name + ".tiles"))
+    c2 = pc.Config(years=YEARS, pool=POOL, wet_min=WET, min_samples=MIN_N,
+                   out=dst, scratch=tmp_path / "scratch-unused", tile=(2, 3))
+    c2.meta_path().unlink(missing_ok=True)
+    return c2
+
+
+def test_finalize_closes_a_store_whose_run_died_after_the_writes(built,
+                                                                 tmp_path):
+    cfg2 = _copy(built, tmp_path)
+    with pytest.raises(FileNotFoundError):
+        pc.open_climatology(cfg2.out)                 # the gate is closed
+    assert pc.tiles_missing(cfg2) == []               # markers say it is done
+    rep = pc.finalize(cfg2)
+    assert rep["decoded"] is True and rep["finalized"] is True
+    assert rep["decode"]["negatives"] == 0
+    assert rep["decode"]["p99_below_p95"] == 0
+    assert rep["decode"]["nan_vs_reliability"] == 0
+    assert (cfg2.out / pc.DONE_NAME).exists()
+    assert cfg2.meta_path().exists()                   # provenance sidecar
+    pc._CACHE.clear()
+
+
+def test_a_tile_without_its_record_falls_back_to_chunk_coverage(built,
+                                                                tmp_path):
+    """Markers are the record; without them a tile is certified only when every
+    chunk it owns is on disk — and zarr omits all-fill chunks, so the tiny
+    grid's all-NaN tile cannot be certified that way."""
+    cfg2 = _copy(built, tmp_path, "precip_nomarks.zarr", markers=False)
+    assert pc.tiles_missing(cfg2) == [[0, 0, 0]]
+    with pytest.raises(SystemExit, match="incomplete store"):
+        pc.verify_store(cfg2)
+
+
+def test_markers_certify_what_chunk_coverage_cannot(built, tmp_path):
+    """Tile (0,0,0) holds a day-chunk that is all-NaN, and zarr does not write
+    all-fill chunks — so only its per-tile marker can certify it. The other
+    tiles are certified by their chunks being on disk."""
+    cfg2 = _copy(built, tmp_path, "precip_marker.zarr")
+    assert pc.tiles_missing(cfg2) == []
+    cfg2.tile_marker(0, 0, 1).unlink()                 # provable without it
+    assert pc.tiles_missing(cfg2) == []
+    cfg2.tile_marker(0, 0, 0).unlink()                 # not provable
+    assert pc.tiles_missing(cfg2) == [[0, 0, 0]]
+    with pytest.raises(SystemExit, match="incomplete store"):
+        pc.verify_store(cfg2)
+
+
+def test_tile_accounting_matches_the_build(built):
+    cfg, _, _ = built
+    assert pc.tiles_expected(cfg) == [[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1]]
+    assert pc.tiles_missing(cfg) == []                # fresh build: all marked
+
+
+def test_verify_refuses_a_foreign_fingerprint(built, tmp_path):
+    cfg2 = _copy(built, tmp_path, "precip_foreign.zarr")
+    other = pc.Config(years=YEARS, pool=POOL + 5, wet_min=WET,
+                      min_samples=MIN_N, out=cfg2.out,
+                      scratch=cfg2.scratch, tile=(2, 3))
+    with pytest.raises(SystemExit, match="not built with this configuration"):
+        pc.verify_store(other)
+
+
+def test_verify_counts_the_product_invariants(built, tmp_path):
+    """A store written by the shipped estimator must pass the deep check."""
+    cfg, _, _ = built
+    rep = pc.verify_store(cfg, decode=True)
+    d = rep["decode"]
+    assert d["finite"] > 0 and d["nan"] > 0           # arid cells stay NaN
+    assert d["below_wet_min"] == 0
+    assert d["min_mm"] >= WET and d["max_mm"] > d["min_mm"]
 
 
 # --------------------------------------------------------------------------

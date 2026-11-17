@@ -147,3 +147,63 @@ The single biggest reclaimable thing I can see is `/opt/ewb-live/data/cache` at 
 inputs whose derived product already exists. Say the word and I prune what you name;
 otherwise I will leave the store as-is and we are one bad sync away from ENOSPC on a
 live box.
+
+---
+
+## [flood-clim] 2026-11-17 04:20 UTC — **the climatology is BUILT and usable**: `precip_threshold*()` works on ewb now
+
+`/opt/ewb-live/data/clim/precip_era5_pooled_1990_2019.zarr` (4.5 GB, 0.25° ERA5
+grid, lon 0…359.75 / lat 90…-90 descending) is **complete, verified and gated**
+(`.done` present). Nothing in the §2 contract changed; flood-detect can start.
+
+**What happened to the build** (so nobody repeats the misdiagnosis): the 2 h 17 min
+compute run had written **all 4 608 chunks** by 23:56 on 2026-11-16, but its parent
+was stopped at 00:54 before it wrote the `.done` gate — and it had logged *nothing*
+after `compute: 64 tiles to do`, because the per-tile progress line ran inside a
+joblib worker, whose logging never reaches `logs/precipclim.log`. It looked hung;
+it wasn't. Two more runs were then started against it (the second one after a box
+reboot at ~01:51, which also destroyed the 45.5 GB `/dev/shm` scratch) before the
+disk guard refused at 02:51 with 5 GB free. **No compute was redone.** I added
+`finalize`, which re-derives completeness from the store itself and re-checks the
+invariants by decoding every slice, and closed the store with it (17 s):
+1.52 × 10⁹ cells, **0 invariant violations**, NaN 6.4 % (the reliability mask),
+range 1.16 … 863.6 mm. Fixes in `precip_clim.py`: parent-side progress log,
+per-tile durable markers (`<store>.tiles/`) instead of trusting one parent-written
+state file, `verify_store`/`finalize`, `status` reports chunk coverage.
+
+**API BUG that was live in the contract I published (§2) — re-pull if you coded it:**
+`precip_threshold(date)` on the **default `grid="era5"`** raised
+`ValueError: target longitudes must be in [-180, 180)`, because the guard rejected
+the store's own 0…359.75 longitude lattice. Fixed (both longitude frames accepted;
+`_target_indices` reduces mod 360 anyway) + regression test
+`test_target_indices_accept_both_longitude_frames`. Everything else on the surface
+was smoke-tested against the real store (`tmp/smoke_loader.py`, output in
+`notes/flood_design.md` §5): `precip_threshold` (721,1440) mm · `precip_threshold_series`
+(5,721,1440) · `grid="imerg"` → (1800,3600) at ±89.95/±179.95 · `precip_threshold_on`
+on an arbitrary lattice · `wet_sample_count` · `scale=` · the two error paths.
+
+**Two things flood-detect must do that the thresholds cannot do for you** (numbers in
+`notes/flood_design.md` §5, region JSON in `notes/flood_regions.json`, 8 maps in
+`notes/flood_maps/`):
+1. **Mask land.** The biggest thresholds in the product are oceanic — global max
+   863.6 mm at 3-day p99 (doy 131, 16.75 N 68 E: the Arabian Sea ITCZ), ~3 400 cells
+   above 400 mm/72 h around doy 125-155, essentially all Indian Ocean / Bay of Bengal
+   / western Pacific.
+2. **Keep the absolute floor.** The Sahara's *defined* p99 daily thresholds are still
+   14-20 mm, so `obs >= threshold` alone calls a desert drizzle a flood: use
+   `obs >= th AND obs >= FLOOR_MM[w]` (`FLOOR_MM = {1: 20, 3: 50}`, in `precip_clim`).
+   Reliability is already in the NaNs (88 % of the Sahara/Sahel box in January, and
+   the whole sahel belt at 1-day/doy-15 — no flood is definable there); **never
+   `fillna(0)`**. The seasonal switch works: sahel 1-day p99 median is all-NaN in
+   January and 26.4 mm in July; India 3-day p99 goes 50 → 127 mm; south China 48 → 143 mm.
+
+**Ops warnings**
+- **Disk**: the ewb root FS is at **100 % / 4.5 GB free** with the store in place. The
+  build cannot be re-run here until ≥ 6 GB is freed (guard `MIN_FREE_GB = 6.0`).
+  Biggest reclaimable: `/opt/ewb-live/data/cache` = 330 GB. I have deleted nothing.
+- **Do not let me (or any of my worktrees) run `ops/remote.sh sync`.** `/opt/ewb-live`
+  currently runs my pre-rebase tree **plus the owner's `freeze <= 0 °C` patch**, which
+  my rebased branch hands off to `ne-mlc-research`; a sync from me would silently
+  revert that live rule. I update the box by `scp`-ing only
+  `ewb_live/climatology/precip_clim.py`. Land the freeze patch on `main` first.
+- Rebuild runbook (and the exact commands): `notes/flood_design.md` §7.
