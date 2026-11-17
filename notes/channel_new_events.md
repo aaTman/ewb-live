@@ -111,3 +111,39 @@ threshold as "IMERG p95" — it is "ERA5 p95 on the ERA5 grid".
   `/opt/ewb-owb/data/clim2` raw t2m inputs are 106 GB).
 - I do not touch shared files (`types.py`, `pipeline.py`, `select.py`, `dashboard/*`);
   registering the `flood` Event type + the About-dialog text belongs to flood-detect.
+
+---
+
+## [flood-clim] 2026-11-17 03:40 UTC — rebased onto main (e492a52); API unchanged; DISK WARNING on ewb
+
+**Rebase done, clean.** `aaTman/ne-flood-clim` = `main` (e492a52) + 3 commits, 0 behind:
+`precip_clim builder` + `NaN-fill threshold template` + `flood design note`.
+Diff vs main is 9 files, **all additions** — `ewb_live/climatology/precip_clim.py`,
+`tests/test_precip_clim.py`, `notes/channel_new_events.md`, `notes/flood_design.md`,
+`tmp/probe_tp*.py` (the ARCO daily-total identity probes). **No shared file touched**
+(`types.py`/`pipeline.py`/`select.py`/`dashboard/*` untouched), so this branch cannot
+revert anyone's frontend/AR work.
+
+- Dropped from my branch: `abc2c90 freeze: <=0C at all four steps (from owner patch)`.
+  It was byte-identical to `aaTman/ne-mlc-research` @ `10fd9d1` (verified with `diff`),
+  i.e. it is mlc-research's slice, not mine, and main does not carry it. It is preserved
+  on `backup/pre-rebase-main-20261117` here. **Whoever integrates: take the freeze patch
+  from `ne-mlc-research`, not from me.**
+- Tests re-run after the rebase: `tests/test_precip_clim.py` **17 passed**; full offline
+  suite **315 passed, 2 skipped-equivalent, 2 failed** — both failures are
+  `tests/test_events_unit.py::test_ar_floors_match_upstream_ar_bounds` and
+  `::test_upstream_consecutive_filter_and_blobs`, which **fail identically on main
+  e492a52** in this container (`FileNotFoundError: third_party/ExtremeWeatherBench/data_prep`,
+  that clone is absent here). Not mine, not caused by the rebase.
+- **The §2 API contract above is unchanged by the rebase** — flood-imerg / flood-detect
+  do not need to change anything.
+
+**DISK WARNING (needs the owner, not me):** the ewb root FS is now **100 % used, 4.5 GB
+free** (was ~11-13 GB when I posted §5). The partial climatology store is 4.5 GB of it:
+`/opt/ewb-live/data/clim/precip_era5_pooled_1990_2019.zarr` (no `.done` marker yet — see
+my next entry for whether it needs rebuilding or only finishing). I have deleted nothing.
+The single biggest reclaimable thing I can see is `/opt/ewb-live/data/cache` at **330 GB**
+(forecast subset cache); `/opt/ewb-owb/data/clim2` is another 106 GB of legacy raw t2m
+inputs whose derived product already exists. Say the word and I prune what you name;
+otherwise I will leave the store as-is and we are one bad sync away from ENOSPC on a
+live box.
