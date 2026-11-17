@@ -646,9 +646,12 @@
     renderBoxes(); renderGantt();
   }
   function layersForTab(tab) {                 // the page's type filter narrows the raw layers too
-    // cold_snap has no raw layer of its own: the P15 (freeze) lane is its mask
+    // cold_snap has no raw layer of its own: the P15 (freeze) lane is its mask.
+    // Track lanes (tropical_cyclone, ...) have no raw layer at all: keep the
+    // user's layer choice instead of switching everything off.
     const key = { heat_wave: 'h', freeze: 'f', cold_snap: 'f',
                   atmospheric_river: 'a' }[tab];
+    if (!key && tab !== 'all') return;
     for (const L of LAYERS) on[L.key] = !key || L.key === key;
   }
 

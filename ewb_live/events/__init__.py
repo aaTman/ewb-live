@@ -43,6 +43,11 @@ def _cache_path(cache_dir: Path, event_type: str, start: dt.date, end: dt.date) 
         from .ar import AR_RULE_REV
 
         tag = f"_{AR_RULE_REV}"
+    if event_type == "tropical_cyclone":
+        # bump when the TC qualification rule changes (tc lane, 2026-11-16)
+        from .tc import MIN_TS_FIXES, MIN_TS_HOURS, MIN_TS_WIND_KT
+
+        tag = f"_v1-{int(MIN_TS_WIND_KT)}kt-{MIN_TS_FIXES}fix-{int(MIN_TS_HOURS)}h"
     return cache_dir / f"{event_type}{tag}_{start:%Y-%m-%d}_{end:%Y-%m-%d}.json"
 
 
@@ -82,13 +87,20 @@ def detect_events(
 
     cutoff = truth_cutoff()
     det_end = min(end, cutoff.date())
-    if det_end < start:
-        logger.warning("window %s..%s fully beyond ERA5 cutoff %s", start, end, cutoff)
-        return []
+    from .select import TRACK_TYPES   # lazy: select pulls in the raster lanes
 
     by_id: dict[str, Event] = {}
     for et in types:
-        path = _cache_path(cache_dir, et, start, det_end)
+        # Track lanes read best-track observations, not ERA5 rasters: the
+        # truth-cutoff clamp must not trim them (2026-11-17 — the clamp
+        # silently erased the last ~6 days of storms from the "90-day" TC
+        # window every week, exactly where the newest cyclone lives).
+        lane_end = end if et in TRACK_TYPES else det_end
+        if lane_end < start:
+            logger.warning("detect_events %s: window %s..%s fully beyond "
+                           "ERA5 cutoff %s; lane skipped", et, start, end, cutoff)
+            continue
+        path = _cache_path(cache_dir, et, start, lane_end)
         if use_cache and not force and path.exists():
             events = [Event.from_dict(d) for d in json.loads(path.read_text())]
             logger.info("detect_events %s: cache hit (%d events)", et, len(events))
@@ -96,11 +108,16 @@ def detect_events(
             if et in ("heat_wave", "freeze", "cold_snap"):
                 from .temperature import scan_temperature_events
 
-                events = scan_temperature_events(start, det_end, et, **scan_kwargs)
+                events = scan_temperature_events(start, lane_end, et, **scan_kwargs)
+            elif et == "tropical_cyclone":
+                # track-based lane (IBTrACS best tracks), no ERA5 scan
+                from .tc import scan_tc_events
+
+                events = scan_tc_events(start, lane_end)
             else:
                 from .ar import scan_ar_events
 
-                events = scan_ar_events(start, det_end, **scan_kwargs)
+                events = scan_ar_events(start, lane_end, **scan_kwargs)
             tmp = path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps([e.to_dict() for e in events], indent=1))
             tmp.replace(path)

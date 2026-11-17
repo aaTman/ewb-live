@@ -37,6 +37,7 @@
 <script src="app.js" defer></script>
 <script src="eventviz.js" defer></script>
 <script src="mergedmap.js" defer></script>
+<script src="trackviz.js" defer></script>
 </head>
 <body>
 
@@ -297,6 +298,12 @@
       400&nbsp;kg&nbsp;m⁻¹&nbsp;s⁻¹ with a ridge criterion. The river must start over the ocean and
       reach land — making landfall on at least one day; objects entirely over land are excluded,
       and tropical cyclones are screened out using IBTrACS best tracks.</li>
+      <li><b>Tropical cyclone</b> — one IBTrACS best-track storm is one event: at least three
+      3-hourly fixes at tropical-storm force (34&nbsp;kt sustained wind) spanning at least
+      12&nbsp;hours, with extratropical and mixed fixes excluded. The event window runs from the
+      first to the last storm-force fix; the detail view draws the storm’s whole track, coloured
+      by wind. These are best-track <em>observations</em>, so the lane carries no model scorecard
+      — it is published for context, not benchmarked.</li>
       <li>The raw detector map shades each cell by its consecutive <b>completed</b> UTC days
       meeting the daily rule. Heat shades only cells reaching the detector’s 3-day minimum
       (heat ramp 3–7+) — below that a cell can never become a heat wave, so it stays blank —
@@ -309,7 +316,8 @@
       threshold for one 6-hour step keeps its id; that step shows its previous footprint with a
       lighter fill (bridged — display only, the river was not physically detected there).</li>
       <li>Parts of one system are merged, no two events overlap in time and space, and each type
-      is capped at 15 events.</li>
+      is capped at 15 events — except the track lane, where a storm is a single object that is
+      never merged and a whole season must fit, so tropical cyclones are capped at 60.</li>
     </ul>
 
     <h3>How a spell becomes an event</h3>

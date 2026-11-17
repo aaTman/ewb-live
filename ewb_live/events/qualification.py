@@ -68,6 +68,11 @@ def _layer_at(path: Path, grid: dict, layer: int,
 
 def qualified_at(event, frames_dir: Path | None = None) -> str:
     """ISO 8601 (6-hourly step) for one Event; see module docstring."""
+    # track lanes (tropical_cyclone, tc 2026-11-16) have no raster exceedance
+    # layer to qualify against: the first qualifying fix IS the qualification
+    # instant, at its own 3/6-hourly resolution
+    if event.event_type not in ("heat_wave", "freeze", "atmospheric_river"):
+        return f"{event.start:%Y-%m-%dT%H:%M:%SZ}"
     frames_dir = Path(frames_dir or DIRNAME)
     idx_p = frames_dir / "index.json"
     fallback = f"{event.start:%Y-%m-%d}T00:00:00Z"

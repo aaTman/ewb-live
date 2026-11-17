@@ -31,6 +31,7 @@ _TITLE_LABELS = {
     "freeze": "Freeze",
     "cold_snap": "Cold Snap",
     "atmospheric_river": "Atmospheric River",
+    "tropical_cyclone": "Tropical Cyclone",   # tc lane, 2026-11-16
 }
 # physical sanity ranges for peak_value, per type. NOTE freeze is NOT
 # "sub-zero": per SPEC it mirrors EWB's climatology-percentile definition
@@ -43,6 +44,9 @@ _PEAK_RANGE = {
     "freeze": (-90.0, 45.0),         # degC (percentile-relative, see above)
     "cold_snap": (-90.0, 45.0),      # degC (same rule minus the <=0C cap)
     "atmospheric_river": (0.0, 10000.0),  # IVT kg m-1 s-1
+    "tropical_cyclone": (34.0, 200.0),    # kt, 1-min sustained (34 = the
+                                          # qualification floor, 200 kt above
+                                          # the highest best-track wind on record)
 }
 # Duration ceiling for a published event. The footprint/core tracker (SPEC §2)
 # closes events on their own core, so long spells are physical rather than an
@@ -71,10 +75,14 @@ def validate_event(e: Event) -> list[str]:
         d1 = dt.date.fromisoformat(m.group("d1"))
         if d0 != e.start.date():
             problems.append(f"title start {d0} != start {e.start.date()}")
-        # titles name the LAST day of the event; end is exclusive
-        if d1 != e.end.date() - dt.timedelta(days=1):
+        # titles name the LAST day of the event; end is exclusive. A sub-daily
+        # end (a tropical cyclone ending 2026-10-03T06:00) is still active on
+        # Oct 3 — for the midnight-aligned daily lanes this is exactly
+        # end.date() - 1 day, so nothing changes for heat/freeze/AR.
+        last_day = (e.end - dt.timedelta(seconds=1)).date()
+        if d1 != last_day:
             problems.append(
-                f"title end {d1} != last event day {e.end.date() - dt.timedelta(days=1)}"
+                f"title end {d1} != last event day {last_day}"
             )
 
     # --- timing
@@ -151,6 +159,35 @@ def validate_event(e: Event) -> list[str]:
             problems.append(
                 f"centroid_lat {clat} outside bbox lat {lat0}..{lat1} (+2.5 deg tol)"
             )
+
+    # --- tropical cyclone: best-track cross-checks (tc lane, 2026-11-16)
+    if e.event_type == "tropical_cyclone":
+        from ewb_live.events.tc import MIN_TS_FIXES
+
+        pw = det.get("peak_wind_kt")
+        if pw is not None and pv is not None and abs(pw - pv) > 0.11:
+            problems.append(
+                f"peak_wind_kt {pw} != peak_value {pv} (peak_value is max wind in kt)")
+        mp = det.get("min_pressure_hpa")
+        if mp is not None and not 850.0 <= mp <= 1015.0:
+            problems.append(f"min_pressure_hpa {mp} outside [850, 1015] hPa")
+        if int(det.get("ts_fixes") or 0) < MIN_TS_FIXES:
+            problems.append(
+                f"ts_fixes {det.get('ts_fixes')} below the "
+                f"{MIN_TS_FIXES}-fix qualification floor")
+        cat = det.get("peak_category")
+        if pv is not None and cat in ("CAT 1", "CAT 2", "CAT 3", "CAT 4", "CAT 5") \
+                and pv < 64.0:
+            problems.append(f"peak_category {cat} with peak wind {pv} kt (< 64 kt)")
+        trk = det.get("track")
+        if not trk:
+            problems.append("track empty: the dashboard has nothing to draw")
+        else:
+            bad = [r for r in trk if not (isinstance(r, list) and len(r) == 5
+                                          and r[1] is not None and r[2] is not None)]
+            if bad:
+                problems.append(f"{len(bad)} track row(s) not [time, lat, lon, "
+                                "intensity, pressure] with finite lat/lon")
 
     return problems
 

@@ -9,11 +9,14 @@ const TYPE_META = {
   freeze:             { label: 'Freezes',            short: 'Freeze',             color: 'var(--series-freeze)' },
   cold_snap:          { label: 'Cold snaps',         short: 'Cold snap',          color: 'var(--series-cold-snap)' },
   atmospheric_river:  { label: 'Atmospheric rivers', short: 'Atmospheric river',  color: 'var(--series-ar)' },
+  tropical_cyclone:   { label: 'Tropical cyclones',  short: 'Tropical cyclone',   color: 'var(--series-tc)',
+                        noScores: true },   // track lane: published, not benchmarked
 };
 /* AR green (design 2026-11-08, owner request): all type colors resolve
    through CSS tokens — dual-theme values, no hardcoded hex in JS. */
 const TYPE_SERIES_VAR = { heat_wave: '--series-heat', freeze: '--series-freeze',
-  cold_snap: '--series-cold-snap', atmospheric_river: '--series-ar' };
+  cold_snap: '--series-cold-snap', atmospheric_river: '--series-ar',
+  tropical_cyclone: '--series-tc' };
 function cssVar(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || fallback;
@@ -21,7 +24,8 @@ function cssVar(name, fallback) {
 function typeColor(etype) {
   return cssVar(TYPE_SERIES_VAR[etype] || '--series-unknown', '#848475');
 }
-const TYPE_ORDER = ['heat_wave', 'freeze', 'cold_snap', 'atmospheric_river'];
+const TYPE_ORDER = ['heat_wave', 'freeze', 'cold_snap', 'atmospheric_river',
+  'tropical_cyclone'];
 
 /* Owner 2026-11-07: empty lanes are legitimate (freezes may be empty at p15).
    Criteria wording mirrors ewb_live/events/temperature.py + ar.py thresholds —
@@ -31,10 +35,29 @@ const TYPE_CRITERIA = {
   freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour) and at or below 0 °C, over land. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). On the map the freeze layer shades cells from their first consecutive COMPLETED day (cold runs are short, so 1–2-day cells stay visible for context; a freeze still needs 3+ days), dithered = today so far on a cell with at least one completed day.',
   cold_snap: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), over land — the freeze rule without its ≤0 °C requirement. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). Where a freeze covers the same window and box the freeze is published instead of the cold snap, so the two never double-count a spell. The cold-snap lane has no raw layer of its own — it reads the same P15 layer as freeze, shading cells from their first consecutive COMPLETED day (dithered = today so far on a cell with at least one completed day).',
   atmospheric_river: 'Integrated water-vapour transport peaking at ≥400 kg m⁻¹ s⁻¹ and reaching land.',
+  tropical_cyclone: 'One IBTrACS best-track storm = one event: at least 3 track fixes at tropical-storm force (≥34 kt sustained) spanning at least 12 hours, extratropical/mixed fixes excluded. Peak value is the strongest sustained wind in the tropical-storm window (kt); the detail view draws the full track, coloured by intensity. Best-track observations, so there is no model scorecard for this lane yet.',
 };
 const emptyLaneLine = (t) => t === 'all'
   ? 'No events met the criteria this window'
+  : t === 'tropical_cyclone' ? tcEmptyNote()
   : `No ${TYPE_META[t].label.toLowerCase()} met the criteria this window`;
+
+/* Honest zero for the tropical-cyclone lane (owner rule 2026-11-17): a bare
+   "0" reads as "the sky was empty", but IBTrACS publishes with a lag of days
+   to weeks, and a data release can also predate the lane itself. meta.json
+   carries the truth (pipeline.py: meta.ibtracs) — say which it is. */
+function tcEmptyNote() {
+  const m = state.meta || {};
+  const ib = m.ibtracs;
+  if (!('ibtracs' in m)) {
+    return 'Tropical cyclones are not published in this data release yet — the IBTrACS lane goes live with a future weekly build.';
+  }
+  if (!ib) {
+    return 'The IBTrACS best-track archive was unreachable when this data was built, so tropical cyclones could not be checked this window.';
+  }
+  const d = String(ib.latest_fix || '').slice(0, 10);
+  return `No qualifying storm in the IBTrACS archive through ${d} — best-track publication lags real time (the archive runs ~${ib.lag_days} days behind today).`;
+}
 
 const MODEL_COLORS = {
   ifs_hres: '#8f9bb3', graphcast: '#4f8ff7', pangu_weather: '#21b8a0',
@@ -579,10 +602,11 @@ function renderControls() {
      tab could control (APG tabs would need one tabpanel + aria-controls + a
      roving tabindex for a filter that acts on four regions of the page).
      aria-pressed on a labelled group says exactly what this is. */
-  const mkTab = (id, label) => {
+  const mkTab = (id, label, tip) => {
     const b = el('button', state.tab === id ? 'on' : '', label);
     b.type = 'button';
     b.setAttribute('aria-pressed', String(state.tab === id));
+    if (tip) b.title = tip;
     b.onclick = () => setTab(id);
     tabs.appendChild(b);
   };
@@ -590,7 +614,9 @@ function renderControls() {
   mkTab('all', `All <span class="n">${state.events.filter(inReg).length}</span>`);
   for (const t of TYPE_ORDER) {
     const n = state.events.filter((e) => e.event_type === t && inReg(e)).length;
-    mkTab(t, `<i class="type-dot" style="background:${TYPE_META[t].color}"></i>${TYPE_META[t].label} <span class="n">${n}</span>`);
+    /* a zero badge on the TC lane carries the honest-zero note as a tooltip */
+    const tip = (t === 'tropical_cyclone' && n === 0) ? tcEmptyNote() : '';
+    mkTab(t, `<i class="type-dot" style="background:${TYPE_META[t].color}"></i>${TYPE_META[t].label} <span class="n">${n}</span>`, tip);
   }
 
   const pills = $('#model-pills');
@@ -961,7 +987,12 @@ function renderScorecard() {
     // contract (n_events/by_type, centroid rule owned by ewb_live/regions.py);
     // Global counts the curated catalog (same universe as before this feature).
     const re = regionEntry();
-    const nEv = re ? (re.by_type || {})[etype] || 0
+    /* A track lane has no score rows by design, so the contract's scored-event
+       split can only ever answer 0 for it — in region view count the published
+       storms through the same region map the tables were built from. */
+    const nEv = (re && TYPE_META[etype] && TYPE_META[etype].noScores)
+      ? state.events.filter((e) => e.event_type === etype && inRegion(e)).length
+      : re ? (re.by_type || {})[etype] || 0
       : state.events.filter((e) => e.event_type === etype).length;
 
     const block = el('div', 'sc-block');
@@ -985,7 +1016,18 @@ function renderScorecard() {
       host.appendChild(block);
       continue;
     }
-    if (!cols) continue;
+    if (!cols) {
+      // track lanes are published without a scorecard (no EWB benchmark for
+      // best-track events): say so instead of dropping the lane silently
+      if (TYPE_META[etype] && TYPE_META[etype].noScores) {
+        const note = el('p', 'lane-empty');
+        note.textContent = `Not scored — ${nEv} storm${nEv === 1 ? '' : 's'} tracked from IBTrACS best tracks; no EWB benchmark for this lane yet.`;
+        note.title = TYPE_CRITERIA[etype];
+        block.appendChild(note);
+        host.appendChild(block);
+      }
+      continue;
+    }
 
     const wrap = el('div', 'table-wrap');
     const table = el('table');
@@ -1603,7 +1645,15 @@ function storyLabel(ev, viz) {
   };
   const parts = [(TYPE_META[ev.event_type] || {}).short || ev.event_type,
     region, `${short(ev.start)} \u2013 ${short(eventLastDay(ev))}`];
-  if (ev.event_type === 'atmospheric_river') {
+  if (ev.event_type === 'tropical_cyclone') {
+    // track lane (tc 2026-11-16): the storm's own numbers, not ERA5 daily means
+    if (d.name && d.name !== 'Unnamed') parts.push(d.name);
+    if (Number.isFinite(ev.peak_value)) {
+      parts.push(Math.round(ev.peak_value) + ' kt' + (d.peak_category ? ' ' + d.peak_category : ''));
+    }
+    if (Number.isFinite(d.min_pressure_hpa)) parts.push(Math.round(d.min_pressure_hpa) + ' hPa');
+    if (d.basin_name) parts.push(d.basin_name);
+  } else if (ev.event_type === 'atmospheric_river') {
     if (Number.isFinite(ev.peak_value)) parts.push('peak IVT ' + Math.round(ev.peak_value) + ' kg m⁻¹ s⁻¹');
     // landfall_days can exceed the event length upstream (G-28): print the landfall date instead
     const lf = parseISO(d.landfall_time);
@@ -1710,7 +1760,10 @@ window.applyBboxFix = function (id, bbox) {
 /* Human name for a list row / detail title: "Heat wave · Iran". Region comes
    from the bbox vote once the country table is loaded (vague band before). */
 function eventName(ev, viz) {
-  const t = (TYPE_META[ev.event_type] || {}).short || ev.event_type;
+  let t = (TYPE_META[ev.event_type] || {}).short || ev.event_type;
+  // the track lane names its storm (IBTrACS NAME); the area lanes stay anonymous
+  const nm = ev.details && ev.details.name;
+  if (ev.event_type === 'tropical_cyclone' && nm && nm !== 'Unnamed') t += ' ' + nm;
   let region;
   if (viz) region = eventRegion(ev, viz);
   else {
@@ -1739,11 +1792,13 @@ function eventDurationDays(ev) {
 
 /* ev.end is exclusive (last scored instant = end - 6 h; viz renders
    end - 1 min) — display the last ACTIVE day, matching the detector's own
-   title and the viz frame range. */
+   title and the viz frame range. Track lanes end mid-day (a cyclone ending at
+   09:00 is still active that day), so step back one instant rather than one
+   day; for the midnight-aligned heat/freeze/AR ends that is the same day. */
 function eventLastDay(ev) {
   const b = parseISO(ev.end);
   if (!b) return ev.end;
-  return new Date(b.getTime() - 86400000).toISOString();
+  return new Date(b.getTime() - 1000).toISOString();
 }
 
 function renderEventTable() {
@@ -2061,7 +2116,17 @@ function selectEvent(id, fromMap, nav) {
   $('#detail-charts').innerHTML = '';
 
   const vizHost = $('#detail-viz');
-  if (vizHost && window.EventViz) {
+  /* Track lanes (tropical_cyclone, tc 2026-11-16) carry their own geometry in
+     details.track (shared 5-slot row schema, documented in the tc lane module)
+     and have no viz.json asset: draw the best-track map instead of loading an
+     event visual. One renderer serves every lane that publishes a track. */
+  if (vizHost && window.TrackViz && Array.isArray(ev.details?.track) && ev.details.track.length) {
+    if (window.EventViz) EventViz.teardown();
+    vizHost.style.minHeight = '';
+    vizHost.innerHTML = '';
+    state._viz = null; state._vizFor = id;
+    TrackViz.render(vizHost, ev, { color: typeColor(ev.event_type) });
+  } else if (vizHost && window.EventViz) {
     vizHost.innerHTML = '<div class="sec-note">loading event visual\u2026</div>';
     vizHost.style.minHeight = '520px';   // CLS: reserve the panel area while the viz JSON loads
     /* Owner 2026-11-08 + Ponytail: a missing/broken viz never leaves a blank
@@ -2193,6 +2258,7 @@ function closeDetail(nav) {
   state.detailDay = null;
   state.detailChartsPending = null;
   if (window.EventViz) { EventViz.onLead = null; EventViz.onModels = null; EventViz.onLayers = null; EventViz.onDay = null; EventViz.initialLead = null; EventViz.teardown(); }
+  if (window.TrackViz) TrackViz.teardown();
   syncUrl(!!nav.push);
   $('#detail-sec').classList.add('hidden');
   document.body.classList.remove('detail-open');
