@@ -34,41 +34,42 @@
      pairs the owner still owns: notes/chips_design.md.
      Identity is glyph + label + hue; the hue is never the only channel. */
   /* heat wave orange (was #c6493c red): midlat_cyclone is RED now (owner), so
-     heat steps to orange — hue ~56° and 0.10 lighter, 3.16:1 on paper. */
-  --series-heat:          #c86906;  --series-heat-soft:     #fee6d5;
-  --series-freeze:        #194f96;  --series-freeze-soft:   #dfecff;  /* L 0.55 — the cold-family floor; cold_snap sits 0.10 above it */
-  /* Cold snap (owner 2026-11-16; re-stepped 2026-11-17, chips redesign): the
+     heat steps to orange — hue ~56° and one step lighter, 3.83:1 on paper. */
+  --series-heat:          #c86906;  --series-heat-soft:     #fee8d9;
+  --series-freeze:        #194f96;  --series-freeze-soft:   #e2eeff;  /* L 0.55 — the cold-family floor; cold_snap sits 0.10 above it */
+  /* Cold snap (owner 2026-11-16; re-stepped 2026-11-18, chips redesign v3): the
      freeze rule without the 0 °C cap, so it keeps the cold family but a
-     distinct teal. The old #0e6d78 sat under the dataviz chroma floor (C 0.08
-     — it read grey, and ΔE 11.3 from freeze for normal vision); #0b859e keeps
-     the hue, raises chroma to C 0.11 and clears the set's gates: ≥15.0 normal
-     and ≥8 CVD against every touching lane (notes/chips_design.md).
-     Measured: 3.16:1 on paper. */
-  --series-cold-snap:      #178bbc;  --series-cold-snap-soft:  #d6f0ff;
-  --series-ar:            #1e7729;  --series-ar-soft:       #ddf2dd;  /* AR green (design 2026-11-08), held; L stepped to 0.50 to clear the flood teal beside it */
+     distinct step. It used to be the set's TEAL (#0b859e) — with flood moving
+     to teal (owner) that hue was needed elsewhere, so cold_snap steps to the
+     cold family's lighter end: ice-blue, one full lightness step above the
+     freeze blue (sibling-but-distinct: ΔE 15.0 normal / ≥12 CVD) and clear of
+     the flood teal it sits diagonally across from in the chip grid (12.7).
+     Measured: 3.28:1 on paper. */
+  --series-cold-snap:      #4090ea;  --series-cold-snap-soft:  #e1eefe;  /* ice-blue (was teal): flood owns teal now, so this steps to the cold family's lighter end; 3.28:1 on paper, ΔE 15.0 from freeze and 12.7 from the flood teal below it */
+  --series-ar:            #1e7729;  --series-ar-soft:       #dff4df;  /* AR green (design 2026-11-08), held; L stepped to 0.50 to clear the flood teal beside it */
   /* TC violet (tc lane 2026-11-16): 6.51:1 on paper. Chosen so the four lane
      hues stay separated by BOTH hue and lightness — freeze L* 34.0 < TC 39.8
      < AR 46.3 ≈ heat 48.4. Violet reads apart from red/green/blue for every
      common CVD type. Not a map-fill lane, so the AR < freeze < heat fill
      ladder is untouched. */
-  --series-tc:            #6f42c1;  --series-tc-soft:       #ece7ff;
-  /* Flood berry (flood lane 2026-11-17; re-stepped the same day in the chips
-     redesign): berry hue ~350 deg keeps it apart from every existing lane by
-     hue AND lightness. The old #a01e56 collapsed against the AR green under
-     deuteranopia (CVD ΔE 7.1 — a WARN band the 7-type set cannot spend, every
-     slot being identity-critical); #9b255c pulls that pair to 8.1 and holds
-     ≥8 against all touching lanes. Measured 7.33:1 on paper, 6.73:1 on the
-     light map ocean. Not a map-fill lane (boxes + Gantt only). */
-  --series-flood:         #10999c;  --series-flood-soft:    #d1f3f4;
-  /* Mid-latitude low (mlc lane 2026-11-17). The mlc branch picked violet
-     #5f3d99 — hue 262 deg against the TC lane's #6f42c1 at hue 261 deg, i.e.
-     the two cyclone lanes were the SAME colour and indistinguishable in a
-     seven-lane UI. Re-hued to amber (hue 39 deg), the one clear gap left in the
-     ladder: heat 6 / AR 123 / cold snap 186 / freeze 217 / TC 261 / flood berry
-     333. Measured 6.82:1 on --paper and 6.15:1 on the light map ocean, L* 38.5.
-     Not a map-fill lane (track + box rendering), so the heat < freeze < AR fill
-     ladder is untouched. Easy to reverse: only these two lines. */
-  --series-mlc:           #c13c3b;  --series-mlc-soft:      #ffe4e1;
+  --series-tc:            #6f42c1;  --series-tc-soft:       #eee9ff;
+  /* Flood (flood lane 2026-11-17; hue changed 2026-11-18, owner): TEAL /
+     blue-green. The berry #9b255c it replaces read as a lighter twin of the TC
+     violet one chip away, and magenta is not what a flood map looks like.
+     Teal is the lane's own map ground (the FLOOD IMPACT ramp runs pale
+     blue-green → deep teal), so chip and raw layer finally agree. ΔE 18.0 from
+     the AR green beside it, 15.4 from the TC violet, 3.26:1 on paper. Not a
+     map-fill lane (boxes + Gantt only). */
+  --series-flood:         #0f9ea4;  --series-flood-soft:    #d3f4f6;  /* teal / blue-green (owner: was magenta, which read as TC-adjacent): ΔE 18.0 from the AR green beside it, 3.26:1 on paper */
+  /* Mid-latitude low (mlc lane 2026-11-17; hue changed 2026-11-18, owner): RED.
+     Amber #7d5200 was another warm mark next to heat's warm mark and read as
+     "warning" everywhere else on this site; a mid-latitude cyclone is a named
+     windstorm, so it owns the storm colour. Red is the skill's reserved
+     critical-status hue, which is legal here because identity is never colour
+     alone (every chip carries a glyph + label). heat_wave moved to orange at
+     the same time so the two warm marks stay apart. ΔE 14.6 from the TC violet
+     beside it, 7.07:1 on paper. */
+  --series-mlc:           #a0312d;  --series-mlc-soft:      #ffe6e3;  /* RED (owner): the deep end of red so it holds 7.07:1 and stays a step dark from heat orange; ΔE 14.6 from TC, glyph + label carry it against heat */
   --series-alt:           #4f8c1f;  --series-alt-soft:      #d7e4cb;
   --series-unknown:       #848475;  --series-unknown-soft:  #e2e2de;
   --stone-grey:           #848475;
@@ -112,7 +113,10 @@
   --text-dim: var(--ink-secondary);
   --accent-ui: var(--accent-link); /* links/focus use the darkened orange, never #ff6000 text */
   --better: 26, 79, 150;   /* rgb — series-freeze (better-than-baseline) */
-  --worse:  198, 73, 60;   /* rgb — series-heat (worse-than-baseline)  */
+  --worse:  198, 73, 60;   /* rgb — the worse-than-baseline STATUS red (a
+                                                        status pair, not the
+                                                        heat_wave identity, which
+                                                        is orange now) */
   --heat:   var(--series-heat);
   --freeze: var(--series-freeze);
   --cold-snap: var(--series-cold-snap);
@@ -154,15 +158,15 @@ html[data-theme="dark"] {
      and re-validated in the tab/Gantt order: adjacent ΔE ≥15 normal, ≥8 CVD,
      ≥3:1 on dark paper. Lightness alternates high/low because a 0.19-wide band
      cannot hold seven lightness steps — the ladder is carried by hue + L. */
-  --series-heat:          #d67620;  --series-heat-soft:     #4c311d;  /* orange, L 0.66 — 4.55:1 on dark paper */
-  --series-freeze:        #5468c8;  --series-freeze-soft:   #2f3652;  /* L 0.55 — 3.15:1 on dark paper; the icon on the selected alabaster wash sits under 3 (label text is the relief channel) */
+  --series-heat:          #d67620;  --series-heat-soft:     #4a301c;  /* orange (was red), L 0.66 — 4.66:1 on dark paper */
+  --series-freeze:        #5468c8;  --series-freeze-soft:   #2d3551;  /* L 0.55 — 3.02:1 on dark paper; the icon on the selected alabaster wash sits under 3 (label text is the relief channel) */
   /* cold snap teal, dark: re-stepped into the dark band and away from freeze
      (the pair must read sibling-but-distinct: normal ΔE 15.1, CVD ≥8) */
-  --series-cold-snap:      #0a9cbc;  --series-cold-snap-soft:  #143e4a;  /* ice-blue, L 0.64 — 5.18:1; 15.1 from freeze */
-  --series-ar:            #75a322;  --series-ar-soft:       #303d20;  /* AR green dark, L 0.66 — 4.86:1 on dark paper */
-  --series-tc:            #967fd0;  --series-tc-soft:       #3a324f;  /* TC violet dark, L 0.65 — 4.11:1; ≥11 CVD from both neighbours */
-  --series-flood:         #028b77;  --series-flood-soft:    #154038;  /* teal, L 0.57 — 3.70:1; 15.1 from the AR green beside it */
-  --series-mlc:           #c43d4d;  --series-mlc-soft:      #4f2d2e;  /* RED (owner), L 0.56 — 3.23:1; 25.1 from TC, 14.6 from heat wave */
+  --series-cold-snap:      #0a9cbc;  --series-cold-snap-soft:  #123d48;  /* ice-blue (was teal), L 0.64 — 4.68:1; 15.2 from freeze, 12.7 from the flood teal */
+  --series-ar:            #75a322;  --series-ar-soft:       #2f3c1f;  /* AR green dark, L 0.66 — 5.06:1 on dark paper */
+  --series-tc:            #967fd0;  --series-tc-soft:       #39314e;  /* TC violet dark, L 0.65 — 4.50:1 on dark paper; 12.6 CVD from the teal beside it */
+  --series-flood:         #028b77;  --series-flood-soft:    #143f36;  /* teal (owner), L 0.57 — 3.58:1 on dark paper; 15.1 from the AR green beside it */
+  --series-mlc:           #cf4a55;  --series-mlc-soft:      #4d2c2c;  /* RED (owner), L 0.58 — 3.43:1 on dark paper; 24.7 from TC, 13.2 from heat orange (the one non-adjacent pair that leans on glyph + label) */
   --series-alt:           #78b447;  --series-alt-soft:      #33402a;
   --series-unknown:       #acab9c;  --series-unknown-soft:  #3b3b34;
   --stone-grey:           #acab9c;

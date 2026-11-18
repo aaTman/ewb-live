@@ -678,8 +678,10 @@ function tabsKeyNav(e) {
   let j = null;
   if (e.key === 'ArrowRight') j = (i + 1) % list.length;
   else if (e.key === 'ArrowLeft') j = (i - 1 + list.length) % list.length;
-  else if (e.key === 'ArrowDown') j = (i + cols) % list.length;
-  else if (e.key === 'ArrowUp') j = (i - cols + list.length) % list.length;
+  /* Up/Down step a column-stride and CLAMP: a wrapped grid has no next row, and
+     wrapping would drop the focus three chips sideways. */
+  else if (e.key === 'ArrowDown') { const k = i + cols; j = k < list.length ? k : i; }
+  else if (e.key === 'ArrowUp') { const k = i - cols; j = k >= 0 ? k : i; }
   else if (e.key === 'Home') j = 0;
   else if (e.key === 'End') j = list.length - 1;
   if (j === null) return;
