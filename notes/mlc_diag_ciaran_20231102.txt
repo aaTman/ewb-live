@@ -1,0 +1,51 @@
+/opt/ewb-live/.venv/lib/python3.12/site-packages/gribapi/__init__.py:23: UserWarning: ecCodes 2.42.0 or higher is recommended. You are running version 2.34.1
+  warnings.warn(
+== frame 2023-11-02 06:00:00 (ARCO reader path, 1 frame, (1, 705, 1440) float32) ==
+  lat: n=705 first=88.00 last=-88.00 ascending=False monotonic=True mean|diff|=0.2500 max|diff|=0.25 min|diff|=0.2500 grid_spacing()=0.2500
+  lon: n=1440 first=0.00 last=-0.25 ascending=False monotonic=False mean|diff|=0.4998 max|diff|=359.75 min|diff|=0.2500 grid_spacing()=0.4998
+
+-- tracker as the reader hands it --
+  nodes: 1
+  cells <1010 hPa in |lat| 5-80: 304368   band min 944.7 hPa
+  peak separation min_distance = 17 cells (lon grid step used: 0.4998 deg)
+  local minima (pre-merge, pre-contour): 92
+      lat      lon    mslp  closed? r_contour(as) r_contour(true)
+   -74.50  -147.00   944.7      yes         32.58            3.43
+   -74.00   -22.25   948.7      yes         10.66            2.98
+   -62.50   -42.25   953.4      yes         21.93            1.49
+    50.50    -1.50   954.0      yes          2.91            1.11
+   -59.25    65.00   957.9      yes         35.79            3.39
+   -78.50   -86.75   960.7      yes         16.44            0.60
+   -71.00   -90.50   963.5       no           inf             inf
+    55.50   -11.50   964.4      yes          8.88            1.24
+   -75.75   162.00   964.9       no           inf             inf
+   -80.00   175.50   965.1       no           inf             inf
+   -62.75     6.75   966.1      yes          6.67            2.00
+   -68.50   151.75   971.1       no           inf             inf
+  enclosing closed +3 hPa rings among those 12: 8, within 6.0 deg: 8
+
+-- same frame, longitude axis sorted ascending --
+  lon: n=1440 first=-180.00 last=179.75 ascending=True monotonic=True mean|diff|=0.2500 max|diff|=0.25 min|diff|=0.2500 grid_spacing()=0.2500
+  nodes: 24
+  cells <1010 hPa in |lat| 5-80: 304368   band min 944.7 hPa
+  peak separation min_distance = 24 cells (lon grid step used: 0.2500 deg)
+  local minima (pre-merge, pre-contour): 75
+      lat      lon    mslp  closed? r_contour(as) r_contour(true)
+   -74.50  -147.00   944.7      yes          3.42            3.43
+   -74.00   -22.25   948.7      yes          2.98            2.98
+   -62.50   -42.25   953.4      yes          1.47            1.49
+    50.50    -1.50   954.0      yes          1.10            1.11
+   -59.25    65.00   957.9      yes          3.40            3.39
+   -78.50   -86.75   960.7      yes          0.60            0.60
+   -71.00   -90.50   963.5       no           inf             inf
+    55.50   -11.50   964.4      yes          1.23            1.24
+   -75.75   162.00   964.9       no           inf             inf
+   -80.00   175.50   965.1       no           inf             inf
+   -62.75     6.75   966.1      yes          2.00            2.00
+   -68.50   151.75   971.1       no           inf             inf
+  enclosing closed +3 hPa rings among those 12: 8, within 6.0 deg: 8
+     -74.50  -147.00   944.7 hPa
+     -74.00   -22.25   948.7 hPa
+     -62.50   -42.25   953.4 hPa
+      50.50    -1.50   954.0 hPa
+     -59.25    65.00   957.9 hPa

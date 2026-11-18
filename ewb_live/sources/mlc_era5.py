@@ -23,6 +23,10 @@ Units: ARCO MSLP is Pa; we divide by 100 and hand out **hPa**, the unit
 ``mlc_track`` and the PROOF recipe use. Latitude comes out ascending (ARCO is
 descending), longitude in [-180, 180) (ARCO is 0-360), the duplicated polar rows
 beyond +-88 deg dropped (the tracker never searches there and ERA5 repeats them).
+Both orders are *enforced* by ``check_axes``: the axis order is part of the
+tracker's contract, and a rotated longitude axis silently doubles the grid step
+its contour mapper derives, which cost this lane every event it should have
+published (mlc-fix 2026-11-18, ``notes/mlc_fix.md``).
 """
 
 from __future__ import annotations
@@ -60,14 +64,71 @@ def open_arco():
 
 
 def _to_repo_frame(mslp):
-    """Pa (time, lat desc, lon 0-360) -> hPa (time, lat asc, lon [-180, 180))."""
+    """Pa (time, lat desc, lon 0-360) -> hPa (time, lat asc, lon [-180, 180)).
+
+    Both axis orders are load-bearing, not cosmetic (mlc-fix 2026-11-18, the
+    0-event blocker in notes/mlc_fix.md):
+
+    * **latitude** — ARCO is 90 N-first (descending). The old guard flipped only
+      an *ascending* input, so ARCO came out descending and every consumer that
+      reads the documented ascending axis (``grid_spacing``, the gap-fill
+      distance field, the cached orography) was off by a reversal.
+    * **longitude** — shifting ``0..359.75`` by ``+180 mod 360`` does not sort
+      it, it ROTATES it: the axis becomes ``0, 0.25, …, 179.75, -180, …, -0.25``
+      with one ``-359.75`` jump. The data columns stay in physical order, but
+      ``mlc_track.contour_to_latlon`` rebuilds longitudes as
+      ``lon[0] + column * grid_spacing(lon)``, and ``grid_spacing`` averages
+      ``|diff|`` across that jump: ``0.4998 deg`` on a 0.25 deg grid, exactly
+      2x. Every closed-contour radius the tracker measures is then inflated by
+      up to ``2/cos(lat)`` — the ``centre + 3 hPa closes within 6 deg`` test
+      measured 8-51 deg for rings that are 1-4 deg across, so real ARCO MSLP
+      produced 0 nodes and the lane published nothing while the same frames in
+      the sorted frame gave 24-27 nodes per frame. Hence the explicit reorder.
+
+    The result is validated against the tracker's contract before it leaves
+    this module.
+    """
     da = mslp.rename("mslp")
-    if float(da.latitude.values[0]) < float(da.latitude.values[-1]):
+    if float(da.latitude.values[0]) > float(da.latitude.values[-1]):   # ARCO: 90N-first
         da = da.isel(latitude=slice(None, None, -1))
-    da = da.assign_coords(
-        longitude=(np.asarray(da.longitude.values, float) + 180.0) % 360.0 - 180.0)
-    # ARCO longitude is ascending 0..359.75, so the shifted axis is ascending too
-    return (da / 100.0).sel(latitude=slice(LAT_LIMIT, -LAT_LIMIT)).astype(np.float32)
+    da = da.sel(latitude=slice(-LAT_LIMIT, LAT_LIMIT))                 # ascending slice
+    shifted = (np.asarray(da.longitude.values, float) + 180.0) % 360.0 - 180.0
+    da = da.assign_coords(longitude=shifted).isel(longitude=np.argsort(shifted,
+                                                                         kind="stable"))
+    out = (da / 100.0).astype(np.float32)
+    check_axes(out.latitude.values, out.longitude.values)
+    return out
+
+
+def check_axes(lats: np.ndarray, lons: np.ndarray) -> None:
+    """Fail loudly if the lattice is not the ascending 0.25-style frame the
+    tracker's index math assumes (see :func:`_to_repo_frame`)."""
+    la = np.asarray(lats, float)
+    lo = np.asarray(lons, float)
+    if la.size < 2 or not np.all(np.diff(la) > 0):
+        raise ValueError(f"mlc_era5: latitude axis must be ascending, got "
+                         f"{la[0] if la.size else float('nan')}.."
+                         f"{la[-1] if la.size else float('nan')}")
+    d = np.diff(lo)
+    if lo.size < 2 or np.any(d <= 0) or np.max(d) - np.min(d) > 1e-6:
+        raise ValueError(f"mlc_era5: longitude axis must be ascending and uniform; "
+                         f"got first={lo[0] if lo.size else float('nan')} "
+                         f"last={lo[-1] if lo.size else float('nan')} "
+                         f"max|d|={np.max(np.abs(d)) if d.size else float('nan')}")
+
+
+def _ranges(times: list[dt.datetime]) -> str:
+    """Compact contiguous-run summary of dropped timestamps."""
+    if not times:
+        return ""
+    out, s, p = [], times[0], times[0]
+    for t in times[1:]:
+        if (t - p).total_seconds() > 6 * 3600:
+            out.append(f"{s:%m-%d %H}Z..{p:%m-%d %H}Z")
+            s = t
+        p = t
+    out.append(f"{s:%m-%d %H}Z..{p:%m-%d %H}Z")
+    return ", ".join(out if len(out) <= 4 else out[:4] + [f"(+{len(out) - 4} more)"])
 
 
 def read_mslp_window(start: dt.datetime, end: dt.datetime, *,
@@ -80,8 +141,14 @@ def read_mslp_window(start: dt.datetime, end: dt.datetime, *,
     store is chunked ``(4, 721, 600)``, i.e. 24 frames is exactly 6 chunks and
     one read per day, and the transient peak stays at the window plus one chunk.
 
-    Times that ARCO does not have yet (the ~6-day lag) are skipped, so the
-    caller always gets a contiguous array of what actually exists.
+    Times that ARCO does not have yet are skipped, so the caller always gets
+    what actually exists — and that includes more than the time *index*: ARCO's
+    axis runs ahead of its data, and whole frames at the tail are all-NaN
+    (measured 2026-11-18: every cell of 2026-11-12 00Z .. 2026-11-17 00Z is NaN).
+    They are dropped here, because peak detection would ignore them but the
+    tracker's gap filling would happily "fill" a hole from an empty frame and
+    publish a NaN central pressure. The lane therefore reports the frames it
+    really used (``mlc.LANE_STATUS``), not the frames the index advertised.
     """
     src = open_arco() if ds is None else ds
     want = np.arange(np.datetime64(start, "h"),
@@ -97,24 +164,39 @@ def read_mslp_window(start: dt.datetime, end: dt.datetime, *,
     times: list[dt.datetime] = []
     blocks: list[np.ndarray] = []
     lats = lons = None
+    n_empty = 0
+    empty: list[dt.datetime] = []
     step = max(1, int(chunk_hours) // 6)
     for i in range(0, want.size, step):
         block = want[i:i + step]
         sel = src[MSLP_VAR].sel(time=block)
         da = _to_repo_frame(sel).transpose("time", "latitude", "longitude")
-        blocks.append(np.ascontiguousarray(
-            np.asarray(da.values, np.float32), dtype=np.float32))
-        times.extend(t.astype("datetime64[h]").astype(dt.datetime)
-                     for t in np.asarray(da.time.values))
-        if lats is None:
+        arr = np.ascontiguousarray(np.asarray(da.values, np.float32), dtype=np.float32)
+        got = [t.astype("datetime64[h]").astype(dt.datetime)
+               for t in np.asarray(da.time.values)]
+        ok = np.any(np.isfinite(arr), axis=(1, 2))      # ARCO index ahead of data
+        if not ok.all():
+            gone = [t for t, k in zip(got, ok) if not k]
+            n_empty += len(gone)
+            empty += gone
+            arr, got = arr[ok], [t for t, k in zip(got, ok) if k]
+        if arr.shape[0]:
+            blocks.append(arr)
+            times.extend(got)
+        if lats is None and arr.shape[0]:
             lats = np.asarray(da.latitude.values, float)
             lons = np.asarray(da.longitude.values, float)
-        del sel, da
+        del sel, da, arr
+    if not blocks:
+        logger.warning("mlc_era5: %d frames of %s..%s are all-NaN in ARCO "
+                       "(its index runs ahead of the data)", n_empty, start, end)
+        return [], np.zeros((0, 0, 0), np.float32), np.zeros(0), np.zeros(0)
     mslp = blocks[0] if len(blocks) == 1 else np.concatenate(blocks, axis=0)
     del blocks
-    logger.info("mlc_era5: %d frames %s..%s (%.2f GB), mslp [%.1f, %.1f] hPa",
+    gap = f" ({n_empty} empty ARCO frames skipped: {_ranges(empty)})" if empty else ""
+    logger.info("mlc_era5: %d frames %s..%s (%.2f GB), mslp [%.1f, %.1f] hPa%s",
                 mslp.shape[0], times[0], times[-1], mslp.nbytes / 1e9,
-                float(np.nanmin(mslp)), float(np.nanmax(mslp)))
+                float(np.nanmin(mslp)), float(np.nanmax(mslp)), gap)
     return times, mslp, lats, lons
 
 
@@ -184,7 +266,7 @@ def load_orography(cache_dir: str | Path | None = None, *, ds=None,
             raise ValueError(f"{TOPO_VAR} is all-NaN at every probed time step")
         lats = np.asarray(z.latitude.values, float)
         lons = np.asarray(z.longitude.values, float)
-        if lats[0] < lats[-1]:
+        if lats[0] > lats[-1]:      # ARCO is 90N-first; the repo frame is ascending
             arr, lats = arr[::-1], lats[::-1]
         lons = (lons + 180.0) % 360.0 - 180.0
         keep = (lats >= -LAT_LIMIT) & (lats <= LAT_LIMIT)

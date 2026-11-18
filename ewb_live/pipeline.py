@@ -54,6 +54,22 @@ def _ibtracs_meta() -> "dict | None":
         return None
 
 
+def _lane_status_meta() -> dict:
+    """Per-lane scan outcomes for the UI's honest zero (meta.lane_status).
+
+    Fail-soft like :func:`_ibtracs_meta`: a status note must never fail a
+    publish, and an empty dict means "nothing was reported", which the UI reads
+    as before (the plain empty-lane line), not as a failure.
+    """
+    try:
+        from .events import lane_status_report
+
+        return lane_status_report()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("lane_status_report failed (meta.lane_status={}): %s", exc)
+        return {}
+
+
 def public_meta(meta: dict) -> dict:
     """meta.json payload with private-infrastructure keys removed (G-31)."""
     return {k: v for k, v in meta.items() if k not in PUBLIC_META_DROP}
@@ -780,6 +796,11 @@ def run(
     # the release was built by pre-lane code (the UI says so instead of
     # printing an unqualified 0).
     ibtracs_meta = _ibtracs_meta()
+    # Same rule, generalised (mlc-fix 2026-11-18): every lane that can fail
+    # soft reports how it ended — {"midlat_cyclone": {"status": "ok"|"failed"
+    # |"no-data", "reason": ...}}. Absent type = the lane reports nothing (or
+    # the release predates it), which the UI must not read as a failure.
+    lane_status = _lane_status_meta()
 
     def _write_outputs(frames: list) -> int:
         """Concat + (re)write scores/scorecard/meta atomically. Called
@@ -843,6 +864,7 @@ def run(
                 "note": "ARCO lags ~6 days; events ending after the cutoff are scored against IFS HRES 0-h analysis",
             },
             "ibtracs": ibtracs_meta,
+            "lane_status": lane_status,
             "climatology": _clim_meta(),
             # owner decision 2026-11-08 (G-40): documented deviation — the AR
             # lane keeps the upstream EWB mask filters verbatim and ADDS an

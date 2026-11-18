@@ -1,0 +1,230 @@
+{
+ "window": [
+  "2023-10-26",
+  "2023-11-30"
+ ],
+ "frames": 144,
+ "lookback_days": 0.0,
+ "read_end": "2023-11-30T18",
+ "frame_range": [
+  "2023-10-26 00:00:00",
+  "2023-11-30 18:00:00"
+ ],
+ "read_s": 136.7,
+ "scan_s": 30.2,
+ "peak_rss_gb": 18.8,
+ "lane_status": {
+  "lane": "midlat_cyclone",
+  "status": "ok",
+  "source": "ERA5 MSLP (ARCO), closed-low tracker",
+  "reason": null,
+  "window": [
+   "2023-10-26",
+   "2023-11-30"
+  ],
+  "rule_rev": "mlc-v2",
+  "n_frames": 144,
+  "n_nodes": 3199,
+  "n_tracks": 138,
+  "n_dupes": 1,
+  "n_events": 71,
+  "n_screened": 66,
+  "screened_by": {
+   "displacement 916 km": 1,
+   "displacement 423 km": 1,
+   "min MSLP 991.7 hPa": 2,
+   "min MSLP 996.3 hPa": 1,
+   "min MSLP 1000.6 hPa": 1,
+   "min MSLP 1000.9 hPa": 1,
+   "genesis |lat| 19.2 outside 25.0-70.0": 1,
+   "displacement 960 km": 1,
+   "genesis over 858 m orography": 1,
+   "displacement 640 km": 1,
+   "genesis over 1505 m orography": 2,
+   "genesis |lat| 11.0 outside 25.0-70.0": 1,
+   "displacement 723 km": 1,
+   "min MSLP 997.8 hPa": 1,
+   "genesis over 1112 m orography": 1,
+   "genesis |lat| 71.8 outside 25.0-70.0": 1,
+   "genesis |lat| 79.5 outside 25.0-70.0": 1,
+   "genesis |lat| 73.0 outside 25.0-70.0": 2,
+   "displacement 357 km": 1,
+   "min MSLP 995.9 hPa": 1,
+   "genesis |lat| 71.5 outside 25.0-70.0": 1,
+   "min MSLP 994.8 hPa": 1,
+   "displacement 812 km": 1,
+   "displacement 356 km": 1,
+   "displacement 835 km": 1,
+   "displacement 844 km": 1,
+   "genesis over 522 m orography": 1,
+   "genesis over 514 m orography": 1,
+   "genesis |lat| 80.0 outside 25.0-70.0": 1,
+   "genesis over 803 m orography": 1,
+   "min MSLP 995.4 hPa": 1,
+   "min MSLP 995.5 hPa": 1,
+   "min MSLP 1003.3 hPa": 1,
+   "genesis over 851 m orography": 1,
+   "displacement 193 km": 1,
+   "genesis |lat| 72.8 outside 25.0-70.0": 1,
+   "displacement 236 km": 1,
+   "genesis |lat| 7.8 outside 25.0-70.0": 1,
+   "displacement 773 km": 1,
+   "genesis |lat| 79.2 outside 25.0-70.0": 1,
+   "displacement 807 km": 1,
+   "min MSLP 996.6 hPa": 1,
+   "genesis over 1612 m orography": 1,
+   "genesis |lat| 73.8 outside 25.0-70.0": 1,
+   "genesis |lat| 76.2 outside 25.0-70.0": 1,
+   "min MSLP 997.0 hPa": 1,
+   "displacement 570 km": 1,
+   "displacement 166 km": 1,
+   "genesis |lat| 77.0 outside 25.0-70.0": 1,
+   "genesis |lat| 74.8 outside 25.0-70.0": 1,
+   "min MSLP 1002.6 hPa": 1,
+   "displacement 821 km": 1,
+   "displacement 961 km": 1,
+   "genesis over 1554 m orography": 1,
+   "genesis over 976 m orography": 1,
+   "displacement 390 km": 1,
+   "genesis over 1594 m orography": 1,
+   "displacement 419 km": 1,
+   "min MSLP 998.8 hPa": 1,
+   "displacement 379 km": 1,
+   "min MSLP 1002.4 hPa": 1,
+   "displacement 779 km": 1,
+   "min MSLP 1005.3 hPa": 1
+  }
+ },
+ "n_events": 71,
+ "n_bombs": 13,
+ "n_invalid": 0,
+ "invalid": [],
+ "median_min_mslp_hPa": 966.4,
+ "deepest_mslp_hPa": 926.7,
+ "median_lifetime_h": 78.0,
+ "median_displacement_km": 1999.0,
+ "mean_abs_genesis_lat": 52.190140845070424,
+ "by_month": {
+  "2023-10": {
+   "events": 9,
+   "bombs": 0,
+   "deepest": 926.7
+  },
+  "2023-11": {
+   "events": 62,
+   "bombs": 13,
+   "deepest": 939.6
+  }
+ },
+ "top": [
+  {
+   "start": "2023-11-01",
+   "end": "2023-11-04",
+   "min_mslp_hPa": 954.0,
+   "lifetime_h": 156.0,
+   "displacement_km": 3456.0,
+   "bomb": true,
+   "genesis": [
+    44.75,
+    -52.5
+   ],
+   "deepest": [
+    50.5,
+    -1.5,
+    "2023-11-02T06:00:00Z"
+   ],
+   "place": "NW Atlantic / Canadianbanks",
+   "field_min_hPa": 954.0281982421875
+  },
+  {
+   "start": "2023-11-21",
+   "end": "2023-11-24",
+   "min_mslp_hPa": 948.1,
+   "lifetime_h": 114.0,
+   "displacement_km": 2608.0,
+   "bomb": true,
+   "genesis": [
+    44.75,
+    162.75
+   ],
+   "deepest": [
+    47.0,
+    177.0,
+    "2023-11-21T18:00:00Z"
+   ],
+   "place": "NW Pacific / Kuroshio extension",
+   "field_min_hPa": 948.1339111328125
+  },
+  {
+   "start": "2023-11-29",
+   "end": "2023-12-01",
+   "min_mslp_hPa": 942.5,
+   "lifetime_h": 90.0,
+   "displacement_km": 1929.0,
+   "bomb": true,
+   "genesis": [
+    -68.0,
+    153.75
+   ],
+   "deepest": [
+    -65.0,
+    -171.25,
+    "2023-11-30T00:00:00Z"
+   ],
+   "place": "other ocean",
+   "field_min_hPa": 942.4862670898438
+  },
+  {
+   "start": "2023-11-19",
+   "end": "2023-11-21",
+   "min_mslp_hPa": 939.6,
+   "lifetime_h": 66.0,
+   "displacement_km": 1923.0,
+   "bomb": true,
+   "genesis": [
+    46.5,
+    157.0
+   ],
+   "deepest": [
+    52.5,
+    165.25,
+    "2023-11-19T18:00:00Z"
+   ],
+   "place": "NW Pacific / Kuroshio extension",
+   "field_min_hPa": 939.6187744140625
+  },
+  {
+   "start": "2023-11-03",
+   "end": "2023-11-06",
+   "min_mslp_hPa": 960.2,
+   "lifetime_h": 108.0,
+   "displacement_km": 5516.0,
+   "bomb": true,
+   "genesis": [
+    39.0,
+    -66.5
+   ],
+   "deepest": [
+    50.75,
+    -14.0,
+    "2023-11-04T06:00:00Z"
+   ],
+   "place": "other ocean",
+   "field_min_hPa": 960.2460327148438
+  }
+ ],
+ "ciaran": {
+  "min_mslp_hPa": 954.0,
+  "lifetime_h": 156.0,
+  "displacement_km": 3456.0,
+  "max_24h_fall_hPa": -32.2,
+  "bomb": true,
+  "bomb_ratio": 1.52,
+  "fixes": 27,
+  "nearest_fix": "2023-11-02 00:00:00",
+  "km_to_landfall": 171.89836154877497
+ },
+ "host": "ewb",
+ "cores": 16,
+ "run_utc": "2026-11-18T03:22:34.548709+00:00"
+}

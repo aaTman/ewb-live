@@ -1,0 +1,390 @@
+{
+ "window": [
+  "2026-08-19",
+  "2026-11-17"
+ ],
+ "frames": 356,
+ "lookback_days": 6.0,
+ "read_end": null,
+ "frame_range": [
+  "2026-08-13 00:00:00",
+  "2026-11-11 18:00:00"
+ ],
+ "read_s": 252.4,
+ "scan_s": 153.5,
+ "peak_rss_gb": 21.5,
+ "lane_status": {
+  "lane": "midlat_cyclone",
+  "status": "ok",
+  "source": "ERA5 MSLP (ARCO), closed-low tracker",
+  "reason": null,
+  "window": [
+   "2026-08-19",
+   "2026-11-17"
+  ],
+  "rule_rev": "mlc-v2",
+  "n_frames": 356,
+  "n_nodes": 9004,
+  "n_tracks": 325,
+  "n_dupes": 2,
+  "n_events": 143,
+  "n_screened": 145,
+  "screened_by": {
+   "min MSLP 1002.0 hPa": 1,
+   "genesis |lat| 79.5 outside 25.0-70.0": 2,
+   "genesis |lat| 19.5 outside 25.0-70.0": 1,
+   "min MSLP 994.7 hPa": 1,
+   "genesis |lat| 12.5 outside 25.0-70.0": 1,
+   "genesis over 1502 m orography": 1,
+   "min MSLP 993.2 hPa": 1,
+   "genesis |lat| 80.0 outside 25.0-70.0": 4,
+   "displacement 692 km": 1,
+   "genesis |lat| 16.0 outside 25.0-70.0": 2,
+   "min MSLP 990.3 hPa": 1,
+   "displacement 653 km": 1,
+   "genesis |lat| 72.8 outside 25.0-70.0": 2,
+   "displacement 355 km": 1,
+   "genesis |lat| 10.5 outside 25.0-70.0": 3,
+   "min MSLP 995.2 hPa": 1,
+   "min MSLP 1000.5 hPa": 1,
+   "genesis |lat| 11.0 outside 25.0-70.0": 1,
+   "displacement 614 km": 1,
+   "displacement 217 km": 1,
+   "displacement 0 km": 1,
+   "genesis |lat| 73.0 outside 25.0-70.0": 2,
+   "displacement 961 km": 1,
+   "min MSLP 993.4 hPa": 1,
+   "genesis |lat| 20.0 outside 25.0-70.0": 1,
+   "displacement 196 km": 1,
+   "min MSLP 992.2 hPa": 1,
+   "displacement 178 km": 1,
+   "displacement 275 km": 1,
+   "genesis over 682 m orography": 1,
+   "genesis |lat| 12.0 outside 25.0-70.0": 1,
+   "displacement 959 km": 1,
+   "genesis |lat| 19.0 outside 25.0-70.0": 1,
+   "genesis |lat| 78.2 outside 25.0-70.0": 2,
+   "displacement 37 km": 1,
+   "min MSLP 990.1 hPa": 1,
+   "displacement 534 km": 1,
+   "min MSLP 994.1 hPa": 1,
+   "displacement 974 km": 1,
+   "min MSLP 995.8 hPa": 1,
+   "displacement 148 km": 1,
+   "genesis over 1317 m orography": 1,
+   "displacement 625 km": 1,
+   "min MSLP 992.4 hPa": 1,
+   "displacement 96 km": 1,
+   "genesis |lat| 24.0 outside 25.0-70.0": 1,
+   "displacement 59 km": 1,
+   "genesis |lat| 73.5 outside 25.0-70.0": 3,
+   "genesis |lat| 16.2 outside 25.0-70.0": 1,
+   "genesis |lat| 72.2 outside 25.0-70.0": 1,
+   "genesis |lat| 76.2 outside 25.0-70.0": 2,
+   "genesis over 678 m orography": 1,
+   "min MSLP 1000.4 hPa": 1,
+   "displacement 791 km": 1,
+   "genesis |lat| 76.0 outside 25.0-70.0": 1,
+   "genesis |lat| 17.8 outside 25.0-70.0": 1,
+   "displacement 540 km": 1,
+   "genesis |lat| 12.8 outside 25.0-70.0": 1,
+   "genesis over 1011 m orography": 1,
+   "genesis |lat| 76.8 outside 25.0-70.0": 1,
+   "min MSLP 1002.3 hPa": 1,
+   "min MSLP 995.7 hPa": 1,
+   "displacement 968 km": 2,
+   "genesis |lat| 10.8 outside 25.0-70.0": 1,
+   "genesis |lat| 78.5 outside 25.0-70.0": 1,
+   "genesis |lat| 14.5 outside 25.0-70.0": 1,
+   "displacement 365 km": 1,
+   "genesis |lat| 17.2 outside 25.0-70.0": 1,
+   "genesis |lat| 75.5 outside 25.0-70.0": 1,
+   "displacement 531 km": 1,
+   "genesis |lat| 77.0 outside 25.0-70.0": 1,
+   "genesis |lat| 13.8 outside 25.0-70.0": 1,
+   "genesis |lat| 72.0 outside 25.0-70.0": 1,
+   "min MSLP 993.8 hPa": 1,
+   "genesis |lat| 72.5 outside 25.0-70.0": 2,
+   "genesis over 885 m orography": 1,
+   "genesis |lat| 17.5 outside 25.0-70.0": 1,
+   "genesis |lat| 13.0 outside 25.0-70.0": 1,
+   "displacement 587 km": 1,
+   "genesis over 522 m orography": 1,
+   "min MSLP 1000.7 hPa": 1,
+   "genesis over 1372 m orography": 1,
+   "genesis |lat| 78.0 outside 25.0-70.0": 1,
+   "genesis |lat| 11.5 outside 25.0-70.0": 1,
+   "displacement 512 km": 1,
+   "displacement 611 km": 1,
+   "displacement 975 km": 1,
+   "genesis over 657 m orography": 1,
+   "displacement 560 km": 1,
+   "displacement 785 km": 1,
+   "genesis |lat| 9.2 outside 25.0-70.0": 1,
+   "min MSLP 998.9 hPa": 1,
+   "genesis |lat| 21.2 outside 25.0-70.0": 2,
+   "displacement 119 km": 1,
+   "genesis |lat| 14.8 outside 25.0-70.0": 1,
+   "displacement 915 km": 1,
+   "min MSLP 991.9 hPa": 1,
+   "displacement 485 km": 1,
+   "displacement 598 km": 1,
+   "genesis |lat| 8.8 outside 25.0-70.0": 2,
+   "genesis over 2662 m orography": 1,
+   "genesis |lat| 77.2 outside 25.0-70.0": 1,
+   "genesis over 1124 m orography": 1,
+   "min MSLP 992.3 hPa": 1,
+   "min MSLP 1002.2 hPa": 1,
+   "min MSLP 999.7 hPa": 1,
+   "min MSLP 1002.9 hPa": 1,
+   "displacement 655 km": 1,
+   "genesis over 1440 m orography": 1,
+   "min MSLP 991.4 hPa": 1,
+   "genesis |lat| 70.2 outside 25.0-70.0": 1,
+   "genesis |lat| 9.5 outside 25.0-70.0": 1,
+   "genesis over 1332 m orography": 1,
+   "genesis |lat| 15.5 outside 25.0-70.0": 1,
+   "min MSLP 1002.4 hPa": 1,
+   "min MSLP 1003.7 hPa": 1,
+   "displacement 669 km": 1,
+   "min MSLP 996.6 hPa": 1,
+   "genesis over 685 m orography": 1,
+   "genesis over 693 m orography": 1,
+   "genesis |lat| 9.8 outside 25.0-70.0": 1,
+   "min MSLP 1000.1 hPa": 1,
+   "displacement 891 km": 1,
+   "genesis |lat| 70.8 outside 25.0-70.0": 1,
+   "displacement 290 km": 1,
+   "min MSLP 998.1 hPa": 1,
+   "displacement 842 km": 1,
+   "genesis |lat| 18.0 outside 25.0-70.0": 1
+  }
+ },
+ "n_events": 143,
+ "n_bombs": 30,
+ "n_invalid": 0,
+ "invalid": [],
+ "median_min_mslp_hPa": 957.6,
+ "deepest_mslp_hPa": 912.2,
+ "median_lifetime_h": 72.0,
+ "median_displacement_km": 2230.0,
+ "mean_abs_genesis_lat": 53.27972027972028,
+ "by_month": {
+  "2026-08": {
+   "events": 17,
+   "bombs": 1,
+   "deepest": 940.6
+  },
+  "2026-09": {
+   "events": 57,
+   "bombs": 10,
+   "deepest": 913.3
+  },
+  "2026-10": {
+   "events": 61,
+   "bombs": 14,
+   "deepest": 912.2
+  },
+  "2026-11": {
+   "events": 8,
+   "bombs": 5,
+   "deepest": 944.1
+  }
+ },
+ "top": [
+  {
+   "start": "2026-09-30",
+   "end": "2026-10-02",
+   "min_mslp_hPa": 952.1,
+   "lifetime_h": 288.0,
+   "displacement_km": 4242.0,
+   "bomb": true,
+   "genesis": [
+    52.0,
+    -22.25
+   ],
+   "deepest": [
+    55.75,
+    -19.5,
+    "2026-09-30T06:00:00Z"
+   ],
+   "place": "NE Atlantic / Bay of Biscay-NI",
+   "field_min_hPa": 952.1231079101562
+  },
+  {
+   "start": "2026-09-14",
+   "end": "2026-09-16",
+   "min_mslp_hPa": 913.3,
+   "lifetime_h": 102.0,
+   "displacement_km": 4907.0,
+   "bomb": true,
+   "genesis": [
+    -35.0,
+    -30.0
+   ],
+   "deepest": [
+    -65.25,
+    30.75,
+    "2026-09-15T06:00:00Z"
+   ],
+   "place": "St Helena-Africa S",
+   "field_min_hPa": 913.2718505859375
+  },
+  {
+   "start": "2026-10-01",
+   "end": "2026-10-03",
+   "min_mslp_hPa": 912.2,
+   "lifetime_h": 96.0,
+   "displacement_km": 1354.0,
+   "bomb": true,
+   "genesis": [
+    -56.75,
+    85.0
+   ],
+   "deepest": [
+    -61.75,
+    98.0,
+    "2026-10-01T12:00:00Z"
+   ],
+   "place": "Indian Ocean southern mid-lats",
+   "field_min_hPa": 912.2481079101562
+  },
+  {
+   "start": "2026-10-17",
+   "end": "2026-10-19",
+   "min_mslp_hPa": 946.3,
+   "lifetime_h": 162.0,
+   "displacement_km": 8142.0,
+   "bomb": true,
+   "genesis": [
+    -38.0,
+    -35.0
+   ],
+   "deepest": [
+    -55.0,
+    73.25,
+    "2026-10-18T06:00:00Z"
+   ],
+   "place": "St Helena-Africa S",
+   "field_min_hPa": 946.3262329101562
+  },
+  {
+   "start": "2026-09-12",
+   "end": "2026-09-14",
+   "min_mslp_hPa": 937.5,
+   "lifetime_h": 192.0,
+   "displacement_km": 4479.0,
+   "bomb": false,
+   "genesis": [
+    -50.5,
+    93.0
+   ],
+   "deepest": [
+    -59.75,
+    110.25,
+    "2026-09-12T18:00:00Z"
+   ],
+   "place": "S Australia-Tasman NZ Pacific",
+   "field_min_hPa": 937.4506225585938
+  },
+  {
+   "start": "2026-09-30",
+   "end": "2026-10-02",
+   "min_mslp_hPa": 935.7,
+   "lifetime_h": 168.0,
+   "displacement_km": 2005.0,
+   "bomb": false,
+   "genesis": [
+    -63.75,
+    156.75
+   ],
+   "deepest": [
+    -65.25,
+    -171.25,
+    "2026-10-01T06:00:00Z"
+   ],
+   "place": "S Australia-Tasman NZ Pacific",
+   "field_min_hPa": 935.69873046875
+  },
+  {
+   "start": "2026-09-06",
+   "end": "2026-09-08",
+   "min_mslp_hPa": 926.8,
+   "lifetime_h": 90.0,
+   "displacement_km": 4919.0,
+   "bomb": true,
+   "genesis": [
+    -43.75,
+    58.75
+   ],
+   "deepest": [
+    -57.5,
+    105.25,
+    "2026-09-06T12:00:00Z"
+   ],
+   "place": "Indian Ocean southern mid-lats",
+   "field_min_hPa": 926.8206176757812
+  },
+  {
+   "start": "2026-09-25",
+   "end": "2026-09-27",
+   "min_mslp_hPa": 924.5,
+   "lifetime_h": 84.0,
+   "displacement_km": 1641.0,
+   "bomb": true,
+   "genesis": [
+    -62.0,
+    -45.0
+   ],
+   "deepest": [
+    -68.5,
+    -12.25,
+    "2026-09-25T18:00:00Z"
+   ],
+   "place": "other ocean",
+   "field_min_hPa": 924.5474853515625
+  },
+  {
+   "start": "2026-10-26",
+   "end": "2026-10-29",
+   "min_mslp_hPa": 946.9,
+   "lifetime_h": 126.0,
+   "displacement_km": 6360.0,
+   "bomb": true,
+   "genesis": [
+    -38.25,
+    -52.5
+   ],
+   "deepest": [
+    -55.75,
+    4.25,
+    "2026-10-27T12:00:00Z"
+   ],
+   "place": "SE South America / Argentina",
+   "field_min_hPa": 946.9131469726562
+  },
+  {
+   "start": "2026-10-22",
+   "end": "2026-10-25",
+   "min_mslp_hPa": 956.8,
+   "lifetime_h": 144.0,
+   "displacement_km": 4440.0,
+   "bomb": true,
+   "genesis": [
+    42.5,
+    141.5
+   ],
+   "deepest": [
+    52.0,
+    155.25,
+    "2026-10-22T06:00:00Z"
+   ],
+   "place": "NW Pacific / Kuroshio extension",
+   "field_min_hPa": 956.7949829101562
+  }
+ ],
+ "ciaran": null,
+ "host": "ewb",
+ "cores": 16,
+ "run_utc": "2026-11-18T03:29:26.812713+00:00"
+}

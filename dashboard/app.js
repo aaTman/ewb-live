@@ -48,10 +48,36 @@ const TYPE_CRITERIA = {
   flood: 'IMERG half-hourly rain summed to a daily total and averaged up onto the ERA5 0.25° land lattice. A cell exceeds when its daily total or its trailing 72 h accumulation reaches the 95th percentile of that calendar day in the ERA5 1990–2019 wet-day climatology AND at least 20 mm/day (or 50 mm per 72 h) — the floor is mandatory because IMERG and ERA5 are different instruments. Cells with no ERA5 percentile (hyper-arid) can never exceed, ocean cells are excluded, and a day whose sampling is incomplete is dropped rather than read as dry. A region ≥10,000 km² becomes an event once its footprint reaches 50,000 km² and ends under 10,000 km². There is no EWB benchmark for flood, so floods are published and mapped but no model is scored on them.',
   midlat_cyclone: 'A closed low in 6-hourly ERA5 mean sea level pressure: a centre that is the lowest pressure within 6° with a +3 hPa isobar closing around it inside 6°, tracked forward while it stays within 6° per step (gaps up to 12 h are bridged). It becomes an event when it lives ≥48 h, travels ≥1000 km, reaches ≤990 hPa, was born between 25–70° and under 500 m elevation, and did not start as a tropical cyclone. Peak value is the lowest central pressure (hPa); a bomb tag marks a fall of ≥24 hPa in 24 h at 60° latitude. Tracked from ERA5, so there is no model scorecard for this lane yet.',
 };
-const emptyLaneLine = (t) => t === 'all'
-  ? 'No events met the criteria this window'
-  : t === 'tropical_cyclone' ? tcEmptyNote()
-  : `No ${TYPE_META[t].label.toLowerCase()} met the criteria this window`;
+/* ------------------------------------------------------------------ */
+/* EMPTY-LANE COPY — ONE PLACE (owner rule 2026-11-17 / mlc-fix 2026-11-18)     */
+/* Every lane's "nothing here" sentence is written here and read from here:     */
+/* the event list, the scorecard lane blocks and the lane tabs/chips (ne-chips) */
+/* must not duplicate this copy — call emptyLaneLine(type).                     */
+/* ------------------------------------------------------------------ */
+
+/* A lane that can fail must never read as an empty sky. meta.lane_status is
+   written by pipeline.py from each lane's own report (ewb_live/events/__init__.py
+   → mlc.lane_status): 'failed' = the scan ran and broke, 'no-data' = the source
+   has nothing for the window, 'ok' = the zero is genuine. */
+function laneStatusNote(t) {
+  const st = (state.meta && state.meta.lane_status) || null;
+  const s = st && st[t];
+  if (!s || (s.status !== 'failed' && s.status !== 'no-data')) return null;
+  const label = TYPE_META[t] ? TYPE_META[t].label : t;
+  const why = s.reason ? ` — ${s.reason}` : '';
+  return s.status === 'failed'
+    ? `${label}: lane failed, so this window has no numbers${why}.`
+    : `${label}: not computed, the source had nothing for this window${why}.`;
+}
+
+const emptyLaneLine = (t) => {
+  const broken = t === 'all' ? null : laneStatusNote(t);
+  if (broken) return broken;
+  return t === 'all'
+    ? 'No events met the criteria this window'
+    : t === 'tropical_cyclone' ? tcEmptyNote()
+    : `No ${TYPE_META[t].label.toLowerCase()} met the criteria this window`;
+};
 
 /* Honest zero for the tropical-cyclone lane (owner rule 2026-11-17): a bare
    "0" reads as "the sky was empty", but IBTrACS publishes with a lag of days
@@ -1024,10 +1050,14 @@ function renderScorecard() {
     if (!nEv) {
       const note = el('p', 'lane-empty');
       const re2 = regionEntry();
-      note.textContent = re2
-        ? `No ${TYPE_META[etype].label.toLowerCase()} in ${re2.label} this window`
-        : emptyLaneLine(etype);
-      note.title = re2 ? 'Events are assigned to regions by the centroid of their bounding box'
+      const broken = laneStatusNote(etype);   // a failed lane outranks the region wording
+      note.textContent = broken
+        ? broken
+        : re2
+          ? `No ${TYPE_META[etype].label.toLowerCase()} in ${re2.label} this window`
+          : emptyLaneLine(etype);
+      note.title = re2 && !broken
+        ? 'Events are assigned to regions by the centroid of their bounding box'
         : TYPE_CRITERIA[etype];
       block.appendChild(note);
       host.appendChild(block);
@@ -1895,12 +1925,14 @@ function renderEventTable() {
     const tr = el('tr', 'lane-empty-row');
     const searching = !!(state.search && state.search.trim());
     const re = regionEntry();
+    const broken = state.tab === 'all' ? null : laneStatusNote(state.tab);
     const note = searching ? 'No events match your search'
+      : broken ? broken
       : re && state.tab === 'all' ? `No events in ${re.label} this window`
       : re ? `No ${TYPE_META[state.tab] ? TYPE_META[state.tab].label.toLowerCase() : ''} in ${re.label} this window`
       : emptyLaneLine(state.tab);
     const crit = searching ? ''
-      : re ? 'Events are assigned to regions by the centroid of their bounding box'
+      : re && !broken ? 'Events are assigned to regions by the centroid of their bounding box'
       : state.tab === 'all' ? 'Events must clear the detection criteria for their type in the 90-day window.' : TYPE_CRITERIA[state.tab];
     tr.innerHTML = `<td></td><td colspan="2"><span class="lane-empty"${crit ? ` title="${esc(crit)}"` : ''}>${esc(note)}${crit ? ' <span class="crit-mark" aria-hidden="true">ⓘ</span>' : ''}</span></td>`;
     tbody.appendChild(tr);
