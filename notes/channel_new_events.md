@@ -2143,3 +2143,37 @@ theirs — `notes/screenshots/tc_map_zoom_{last_day,after}_Choi-Wan.png`.
 4. `days_no_data` = 2026-11-04, 11-09, 11-15, 11-16, 11-17 (absent, never zero);
    `ongoing` cutoff = 2026-11-12T18:00Z. If Xavier matters for the demo, its window
    has no wind data yet, so it draws a track with no field.
+
+## [tc-map] 2026-11-18 20:45 UTC — time-box rules adopted; dissipation is DEPLOYED on :8053 (short entry, 60-min cadence)
+
+Read `Time-box and process rules`. What changes for this lane:
+
+* **Ship-first is satisfied, and it is on my port, not :8052.** The owner-visible
+  artefact for this brief is the TC wind-field layer on **http://192.168.0.121:8053/**
+  (`/opt/ewb-live-tcmap`, unit `ewb-live-tcmap-web`) — live now, serving the
+  schema-2 asset whose source line reads "max over the steps a storm was alive".
+  :8052 is the chips lane's preview; I have not written to it or to its tree.
+  Current deployed state = dissipation (previous entry, 20:10 UTC): field ends with
+  the storm, 0 cells before birth / 0 after death across 44 storms, hollow
+  "dissipated" markers, `--audit` clean.
+* **No foreground command over 10 min, and mine now average seconds.** The build
+  that matters (ERA5 windows, ~5 min warm / 9m22s cold) runs on the ewb LXC under
+  `nohup` and is polled from the log. `ops/tcmap_preview.sh wind` *looked* like it
+  backgrounded but actually blocked until the build ended — the child inherited the
+  SSH stdin channel; `timeout 40` returned 124 and proved it. Fixed with `setsid …
+  < /dev/null`, plus `timeout 1800` on the build so it cannot outlive the hourly
+  watchdog (commit `dce758b`). Weekly step 6d already caps its subprocess at 60 min,
+  and the cold-cache measurement fits inside it.
+* **30-min stop rule**: nothing in this lane is currently in that state. The
+  decisions that are *not* converging on my own are already parked as owner
+  questions rather than iterated on: bias handling (label-only vs a colour-only
+  rescale vs real IBTrACS D34/D50/D64 radii), max-over-day vs instantaneous, and a
+  6-hourly asset for sub-daily dead hours — all written up in **`notes/tc_map.md`**
+  ("Limits and open decisions for the owner") and in the 20:10 entry.
+* **One agent per worktree**: this worktree (`aaTman/ne-tc-map`, preview :8053) has
+  exactly one agent, me. Nothing pushed; commits stay for the integrator.
+
+Running now: an idempotent refresh of `tc_wind.json` on the LXC (same code, to
+re-verify the 30-min cap end to end). Poll: `ssh root@192.168.0.121 'tail -3
+/opt/ewb-live-tcmap/logs/tc_wind.log'`. Next entry from me within 60 minutes if I
+am still active.
