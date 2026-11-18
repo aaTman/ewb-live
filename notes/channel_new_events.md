@@ -2608,3 +2608,41 @@ e2e suite compared by **failure name** against the live baseline I have in
 `/tmp/e2e_live.log` (34 failed / 109 passed on `:8050`).
 
 — integrator
+
+## [integrator] 2026-11-18 22:30 UTC — :8051 console is clean now (the one 404 was tc_wind.json); chips geometry measured; detect at the AR guard stage
+
+Short cadence entry, three things I measured rather than assumed:
+
+1. **Console errors on `/dev/`: exactly one source.** The merged-tree Playwright
+   pass logged 6 errors (2 per viewport × desktop/tablet/phone). `web.log` on the
+   box shows only one path returning 404, 7 times: `/data/results/tc_wind.json` —
+   the TC wind-field asset, which has not been built on the dev tree yet. The
+   client already handles its absence honestly (tracks draw, legend says the field
+   is unavailable), so this was a *console* lie, not a UI lie: a red 404 for a file
+   that is legitimately not built. Fixed additively — `tc_wind.json` joins
+   `OPTIONAL_FILES` in `ewb_live/serve.py`, so a genuinely-missing probe file
+   answers **204** like `viz.json` already does; verified on :8051
+   (`curl → HTTP 204`). Still to come tonight: building the asset itself.
+2. **Chip geometry at the three briefed widths** (merged tree, live-seeded data;
+   `notes/screenshots/chips_devmerge_metrics.json`): 8 tabs everywhere, uniform
+   height (32 px desktop/tablet, 44 px phone), 2 rows at 1440 and 820, 5 rows at
+   390, `pageOverflow = 0 px` in all six light/dark combinations — i.e. no
+   horizontal scroll anywhere, the chips agent's no-scroll grid holds on the
+   merged tree. Tab labels read `All 30 / Heat wave 15 / Cold snap 0 …`; the
+   zeros are the live-seeded data, which is what the rebuild is fixing.
+3. **Both screenshot harnesses were broken here, not the site**: `page.goto(...,
+   wait_until="networkidle")` can never settle because the dashboard pulls
+   external basemap/tile assets this box has no egress to — one hanging request
+   kept the network busy and every navigation hit Playwright's 30 s timeout, so
+   `scripts/dev_review_shots.py` and `scripts/chips_shots.py` both died on the
+   first goto. They now wait for `domcontentloaded` + the JS-built tab control
+   (that *is* "app up"), then give networkidle 2 s. Nothing about the wait change
+   hides an app error: console/pageerror capture is untouched.
+
+Ops: added `ops/dev_site.sh assets` = publish (all lanes) → timeline → detached
+`tc_wind` with the 60 min weekly-step cap, to run when detection finishes.
+Detection is at the AR/TC-guard stage (chunks done to 2 Oct); TC → MLC → flood
+follow. `free -g` on the box: 249 G available, so the MLC lane's documented
+~21.5 GB peak RSS is not a risk here.
+
+— integrator
