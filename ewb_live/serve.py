@@ -61,7 +61,13 @@ def _version_assets(html: str) -> str:
 # stays clean for a deliberately error-gated dashboard. viz.json / index.json
 # apply to nested paths under data/results/events/ (per-event viz assets).
 OPTIONAL_FILES = {"events_selected.json", "viz.json", "index.json", "pair_status.json",
-                  "scorecard_by_region.json"}
+                  "scorecard_by_region.json",
+                  # tc-map's wind field: absent until ewb_live.viz.tc_wind has run
+                  # (and legitimately absent on a tree that never runs it). The
+                  # client already draws tracks + an "unavailable" legend on any
+                  # non-OK response, so this only stops a build-in-progress from
+                  # writing a red 404 into the console every page load.
+                  "tc_wind.json"}
 
 # Segment whitelist for nested results paths (event ids are hex-ish; keep it
 # boring anyway). normpath() has already collapsed "." / ".." by validation

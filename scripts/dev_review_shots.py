@@ -26,6 +26,28 @@ VIEWPORTS = {"desktop": {"width": 1440, "height": 900},
              "phone": {"width": 390, "height": 844}}
 
 
+def open_page(page, url: str) -> None:
+    """Load the dashboard and wait for the app, not for the *network*.
+
+    `wait_until="networkidle"` (what both harnesses used) is not reachable here:
+    the dashboard pulls external map tiles / basemap assets, and on a box without
+    that egress one hanging request keeps the network busy forever, so every
+    goto() hit Playwright's 30 s timeout and the whole pass died on the first
+    navigation. Wait for domcontentloaded, then for the tab control the JS builds
+    (that IS "the app is up"), then give networkidle a short chance so map tiles
+    and viz.json still get their chance to land.
+"""
+    page.goto(url, wait_until="domcontentloaded")
+    try:
+        page.wait_for_selector("#type-tabs button", state="visible", timeout=15_000)
+    except Exception:  # noqa: BLE001 - a tab-less page is still worth shooting
+        pass
+    try:
+        page.wait_for_load_state("networkidle", timeout=2_000)
+    except Exception:  # noqa: BLE001 - a hanging basemap request is not an app error
+        pass
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://192.168.0.121:8051")
@@ -53,7 +75,7 @@ def main() -> int:
                     if m.type == "error" else None)
             page.on("pageerror", lambda e, v=vname: errors.append(f"{v}: pageerror: {e}"))
             for tab in types_iter:
-                page.goto(url, wait_until="networkidle")
+                open_page(page, url)
                 page.wait_for_timeout(600)
                 # the tab control is JS-built buttons ("Floods 30") with no
                 # data-type attribute: click by position in TYPE_ORDER
@@ -100,7 +122,7 @@ def main() -> int:
                         page.screenshot(path=str(out / f"{vname}-{tab}-event.png"))
                         page.keyboard.press("Escape")
                         page.wait_for_timeout(300)
-                        page.goto(url, wait_until="networkidle")
+                        open_page(page, url)
                         page.wait_for_timeout(400)
                     except Exception as exc:
                         report[f"{vname}/{tab}/event"] = f"click failed: {exc}"
@@ -110,7 +132,7 @@ def main() -> int:
                     page.wait_for_timeout(250)
                     page.screenshot(path=str(out / f"{vname}-{tab}-{theme}.png"), full_page=False)
             # About dialog, once per viewport
-            page.goto(url, wait_until="networkidle")
+            open_page(page, url)
             about = page.query_selector("#about-btn")
             if about and about.is_visible():
                 about.click()

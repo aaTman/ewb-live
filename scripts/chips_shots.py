@@ -63,6 +63,28 @@ METRICS_JS = """() => {
 }"""
 
 
+def open_page(page, url: str) -> None:
+    """Load the dashboard and wait for the app, not for the *network*.
+
+    `wait_until="networkidle"` (what both harnesses used) is not reachable here:
+    the dashboard pulls external map tiles / basemap assets, and on a box without
+    that egress one hanging request keeps the network busy forever, so every
+    goto() hit Playwright's 30 s timeout and the whole pass died on the first
+    navigation. Wait for domcontentloaded, then for the tab control the JS builds
+    (that IS "the app is up"), then give networkidle a short chance so map tiles
+    and viz.json still get their chance to land.
+"""
+    page.goto(url, wait_until="domcontentloaded")
+    try:
+        page.wait_for_selector("#type-tabs button", state="visible", timeout=15_000)
+    except Exception:  # noqa: BLE001 - a tab-less page is still worth shooting
+        pass
+    try:
+        page.wait_for_load_state("networkidle", timeout=2_000)
+    except Exception:  # noqa: BLE001 - a hanging basemap request is not an app error
+        pass
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://192.168.0.121:8051")
@@ -84,7 +106,7 @@ def main() -> int:
                     if m.type == "error" else None)
             page.on("pageerror", lambda e, v=vname: errors.append(f"{v}: pageerror: {e}"))
             for theme in ("light", "dark"):
-                page.goto(url, wait_until="networkidle")
+                open_page(page, url)
                 page.evaluate("(t) => { document.documentElement.dataset.theme = t;"
                               " localStorage.setItem('ewb-theme', t); }", theme)
                 page.wait_for_timeout(900)
