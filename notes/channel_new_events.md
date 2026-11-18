@@ -1913,3 +1913,180 @@ diagnosis.
 * Handoff doc for a successor: `notes/handoff_integrator_1.md`.
 
 — integrator
+---
+
+## 2026-11-18 03:45 UTC — role `mlc-fix` — midlat_cyclone 0-event blocker: ROOT-CAUSED, FIXED, RE-VALIDATED. 90-day dev window: **0 → 143 events** (30 bombs). Storm Ciaran reproduced exactly. DONE.
+
+Branch `aaTman/ne-mlc-fix`, branched from your integrated tree at `d95924b`. All
+numbers below are from the **ewb LXC** (ssh alias `ewb` = root@192.168.0.121), run
+from `/root/scratch/mlc-fix` (a scratch copy of this tree) with `/opt/ewb-live/.venv`;
+`/opt/ewb-live` and `/opt/ewb-live-dev` untouched. Write-up with the full table of
+hypotheses: **`notes/mlc_fix.md`**; harness: `scripts/mlc/{diag_arco_frame,revalidate}.py`;
+raw output: `notes/mlc_revalidate_20261118.log`, `notes/mlc_diag_ciaran_20231102.txt`.
+
+**ROOT CAUSE — `mlc_era5._to_repo_frame` shifted the longitude axis without
+sorting it.** `assign_coords(longitude=(lon+180)%360-180)` *rotates* ARCO's
+ascending 0-359.75 axis: it becomes `0 … 179.75, -180 … -0.25` (the code comment
+asserted it stayed ascending). Data columns stay in physical order, so no cell is
+mislabelled — but the tracker derives degrees from **column index × grid step**:
+`grid_spacing(lon)` averages `|diff(lon)|`, which now contains one **-359.75°**
+step → **0.4998° on a 0.25° grid (2×)**, and `contour_to_latlon` also anchors at
+the rotated axis origin. Every closed-low radius is therefore measured far too
+wide, `centre + 3 hPa closes within 6 deg` — the one gate separating "a local
+minimum" from "a closed low" — rejects everything, `find_peaks_for_time_slice`
+returns no nodes, and the lane publishes nothing while every unit test stays green.
+
+Evidence (same field, both axis orders, `diag_arco_frame.py`):
+
+| real frame | as the reader returned it | nodes as-read | nodes lon-sorted |
+|---|---|---|---|
+| 2023-11-02 06Z (Ciaran) | lon max step 359.75°, `grid_spacing 0.4998°` | 1 | **24** |
+| 2026-10-20 00Z (dev window) | same | **0** | **27** |
+
+Ciaran's own +3 hPa ring measures **2.91° as-read vs 1.11° true**; the deepest
+candidates on the dev-window frame measure **40-68°** against true radii of 1.9-2.7°.
+This is exactly your 22:55 "contour-distance bug" note, and your "not an
+un-fixable upstream gap" call was right.
+
+Your other hypotheses, tested rather than assumed: **units Pa-vs-hPa** — not it,
+`_to_repo_frame` divides by 100 and the dev window reads 912.2-1061.1 hPa (kept as
+a test: the same synthetic low left in Pa yields 0 nodes, because the 1013 hPa
+ceiling then masks the globe); **latitude order** — real contract violation (the
+flip test was inverted, so ARCO's 90 N-first grid came out descending, the
+opposite of the docstring), but `find_peaks_for_time_slice` flips descending
+internally, so not the cause; **missing 1/cos(lat) widening** — already present
+(`lhw = ceil(halfwin/cos lat)`); **float32 vs float64** — identical nodes;
+**dask indexing** — the reader materialises contiguous float32 first. Why the
+python port validated and the repo did not: `scripts/mlc/extract_month.py` shifts
+**and `sortby("longitude")`**, so the validated path was well ordered and the ARCO
+path was simply untested.
+
+**FIX (3 commits).** `6ffad95` sort the longitude axis (flip lat to ascending,
+clip |lat|≤88 with an ascending slice, shift lon **and re-order the columns to
+match**), then validate the lattice in the reader (`check_axes`) *and* at the
+tracker entry (`mlc_track.check_grid` raises on a non-monotonic/non-uniform axis —
+so a future reader regression is a loud lane failure the UI reports, never an
+honest-looking zero). `8ce13b9` ARCO's time index runs ahead of its data — every
+cell of 2026-11-12 00Z…11-17 00Z (and 11-04, 11-09) is NaN, so a 90-day request
+got 385 frames with 29 empty ones; peak detection ignores NaN but **gap filling
+takes the lowest cell in a hole**, so an empty frame could publish a NaN central
+pressure (`min_mslp` NaN passes `> 990`, `peak_value` → null). The reader now drops
+all-NaN frames, logs the ranges, and returns the no-frames sentinel if that empties
+the window. `95b5044` the lane records how it ended (§ below). **No science was
+retuned** — `Params`, `QualifyParams`, every screen, the ranking and the track
+schema are as `mlc-impl` shipped them; your "a silent retune would be worse than an
+empty tab" constraint held.
+
+**RE-VALIDATION (PROOF window, through the ARCO reader).** It now reproduces
+mlc-impl's netCDF-extract validation **node for node**:
+
+| window | frames | nodes | tracks ≥48 h | events | bombs |
+|---|---|---|---|---|---|
+| their exact field (`--lookback-days 0 --read-end 2023-11-30T18`) | 144 | **3199** | **138** | **71** | **13** |
+| mlc-impl's reference (netCDF path) | 144 | 3199 | 138 | 71 | 13 |
+| same event window, field ending 30 Nov 00Z | 141 | 3142 | 136 | 70 | 12 |
+| **production setting** (6 d stitching look-back) | 165 | 3833 | 161 | 69 | 12 |
+
+The two lower rows are a shorter field, not a different result: the lane reads
+`[start−6 d, end]`, and a low born on 29-30 Nov can't reach the ≥48 h/≥1000 km
+floors without frames after `end` (look-back helps genesis, never the tail).
+**Storm Ciaran found, field-by-field identical to `mlc_algorithm.md`/TE/mlc-impl**:
+min 954.0 hPa at 2023-11-02 06Z, 156 h, 3456 km, −32.2 hPa/24 h = 1.52×, 27 fixes,
+nearest fix 172 km from the Finistère landfall point.
+
+**RE-VALIDATION (90-day dev window 2026-08-19…11-17, ARCO reader).**
+
+| | before (pre-fix reader) | after |
+|---|---|---|
+| frames to the tracker | 385 (29 empty) | 356 (empties dropped) |
+| nodes | **273** (0.71/frame) | **9004** (25.3/frame) |
+| tracks ≥48 h | 3 | 325 |
+| same-low dupes | 0 | 2 |
+| **events** | **0** | **143** |
+| bombs / invalid (`validate.validate_event`) | 0 / — | **30 / 0** |
+| read + scan wall | 295 s / 0 s | 252 s + 153 s (0.43 s/frame) |
+| peak RSS (incl. the one-time 17 GB orography decode) | 21.8 GB | 21.5 GB |
+
+Population: median min MSLP **957.6 hPa**, deepest **912.2 hPa**, median lifetime
+**72 h**, median displacement **2230 km**, mean |genesis lat| **53.3°**; by genesis
+month (events/bombs/deepest) Aug 17/1/941, Sep 57/10/913, Oct 61/14/912, Nov 1-11
+8/5/944 — a spring-wmax Southern Ocean cycle, the same regime shape the PROOF
+measured for Nov 2023 (the low Nov figure is partly the missing ARCO tail).
+Sanity, stated honestly: **for all 10 top events the published central pressure
+equals the ERA5 field minimum within 2° and ±6 h of the deepest fix** (the harness
+checks this per event), and 9 of 10 sit in the deep Southern Ocean / Kuroshio —
+where the reanalysis record's most intense mid-latitude cyclogenesis is, in
+Aug-Oct. The one North Atlantic case (#1, 952.1 hPa, 52-56°N, 2026-09-30) is a
+plausible late-September low. The 912-913 hPa values are extreme but they are
+ERA5's own numbers; no station/ship report was consulted, so read the top rows as
+"the archive says so, the tracker follows", not as independent verification.
+Top 10 (born → min hPa / life / displacement / basin): 09-30 952.1 288 h 4242 km NE
+Atlantic · 09-14 913.3 102 h 4907 km S Atlantic→Kerguelen · 10-01 912.2 96 h 1354 km
+Indian S of Australia · 10-17 946.3 162 h 8142 km S Atlantic→Kerguelen · 09-12 937.5
+192 h 4479 km Great Southern Bight · 09-30 935.7 168 h 2005 km S Pacific→Drake ·
+09-06 926.8 90 h 4919 km Indian · 09-25 924.5 84 h 1641 km Weddell Sea · 10-26 946.9
+126 h 6360 km S Atlantic · 10-22 956.8 144 h 4440 km Kuroshio.
+
+**TESTS.** `tests/test_mlc_arco_frame.py` adds a real-frame fixture —
+`tests/fixtures/mlc_ciaran_cutout.npz` (9 real ARCO frames around Ciaran, 377 KB,
+regenerate with `diag_arco_frame.py --save-cutout`) — and asserts the nodes, the
+stitched track, the published `Event` with its `extra`, and that the **same bytes**
+re-expressed in ARCO's conventions (Pa, 90 N-first, lon 0-360) still find the low,
+plus the Pa-vs-hPa units regression, the reader contract (ascending/monotonic,
+0..360 handled), the rotated-axis radius inflation, and that the reader refuses to
+hand over frames ARCO hasn't filled. Three of those fail on the pre-fix reader
+(verified by reverting `mlc_era5.py` alone). `tests/test_mlc_lane_status.py` covers
+the status plumbing. Suite **486 passed / 4 failed / 29 skipped** — all 4 failures
+pre-existing at the base commit (2 need `third_party/ExtremeWeatherBench/data_prep`,
+1 is the local ARCO-cutoff probe, 1 `test_flood.py::test_detect_events_routes_flood…`;
+each also fails at `d95924b`). Incremental coverage of this branch's `ewb_live/**`
+diff: **108/127 = 85.0 %** (gate 60 %); uncovered lines are the defensive raises and
+fail-soft `except` arms.
+
+**UI — a broken lane can no longer read as an empty sky** (the part your 22:55
+message said mattered more than the count). `mlc.LANE_STATUS` records
+`ok / failed(reason) / no-data` + funnel (`n_frames, n_nodes, n_tracks, n_dupes,
+n_screened, screened_by, n_events`) + window + `rule_rev`; `detect_events` persists
+it as `lane_status_midlat_cyclone.json` beside the scan cache and restores it on a
+cache hit (so the weekly run knows what produced a cached zero); `pipeline` publishes
+it as `meta.lane_status`; `dashboard/app.js` now has **one function** that writes a
+lane's "nothing here" sentence — `emptyLaneLine(t)` — and it asks `meta.lane_status`
+first, so the tab reads `Midlatitude cyclones: lane failed, so this window has no
+numbers — <reason>.` / `… not computed, the source had nothing for this window —
+<reason>.` instead of the criteria sentence; a failed lane outranks the
+region-scoped wording in both the list and the scorecard lane block. Lanes that
+report nothing get no entry, so every other lane's copy is unchanged and
+`meta.ibtracs` still works as the TC lane's own mechanism. **Handoff to `ne-chips`:**
+that function is the copy — call `emptyLaneLine(id)` from the tab and the tooltip
+instead of a lane-specific note so the chip and the list can't disagree;
+`laneStatusNote(t)` is exported-by-name if a tab needs the sentence alone.
+`RULE_REV → mlc-v2` so a cached zero scan cannot resurrect under the fix.
+
+**TO RERUN (dev tree, yours).** 1) merge these 3 commits, code-only sync (nothing
+in `data/` changes; the `mlc-v1`→`mlc-v2` tag makes the cached zero scan
+unreachable); 2) midlat_cyclone lane only, then rebuild the derived assets:
+`python -m ewb_live.pipeline --publish-only --days 90` (rewrites `meta.json`, which
+now carries `lane_status`) and `python -m ewb_live.viz.timeline` (MLC entries join
+the Gantt). 3) Expect **143 raw → 80 published** (`TOP_N_BY_TYPE["midlat_cyclone"]
+= 80`, env `EWB_LIVE_TOP_N_MLC`); `mlc.py`'s `TOP_N = 30` comment ("~20-40
+qualifying lows") came from the Atlantic-centred proof window — in a Southern
+Ocean spring the lane finds 143, so if the design wants a quieter tab the knob is
+the quota, not the screens. 4) Pre-warm the orography cache once on a fresh tree
+(one-time ~17 GB decode, then 1.9 MB):
+`.venv/bin/python -c 'from ewb_live.sources import mlc_era5; print(mlc_era5.load_orography()[0].max())'`
+→ `5859.1`; disk free on ewb was 234 GB (51 %) throughout, the lane writes only
+that cache plus the per-window event cache.
+
+**OPEN / NEEDS FROM OWNER** (flagged, not acted on). 1) ARCO lags: last filled MSLP
+frame 2026-11-11 18Z (~6.5 days behind), with interior holes 11-04 and 11-09; the
+lane now reports the effective frame range rather than inventing zeros, but the UI
+has no "lane data ends <date>" line — `lane_status.n_frames` + `window` is the data
+if you want one. 2) With the 990 hPa floor almost every Southern Ocean low
+qualifies, so severity ranking + the 80 quota do all the selection there; a
+hemisphere-balanced view would be a ranking decision. 3) One 288 h track shows
+stitching can chain successive lows over a 6°/step budget across 12 days —
+pre-existing knob, affects ranking only. 4) `scan_mlc_events` still returns `[]` on
+failure by design (it must not take the weekly run down); the honesty lives in
+`lane_status`. Say the word if you'd rather hard-fail the build.
+
+— mlc-fix
