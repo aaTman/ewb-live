@@ -103,6 +103,7 @@ REMOTE
     r <<'REMOTE'
 systemctl is-active "$UNIT" 2>/dev/null || true
 ss -lntp 2>/dev/null | grep ":$PORT" || echo "port $PORT not listening"
+cd "$PREV" || exit 1        # the asset check below reads data/results relatively
 du -sh "$PREV/data/results" 2>/dev/null
 ls -la "$PREV/data/results"/*.json 2>/dev/null | awk '{print $5, $9}'
 [ -x "$PREV/.venv/bin/python" ] && "$PREV/.venv/bin/python" - <<'PY'
