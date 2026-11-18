@@ -10,7 +10,10 @@ Covers the streamlined chip contract on the deployed dashboard
     and writes the selection to the URL (#tab=), like Region does
   * an honest zero tab stays selectable and its tooltip says why
   * one component: identical heights per viewport, no page-level horizontal
-    overflow at 390 px, the row never ragged-wraps (it scrolls)
+    overflow at 390 px, and NO scroller — the wrapped equal-column grid keeps
+    every chip on screen at every width (owner 2026-11-18)
+  * identity colour tokens: flood teal, midlat_cyclone red, heat orange, and
+    two visually distinct storm glyphs
   * text tokens, not series colours: every chip label clears WCAG AA on its
     own ground in the active theme (identity rides glyph + label)
 
@@ -92,8 +95,16 @@ def test_tablist_semantics_and_grouped_order(live_url, page_ctx):
     assert info[[t["tab"] for t in info].index(0)]["sel"] == "true"
     # grouped order: temperature | water | storms (chips redesign)
     assert [t["etype"] for t in info[1:]] == TYPE_KEYS
-    # quiet group dividers sit at the head of the water and storm groups
-    assert page.locator("#type-tabs [role=tab][data-div]").count() == 2
+    # labelled groups: Temperature | Water | Storms. Each group head is preceded
+    # by a presentational caption — role=none + aria-hidden, so the tablist still
+    # owns exactly one tab per type (the count above is unchanged) and the caption
+    # never enters the a11y tree.
+    caps = page.locator("#type-tabs .type-group")
+    assert caps.count() == 3
+    assert [c.strip().lower() for c in caps.all_inner_texts()] == [
+        "temperature", "water", "storms"]
+    assert page.get_attribute("#type-tabs .type-group", "aria-hidden") == "true"
+    assert page.get_attribute("#type-tabs .type-group", "role") == "none"
     assert page.errors == []
 
 
@@ -160,37 +171,81 @@ def test_zero_lane_selectable_and_explained(live_url, page_ctx):
 
 
 # ------------------------------------------------------------ responsive ----
-def test_row_never_ragged_and_phone_has_no_overflow(live_url):
+def _grid(page):
+    return page.evaluate("""() => {
+        const t = document.querySelector('#type-tabs');
+        const tabs = [...t.querySelectorAll('[role=tab]')];
+        const box = (e) => e.getBoundingClientRect();
+        const rows = {};
+        tabs.forEach((e) => { const y = Math.round(box(e).top);
+          (rows[y] = rows[y] || []).push({ w: Math.round(box(e).width),
+            right: Math.round(box(e).right), over: box(e).right > document.documentElement.clientWidth }); });
+        return { cols: getComputedStyle(t).gridTemplateColumns.split(' ').length,
+                 rows, heights: [...new Set(tabs.map((e) => Math.round(box(e).height)))],
+                 widths: [...new Set(tabs.map((e) => Math.round(box(e).width)))],
+                 clipped: tabs.filter((e) => { const l = e.querySelector('.t-label');
+                   return l.scrollWidth > l.clientWidth + 1; }).map((e) => e.dataset.tab),
+                 rowScroll: t.scrollWidth - t.clientWidth,
+                 pageScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                 caps: [...t.querySelectorAll('.type-group')].filter((c) => c.getBoundingClientRect().width > 0).length,
+                 badges: [...new Set(tabs.map((e) => Math.round(
+                     e.querySelector('.n').getBoundingClientRect().right - box(e).right)))] }; }""")
+
+
+@pytest.mark.parametrize("w,h,rows,cols", [(1440, 900, [4, 4], 4), (1100, 900, [4, 4], 4),
+                                           (820, 1100, [4, 4], 4), (390, 844, [1, 2, 1, 2, 2], 2)])
+def test_chips_grid_is_never_scrolled_or_ragged(live_url, w, h, rows, cols):
+    """The owner complaint was scrolling to find a lane: every chip is on screen
+    at every width, in equal columns, with no ragged last row."""
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page(viewport={"width": w, "height": h})
+        page.goto(live_url, wait_until="networkidle")
+        page.wait_for_selector("#type-tabs [role=tab]")
+        m = _grid(page)
+        assert m["pageScroll"] <= 0, m                      # no horizontal page overflow
+        assert m["rowScroll"] == 0, m                       # the row cannot scroll at all
+        assert list(m["rows"].values()) and [len(r) for r in m["rows"].values()] == rows, m
+        assert m["cols"] == cols, m
+        assert not [c for r in m["rows"].values() for c in r if c["over"]], m
+        assert m["clipped"] == [], m                        # short labels, never truncated
+        assert len(m["heights"]) == 1, m                    # one chip height per viewport
+        assert m["caps"] == 3, m                            # grouping visible at every width
+        assert len(m["badges"]) == 1, m                     # counts align down each column
+        # equal columns: inside a row every chip is the same width
+        for r in m["rows"].values():
+            assert len({c["w"] for c in r}) == 1, m
+        browser.close()
+
+
+def test_phone_touch_targets_are_44px(live_url):
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = browser.new_page(viewport={"width": 390, "height": 844})
         page.goto(live_url, wait_until="networkidle")
         page.wait_for_selector("#type-tabs [role=tab]")
-        m = page.evaluate("""() => {
-            const tabs = [...document.querySelectorAll('#type-tabs [role=tab]')];
-            const tops = new Set(tabs.map(t => Math.round(t.getBoundingClientRect().top)));
-            const clipped = tabs.filter((t) => t.getBoundingClientRect().right < 0).length;
-            return { rows: tops.size,
-                     pageScroll: document.documentElement.scrollWidth
-                                 - document.documentElement.clientWidth,
-                     clipped,
-                     heights: [...new Set(tabs.map(t => Math.round(t.getBoundingClientRect().height)))],
-                     rowScrollable: (() => { const e = document.querySelector('#type-tabs');
-                        return e.scrollWidth >= e.clientWidth; })() }; }""")
-        assert m["pageScroll"] <= 0, m              # no horizontal page overflow at 390
-        assert m["rows"] == 1, m                    # one line: scrolls, never ragged-wraps
-        assert m["heights"] == [44], m              # 44 px touch target at phone width
-        # chips never sit off-screen to the LEFT (the row starts at x>=0);
-        # what extends past the right edge is inside the scroller, one flick away
-        assert m["clipped"] == 0, m
-        assert m["rowScrollable"]
-        # keyboard focus scrolls the chip fully into view
-        page.evaluate("document.querySelector('#type-tabs [role=tab]').focus()")
-        page.keyboard.press("End")
-        last = page.evaluate("""() => { const e = document.activeElement, r = e.getBoundingClientRect();
-            return { fits: r.left >= -1 && r.right <= document.documentElement.clientWidth + 1 }; }""")
-        assert last["fits"], last
+        m = _grid(page)
+        assert m["heights"] == [44], m                      # WCAG 2.5.5 / M7
         browser.close()
+
+
+def test_arrow_keys_walk_the_grid(live_url, page_ctx):
+    """Left/Right step a chip, Up/Down step a whole row-stride (the wrapped grid
+    has no scroller, so focus must reach every row by hand)."""
+    page = page_ctx
+    page.goto(live_url, wait_until="networkidle")
+    page.wait_for_selector("#type-tabs [role=tab]")
+    page.evaluate("document.querySelector('#type-tabs [role=tab]').focus()")
+    seq = []
+    for key in ["ArrowRight", "ArrowDown", "ArrowDown", "ArrowUp", "Home", "End"]:
+        page.keyboard.press(key)
+        seq.append(page.evaluate("document.activeElement.dataset.tab"))
+    assert seq[0] == "heat_wave", seq
+    assert seq[1] == "flood", seq                           # a 4-column stride down
+    assert seq[2] == "flood", seq                           # no row below: stays put
+    assert seq[3] == "heat_wave", seq                       # and back up the same column
+    assert seq[4] == "all" and seq[5] == "midlat_cyclone", seq
+    assert page.errors == []
 
 
 # ------------------------------------------------------------- contrast ----

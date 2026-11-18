@@ -169,7 +169,7 @@ def test_storage_blocked_does_not_break_theme_toggle(engine, base):
     page.on("pageerror", lambda e: errs.append(str(e)))
     _boot(page, base)
     page.click("#theme-ctl button[data-pref='dark']")
-    page.click("#type-tabs button:nth-child(2)")
+    page.click("#type-tabs button:nth-of-type(2)")
     page.wait_for_timeout(300)
     assert page.locator("#event-table tbody tr").count() >= 0
     assert not errs, errs

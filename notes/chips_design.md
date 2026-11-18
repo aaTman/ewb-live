@@ -230,3 +230,157 @@ above, `scripts/chips_shots.py` (before/after harness).
 4. The dev build's `global_timeline.json` currently carries no cold_snap/flood
    bars, so those Gantt lanes are empty there — data-side (integrator's lane
    build), the lane order/colours are ready for it.
+
+---
+
+# Round 2 — owner feedback applied (2026-11-18, chips-design)
+
+Owner feedback on the first pass: the chips row **scrolled** ("cannot scroll to
+find the lanes"), the grouping was **too subtle**, the identity colours
+**collided**, and the two storm chips **shared a look**. All four are addressed
+and deployed on **:8052** (`bash scripts/deploy_preview.sh`, cache-busted with
+`?v=` so a redeploy can't serve a stale bundle).
+
+## R2.1 No scrolling, at any width
+
+`#type-tabs` is a wrapped **equal-column grid**, not a scroller. The scroller's
+`overflow-x`, snap points, edge-fade masks and the wheel-capture handler are
+deleted — there is nothing left to scroll.
+
+| viewport | columns | rows (chips per row) | chip h | chip w | row scroll | page overflow-x |
+|---|---|---|---|---|---|---|
+| 1440 | 4 | 4 + 4 | 32 | 236 | 0 | 0 |
+| 1100 | 4 | 4 + 4 | 32 | 188 | 0 | 0 |
+| 820 | 4 | 4 + 4 | 32 | 187 | 0 | 0 |
+| 390 | 2 | 1 + 2 + 1 + 2 + 2 | 44 | 175 (All + the odd group's tail span both) | 0 | 0 |
+
+Eight cells (All + seven lanes) divide four columns exactly, so desktop is two
+rows of four with **count badges right-aligned down each column**. Below 720px
+two columns divide eight evenly; the one odd group (Temperature, three lanes)
+spans its tail chip across the last row, so no row is ragged. Labels are the
+short forms (`Atm. river`, `Trop. cyclone`) and **never truncate** — the e2e
+asserts `scrollWidth <= clientWidth` on every label at 1440/1100/820/390.
+Arrow Up/Down step a **column stride** (clamped at the last row); Left/Right and
+Home/End are unchanged. `#tab=` in the URL still records the selection.
+
+## R2.2 Grouping is a row header, not a hairline
+
+Temperature / Water / Storms render as **caption rows above the chips they
+name**, each with a hairline rule running to the group's right edge — at 4
+columns the caption sits over exactly the columns it owns (Temperature spans
+cols 2–4 of the first row's chips, Water cols 1–2 and Storms cols 3–4 of the
+second). At phone width each caption spans the grid. Still `role=none` +
+`aria-hidden`, so the tablist owns one tab per lane, the a11y tree is
+unchanged, roving-tabindex order is unchanged, and `button:nth-of-type()`
+selectors in the other suites still hold. Three captions are asserted visible
+at every viewport.
+
+## R2.3 Identity colours (re-derived, both themes)
+
+`bash scripts/chips_palette_check.sh` re-runs the gates on the hexes **as
+written in `dashboard/styles.css`**, in `TYPE_ORDER` — the neighbour list that
+matters (the chip row, and the first five are the Gantt lane order). The
+validator is vendored at `scripts/vendor/validate_palette.js`.
+
+```
+light  #c86906 #4090ea #194f96 #1e7729 #0f9ea4 #6f42c1 #a0312d
+dark   #d67620 #0a9cbc #5468c8 #75a322 #028b77 #967fd0 #cf4a55
+```
+
+Light: band PASS, chroma PASS, **CVD 17.4 PASS, normal 18.0 PASS**, contrast
+PASS (worst mark 3.26:1). Dark: band PASS, chroma PASS, **CVD 12.6 PASS, normal
+15.1 PASS**, contrast PASS (worst mark 3.02:1). Both runs exit 0.
+
+Moves, and why: **flood → teal** `#9b255c→#0f9ea4` / `#da6b94→#028b77` (berry
+read as a lighter twin of the TC violet one chip away; the lane has **no raw
+raster layer** — `mergedmap.js` draws flood as boxes + Gantt rows only — so this
+hue is pure identity and nothing on the map had to move with it). **midlat_cyclone → RED** `#7d5200→#a0312d` / `#c38823→#cf4a55`.
+**heat_wave → orange** `#c6493c→#c86906` / `#e76761→#d67620` — the collision
+with the new MLC red was real, so heat moves a hue family off it rather than
+MLC moving off red. **cold_snap → ice-blue** `#0b859e→#4090ea` /
+`#289f9d→#0a9cbc`: it owned the teal the owner just gave to flood, and as the
+set's teal it was only ΔE 7.4 from flood teal — and in a 4-across grid those two
+sit on the diagonal. Freeze blue and AR green are held (AR at L 0.50 so the
+teal beside it clears: ΔE 18.0).
+
+### Weakest pairs — owner decisions, not silent fails
+
+Adjacent-pair gates pass everywhere. These are the pairs that are **not**
+adjacent but do share the screen; the skill itself says a 7-hue set cannot pass
+all-pairs ≥15/≥8, so they are reported, not hidden:
+
+1. **midlat_cyclone red ↔ atmospheric_river green — all-pairs CVD ΔE 1.2
+   (light) / 1.6 (dark, heat↔AR).** Protan/deutan collapse the red↔green axis;
+   this is the one pair the palette cannot fix while MLC is red *and* AR is the
+   owner-mandated green. Both sit far apart in the row (slot 7 vs slot 4) and
+   carry different glyphs (front+L vs river arrow). Lever if you want it fixed:
+   MLC leaves red (storm-status red then belongs to nothing) or AR leaves green.
+2. **cold_snap ice-blue ↔ flood teal — all-pairs normal ΔE 12.7 (light) / 10.6
+   (dark).** Diagonal neighbours in the 4-across grid, above the 12 floor and
+   below the 15 target. Fixable only by pushing cold_snap out of the cold
+   family (it must stay freeze's sibling) or flood out of teal (you asked for
+   teal). Glyph + label + the count badge's column carry it.
+3. **heat orange ↔ midlat_cyclone red — normal 13.2 (dark) / 14.6 (light)**,
+   both above the floor, never adjacent in any surface.
+
+Non-text marks clear 3:1 on their own ground in both themes (worst: dark freeze
+3.02:1, light flood 3.26:1). Static type tags keep ink on a soft tint at
+**≥9.66:1**. Red is the skill's reserved critical-status hue; spending it as an
+identity is legal only because identity is never colour alone — which is what
+the glyphs in R2.4 are for.
+
+## R2.4 Storm glyphs
+
+`tropical_cyclone` was wind lines, one chip away from AR's wave-and-arrow, so
+both storm chips read as "moving air". TC now carries the **two-hook hurricane
+mark with a filled eye**; MLC carries a **broken isobar around a bold L** (a
+low-pressure centre mark), not a smaller hurricane. Both were redrawn after a
+15/20/28px legibility sheet — the first swirl cut read as a plain S-curve at
+chip size. Glyph identity is asserted in `test_tablist_semantics_and_grouped_order`
+(every tab owns an `<svg>`).
+
+## R2.5 Status of the suite on :8052
+
+`tests/e2e/test_chips_fe.py` — **12 passed**, rewritten for the grid (the old
+test asserted the row *does* scroll). `test_dashboard_fe.py` +
+`test_guardian_fe.py` — **81 passed / 38 failed** on :8052, and the same two
+files on :8051 with the same command give **80 passed / 39 failed**: this round
+adds no failures and removes one. The failures are the stale synthetic
+`gd/dur` fixtures on this data build (`test_ar_ramp_legend_shows_5_steps`,
+deselected in both runs, fails on :8050 too). Two `test_dashboard_fe` cases
+clicked the chip by its long label and are updated to `[data-tab=…]` now the
+chips are short-labelled.
+
+## R2.6 Open questions, round 2
+
+1. The phone block is now **five rows ≈315px tall** (2 columns, all seven
+   visible with no scrolling). That is the direct cost of "no scrolling to see
+   the chips" on a 390px screen. Alternative if the map must ride higher:
+   collapse Water/Storms behind a "more" chip, or drop to 44px→40px targets
+   (fails WCAG 2.5.5).
+2. Dark `freeze` at **3.02:1** is 0.02 over the graphic floor; lightening it to
+   clear 3.2 costs the cold-snap sibling pair (15.2 → 14.2 normal). Currently
+   the pair keeps the gate.
+3. `Midlat. cyclone` short label is still the one I would happily trade for
+   "Midlat. low" if you want the row narrower.
+4. Nothing here merges. `ne-tc-map`'s wind field and `ne-mlc-fix`'s MLC
+   detection cannot put cyclone data on :8052 by themselves: the dev data build
+   carries **0 midlat_cyclone events** (the MLC chip's honest zero) and
+   `tc_wind.json` exists only in that branch's own tree. The TC lane renders
+   from TrackViz today (44 storms). Say the word and I will repoint :8052's data
+   symlink at a tree that has them, or wait for the integrator's rebuild.
+
+## R2.7 :8052 is supervised now (it wasn't)
+
+The preview was launched as a bare `setsid nohup python3 -m ewb_live.serve`
+child of an ssh session, while its siblings on the same box (`ewb-live-dev-web`
+:8051, `ewb-live-tcmap-web` :8053) are systemd units. It survived only because
+of `setsid`; a reboot — or the box's own memory guard killing it — would have
+left **:8052 dead with nothing to bring it back**, which reads to the owner as
+"the agent's work vanished". Added `ewb-live-chips-web.service` on the LXC
+(`WorkingDirectory=/opt/ewb-preview-chips`, `/usr/bin/python3.12 -m
+ewb_live.serve --port 8052 --host 0.0.0.0`, `Restart=always`, enabled), and
+`scripts/deploy_preview.sh` now does `systemctl restart ewb-live-chips-web`
+instead of `pkill` + `setsid`. Verified: unit active + enabled, `:8052
+listening (active)`, HTTP 200, served CSS carries the round-2 tokens. Only this
+unit is touched; `ewb-live-web` (:8050) and `ewb-live-dev-web` (:8051) are not.

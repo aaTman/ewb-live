@@ -577,7 +577,7 @@ def test_type_filter_narrows_map_list_and_scorecard_together(live_url, page_ctx)
     page = page_ctx
     _home(page, live_url)
     n_all = page.locator("#event-table tbody tr[data-id]").count()
-    page.click("#type-tabs button:nth-child(5)")           # atmospheric rivers
+    page.click("#type-tabs button:nth-of-type(5)")           # atmospheric rivers
     # (child 5 since the chips redesign: All | Heat wave, Cold snap, Freeze | AR, Flood | TC, MLC)
     page.wait_for_timeout(600)
     st = page.evaluate("""() => ({ on: MergedMap._dbg().on, hash: location.hash,
@@ -1664,7 +1664,7 @@ def test_show_tabs_are_the_only_layer_toggle(dur_server, page_ctx):
     tabs = page.locator("#type-tabs button")
     assert tabs.count() == 8            # All + every published lane (zeros included)
     labels = " ".join(tabs.all_inner_texts())
-    assert "Heat wave" in labels and "Freeze" in labels and "Atmospheric river" in labels
+    assert "Heat wave" in labels and "Freeze" in labels and "Atm. river" in labels
     page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
     assert page.eval_on_selector_all("#gm-legend .lg-group",
                                      "els => els.map(e => e.dataset.layer)") == ["h", "f", "a"]
@@ -1675,7 +1675,7 @@ def test_show_tabs_are_the_only_layer_toggle(dur_server, page_ctx):
     assert "COMPLETED UTC days" in tips[0] and "7+ days is the darkest stop in light" in tips[0]
     assert "P15" in tips[1] and "3+ days is the darkest stop in light" in tips[1]
     # the tab narrows the map layers and the legend, and records #layers=
-    page.locator("#type-tabs button", has_text="Atmospheric river").click()
+    page.locator("#type-tabs [data-tab=atmospheric_river]").click()   # chip label is the short form
     page.wait_for_function(
         "() => document.querySelectorAll('#gm-legend .lg-group').length === 1")
     assert page.locator("#gm-legend .lg-group[data-layer=a]").count() == 1
@@ -1711,7 +1711,7 @@ def test_legend_sits_below_the_map_and_never_moves_the_page(dur_server, page_ctx
     a = page.evaluate(geo)
     assert not a["inMap"], "the strip must live outside #raw-map-wrap"
     assert a["belowMap"] and a["groups"] == 3, a          # sits under the map, not on it
-    page.locator("#type-tabs button", has_text="Atmospheric river").click()   # 3 -> 1 lane
+    page.locator("#type-tabs [data-tab=atmospheric_river]").click()   # 3 -> 1 lane
     page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 1")
     b = page.evaluate(geo)
     assert b["groups"] == 1 and b["leg"][3] == a["leg"][3], (a, b)   # height is fixed

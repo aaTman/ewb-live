@@ -2510,3 +2510,63 @@ am still active.
   a 3x margin on a network-bound read. Commit `08e52c2` carries the corrected
   message; the script echoes the same numbers. (The 20:45 entry above says
   `timeout 1800` — superseded; the deployed script caps at 3600 s.)
+## [chips-design] 2026-11-18 20:20 UTC — chips round 2 LIVE on :8052: no scrolling, labelled groups, teal/red/orange identities, hurricane + low glyphs
+
+**Preview: http://192.168.0.121:8052/** (`aaTman/ne-chips`, 4 new commits,
+`bash scripts/deploy_preview.sh`). The owner's complaint list is addressed in
+full; rationale + validator output in **`notes/chips_design.md` §"Round 2"**.
+
+* **No scrolling to find the lanes.** `#type-tabs` is a wrapped equal-column
+  grid; the `overflow-x` scroller, snap points, edge-fade masks and the
+  wheel-capture handler are deleted. Measured on the running preview at 1440 /
+  1100 / 820 / 390 × light + dark: row scroll **0 px**, page overflow-x **0**,
+  clipped labels **0**. Desktop/laptop/tablet = two rows of four (chip 32 px,
+  equal columns, counts right-aligned down each column); phone = 44 px targets
+  in two columns, the one odd group spanning its tail chip so no row is ragged.
+* **Grouping is a row header, not a hairline.** Temperature / Water / Storms
+  caption rows sit above the chips they name, with a hairline to the group's
+  right edge; at 4 columns a caption spans exactly its own columns. Still
+  `role=none` + `aria-hidden` — one tab per lane, a11y tree, roving-tabindex
+  order and `button:nth-of-type()` selectors all unchanged. Arrow Up/Down now
+  step a column stride (clamped); `#tab=` is still URL state.
+* **Identity colours re-derived with the dataviz validator, both themes.**
+  `bash scripts/chips_palette_check.sh` (validator vendored at
+  `scripts/vendor/validate_palette.js`) reads the hexes out of `styles.css` in
+  `TYPE_ORDER` and exits 0: **light adjacent CVD 17.4 / normal 18.0, dark 12.6 /
+  15.1**, all marks ≥3:1 on their ground, all chips ink-on-soft ≥9.66:1.
+  Flood → **teal** (matches the lane's own FLOOD IMPACT ramp, and the berry it
+  replaces read as a lighter TC violet), midlat_cyclone → **RED**, heat_wave →
+  **orange** (the red↔red collision was real, so heat moves a hue family),
+  cold_snap → **ice-blue** (it owned the teal flood now has, and was ΔE 7.4
+  from flood teal while sitting diagonally adjacent in the grid). AR green and
+  TC violet held.
+* **Named weak pairs, not hidden.** Not-adjacent but sharing the screen:
+  ML-red↔AR-green all-pairs CVD **1.2** (protan collapse — only fixable by MLC
+  leaving red or AR leaving green), cold_snap↔flood normal **12.7** (diagonal
+  pair, above the 12 floor), heat↔MLC **13.2** dark. Glyph + label + column
+  position carry all three. Owner decision, listed in the note.
+* **Storm glyphs.** TC = two-hook hurricane mark with a filled eye (was wind
+  lines, one chip from AR's wave-and-arrow, so both storms read as "moving
+  air"); MLC = broken isobar around a bold L. Redrawn after a 15/20/28 px
+  legibility sheet.
+* **Tests.** `test_chips_fe.py` 12/12 green against :8052, rewritten for the
+  grid (the old responsive test asserted the row *does* scroll). Wider suite on
+  :8052: 81 passed / 38 failed. Same two files on **:8051** (the integration
+  dev site without these changes), same command: **80 passed / 39 failed** —
+  this round adds no failures, it removes one. (`test_ar_ramp_legend_shows_5_steps`
+  is deselected in both; it fails on :8050 too.) Two dashboard tests clicked
+  the chip by its long label and are updated to `[data-tab=…]` now the chips
+  are short-labelled.
+* **Still nothing merged** by this role. Merging `ne-mlc-fix` / `ne-tc-map`
+  would not put cyclone data on the preview: the dev data build has **0
+  midlat_cyclone events** (hence MLC's honest zero) and `tc_wind.json` exists
+  only in that branch's own tree; the TC lane renders from TrackViz (44
+  storms). Ask if you want :8052 repointed at a tree that has them.
+* **Preview infra**: :8052 was a bare `setsid nohup` server while its siblings
+  on that box are units — a reboot or an OOM-kill would have left the port dead
+  with nothing to restart it. Now `ewb-live-chips-web.service`
+  (`Restart=always`, enabled at boot) and `scripts/deploy_preview.sh` restarts
+  the unit. Verified active + HTTP 200; :8050/:8051 untouched.
+* Phone cost of "no scrolling": the chip block is **five rows ≈315 px** at
+  390 px. Alternatives (collapse Water/Storms behind "more", or 40 px targets
+  which fail WCAG 2.5.5) are in the note's open questions.
