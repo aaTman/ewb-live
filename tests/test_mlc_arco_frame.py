@@ -148,16 +148,20 @@ def test_real_frames_publish_ciaran_as_an_event(cutout):
 
 
 # ------------------------------------------------------------ reader contract
-def _synthetic_arco(low_lat=50.0, low_lon=-20.0, depth=40.0, sigma=2.0):
+def _synthetic_arco(low_lat=50.0, low_lon=-20.0, depth=40.0, sigma=2.0,
+                    times=("2024-01-10T00", "2024-01-10T06"), nan_last=False):
     """A closed low on a 1 deg global grid, dressed as ARCO: Pa, lat descending
-    (90 N-first), lon ascending 0-360."""
+    (90 N-first), lon ascending 0-360. ``nan_last`` reproduces ARCO's habit of
+    advertising time steps it has not filled in yet (an all-NaN frame)."""
     la = np.arange(88.0, -89.0, -1.0)                       # 90 N-first, descending
     lo = np.arange(0.0, 360.0, 1.0)                         # ARCO's 0..359
-    t = [np.datetime64("2024-01-10T00"), np.datetime64("2024-01-10T06")]
+    t = [np.datetime64(x) for x in times]
     d = T.haversine_km(la[:, None], lo[None, :], low_lat, low_lon) / 111.195
     field = (1013.0 - depth * np.exp(-((d / sigma) ** 2) / 2.0)) * 100.0   # Pa
-    ds = xr.Dataset({mlc_era5.MSLP_VAR: (("time", "latitude", "longitude"),
-                                         np.stack([field, field]).astype(np.float32))},
+    stack = np.stack([field for _ in t]).astype(np.float32)
+    if nan_last:
+        stack[-1] = np.nan
+    ds = xr.Dataset({mlc_era5.MSLP_VAR: (("time", "latitude", "longitude"), stack)},
                     coords={"time": t, "latitude": la, "longitude": lo})
     return ds
 
@@ -195,6 +199,28 @@ def test_reader_units_and_order_find_the_same_low():
 
 
 # ----------------------------------------------------------- lattice guards
+def test_reader_drops_frames_arco_has_not_filled():
+    """ARCO's time index runs ahead of its data (all-NaN frames at the tail).
+
+    Peak detection would ignore them, but the tracker's gap filling picks the
+    lowest cell in a hole, so an empty frame could become a NaN central pressure
+    in a published track. The reader hands over only what has data.
+    """
+    ds = _synthetic_arco(times=("2024-01-10T00", "2024-01-10T06", "2024-01-10T12"),
+                         nan_last=True)
+    times, mslp, lats, lons = mlc_era5.read_mslp_window(
+        dt.datetime(2024, 1, 10, 0), dt.datetime(2024, 1, 10, 12), ds=ds)
+    assert times == [dt.datetime(2024, 1, 10, 0), dt.datetime(2024, 1, 10, 6)]
+    assert mslp.shape[0] == 2 and np.isfinite(mslp).all()
+
+    ds_all_nan = _synthetic_arco(times=("2024-01-10T12", "2024-01-10T18"),
+                                 nan_last=True)
+    ds_all_nan[mlc_era5.MSLP_VAR].values[0] = np.nan
+    t2, m2, _, _ = mlc_era5.read_mslp_window(
+        dt.datetime(2024, 1, 10, 12), dt.datetime(2024, 1, 10, 18), ds=ds_all_nan)
+    assert t2 == [] and m2.size == 0        # -> the lane reports no-data, not 0 lows
+
+
 def test_check_grid_rejects_a_rotated_longitude_axis():
     lats = np.arange(-80.0, 80.0 + 1e-9, 0.25)
     lons = np.arange(-180.0, 180.0, 0.25)

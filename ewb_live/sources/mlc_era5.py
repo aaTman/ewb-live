@@ -127,8 +127,14 @@ def read_mslp_window(start: dt.datetime, end: dt.datetime, *,
     store is chunked ``(4, 721, 600)``, i.e. 24 frames is exactly 6 chunks and
     one read per day, and the transient peak stays at the window plus one chunk.
 
-    Times that ARCO does not have yet (the ~6-day lag) are skipped, so the
-    caller always gets a contiguous array of what actually exists.
+    Times that ARCO does not have yet are skipped, so the caller always gets
+    what actually exists — and that includes more than the time *index*: ARCO's
+    axis runs ahead of its data, and whole frames at the tail are all-NaN
+    (measured 2026-11-18: every cell of 2026-11-12 00Z .. 2026-11-17 00Z is NaN).
+    They are dropped here, because peak detection would ignore them but the
+    tracker's gap filling would happily "fill" a hole from an empty frame and
+    publish a NaN central pressure. The lane therefore reports the frames it
+    really used (``mlc.LANE_STATUS``), not the frames the index advertised.
     """
     src = open_arco() if ds is None else ds
     want = np.arange(np.datetime64(start, "h"),
@@ -144,24 +150,36 @@ def read_mslp_window(start: dt.datetime, end: dt.datetime, *,
     times: list[dt.datetime] = []
     blocks: list[np.ndarray] = []
     lats = lons = None
+    n_empty = 0
     step = max(1, int(chunk_hours) // 6)
     for i in range(0, want.size, step):
         block = want[i:i + step]
         sel = src[MSLP_VAR].sel(time=block)
         da = _to_repo_frame(sel).transpose("time", "latitude", "longitude")
-        blocks.append(np.ascontiguousarray(
-            np.asarray(da.values, np.float32), dtype=np.float32))
-        times.extend(t.astype("datetime64[h]").astype(dt.datetime)
-                     for t in np.asarray(da.time.values))
-        if lats is None:
+        arr = np.ascontiguousarray(np.asarray(da.values, np.float32), dtype=np.float32)
+        got = [t.astype("datetime64[h]").astype(dt.datetime)
+               for t in np.asarray(da.time.values)]
+        ok = np.any(np.isfinite(arr), axis=(1, 2))      # ARCO index ahead of data
+        if not ok.all():
+            n_empty += int(np.count_nonzero(~ok))
+            arr, got = arr[ok], [t for t, k in zip(got, ok) if k]
+        if arr.shape[0]:
+            blocks.append(arr)
+            times.extend(got)
+        if lats is None and arr.shape[0]:
             lats = np.asarray(da.latitude.values, float)
             lons = np.asarray(da.longitude.values, float)
-        del sel, da
+        del sel, da, arr
+    if not blocks:
+        logger.warning("mlc_era5: %d frames of %s..%s are all-NaN in ARCO "
+                       "(its index runs ahead of the data)", n_empty, start, end)
+        return [], np.zeros((0, 0, 0), np.float32), np.zeros(0), np.zeros(0)
     mslp = blocks[0] if len(blocks) == 1 else np.concatenate(blocks, axis=0)
     del blocks
-    logger.info("mlc_era5: %d frames %s..%s (%.2f GB), mslp [%.1f, %.1f] hPa",
+    logger.info("mlc_era5: %d frames %s..%s (%.2f GB), mslp [%.1f, %.1f] hPa%s",
                 mslp.shape[0], times[0], times[-1], mslp.nbytes / 1e9,
-                float(np.nanmin(mslp)), float(np.nanmax(mslp)))
+                float(np.nanmin(mslp)), float(np.nanmax(mslp)),
+                f" ({n_empty} empty ARCO frames skipped)" if n_empty else "")
     return times, mslp, lats, lons
 
 
