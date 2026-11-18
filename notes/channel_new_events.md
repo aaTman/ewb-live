@@ -2168,3 +2168,61 @@ instead of implying "no events". Data behind it is the live-seeded set until the
 rebuild above finishes.
 
 — integrator
+
+## [integrator] 2026-11-18 22:04 UTC — OWNER-Visible: ERA5 ARCO truth is 6 days behind AND has interior holes; the probe could not cope and took every lane down with it
+
+While rebuilding the dev data after the incident above, the first `--events-only`
+run died at 21:56 UTC in `probe_arco_cutoff` — `RuntimeError: ERA5 ARCO probe:
+oldest probed hour is NaN`. I measured the archive on the box (0.25°/1 h `t2m`,
+four open-ocean probe points, hourly scan 1 → 12 Nov):
+
+| hour (UTC) | read |
+| --- | --- |
+| 2026-11-03T23 | filled (290.4 K) |
+| **2026-11-04T05** | **NaN at all four points** |
+| 2026-11-05T23 … 2026-11-08T23 | filled |
+| **2026-11-09T23** | **NaN at all four points** |
+| 2026-11-10T23 | filled (294.0 K) |
+| newest filled hour | **2026-11-11T17Z**, re-probe later found **2026-11-12T23Z** |
+
+So: the archive stopped filling ~6 days ago (normal lag is 5–7 d, so that is
+*at the edge*, not yet an outage by itself) **and** it is not hole-free inside the
+dashboard window. Two consequences, in order of importance:
+
+1. **The probe was the actual failure, not the data.** `probe_arco_cutoff`
+   anchored on one hour at `now − 14 d` and raised if that single hour was NaN.
+   `now − 14 d` is 2026-11-04T22 — inside a hole. That abort is *precondition*
+   code: it killed `--events-only` **and** `--publish-only`, i.e. every lane,
+   before any detection ran. A hole in the middle of the archive is a data
+   condition, not a reason for the pipeline to refuse to run.
+2. `truth_cutoff()` had **no stale-cache fallback**: probe failure = exception =
+   no build, while a cached cutoff (whatever its age) was sitting right there.
+
+**What I changed** (`ewb_live/events/truth.py`, one module, no science touched):
+the probe now walks **backwards from `now`** on a 12 h stride, bounded by
+`lookback_days` (25 probes against the real archive), then refines hourly, so it
+tolerates holes at the end *and* inside; `truth_cutoff()` falls back to the cached
+cutoff with a loud `logger.warning` (age in hours, and the fact that the window is
+clamped) instead of raising, and only re-raises when there is no cache to fall
+back on. New `tests/test_truth_probe.py`: 4 tests, in-memory fake archive, no
+network — lag, interior hole, probe-fail-with-cache, probe-fail-without-cache.
+`tests/test_events_unit.py::test_detect_events_validation_and_cache`, which had
+been failing against the real archive for the same reason, passes again.
+
+**What the owner will see on `/dev/` and needs to know**: the build window is now
+`2026-08-20 … 2026-11-12` — the last 6 days of the nominal 90-day window cannot be
+scanned at all until ARCO fills, so the newest events on the dev site (and on live,
+same archive) will be ~Nov 12 while today is Nov 18. That is honest and it is a
+`wait for upstream` item, not something I can compute around. If ARCO stays
+stuck, the follow-up decision is a UI line ("ERA5 truth through Nov 12; the last 6
+days are not scored yet") rather than a silent truncated window — I have NOT added
+that line, it is a design call.
+
+**Also: interior holes are still there.** The probe only reports the newest fully
+available hour; lanes whose window crosses Nov 4 / Nov 9 will see NaN truth cells
+there and treat them as missing. I did not re-tune any detection for it.
+
+Detect is running again (`/opt/ewb-live-dev/logs/lanes.log`, started 22:01 UTC);
+`mlc-fix` is merged, `tc-map` and `chips` next.
+
+— integrator
