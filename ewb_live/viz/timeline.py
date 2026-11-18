@@ -10,6 +10,10 @@ shortcut: ARs have a single anchor (peak-area) mask in viz.json, repeated on
 every active day — same approximation the AR detail panel already draws;
 upgrade when build_ar stores true per-day masks.
 
+The cyclone lanes have no footprint raster at all: their entry carries the
+best track itself (``track`` — see TRACK_TYPES), which is what the merged map
+draws as a polyline with intensity-coloured fixes (dashboard/tracklayer.js).
+
 Runs as the tail of `python -m ewb_live.viz` (after any build pass) or
 standalone: `python -m ewb_live.viz.timeline`. No network, seconds of CPU.
 """
@@ -21,13 +25,15 @@ import datetime as dt
 import json
 import logging
 import os
+import re
 from pathlib import Path
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-SCHEMA = 2          # 2: + qualified_at/q_source per entry, + raw header mirror
+SCHEMA = 3          # 2: + qualified_at/q_source per entry, + raw header mirror
+                    # 3: + track entries for the cyclone lanes (merged map)
 STEP_DEG = 1.0          # coarsening target for footprints
 SIZE_LIMIT = 2_000_000  # bytes; brief target < 1-2 MB
 OUT_NAME = "global_timeline.json"
@@ -36,9 +42,17 @@ OUT_NAME = "global_timeline.json"
 # their per-event viz.json for the footprint bits; flood has none (its evidence
 # is a 0.1° IMERG accumulation, not a v2 sidecar raster), so its entries fall
 # back to bbox+days in build() — enough to populate the lane's bars, which is
-# what mergedmap's LANE_ORDER draws. The cyclone lanes are deliberately absent:
-# a storm/low is a track, drawn in its own detail view (TrackViz).
+# what mergedmap's LANE_ORDER draws.
 TYPES = ("heat_wave", "freeze", "cold_snap", "atmospheric_river", "flood")
+
+# TRACK lanes (tc-map 2026-11-18): a cyclone's geometry is not a footprint, it
+# is the best track the lane already published in ``details.track`` (the shared
+# 5-slot row schema). Those entries carry a compact ``track`` object instead of
+# grid/masks and the merged map draws the TRACK — polyline, intensity fixes, the
+# position at the selected step — never a bbox box. Without this the lane is in
+# the catalogue, the tabs and the event table but on NO map at all, which is the
+# bug this fixes (44 published storms, 0 pixels).
+TRACK_TYPES = ("tropical_cyclone", "midlat_cyclone")
 
 
 def _qualified(ev: dict) -> tuple[str, str]:
@@ -52,7 +66,7 @@ def _qualified(ev: dict) -> tuple[str, str]:
 
 
 def _compact(iso) -> str:
-    s = str(iso)[:19].replace("-", "").replace(":", "").replace("T", "")
+    s = str(iso)[:19].replace("-", "").replace(":", "").replace("T", "").replace(" ", "")
     return s[:10].ljust(10, "0")  # date-only input -> 00Z step
 
 
@@ -101,6 +115,90 @@ def _align(m: np.ndarray, n: int) -> np.ndarray:
         return m[:n]
     pad = np.zeros((n - m.shape[0],) + m.shape[1:], dtype=bool)
     return np.concatenate([m, pad], axis=0)
+
+
+def _num(v) -> float | None:
+    """Track/meta scalar -> rounded float or None. Lane details scalars arrive
+    as strings after the DataFrame round-trip ("115.0"), and JSON has no NaN:
+    anything non-numeric or non-finite becomes a JSON null."""
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return round(f, 3) if np.isfinite(f) else None
+
+
+def _flag(v) -> bool:
+    """bool that also reads the string form the lane writes ("False")."""
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes")
+    return bool(v)
+
+
+def _text(v) -> str:
+    s = "" if v is None else str(v)
+    return "" if s.strip().lower() in ("", "nan", "none", "unnamed") else s.strip()
+
+
+def _pick(d: dict, *keys):
+    """First key present with a usable value (the lanes name their headline
+    differently: peak_wind_kt vs min_mslp_hPa, min_pressure_hpa vs …)."""
+    for k in keys:
+        if d.get(k) is not None:
+            return d[k]
+    return None
+
+
+def _track_entry(ev: dict) -> dict | None:
+    """A TRACK-lane entry: the event's own geometry, compacted to the map's
+    frame key. Slot 0 of every fix becomes 'YYYYMMDDHH' so the browser compares
+    fixes against ``raw.frames`` with a string compare — the same convention as
+    ``qualified_at`` and the same reason (no Date parsing, no timezone traps).
+    The 5-slot row order is the repo-wide ``details.track`` contract:
+    [time, lat, lon, intensity, pressure_hpa]; intensity is the lane's own unit
+    and direction (``units`` carries it, e.g. 'kt' up, 'hPa' down).
+    """
+    d = ev.get("details") or {}
+    rows = d.get("track")
+    if not isinstance(rows, list):
+        logger.warning("timeline: %s (%s) has no details.track — no map entry",
+                       ev["id"], ev.get("event_type"))
+        return None
+    fixes = []
+    for r in rows:
+        if not isinstance(r, (list, tuple)) or len(r) < 3:
+            continue
+        ts = _compact(r[0])
+        if not re.fullmatch(r"\d{10}", ts):      # unusable stamp: drop the fix
+            continue
+        lat, lon = _num(r[1]), _num(r[2])
+        if lat is None or lon is None or abs(lat) > 90 or abs(lon) > 360:
+            continue
+        fixes.append([ts, lat, lon,
+                      _num(r[3]) if len(r) > 3 else None,
+                      _num(r[4]) if len(r) > 4 else None])
+    if len(fixes) < 2:
+        logger.warning("timeline: %s (%s) track has %d usable fix(es) — no map entry",
+                       ev["id"], ev.get("event_type"), len(fixes))
+        return None
+    entry = {"id": ev["id"], "type": ev["event_type"], "title": ev.get("title"),
+             "start": ev["start"], "end": ev["end"], "bbox": ev["bbox"],
+             "days": [str(ev["start"])[:10]]}
+    entry["qualified_at"], entry["q_source"] = _qualified(ev)
+    entry["track"] = {
+        "units": _text(d.get("intensity_units")),
+        "step_h": _num(_pick(d, "fix_step_h")),
+        "name": _text(_pick(d, "name", "storm_name")),
+        "basin": _text(_pick(d, "basin_name", "basin")),
+        "peak": _num(_pick(d, "peak_wind_kt", "min_mslp_hPa", ev.get("peak_value"))),
+        "peak_label": _text(_pick(d, "peak_category")),
+        "pressure": _num(_pick(d, "min_pressure_hpa", "min_mslp_hPa")),
+        "crosses_antimeridian": _flag(d.get("track_crosses_antimeridian")),
+        "fixes": fixes,
+    }
+    return entry
 
 
 def _event_entry(ev: dict, results: Path) -> dict:
@@ -161,6 +259,15 @@ def build(results_dir: Path) -> Path:
     meta = _load(results_dir / "meta.json") or {}
     entries = []
     for ev in events:
+        if ev.get("event_type") in TRACK_TYPES:
+            try:
+                te = _track_entry(ev)
+            except Exception:  # one bad track must not kill the timeline
+                logger.exception("timeline: track entry for %s failed", ev["id"])
+                te = None
+            if te:
+                entries.append(te)
+            continue
         if ev.get("event_type") not in TYPES:
             continue
         try:

@@ -63,6 +63,7 @@
   const minDays = (L) => (raw && raw.dur && raw.dur.min && raw.dur.min[L.name] != null)
     ? raw.dur.min[L.name] : (L.min || 0);
   const runBin = (count, bins) => Math.min(count - 1, bins - 1);   // bins: 1..bins
+  const isTrack = (e) => !!(e && e.track);   // TRACK lane → tracklayer.js draws it
   const TYPES = {
     heat_wave:          { css: 'heat',      short: 'Heat' },
     freeze:             { css: 'freeze',    short: 'Freeze' },
@@ -74,14 +75,23 @@
     // 0.1 deg IMERG accumulation, not a raster published with the v2 sidecars):
     // flood events are drawn as boxes and Gantt rows only
     flood:              { css: 'flood',     short: 'Flood' },
+    /* TRACK lanes (tc-map 2026-11-18): a cyclone entry carries its own `track`
+       geometry, so it is drawn by the additive tracklayer.js layer (polyline,
+       intensity fixes, position at the selected step) and NEVER as a bbox box —
+       a rectangle around a 3,000 km track is not information. These entries give
+       that layer the lane colour and the Gantt short label. */
+    tropical_cyclone:   { css: 'tc',        short: 'Tropical cyclone', track: true },
+    midlat_cyclone:     { css: 'mlc',       short: 'Midlat. cyclone', track: true },
   };
-  // Gantt lanes. tropical_cyclone is deliberately absent: a storm is a track,
-  // drawn in its own detail view (TrackViz), not a raster lane here.
-  // Grouped in the chips' order (Temperature | Water): the lane adjacency is
+  // Gantt lanes. midlat_cyclone stays out until its lane publishes events (an
+  // always-empty lane would be its own small lie); a track lane gets bars like
+  // every other lane, from qualified_at → end, which is how a storm becomes
+  // findable on the time strip at all.
+  // Grouped in the chips' order (Temperature | Water | Storms): the lane adjacency is
   // part of what the identity palette was validated against — if this order
   // changes, re-run the palette check (notes/chips_design.md).
   const LANE_ORDER = ['heat_wave', 'cold_snap', 'freeze', 'atmospheric_river',
-    'flood'];
+    'flood', 'tropical_cyclone'];
   const SPEEDS = [2, 5, 10];               // fps choices
 
   let raw = null;                          // raw_exceedance index.json
@@ -258,6 +268,28 @@
     const bx = $('#gm-boxes');                     // overlay tracks the canvas exactly
     bx.setAttribute('width', W); bx.setAttribute('height', H);
     bx.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    emitTracks('resize');      // the track layer is sized/projection-matched here
+  }
+
+  /* ---------------- TRACK lanes: the seam to tracklayer.js ----------------
+     A cyclone entry carries its own geometry, and drawing it (canvas lines +
+     fix dots, plus one interactive SVG marker per positioned storm) is that
+     module's business, not the merged map's. This hands it what only the map
+     knows — the live projection, the fit, the selected step, the region/tab
+     filter, the selection — at every state change the map owns. Absent module
+     (or a timeline with no track entries) is a no-op: nothing here assumes it.
+     See notes/tc_map.md for the layer's own contract. */
+  function emitTracks(reason) {
+    if (typeof window.onMapTracks !== 'function') return;
+    try {
+      window.onMapTracks({
+        reason, proj, fit, mounted,
+        ts: raw ? raw.frames[idx] : null,
+        readout: raw ? fmtReadout(raw.frames[idx]).replace(/^Valid time: /, '') : '',
+        region, tab: pageTab(), sel: Array.from(sel), previewId,
+        events: tl ? tlEvents() : [],
+      });
+    } catch (err) { console.warn('track layer:', err.message); }
   }
 
   function drawBase(ctx) {
@@ -559,14 +591,16 @@
     const anySel = sel.size > 0;
     // list preview of an event that is not on screen at this time step: a
     // non-interactive outline, so pointing at a row always shows WHERE it is
+    // (a TRACK event's preview outline is drawn by tracklayer.js instead)
     const ghost = previewId && !active.some((e) => e.id === previewId)
       ? tl.events.find((e) => e.id === previewId) : null;
-    if (ghost) {
+    if (ghost && !isTrack(ghost)) {
       const gd = bboxPaths(ghost), gt = TYPES[ghost.type] || { css: 'heat' };
       if (gd) mk('path', { class: 'gm-ghost', d: gd, 'aria-hidden': 'true',
                            style: `stroke: var(--series-${gt.css}); fill: var(--series-${gt.css})` }, g);
     }
     for (const ev of active) {
+      if (isTrack(ev)) continue;             // TRACK lane → tracklayer.js
       const t = TYPES[ev.type] || { css: 'heat' };
       const cls = 'gm-ev' + (sel.has(ev.id) ? ' sel' : '') + (anySel && !sel.has(ev.id) ? ' dim' : '')
         + (previewId === ev.id ? ' hov' : '');
@@ -631,11 +665,15 @@
       if (t) t.focus({ preventScroll: true });
     }
     if (typeof window.onMapEvents === 'function') window.onMapEvents(active.map((e) => e.id), Array.from(sel));
-    const nHeat = active.filter((e) => e.type === 'heat_wave').length;
-    const nFrz = active.filter((e) => e.type === 'freeze').length;
-    const nCold = active.filter((e) => e.type === 'cold_snap').length;
-    const nAr = active.filter((e) => e.type === 'atmospheric_river').length;
-    const nFl = active.filter((e) => e.type === 'flood').length;
+    // the canvas describes what the CANVAS paints (layers + boxes); a track
+    // lane is a separate layer with its own aria-label on #gm-track-marks
+    const boxed = active.filter((e) => !isTrack(e));
+    const nHeat = boxed.filter((e) => e.type === 'heat_wave').length;
+    const nFrz = boxed.filter((e) => e.type === 'freeze').length;
+    const nCold = boxed.filter((e) => e.type === 'cold_snap').length;
+    const nAr = boxed.filter((e) => e.type === 'atmospheric_river').length;
+    const nFl = boxed.filter((e) => e.type === 'flood').length;
+    const nTk = active.length - boxed.length;
     const parts = [];
     if (nHeat) parts.push(`${nHeat} heat`);
     if (nFrz) parts.push(`${nFrz} freeze`);
@@ -644,8 +682,9 @@
     if (nFl) parts.push(`${nFl} flood`);
     $('#raw-canvas').setAttribute('aria-label',
       `Equal Earth world map — raw detector layers and event boxes: `
-      + `${active.length} event${active.length === 1 ? '' : 's'} visible`
-      + (parts.length ? ` (${parts.join(', ')})` : ''));
+      + `${boxed.length} event${boxed.length === 1 ? '' : 's'} visible`
+      + (parts.length ? ` (${parts.join(', ')})` : '')
+      + (nTk ? ` — plus ${nTk} cyclone track${nTk === 1 ? '' : 's'} in the track layer` : ''));
   }
   const spanLon = (b) => (b[2] <= b[3] ? b[3] - b[2] : 360);
   function hoverRow(id, on) {                  // map box → its row in the event list
@@ -655,7 +694,7 @@
   function preview(id) {                       // event list → outline on map + timeline (no canvas repaint)
     if (!mounted || !raw || previewId === id) return;
     previewId = id;
-    renderBoxes(); renderGantt();
+    renderBoxes(); renderGantt(); emitTracks('preview');
   }
   function layersForTab(tab) {                 // the page's type filter narrows the raw layers too
     // cold_snap has no raw layer of its own: the P15 (freeze) lane is its mask.
@@ -744,6 +783,7 @@
     badge.textContent = past ? `raw layers end ${fmtShort(raw.cutoff)} ${raw.cutoff.slice(8, 10)}Z · ERA5 lag` : '';
     renderBoxes();
     renderGantt();
+    emitTracks('frame');       // track lanes follow the step, the tab and the region
     getFrame(idx).then((frame) => {
       if (seq !== renderSeq) return;
       const note = $('#raw-note');
@@ -989,6 +1029,16 @@
           + `<span class="lg-stops">${stops.join('')}</span></span>`);
       });
     }
+    /* TRACK lanes contribute their own groups (tracklayer.js): a lane only
+       appears when it has published events, so the raster-only pages keep
+       their exact legend contract (counts, widths, fixed height). */
+    if (typeof window.onTrackLegend === 'function') {
+      try {
+        const extra = window.onTrackLegend({ tab: pageTab(), ts: raw && raw.frames[idx],
+          region, events: tl ? tlEvents() : [], sel: Array.from(sel) });
+        if (extra) groups.push(extra);
+      } catch (err) { console.warn('track legend:', err.message); }
+    }
     const html = groups.join('');
     if (html === legHtml) return;              // same legend: no reflow per frame
     legHtml = html;
@@ -1021,6 +1071,7 @@
     new MutationObserver(() => {
       packedCache = null; rampCache = null; ghostCache = null;   // theme flip: repack colours
       if (raw && fit) paintFrame(frameCache.get(raw.frames[idx]) || null);
+      emitTracks('theme');     // the track layer bakes lane/ramp colours too
     })
       .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
@@ -1160,6 +1211,10 @@
 
   window.MergedMap = { mount, urlParams, applyUrl,
     preview,
+    /* the two ways another layer may act on the map (tracklayer.js): select an
+       event (the same multi-highlight + #sel= a box click does) and open its
+       detail page; hover mirrors the box ↔ event-list row highlight. */
+    select: toggleSel, open: openEvent, hover: hoverRow,
     /* Region view (app.js Region dropdown): null/`global` = whole world.
        Refits the projection + repaints; before mount it just parks the view
        (mount's fitProjection picks it up). */

@@ -1030,7 +1030,11 @@ nav.controls .dd .dd-body {
 .lg-group.none { opacity: .6; }
 @container (min-width: 680px) {   /* one row when the map column can hold all three lanes */
   #gm-legend { flex-direction: row; align-items: center; gap: 20px;
-    min-height: 48px; padding: 6px 8px 4px; }
+    min-height: 48px; padding: 6px 8px 4px;
+    /* a track lane adds a group; the strip still NEVER scrolls horizontally
+       (test_legend_never_hides_a_lane_behind_a_scroll), it wraps instead — the
+       only promise a fourth lane can keep without hiding a colour */
+    flex-wrap: wrap; row-gap: 4px; }
   .lg-bin.prov { width: auto; }
   .lg-bin.prov .lg-t { display: none; }   /* the dither texture + its title carry it in one row */
   /* one row has no vertical air between the lanes: a hairline divider keeps
@@ -1065,9 +1069,38 @@ nav.controls .dd .dd-body {
 #gm-gantt text { font-family: var(--font-mono); font-size: var(--text-2xs); fill: var(--ink-muted); }
 #gm-gantt .gm-lane-lab { fill: var(--ink-muted); }
 
+/* ---- TRACK lanes on the merged map (tracklayer.js, tc-map 2026-11-18) ----
+   A transparent canvas over the raster canvas (tracks + intensity fixes) and,
+   above it, one interactive marker per positioned storm. Both layers cover the
+   map exactly and never take pointer events except on a marker, so the event
+   boxes painted underneath stay clickable. Colours come from tokens only — the
+   lane hue (--series-tc / --series-mlc) and the lane's own bin ramp — so light
+   and dark need no separate rules and a theme flip just repaints. */
+#gm-tracks { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+#gm-track-marks { position: absolute; inset: 0; pointer-events: none;
+  overflow: visible; z-index: 3; }
+#gm-track-marks .gm-mark { pointer-events: auto; cursor: pointer; }
+#gm-track-marks .gm-mark:focus-visible { outline: 2px solid var(--accent-focus);
+  outline-offset: 2px; border-radius: 50%; }
+#gm-track-marks .gm-mark-hit { fill: transparent; }
+#gm-track-marks .gm-mark-ring { fill: var(--paper); stroke-width: 2; }
+#gm-track-marks .gm-mark.sel .gm-mark-ring { stroke-width: 2.6; }
+#gm-track-marks .gm-mark.dim { opacity: .35; }
+#gm-track-marks .gm-mark.hov .gm-mark-ring { stroke-width: 3; }
+#gm-track-marks .gm-mark-lab { font-family: var(--font-mono);
+  font-size: var(--text-2xs); paint-order: stroke; stroke: var(--paper);
+  stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+#gm-track-marks .gm-mark-lab.is-open { pointer-events: auto; cursor: pointer;
+  text-decoration: underline; }
+/* the legend groups those lanes add (data-track, never data-layer): the raster
+   strip's own contract — its counts, widths and fixed height — is untouched */
+.lg-group[data-track] .lg-bin { width: 32px; }        /* 'C2–3' is the widest class */
+.lg-group[data-track] .lg-bin.wide { width: 40px; }   /* 'track' */
+.lg-group .swatch.lg-line { height: 4px; margin-top: 3px; border-radius: 2px; }
 @media (prefers-reduced-motion: reduce) {
-  #gm-boxes .gm-bbox, #gm-gantt .gm-bar { transition: none; }
+  #gm-boxes .gm-bbox, #gm-gantt .gm-bar, #gm-track-marks .gm-mark { transition: none; }
   .raw-skeleton { animation: none; }
+  #gm-track-marks .gm-mark-ring, #gm-track-marks .gm-mark-lab { transition: none; }
 }
 
 /* ==========================================================================
