@@ -98,7 +98,7 @@ def test_tc_row_is_named_and_coloured(page):
 
 def test_tab_and_criteria_exist(page):
     tabs = page.inner_text("#lane-tabs") if page.locator("#lane-tabs").count() else ""
-    assert "Tropical cyclones" in tabs or "Tropical cyclone" in page.inner_text("body")
+    assert "Tropical cyclone" in tabs or "Tropical cyclone" in page.inner_text("body")
 
 
 def test_detail_uses_the_track_renderer(page):
@@ -174,7 +174,7 @@ def zero_page(tmp_path_factory):
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.goto(f"http://127.0.0.1:{srv.server_address[1]}/index.html")
         pg.wait_for_selector("#event-table tbody tr", timeout=20000)
-        pg.click('#type-tabs button:has-text("Tropical cyclones")')
+        pg.click('#type-tabs button:has-text("Tropical cyclone")')
         pg.wait_for_selector("#event-table .lane-empty", timeout=20000)
         opened.append((pw, pg, srv))
         return pg
@@ -189,7 +189,7 @@ def zero_page(tmp_path_factory):
 def test_honest_zero_when_lane_absent_from_release(zero_page):
     pg = zero_page(lambda m: m.pop("ibtracs", None))
     assert "not published in this data release" in pg.inner_text("#event-table")
-    tip = pg.get_attribute('#type-tabs button:has-text("Tropical cyclones")', "title")
+    tip = pg.get_attribute('#type-tabs button:has-text("Tropical cyclone")', "title")
     assert tip and "not published" in tip, "the 0 badge carries the reason"
 
 
@@ -202,7 +202,7 @@ def test_honest_zero_reports_the_archive_reach(zero_page):
     pg = zero_page(mut)
     body = pg.inner_text("#event-table")
     assert "IBTrACS" in body and "2026-11-12" in body, body
-    tip = pg.get_attribute('#type-tabs button:has-text("Tropical cyclones")', "title")
+    tip = pg.get_attribute('#type-tabs button:has-text("Tropical cyclone")', "title")
     assert tip and "IBTrACS" in tip
 
 

@@ -1,0 +1,1229 @@
+{
+ "report": {
+  "chips_before-desktop-light": {
+   "tabs": [
+    {
+     "text": "All 123",
+     "h": 29,
+     "w": 68,
+     "row": 200,
+     "ariaPressed": "true",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Heat waves 15",
+     "h": 29,
+     "w": 130,
+     "row": 200,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Freezes 5",
+     "h": 29,
+     "w": 101,
+     "row": 200,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Cold snaps 6",
+     "h": 29,
+     "w": 122,
+     "row": 200,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Atmospheric rivers 13",
+     "h": 29,
+     "w": 175,
+     "row": 200,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Tropical cyclones 44",
+     "h": 29,
+     "w": 166,
+     "row": 200,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Midlatitude cyclones 0",
+     "h": 29,
+     "w": 176,
+     "row": 200,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Floods 40",
+     "h": 29,
+     "w": 102,
+     "row": 237,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    }
+   ],
+   "rows": 2,
+   "heights": [
+    29
+   ],
+   "widths": [
+    68,
+    130,
+    101,
+    122,
+    175,
+    166,
+    176,
+    102
+   ],
+   "selShadow": true,
+   "pageOverflow": 0,
+   "filterBox": {
+    "x": 314,
+    "y": 177,
+    "w": 1032,
+    "h": 144,
+    "top": 177
+   },
+   "legendBox": {
+    "x": 314,
+    "y": 697,
+    "w": 698,
+    "h": 48,
+    "top": 697
+   },
+   "chips": [
+    {
+     "text": "Heat wave",
+     "h": 18,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(198, 73, 60)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Freeze",
+     "h": 18,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(26, 79, 150)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 18,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(46, 125, 50)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Heat wave",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(198, 73, 60)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Freeze",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(26, 79, 150)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Cold snap",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(14, 109, 120)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(46, 125, 50)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Tropical cyclone",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(111, 66, 193)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Midlatitude cyclone",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(125, 82, 0)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Flood",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(160, 30, 86)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    }
+   ]
+  },
+  "chips_before-desktop-dark": {
+   "tabs": [
+    {
+     "text": "All 123",
+     "h": 29,
+     "w": 68,
+     "row": 200,
+     "ariaPressed": "true",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Heat waves 15",
+     "h": 29,
+     "w": 130,
+     "row": 200,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Freezes 5",
+     "h": 29,
+     "w": 101,
+     "row": 200,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Cold snaps 6",
+     "h": 29,
+     "w": 122,
+     "row": 200,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Atmospheric rivers 13",
+     "h": 29,
+     "w": 175,
+     "row": 200,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Tropical cyclones 44",
+     "h": 29,
+     "w": 166,
+     "row": 200,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Midlatitude cyclones 0",
+     "h": 29,
+     "w": 176,
+     "row": 200,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Floods 40",
+     "h": 29,
+     "w": 102,
+     "row": 237,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    }
+   ],
+   "rows": 2,
+   "heights": [
+    29
+   ],
+   "widths": [
+    68,
+    130,
+    101,
+    122,
+    175,
+    166,
+    176,
+    102
+   ],
+   "selShadow": true,
+   "pageOverflow": 0,
+   "filterBox": {
+    "x": 314,
+    "y": 177,
+    "w": 1032,
+    "h": 144,
+    "top": 177
+   },
+   "legendBox": {
+    "x": 314,
+    "y": 697,
+    "w": 698,
+    "h": 48,
+    "top": 697
+   },
+   "chips": [
+    {
+     "text": "Heat wave",
+     "h": 18,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(245, 113, 96)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Freeze",
+     "h": 18,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(77, 115, 191)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 18,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(102, 187, 106)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Heat wave",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(245, 113, 96)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Freeze",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(77, 115, 191)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Cold snap",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(38, 128, 143)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(102, 187, 106)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Tropical cyclone",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(179, 157, 219)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Midlatitude cyclone",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(217, 164, 65)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Flood",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(232, 139, 187)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    }
+   ]
+  },
+  "chips_before-tablet-light": {
+   "tabs": [
+    {
+     "text": "All 123",
+     "h": 29,
+     "w": 68,
+     "row": 252,
+     "ariaPressed": "true",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Heat waves 15",
+     "h": 29,
+     "w": 130,
+     "row": 252,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Freezes 5",
+     "h": 29,
+     "w": 101,
+     "row": 252,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Cold snaps 6",
+     "h": 29,
+     "w": 122,
+     "row": 252,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Atmospheric rivers 13",
+     "h": 29,
+     "w": 175,
+     "row": 252,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Tropical cyclones 44",
+     "h": 29,
+     "w": 166,
+     "row": 289,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Midlatitude cyclones 0",
+     "h": 29,
+     "w": 176,
+     "row": 289,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Floods 40",
+     "h": 29,
+     "w": 102,
+     "row": 289,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    }
+   ],
+   "rows": 2,
+   "heights": [
+    29
+   ],
+   "widths": [
+    68,
+    130,
+    101,
+    122,
+    175,
+    166,
+    176,
+    102
+   ],
+   "selShadow": true,
+   "pageOverflow": 0,
+   "filterBox": {
+    "x": 24,
+    "y": 229,
+    "w": 772,
+    "h": 144,
+    "top": 229
+   },
+   "legendBox": {
+    "x": 24,
+    "y": 785,
+    "w": 772,
+    "h": 48,
+    "top": 785
+   },
+   "chips": [
+    {
+     "text": "Heat wave",
+     "h": 18,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(198, 73, 60)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Freeze",
+     "h": 18,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(26, 79, 150)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 18,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(46, 125, 50)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Heat wave",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(198, 73, 60)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Freeze",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(26, 79, 150)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Cold snap",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(14, 109, 120)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(46, 125, 50)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Tropical cyclone",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(111, 66, 193)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Midlatitude cyclone",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(125, 82, 0)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Flood",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(160, 30, 86)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    }
+   ]
+  },
+  "chips_before-tablet-dark": {
+   "tabs": [
+    {
+     "text": "All 123",
+     "h": 29,
+     "w": 68,
+     "row": 252,
+     "ariaPressed": "true",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Heat waves 15",
+     "h": 29,
+     "w": 130,
+     "row": 252,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Freezes 5",
+     "h": 29,
+     "w": 101,
+     "row": 252,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Cold snaps 6",
+     "h": 29,
+     "w": 122,
+     "row": 252,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Atmospheric rivers 13",
+     "h": 29,
+     "w": 175,
+     "row": 252,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Tropical cyclones 44",
+     "h": 29,
+     "w": 166,
+     "row": 289,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Midlatitude cyclones 0",
+     "h": 29,
+     "w": 176,
+     "row": 289,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Floods 40",
+     "h": 29,
+     "w": 102,
+     "row": 289,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    }
+   ],
+   "rows": 2,
+   "heights": [
+    29
+   ],
+   "widths": [
+    68,
+    130,
+    101,
+    122,
+    175,
+    166,
+    176,
+    102
+   ],
+   "selShadow": true,
+   "pageOverflow": 0,
+   "filterBox": {
+    "x": 24,
+    "y": 229,
+    "w": 772,
+    "h": 144,
+    "top": 229
+   },
+   "legendBox": {
+    "x": 24,
+    "y": 785,
+    "w": 772,
+    "h": 48,
+    "top": 785
+   },
+   "chips": [
+    {
+     "text": "Heat wave",
+     "h": 18,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(245, 113, 96)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Freeze",
+     "h": 18,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(77, 115, 191)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 18,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(102, 187, 106)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Heat wave",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(245, 113, 96)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Freeze",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(77, 115, 191)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Cold snap",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(38, 128, 143)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(102, 187, 106)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Tropical cyclone",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(179, 157, 219)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Midlatitude cyclone",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(217, 164, 65)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Flood",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(232, 139, 187)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    }
+   ]
+  },
+  "chips_before-phone-light": {
+   "tabs": [
+    {
+     "text": "All 123",
+     "h": 29,
+     "w": 68,
+     "row": 316,
+     "ariaPressed": "true",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Heat waves 15",
+     "h": 29,
+     "w": 130,
+     "row": 316,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Freezes 5",
+     "h": 29,
+     "w": 101,
+     "row": 316,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Cold snaps 6",
+     "h": 29,
+     "w": 122,
+     "row": 353,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Atmospheric rivers 13",
+     "h": 29,
+     "w": 175,
+     "row": 353,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Tropical cyclones 44",
+     "h": 29,
+     "w": 166,
+     "row": 389,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Midlatitude cyclones 0",
+     "h": 29,
+     "w": 176,
+     "row": 389,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Floods 40",
+     "h": 29,
+     "w": 102,
+     "row": 426,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    }
+   ],
+   "rows": 4,
+   "heights": [
+    29
+   ],
+   "widths": [
+    68,
+    130,
+    101,
+    122,
+    175,
+    166,
+    176,
+    102
+   ],
+   "selShadow": true,
+   "pageOverflow": 0,
+   "filterBox": {
+    "x": 16,
+    "y": 292,
+    "w": 358,
+    "h": 217,
+    "top": 292
+   },
+   "legendBox": {
+    "x": 16,
+    "y": 721,
+    "w": 358,
+    "h": 116,
+    "top": 721
+   },
+   "chips": [
+    {
+     "text": "Heat wave",
+     "h": 18,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(198, 73, 60)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Freeze",
+     "h": 18,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(26, 79, 150)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 18,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(46, 125, 50)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Heat wave",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(198, 73, 60)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Freeze",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(26, 79, 150)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Cold snap",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(14, 109, 120)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(46, 125, 50)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Tropical cyclone",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(111, 66, 193)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Midlatitude cyclone",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(125, 82, 0)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Flood",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(160, 30, 86)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    }
+   ]
+  },
+  "chips_before-phone-dark": {
+   "tabs": [
+    {
+     "text": "All 123",
+     "h": 29,
+     "w": 68,
+     "row": 316,
+     "ariaPressed": "true",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Heat waves 15",
+     "h": 29,
+     "w": 130,
+     "row": 316,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Freezes 5",
+     "h": 29,
+     "w": 101,
+     "row": 316,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Cold snaps 6",
+     "h": 29,
+     "w": 122,
+     "row": 353,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Atmospheric rivers 13",
+     "h": 29,
+     "w": 175,
+     "row": 353,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Tropical cyclones 44",
+     "h": 29,
+     "w": 166,
+     "row": 389,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Midlatitude cyclones 0",
+     "h": 29,
+     "w": 176,
+     "row": 389,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    },
+    {
+     "text": "Floods 40",
+     "h": 29,
+     "w": 102,
+     "row": 426,
+     "ariaPressed": "false",
+     "role": null,
+     "title": "",
+     "badgeRight": -13,
+     "dot": true
+    }
+   ],
+   "rows": 4,
+   "heights": [
+    29
+   ],
+   "widths": [
+    68,
+    130,
+    101,
+    122,
+    175,
+    166,
+    176,
+    102
+   ],
+   "selShadow": true,
+   "pageOverflow": 0,
+   "filterBox": {
+    "x": 16,
+    "y": 292,
+    "w": 358,
+    "h": 217,
+    "top": 292
+   },
+   "legendBox": {
+    "x": 16,
+    "y": 721,
+    "w": 358,
+    "h": 116,
+    "top": 721
+   },
+   "chips": [
+    {
+     "text": "Heat wave",
+     "h": 18,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(245, 113, 96)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Freeze",
+     "h": 18,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(77, 115, 191)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 18,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(102, 187, 106)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Heat wave",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(245, 113, 96)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Freeze",
+     "h": 16,
+     "color": "rgb(255, 255, 255)",
+     "bg": "rgb(77, 115, 191)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Cold snap",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(38, 128, 143)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(102, 187, 106)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Tropical cyclone",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(179, 157, 219)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Midlatitude cyclone",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(217, 164, 65)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    },
+    {
+     "text": "Flood",
+     "h": 16,
+     "color": "rgb(26, 26, 22)",
+     "bg": "rgb(232, 139, 187)",
+     "fs": "10.5px",
+     "tt": "uppercase"
+    }
+   ]
+  }
+ },
+ "console_errors": []
+}

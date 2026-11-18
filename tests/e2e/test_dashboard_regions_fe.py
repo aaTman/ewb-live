@@ -246,7 +246,7 @@ def test_merged_map_region_view(dash):
     corner = page.evaluate("() => window.MergedMap._dbg().project([-12.5, 35])")
     assert corner and 0 <= corner[0] <= w and 0 <= corner[1], f"corner {corner} off canvas (W={w})"
     # region view survives a type-tab repaint (counts are region-filtered)
-    page.locator("#type-tabs button", has_text="Heat waves").click()
+    page.locator("#type-tabs button", has_text="Heat wave").click()
     assert page.evaluate("() => window.MergedMap._dbg().region") == "europe"
     page.locator("#type-tabs button", has_text="All").click()
     page.select_option("#region-select", "global")
@@ -302,9 +302,9 @@ def test_region_filters_lists_and_counts(dash):
     assert page.evaluate(sec_aria).startswith("Europe")
     assert page.evaluate(KV_EVENTS) == "2"      # matches the contract's n_events
     labels = tab_labels(page)
-    assert any(l.startswith("Heat waves") and l.strip().endswith("1") for l in labels)
-    assert any(l.startswith("Freezes") and l.strip().endswith("1") for l in labels)
-    assert any(l.startswith("Atmospheric rivers") and l.strip().endswith("0") for l in labels)
+    assert any(l.startswith("Heat wave") and l.strip().endswith("1") for l in labels)
+    assert any(l.startswith("Freeze") and l.strip().endswith("1") for l in labels)
+    assert any(l.startswith("Atmospheric river") and l.strip().endswith("0") for l in labels)
     assert page.inner_text("#event-count").startswith("2 event")
     titles = page.eval_on_selector_all("#event-table tbody tr td:nth-child(2)",
                                        "els => els.map(e => e.textContent)")

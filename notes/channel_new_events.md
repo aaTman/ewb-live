@@ -1913,3 +1913,53 @@ diagnosis.
 * Handoff doc for a successor: `notes/handoff_integrator_1.md`.
 
 — integrator
+## [chips-design] 2026-11-17 23:58 UTC — event-type chips streamlined: commit on `aaTman/ne-chips`, preview on :8052
+
+The owner brief (`briefs-new-events/chips_design.md`) is done; full rationale
+in **`notes/chips_design.md`**. Headline:
+
+* **One chip component** (tab + static tag): fixed height 32 px (44 px touch),
+  counts in tabular mono `min-width: 3ch`, no inline hexes anywhere — the
+  lane colour rides a `data-etype` → `--etype` token map, and the two dark
+  ink-flip hacks (incl. the `[style*="series-freeze"]` special case) are
+  deleted. Static tags now use soft lane ground + ink instead of solid fill +
+  white 10.5 px text.
+* **Tab row is a real `role=tablist`** (the brief asked; the old
+  `aria-pressed` note's objection was "no single tabpanel" — each tab now
+  `aria-controls="explore scorecard-sec"`, naming both regions it changes).
+  Roving tabindex, arrows move focus only, Enter selects; `#tab=<lane>`
+  joins region/lead/frame in the URL.
+* **No wrap ever**: one row at 1440/820/390, horizontal scroll + snap +
+  edge-fade, page overflow 0 px, 44 px targets on phone. Chips grouped
+  Temperature | Heat wave, Cold snap, Freeze · Water | AR, Flood · Storms |
+  TC, MLC with hairline group dividers.
+* **Palette re-validated with the dataviz skill** — the old set failed its
+  own checks (cold-snap chroma floor, dark L-band on 5/7, TC↔flood ΔE 4.7
+  protan in dark). New set: ALL PASS both themes, chip order and Gantt order
+  (worst CVD pair 8.1 flood↔AR deutan, flagged + label-relief). Light moved
+  only cold snap + flood; dark re-stepped heat/freeze-sibling/AR/flood/TC/MLC
+  into the band. `--series-*` changed in both themes — **the scorecard's
+  better/worse pair is untouched**; `test_ar_type_color_token_both_themes`
+  re-pinned to the new dark AR `#76a729` with a comment.
+* **Event-list dot → lane glyph** (identity never colour-alone), honest-zero
+  tabs keep their tooltips and get detection-rule tooltips everywhere else,
+  counts in the accessible name via visible text (first aria-label draft
+  tripped axe `label-content-name-mismatch` — dropped per axe).
+* **Tests**: new `tests/e2e/test_chips_fe.py` 7/7 green against the preview;
+  selector updates in dashboard/regions/tracklane e2e (short singular labels,
+  AR now `nth-child(5)`, fixture `tabs.count()==8` since every lane renders
+  at zero — honest-zero contract). No new failures vs the pre-change
+  reference run (45F base → 39F shared + 2 of the base failures now fixed;
+  dashboard_fe 31F vs 33F pre-existing, and a stash-rerun proves the
+  remaining fixture failures fail identically on clean integration code —
+  the synthetic `gd/dur` fixtures are a separate stale-fixtures brief).
+* **Preview**: http://192.168.0.121:8052/ — `/opt/ewb-preview-chips` on the
+  ewb LXC: this worktree's `dashboard/` + `ewb_live/`, `data` symlinked
+  read-only to `/opt/ewb-live-dev/data`, served by `ewb_live.serve --port
+  8052`. `:8051` and `/opt/ewb-live` untouched. Before/after screenshots +
+  geometry JSON committed under `notes/screenshots/` (`chips_before_*` /
+  `chips_after_*`), harness `scripts/chips_shots.py`.
+* Open questions for the owner are at the end of `notes/chips_design.md`
+  ("Midlat. cyclone" short label; scroll-line vs phone grid; the one 2.47:1
+  dark freeze glyph-on-selected-wash relief case and what fixing it would
+  cost the CVD gate).

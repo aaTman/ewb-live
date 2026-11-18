@@ -577,7 +577,8 @@ def test_type_filter_narrows_map_list_and_scorecard_together(live_url, page_ctx)
     page = page_ctx
     _home(page, live_url)
     n_all = page.locator("#event-table tbody tr[data-id]").count()
-    page.click("#type-tabs button:nth-child(4)")           # atmospheric rivers
+    page.click("#type-tabs button:nth-child(5)")           # atmospheric rivers
+    # (child 5 since the chips redesign: All | Heat wave, Cold snap, Freeze | AR, Flood | TC, MLC)
     page.wait_for_timeout(600)
     st = page.evaluate("""() => ({ on: MergedMap._dbg().on, hash: location.hash,
         rows: [...document.querySelectorAll('#event-table tbody tr[data-id]')].map((r) => r.dataset.id),
@@ -716,7 +717,9 @@ def test_ar_type_color_token_both_themes(live_url, page_ctx):
     page.click("#theme-ctl button[data-pref='dark']")   # segmented control (rail footer)
     dark = page.evaluate(
         "getComputedStyle(document.documentElement).getPropertyValue('--series-ar').trim()")
-    assert dark == "#66bb6a", dark
+    # dark AR re-stepped into the dark OKLCH band by the chips redesign 2026-11-17
+    # (was #66bb6a, L 0.72 outside 0.48–0.67); see notes/chips_design.md
+    assert dark == "#76a729", dark
 
 # ---------------------------------------------------------------- global ----
 # Owner 2026-11-08: GLOBAL EVENT DASHBOARD. Synthetic deterministic timeline so
@@ -1325,7 +1328,7 @@ def test_raw_layer_toggles_and_url(raw_server, page_ctx):
         timeout=20000)
     assert page.locator("#raw-layers").count() == 0        # chips retired
     tabs = page.locator("#type-tabs button")
-    assert tabs.count() == 4                               # All + the three types
+    assert tabs.count() == 8      # All + every published lane (zeros ride as honest-zero tabs)
     # deep link: frame + only-heat layers survive a load, no widget involved
     page.goto(raw_server + "/#raw=2025110606&layers=h")
     _wait_js(page,
@@ -1333,7 +1336,7 @@ def test_raw_layer_toggles_and_url(raw_server, page_ctx):
         timeout=20000)
     assert page.evaluate("MergedMap._dbg().on") == {"h": True, "f": False, "a": False}
     # the freeze tab narrows to freeze only and records layers=f
-    tabs.filter(has_text="Freezes").click()
+    tabs.filter(has_text="Freeze").click()
     page.wait_for_timeout(400)
     assert page.evaluate("MergedMap._dbg().on") == {"h": False, "f": True, "a": False}
     assert "layers=f" in page.evaluate("decodeURIComponent(location.hash)")
@@ -1659,9 +1662,9 @@ def test_show_tabs_are_the_only_layer_toggle(dur_server, page_ctx):
     assert page.locator("#raw-layers").count() == 0
     assert page.locator(".map-legend").count() == 0
     tabs = page.locator("#type-tabs button")
-    assert tabs.count() == 4                                  # All + the three types
+    assert tabs.count() == 8            # All + every published lane (zeros included)
     labels = " ".join(tabs.all_inner_texts())
-    assert "Heat waves" in labels and "Freezes" in labels and "Atmospheric rivers" in labels
+    assert "Heat wave" in labels and "Freeze" in labels and "Atmospheric river" in labels
     page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
     assert page.eval_on_selector_all("#gm-legend .lg-group",
                                      "els => els.map(e => e.dataset.layer)") == ["h", "f", "a"]
@@ -1672,7 +1675,7 @@ def test_show_tabs_are_the_only_layer_toggle(dur_server, page_ctx):
     assert "COMPLETED UTC days" in tips[0] and "7+ days is the darkest stop in light" in tips[0]
     assert "P15" in tips[1] and "3+ days is the darkest stop in light" in tips[1]
     # the tab narrows the map layers and the legend, and records #layers=
-    page.locator("#type-tabs button", has_text="Atmospheric rivers").click()
+    page.locator("#type-tabs button", has_text="Atmospheric river").click()
     page.wait_for_function(
         "() => document.querySelectorAll('#gm-legend .lg-group').length === 1")
     assert page.locator("#gm-legend .lg-group[data-layer=a]").count() == 1
@@ -1708,7 +1711,7 @@ def test_legend_sits_below_the_map_and_never_moves_the_page(dur_server, page_ctx
     a = page.evaluate(geo)
     assert not a["inMap"], "the strip must live outside #raw-map-wrap"
     assert a["belowMap"] and a["groups"] == 3, a          # sits under the map, not on it
-    page.locator("#type-tabs button", has_text="Atmospheric rivers").click()   # 3 -> 1 lane
+    page.locator("#type-tabs button", has_text="Atmospheric river").click()   # 3 -> 1 lane
     page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 1")
     b = page.evaluate(geo)
     assert b["groups"] == 1 and b["leg"][3] == a["leg"][3], (a, b)   # height is fixed
@@ -1786,7 +1789,7 @@ def test_legend_adapts_to_layers_frame_and_region(dur_server, page_ctx):
     assert page.locator("#gm-legend .lg-group[data-layer=a] .lg-bin.out").count() == 0
     # a Show tab narrows to one lane -> the other groups leave the legend
     # (and never dim to nothing)
-    page.locator("#type-tabs button", has_text="Freezes").click()
+    page.locator("#type-tabs button", has_text="Freeze").click()
     page.wait_for_function(
         "() => document.querySelectorAll('#gm-legend .lg-group').length === 1")
     assert page.locator("#gm-legend .lg-group[data-layer=f]").count() == 1
