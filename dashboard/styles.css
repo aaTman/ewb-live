@@ -488,6 +488,10 @@ nav.controls {
 .type-filter > #type-tabs { grid-column: 1 / -1; }
 #type-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px 8px; align-items: end; min-width: 0; }
+@media (min-width: 720px) {          /* cap the cell so a wide shell doesn't
+                                       stretch four pills across the page */
+  #type-tabs { grid-template-columns: repeat(4, minmax(0, 236px)); }
+}
 @media (max-width: 719px) {          /* 8 cells / 2 = four even rows */
   #type-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .etype-tab.is-all, .etype-tab.is-tail { grid-column: 1 / -1; }
@@ -507,7 +511,7 @@ nav.controls {
   background: var(--alabaster); border-color: var(--matte-black); color: var(--matte-black);
   font-weight: 500; box-shadow: inset 0 0 0 0.5px var(--matte-black); }
 .etype-tab[aria-selected="true"]:hover { background: var(--alabaster); }
-.etype-tab .n { min-width: 3ch; text-align: right;                 /* counts don't jiggle (no CLS) */
+.etype-tab .n { min-width: 3ch; text-align: right; margin-left: auto;   /* counts don't jiggle (no CLS) and line up down each grid column */
   font: 400 var(--text-xs)/1 var(--font-mono); font-variant-numeric: tabular-nums;
   color: var(--ink-secondary); }                                    /* 5.4:1 on paper */
 .etype-tab[aria-selected="true"] .n { color: var(--matte-black); }  /* ink-secondary on the alabaster wash is 4.3 — the selected tab's count rides the label ink */
@@ -526,9 +530,9 @@ nav.controls {
 /* ≥720px: four columns, two chip rows. Captions are pinned to the header row
    above their own chips (chips auto-place into the two free rows in order). */
 @media (min-width: 720px) {
-  .type-group[data-slot="a"] { grid-row: 1; grid-column: 2 / -1; }
-  .type-group[data-slot="b"] { grid-row: 3; grid-column: 1 / 3; }
-  .type-group[data-slot="c"] { grid-row: 3; grid-column: 3 / -1; }
+  .type-group[data-group="temperature"] { grid-row: 1; grid-column: 2 / -1; }
+  .type-group[data-group="water"] { grid-row: 3; grid-column: 1 / 3; }
+  .type-group[data-group="storms"] { grid-row: 3; grid-column: 3 / -1; }
   .etype-tab[data-slot="a"] { grid-row: 2; }
   .etype-tab[data-slot="b"] { grid-row: 4; }
 }

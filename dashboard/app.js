@@ -53,9 +53,9 @@ const TYPE_ORDER = ['heat_wave', 'cold_snap', 'freeze', 'atmospheric_river',
    still owns exactly one tab per type and the a11y tree is unchanged. */
 const TYPE_GROUP_LABEL = { heat_wave: 'Temperature', atmospheric_river: 'Water',
   tropical_cyclone: 'Storms' };
-/* Which grid row a cell belongs to at ≥2 columns: All travels with the
-   Temperature group's row, Water + Storms share the second. CSS places them. */
-const TYPE_GROUP_SLOT = { Temperature: 'a', Water: 'b', Storms: 'c' };
+/* Which grid row a chip belongs to: All travels with the Temperature row, and
+   Water + Storms share the second. Captions are keyed by group name. */
+const TYPE_GROUP_KEY = { Temperature: 'temperature', Water: 'water', Storms: 'storms' };
 /* chip labels are short (one line in a four-across grid, not truncated); the
    full label + the one-line detection rule ride the tooltip (About copy) */
 const TYPE_TAB_LABEL = { heat_wave: 'Heat wave', cold_snap: 'Cold snap', freeze: 'Freeze',
@@ -70,14 +70,13 @@ const TYPE_ICONS = {
   freeze: '<path d="M12 3v18"/><path d="m4.2 7.5 15.6 9"/><path d="m19.8 7.5-15.6 9"/><path d="m9.6 5.2 2.4 2 2.4-2"/><path d="m9.6 18.8 2.4-2 2.4 2"/>',
   atmospheric_river: '<path d="M2.5 7c2.8-2.8 5.6 2.4 8.4.2s5.6 2.4 8.4-.2"/><path d="M3.5 17.5h12"/><path d="m12.6 14.4 3.5 3.1-3.5 3.1"/>',
   flood: '<path d="M3 8c2.3-2.2 4.7 2 7 0s4.7 2.2 7 0"/><path d="M3 12.7c2.3-2.2 4.7 2 7 0s4.7 2.2 7 0"/><path d="M3 17.4c2.3-2.2 4.7 2 7 0s4.7 2.2 7 0"/>',
-  /* Hurricane symbol (owner 2026-11-18): the two-arm NHC swirl, not wind lines
-     — TC must read as a storm at 15 px, and wind lines collide with the AR
-     river glyph in the same row. */
-  tropical_cyclone: '<path d="M12 12c.3-3.6 2.7-6.3 6.2-6.7"/><path d="M12 12c-.3 3.6-2.7 6.3-6.2 6.7"/><path d="M17.4 4.6c.4 1.3.5 2.6.3 3.9M6.6 19.4c-.4-1.3-.5-2.6-.3-3.9"/><circle cx="12" cy="12" r="1.6"/>',
-  /* Frontal low: the open front (warm semicircle + cold triangle on a
-     stationary boundary) over the L of the low — its own shape, not a smaller
-     hurricane. */
-  midlat_cyclone: '<path d="M3.2 9.5h17.6"/><path d="M7.4 9.5a2.6 2.6 0 0 1 5.2 0"/><path d="M14.2 14.5h5.2l-2.6-3.2z"/><path d="M10 15.4v4.6h4.2"/>',
+  /* Hurricane symbol (owner 2026-11-18): the two-arm NHC swirl with a filled
+     eye — not wind lines, which read as the AR river glyph one chip away.
+     Two strokes only, so it stays legible at the 15 px chip size. */
+  tropical_cyclone: '<path d="M12.6 10.9c.6-4 3.4-6.6 7.2-6.7"/><path d="M19.8 4.2c.6 1.2.6 2.5-.1 3.5"/><path d="M11.4 13.1c-.6 4-3.4 6.6-7.2 6.7"/><path d="M4.2 19.8c-.6-1.2-.6-2.5.1-3.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
+  /* Frontal low: an open circulation (the broken isobar) around a bold L —
+     a low-pressure centre mark, its own shape, not a smaller hurricane. */
+  midlat_cyclone: '<path stroke-width="2" d="M18.4 6.4a8.6 8.6 0 1 0-.2 11.4"/><path stroke-width="2" d="M10.2 8.2v7.4h5.2"/>',
 };
 function typeIcon(etype) {
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"'
@@ -720,7 +719,7 @@ function renderControls() {
     b.title = (id === 'all' ? '' : (TYPE_META[id].label + ' — ')) + why + rule;
     b.dataset.tab = id;
     b.dataset.etype = id;   // CSS maps the lane hue onto the glyph ("all" stays neutral)
-    b.dataset.slot = slot;  // which chip row the wrapped grid puts this cell in
+    b.dataset.slot = slot;  // "a" / "b": which chip row the wrapped grid puts this cell in
     b.onclick = () => setTab(id);
     // Presentational group header above its group (role=none + aria-hidden):
     // not a tab, so the tablist's owned set, the a11y tree and the roving-tabindex
@@ -729,29 +728,33 @@ function renderControls() {
       const g = el('span', 'type-group', esc(TYPE_GROUP_LABEL[id]));
       g.setAttribute('role', 'none');
       g.setAttribute('aria-hidden', 'true');
-      g.dataset.slot = TYPE_GROUP_SLOT[TYPE_GROUP_LABEL[id]];
+      g.dataset.group = TYPE_GROUP_KEY[TYPE_GROUP_LABEL[id]];
       tabs.appendChild(g);
     }
     tabs.appendChild(b);
     return b;
   };
   mkTab('all', 'All', state.events.filter(inReg).length, 'all', 'a');
-  /* A two-column phone grid needs an even number of chips per group, or the
-     group's last row goes ragged. Temperature has three lanes, so its tail
-     chip spans both columns (a full row, not a hole). Counted, not assumed. */
-  const counts = TYPE_ORDER.reduce((m, t) => {
-    const g = TYPE_GROUP_LABEL[t] || 'other';
-    m[g] = (m[g] || 0) + 1; return m;
-  }, {});
-  const seen = {};
+  /* Group membership is inherited until the next caption: only a group HEAD
+     carries TYPE_GROUP_LABEL, so cold_snap/freeze belong to Temperature, and so
+     on. Derived from TYPE_ORDER, not restated (one source of truth). */
+  const groups = [];
+  for (const t of TYPE_ORDER) {
+    if (TYPE_GROUP_LABEL[t]) groups.push({ label: TYPE_GROUP_LABEL[t], members: [t] });
+    else groups[groups.length - 1].members.push(t);
+  }
+  const slotOf = {}, tailOf = {};
+  for (const g of groups) {
+    const key = TYPE_GROUP_KEY[g.label];
+    for (const t of g.members) slotOf[t] = key === 'temperature' ? 'a' : 'b';
+    /* A two-column phone grid needs an even number of chips per group or the
+       group's last row goes ragged: an odd group's tail chip spans the row. */
+    if (g.members.length % 2 === 1) tailOf[g.members[g.members.length - 1]] = true;
+  }
   for (const t of TYPE_ORDER) {
     const n = state.events.filter((e) => e.event_type === t && inReg(e)).length;
-    const grp = TYPE_GROUP_LABEL[t];
-    const b = mkTab(t, TYPE_TAB_LABEL[t] || TYPE_META[t].short, n, t,
-      grp && TYPE_GROUP_SLOT[grp] === 'a' ? 'a' : 'b');
-    seen[grp || 'other'] = (seen[grp || 'other'] || 0) + 1;
-    if (b && counts[grp || 'other'] % 2 === 1 && seen[grp || 'other'] === counts[grp || 'other'])
-      b.classList.add('is-tail');
+    const b = mkTab(t, TYPE_TAB_LABEL[t] || TYPE_META[t].short, n, t, slotOf[t]);
+    if (tailOf[t]) b.classList.add('is-tail');
   }
   if (wasFocus) {   // keyboard focus must survive a re-render (tab click, region switch)
     const sel = tabs.querySelector('[aria-selected="true"]');
