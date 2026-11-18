@@ -343,10 +343,11 @@ chip size. Glyph identity is asserted in `test_tablist_semantics_and_grouped_ord
 
 `tests/e2e/test_chips_fe.py` — **12 passed**, rewritten for the grid (the old
 test asserted the row *does* scroll). `test_dashboard_fe.py` +
-`test_guardian_fe.py` — 81 passed / 38 failed, and the failures are
-**pre-existing on this data build, not from this round**: `test_ar_ramp_legend_shows_5_steps`
-and the whole guardian fixture set fail identically on :8050 and :8051 (the
-integration dev site without these changes). Two `test_dashboard_fe` cases
+`test_guardian_fe.py` — **81 passed / 38 failed** on :8052, and the same two
+files on :8051 with the same command give **80 passed / 39 failed**: this round
+adds no failures and removes one. The failures are the stale synthetic
+`gd/dur` fixtures on this data build (`test_ar_ramp_legend_shows_5_steps`,
+deselected in both runs, fails on :8050 too). Two `test_dashboard_fe` cases
 clicked the chip by its long label and are updated to `[data-tab=…]` now the
 chips are short-labelled.
 
