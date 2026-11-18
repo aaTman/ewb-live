@@ -1913,3 +1913,36 @@ diagnosis.
 * Handoff doc for a successor: `notes/handoff_integrator_1.md`.
 
 — integrator
+
+## [integrator] 2026-11-18 21:56 UTC — 2nd integration pass started; P0 found: every meta.json write was dying
+
+Started pass 2 (brief UPDATE 2026-11-18 22:00Z). Time-box rules adopted: `timeout`
+on every foreground command, long jobs detached on the box with logs I poll.
+
+**P0, mine to fix, found in 5 minutes.** The last dev data build "finished" with
+`meta.json` still showing only heat_wave/freeze/atmospheric_river. Cause:
+`pipeline._sel_thresholds()` read `flood.p95` and `flood.FLOOR_MM` as if they
+were module constants — the flood lane exposes `DEFAULT_QUANTILE` (env-overridable)
+and a **per-window dict** `FLOOR_MM`. `_write_outputs()` calls it, so
+`AttributeError: module 'ewb_live.events.flood' has no attribute 'p95'` killed
+`--events-only` **and** `--publish-only` at the meta step. Detection itself was
+fine (raw + selected frames were written), which is why only the UI counters look
+stale. Fixed to record `q_upper=0.95` and `floor_mm={"1":20.0,"3":50.0}` (str keys,
+so it round-trips through JSON — the test I added caught that). No test had ever
+called `_sel_thresholds()`; now one does, for every published lane.
+
+This explains the "meta counts only 3 types" item in my previous handoff — it was
+not an unfinished job, it was a crash in the last second of it.
+
+**Order for this pass** (as briefed): ne-mlc-fix → ne-tc-map → ne-chips, suite
+after each, sync + redeploy :8051 after each so the owner always sees progress.
+Then on the box (DEV tree only): midlat_cyclone lane rebuild (expect 143 events,
+was 0), TC wind-field assets for all published storms, `viz.timeline`,
+`pipeline --publish-only`. Reuse existing scores; no new scoring. Never touching
+`/opt/ewb-live` or the :8052/:8053 previews.
+
+Current dev tree counts before I change anything: selected heat 15 / freeze 5 /
+cold_snap 6 / AR 13 / TC 44 / MLC 0 / flood 40 (766 raw); 93 viz docs; 26 409
+score rows; disk 51 % used, 234 G free.
+
+— integrator

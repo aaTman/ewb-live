@@ -132,7 +132,7 @@ def _heartbeat(**fields) -> None:
 def _sel_thresholds() -> dict:
     """Effective selection quantiles for the current run (meta record)."""
     from .events.temperature import _mode_clim
-    from .events import flood as flood_clim
+    from .events import flood
 
     clim = _mode_clim()
     return {
@@ -142,8 +142,15 @@ def _sel_thresholds() -> dict:
         "cold_snap": {"q_upper": float(clim["cold_snap"]["q_upper"])},
         "atmospheric_river": {"q_upper": "p90 ivt (EWB default)"},
         # flood: ERA5 wet-day percentile of the daily total and of the trailing
-        # 72 h, plus the absolute plausibility floor (events/flood.py)
-        "flood": {"q_upper": flood_clim.p95, "floor_mm": flood_clim.FLOOR_MM},
+        # 72 h, plus the absolute plausibility floors per window
+        # (events/flood.py). Integration fix 2026-11-18: this used to read
+        # flood.p95 / flood.FLOOR_MM as module constants; the lane exposes
+        # DEFAULT_QUANTILE (env-overridable) and a per-window FLOOR_MM dict, and
+        # the bad attribute raised AttributeError inside every pipeline run that
+        # writes meta.json -- i.e. the whole detect/publish step died here.
+        "flood": {"q_upper": flood.DEFAULT_QUANTILE,
+                  "floor_mm": {str(k): float(v)
+                               for k, v in flood.FLOOR_MM.items()}},
     }
 
 
