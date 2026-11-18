@@ -55,11 +55,11 @@
   --series-tc:            #6f42c1;  --series-tc-soft:       #eee9ff;
   /* Flood (flood lane 2026-11-17; hue changed 2026-11-18, owner): TEAL /
      blue-green. The berry #9b255c it replaces read as a lighter twin of the TC
-     violet one chip away, and magenta is not what a flood map looks like.
-     Teal is the lane's own map ground (the FLOOD IMPACT ramp runs pale
-     blue-green → deep teal), so chip and raw layer finally agree. ΔE 18.0 from
-     the AR green beside it, 15.4 from the TC violet, 3.26:1 on paper. Not a
-     map-fill lane (boxes + Gantt only). */
+     violet one chip away. The lane has no raw raster of its own (mergedmap.js:
+     its evidence is IMERG accumulation behind the box, so it draws as boxes +
+     Gantt rows only), which means this hue is pure identity — nothing on the
+     map had to be re-derived with it. ΔE 18.0 from the AR green beside it,
+     15.4 from the TC violet, 3.26:1 on paper. */
   --series-flood:         #0f9ea4;  --series-flood-soft:    #d3f4f6;  /* teal / blue-green (owner: was magenta, which read as TC-adjacent): ΔE 18.0 from the AR green beside it, 3.26:1 on paper */
   /* Mid-latitude low (mlc lane 2026-11-17; hue changed 2026-11-18, owner): RED.
      Amber #7d5200 was another warm mark next to heat's warm mark and read as

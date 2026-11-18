@@ -291,10 +291,10 @@ Light: band PASS, chroma PASS, **CVD 17.4 PASS, normal 18.0 PASS**, contrast
 PASS (worst mark 3.26:1). Dark: band PASS, chroma PASS, **CVD 12.6 PASS, normal
 15.1 PASS**, contrast PASS (worst mark 3.02:1). Both runs exit 0.
 
-Moves, and why: **flood → teal** `#9b255c→#0f9ea4` / `#da6b94→#028b77` (the
-lane's own FLOOD IMPACT map ramp is pale blue-green → deep teal, so chip and
-raw layer finally agree; berry read as a lighter twin of the TC violet one chip
-away). **midlat_cyclone → RED** `#7d5200→#a0312d` / `#c38823→#cf4a55`.
+Moves, and why: **flood → teal** `#9b255c→#0f9ea4` / `#da6b94→#028b77` (berry
+read as a lighter twin of the TC violet one chip away; the lane has **no raw
+raster layer** — `mergedmap.js` draws flood as boxes + Gantt rows only — so this
+hue is pure identity and nothing on the map had to move with it). **midlat_cyclone → RED** `#7d5200→#a0312d` / `#c38823→#cf4a55`.
 **heat_wave → orange** `#c6493c→#c86906` / `#e76761→#d67620` — the collision
 with the new MLC red was real, so heat moves a hue family off it rather than
 MLC moving off red. **cold_snap → ice-blue** `#0b859e→#4090ea` /
