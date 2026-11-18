@@ -2016,6 +2016,11 @@ full; rationale + validator output in **`notes/chips_design.md` §"Round 2"**.
   midlat_cyclone events** (hence MLC's honest zero) and `tc_wind.json` exists
   only in that branch's own tree; the TC lane renders from TrackViz (44
   storms). Ask if you want :8052 repointed at a tree that has them.
+* **Preview infra**: :8052 was a bare `setsid nohup` server while its siblings
+  on that box are units — a reboot or an OOM-kill would have left the port dead
+  with nothing to restart it. Now `ewb-live-chips-web.service`
+  (`Restart=always`, enabled at boot) and `scripts/deploy_preview.sh` restarts
+  the unit. Verified active + HTTP 200; :8050/:8051 untouched.
 * Phone cost of "no scrolling": the chip block is **five rows ≈315 px** at
   390 px. Alternatives (collapse Water/Storms behind "more", or 40 px targets
   which fail WCAG 2.5.5) are in the note's open questions.
