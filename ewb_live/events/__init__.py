@@ -18,9 +18,72 @@ from .truth import truth_cutoff
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["detect_events", "EVENT_TYPES", "Event", "truth_cutoff"]
+__all__ = ["detect_events", "lane_status_report", "EVENT_TYPES", "Event",
+           "truth_cutoff"]
 
 DEFAULT_CACHE_DIR = Path("data/cache/events")
+
+# --------------------------------------------------------------------------
+# Per-lane scan outcome for the UI's honest zero (owner rule 2026-11-17, mlc-fix
+# 2026-11-18): a lane that can fail must be able to tell "the lane broke" from
+# "nothing happened this window". The midlat_cyclone tracker used to fail soft to
+# ``[]``, so a reader bug spent a whole 90-day build publishing a calm-looking 0
+# (notes/mlc_fix.md). A lane reports its outcome through its own ``lane_status()``
+# (mlc.py); ``detect_events`` records it here and persists it next to the scan
+# cache so a cache-hit run still knows, and ``pipeline`` publishes the dict as
+# ``meta.lane_status``. Lanes that report nothing get no entry and keep their
+# existing empty-lane copy — the TC lane's ``meta.ibtracs`` stays as it is.
+# --------------------------------------------------------------------------
+LANE_STATUS: dict[str, dict] = {}
+
+
+def _status_path(cache_dir: Path, event_type: str) -> Path:
+    return cache_dir / f"lane_status_{event_type}.json"
+
+
+def _lane_scan_status(event_type: str) -> dict:
+    """What the scan that just ran says about itself ({} = it reports nothing)."""
+    if event_type == "midlat_cyclone":
+        from .mlc import lane_status
+
+        try:
+            return lane_status()
+        except Exception as exc:  # noqa: BLE001 - a status note must not fail a scan
+            logger.warning("lane_status(%s) unreadable: %s", event_type, exc)
+            return {}
+    return {}
+
+
+def _remember_lane_status(cache_dir: Path, event_type: str) -> None:
+    """Keep this run's outcome in memory and on disk (atomic, like the cache)."""
+    st = _lane_scan_status(event_type)
+    if not st:
+        return
+    LANE_STATUS[event_type] = st
+    path = _status_path(cache_dir, event_type)
+    try:
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(st, indent=1))
+        tmp.replace(path)
+    except OSError as exc:                      # read-only cache: in-memory still ships it
+        logger.warning("lane_status(%s): could not persist %s: %s", event_type, path, exc)
+
+
+def lane_status_report(cache_dir: str | Path = DEFAULT_CACHE_DIR,
+                       types: tuple[str, ...] = EVENT_TYPES) -> dict:
+    """``meta.lane_status`` payload for these lanes (empty dict = nothing known)."""
+    cache_dir = Path(cache_dir)
+    out: dict[str, dict] = {}
+    for et in types:
+        p = _status_path(cache_dir, et)
+        if p.exists():
+            try:
+                out[et] = json.loads(p.read_text())
+            except (OSError, ValueError) as exc:
+                logger.warning("lane_status_report: bad %s: %s", p, exc)
+        if et in LANE_STATUS:
+            out[et] = LANE_STATUS[et]
+    return out
 
 
 def _cache_path(cache_dir: Path, event_type: str, start: dt.date, end: dt.date) -> Path:
@@ -120,9 +183,15 @@ def detect_events(
                            "ERA5 cutoff %s; lane skipped", et, start, end, cutoff)
             continue
         path = _cache_path(cache_dir, et, start, lane_end)
+        status_path = _status_path(cache_dir, et)
         if use_cache and not force and path.exists():
             events = [Event.from_dict(d) for d in json.loads(path.read_text())]
             logger.info("detect_events %s: cache hit (%d events)", et, len(events))
+            if status_path.exists():      # the scan that made this cache said why
+                try:
+                    LANE_STATUS[et] = json.loads(status_path.read_text())
+                except (OSError, ValueError) as exc:
+                    logger.warning("detect_events %s: bad lane status: %s", et, exc)
         else:
             if et in ("heat_wave", "freeze", "cold_snap"):
                 from .temperature import scan_temperature_events
@@ -154,6 +223,7 @@ def detect_events(
             tmp.write_text(json.dumps([e.to_dict() for e in events], indent=1))
             tmp.replace(path)
             logger.info("detect_events %s: scanned %d events", et, len(events))
+            _remember_lane_status(cache_dir, et)
         for e in events:
             by_id[e.id] = e
 

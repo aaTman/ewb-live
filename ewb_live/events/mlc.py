@@ -59,7 +59,10 @@ Not scored: EWB has no metric set for a pressure-minimum track, so this lane is
 published and rendered, never benchmarked (``select.TRACK_TYPES``, and the
 pipeline documents an ``unsupported`` pair_status per pair exactly like the tc
 lane). Fail-soft by design: if ERA5 ARCO cannot be read the scan logs and
-returns ``[]`` rather than taking the weekly run down with it.
+returns ``[]`` rather than taking the weekly run down with it — and records
+*why* in :func:`lane_status`, because a silent ``[]`` is how a broken reader
+spent a whole 90-day build looking like a quiet ocean (``meta.lane_status``,
+``notes/mlc_fix.md``).
 """
 
 from __future__ import annotations
@@ -79,7 +82,10 @@ from .types import Event, make_event_id, normalize_lon_180
 
 logger = logging.getLogger(__name__)
 
-RULE_REV = "mlc-v1"          # bump when a screen or the mapping changes (cache key)
+RULE_REV = "mlc-v2"          # bump when a screen or the mapping changes (cache key)
+# v1 -> v2 (mlc-fix 2026-11-18): the ARCO reader handed the tracker a rotated
+# longitude axis, so every window scanned 0 events; the tag is bumped so a
+# cached empty scan cannot resurrect under the fix (notes/mlc_fix.md).
 TITLE_LABEL = "Midlatitude Cyclone"
 SOURCE_NAME = "ERA5 MSLP (ARCO), closed-low tracker"
 BBOX_PAD_DEG = 5.0           # same margin as Event.padded / the tc lane
@@ -325,6 +331,41 @@ def dedupe_tracks(tracks: Sequence[Track], dist_deg: float = 6.0
     return kept, pairs
 
 
+# ------------------------------------------------------------ lane status
+#: Outcome of the last :func:`scan_mlc_events` call *in this process*.
+#
+#: The lane used to fail soft to ``[]``, which the dashboard rendered as "No
+#: midlatitude cyclones met the criteria this window" — an honest-looking zero.
+#: That is what made a reader bug invisible for a whole 90-day build (the
+#: 0-event blocker in ``notes/mlc_fix.md``), so the scan now says which of the
+#: three it was: ``{"status": "ok"}`` with the funnel counts, ``failed`` with
+#: the exception, or ``no-data`` when the source has no frames for the window.
+#: ``ewb_live.events.detect_events`` persists it beside the scan cache and
+#: ``pipeline`` publishes it as ``meta.lane_status.midlat_cyclone``; the single
+#: piece of UI copy that reads it is ``emptyLaneLine()`` in dashboard/app.js.
+#: Same idea as the TC lane's ``meta.ibtracs`` freshness record, one shape for
+#: any lane that can fail.
+LANE_STATUS: dict[str, Any] = {}
+
+
+def lane_status() -> dict:
+    """The last :func:`scan_mlc_events` outcome (empty dict before any scan)."""
+    return dict(LANE_STATUS)
+
+
+def _set_lane_status(status: str, *, reason: str | None = None,
+                     window: tuple | None = None, **counts) -> None:
+    LANE_STATUS.clear()
+    LANE_STATUS.update({
+        "lane": "midlat_cyclone", "status": status, "source": SOURCE_NAME,
+        "reason": reason,
+        "window": [window[0].isoformat(), window[1].isoformat()]
+        if window else None,
+        "rule_rev": RULE_REV,
+        **counts,
+    })
+
+
 # ------------------------------------------------------------ tropical screen
 def tropical_origin_checker(q: QualifyParams = QualifyParams(), *, loader=None):
     """A ``genesis -> is-it-a-tropical-system`` test from the tc lane's IBTrACS.
@@ -408,6 +449,8 @@ def scan_mlc_events(
                 orography = mlc_era5.load_orography()
         except Exception as exc:  # noqa: BLE001 - fail soft, like the exceedance lane
             logger.warning("midlat_cyclone: ERA5 read failed (%s) — no events", exc)
+            _set_lane_status("failed", reason=f"ERA5 MSLP read failed: {exc}",
+                             window=(start, end))
             return []
     else:
         times, mslp, lats, lons = fields
@@ -416,6 +459,10 @@ def scan_mlc_events(
     elev, elev_lat, elev_lon = orography
     if not len(times) or mslp.size == 0:
         logger.warning("midlat_cyclone: no ERA5 MSLP for %s..%s — no events", start, end)
+        _set_lane_status("no-data",
+                         reason=f"ERA5 ARCO has no MSLP frames for "
+                                f"{t0:%Y-%m-%d}..{t1:%Y-%m-%d}",
+                         window=(start, end))
         return []
 
     res = generate_mlc_tracks(mslp, lats, lons, times, tracker)
@@ -449,6 +496,11 @@ def scan_mlc_events(
         "(%d same-low dupes; screened out %s)",
         start, end, res.n_frames, res.n_nodes, len(res.tracks), len(events),
         len(dupes), counts or "nothing")
+    _set_lane_status("ok", reason=None, window=(start, end),
+                     n_frames=res.n_frames, n_nodes=res.n_nodes,
+                     n_tracks=len(res.tracks), n_dupes=len(dupes),
+                     n_events=len(events), n_screened=sum(counts.values()),
+                     screened_by=dict(counts))
     return events
 
 
