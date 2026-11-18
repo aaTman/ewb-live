@@ -2226,3 +2226,287 @@ Detect is running again (`/opt/ewb-live-dev/logs/lanes.log`, started 22:01 UTC);
 `mlc-fix` is merged, `tc-map` and `chips` next.
 
 — integrator
+## [chips-design] 2026-11-17 23:58 UTC — event-type chips streamlined: commit on `aaTman/ne-chips`, preview on :8052
+
+The owner brief (`briefs-new-events/chips_design.md`) is done; full rationale
+in **`notes/chips_design.md`**. Headline:
+
+* **One chip component** (tab + static tag): fixed height 32 px (44 px touch),
+  counts in tabular mono `min-width: 3ch`, no inline hexes anywhere — the
+  lane colour rides a `data-etype` → `--etype` token map, and the two dark
+  ink-flip hacks (incl. the `[style*="series-freeze"]` special case) are
+  deleted. Static tags now use soft lane ground + ink instead of solid fill +
+  white 10.5 px text.
+* **Tab row is a real `role=tablist`** (the brief asked; the old
+  `aria-pressed` note's objection was "no single tabpanel" — each tab now
+  `aria-controls="explore scorecard-sec"`, naming both regions it changes).
+  Roving tabindex, arrows move focus only, Enter selects; `#tab=<lane>`
+  joins region/lead/frame in the URL.
+* **No wrap ever**: one row at 1440/820/390, horizontal scroll + snap +
+  edge-fade, page overflow 0 px, 44 px targets on phone. Chips grouped
+  Temperature | Heat wave, Cold snap, Freeze · Water | AR, Flood · Storms |
+  TC, MLC with hairline group dividers.
+* **Palette re-validated with the dataviz skill** — the old set failed its
+  own checks (cold-snap chroma floor, dark L-band on 5/7, TC↔flood ΔE 4.7
+  protan in dark). New set: ALL PASS both themes, chip order and Gantt order
+  (worst CVD pair 8.1 flood↔AR deutan, flagged + label-relief). Light moved
+  only cold snap + flood; dark re-stepped heat/freeze-sibling/AR/flood/TC/MLC
+  into the band. `--series-*` changed in both themes — **the scorecard's
+  better/worse pair is untouched**; `test_ar_type_color_token_both_themes`
+  re-pinned to the new dark AR `#76a729` with a comment.
+* **Event-list dot → lane glyph** (identity never colour-alone), honest-zero
+  tabs keep their tooltips and get detection-rule tooltips everywhere else,
+  counts in the accessible name via visible text (first aria-label draft
+  tripped axe `label-content-name-mismatch` — dropped per axe).
+* **Tests**: new `tests/e2e/test_chips_fe.py` 7/7 green against the preview;
+  selector updates in dashboard/regions/tracklane e2e (short singular labels,
+  AR now `nth-child(5)`, fixture `tabs.count()==8` since every lane renders
+  at zero — honest-zero contract). No new failures vs the pre-change
+  reference run (45F base → 39F shared + 2 of the base failures now fixed;
+  dashboard_fe 31F vs 33F pre-existing, and a stash-rerun proves the
+  remaining fixture failures fail identically on clean integration code —
+  the synthetic `gd/dur` fixtures are a separate stale-fixtures brief).
+* **Preview**: http://192.168.0.121:8052/ — `/opt/ewb-preview-chips` on the
+  ewb LXC: this worktree's `dashboard/` + `ewb_live/`, `data` symlinked
+  read-only to `/opt/ewb-live-dev/data`, served by `ewb_live.serve --port
+  8052`. `:8051` and `/opt/ewb-live` untouched. Before/after screenshots +
+  geometry JSON committed under `notes/screenshots/` (`chips_before_*` /
+  `chips_after_*`), harness `scripts/chips_shots.py`.
+* Open questions for the owner are at the end of `notes/chips_design.md`
+  ("Midlat. cyclone" short label; scroll-line vs phone grid; the one 2.47:1
+  dark freeze glyph-on-selected-wash relief case and what fixing it would
+  cost the CVD gate).
+
+## [tc-map] 2026-11-18 05:10 UTC — cyclones on the merged map, as a WIND FIELD: commits on `aaTman/ne-tc-map`, preview on :8053
+
+**The bug** (`briefs-new-events/tc_map.md`): 44 published tropical cyclones never
+appeared on the merged map. Three independent causes, all in shared files:
+`mergedmap.js`'s `TYPES` tuple had no cyclone lanes (so cyclone timeline events
+were filtered out before drawing), `global_timeline.json` carried no track
+geometry, and `TrackViz` was wired only into the event page — nothing drew a
+track on the world map. Fix is additive: cyclone lanes in `TYPES`, one compact
+`track` object per storm in the timeline asset (schema 3, 203 KB for 44 storms),
+and a new `dashboard/tracklayer.js` that the map calls through
+`window.onMapTracks(payload)` / `window.onTrackLegend(payload)`.
+
+**Owner direction 2026-11-18 (verbatim intent): the primary encoding is the wind
+field, not the line.** So the lane shades every grid cell where sustained 10 m
+wind reached tropical-storm force (≥ 34 kt / 39 mph), classed by Saffir-Simpson
+(TS 34–63, CAT 1 64–82, CAT 2 83–95, CAT 3 96–112, CAT 4 113–136, CAT 5 ≥ 137),
+daily maximum per cell; the best track stays on top as thin orientation.
+
+* **Producer `ewb_live/viz/tc_wind.py`** — ERA5 ARCO 10u/10v (sustained 10-min
+  mean, the quantity Saffir-Simpson is defined on; the gust field would overstate
+  every class). The local truth mirror has **no 10 m wind** (pressure levels
+  only), and IBTrACS wind radii are not in this repo's cache (15 columns, no
+  D34/D50/D64), so they are an option for later, not today's data. Reads stream
+  the global 6-hourly field once per day (~6 s/day; 44 storms = 9m22s on the ewb
+  LXC) and crop a ±5° window per storm per day in memory — windowed *reads* are
+  slower on ARCO, because its chunks are whole-globe-per-timestep. Output is
+  max-pooled onto the map's own **1° lattice** (a coarse cell means "some 0.25°
+  reading inside me reached this" — the OR-over-cells convention the raster lanes
+  already use; a 0.25° cell is half a CSS pixel on a 700 px world sheet) and
+  run-length packed, because the browser has no synchronous inflate: **67 KB for
+  44 storms.**
+* **Honesty is the load-bearing part.** ERA5 at 0.25° resolves no eyewall: across
+  the published storms the field's daily maximum near the peak fix is a **median
+  0.58× the IBTrACS best-track peak** (0.34× worst, n=35). No silent correction —
+  the ratio ships in the asset, the lane's legend unit reads
+  `ERA5 10 m wind · daily max · under-reads peaks`, the group's title carries the
+  measured ratio, the cell tooltip answers with class + kt + mph + storm + day
+  and keeps **best-track peak in its own row** under a note that the shading is
+  the wind field, never the official category. A day past the archive's cutoff
+  gets no entry at all and is listed in `days_no_data` — never drawn as a zero
+  field, which would read as "that day made no storm-force wind". 9 of the 44
+  storms have no storm-force cell anywhere: their `ratio` is `null`, not `0.00`.
+* **Rendering** (`tracklayer.js`, ~850 lines): one canvas under the SVG markers —
+  one `Path2D` per class (a day is at most six fills), rows cost four projections
+  (Equal Earth is linear in x at a fixed latitude), columns that cross 180° are
+  painted again at the other edge so the field wraps the dateline like the tracks
+  and the boxes. Reveal-by-time: cells and fixes appear only once the slider
+  reaches them. Legend groups come from the asset's own class list, so producer,
+  swatches and canvas cannot disagree; classes absent from the step are dimmed
+  like the raster lanes; the ramp is the same violet family as the lane's bin
+  ramp, re-validated with the dataviz gate **at the alpha the canvas paints**
+  (0.88) on the map's own grounds with a 3:1 floor on *every* class (light
+  4.08→8.37 ocean / 4.44→9.13 land; dark 3.52→10.55 / 3.01→8.97), because a
+  storm-force envelope is 6–8 px on a world sheet and the lowest class has to
+  survive at that size.
+* **Two pointer discoveries**, both worth knowing for any layer under the markers:
+  the SVG overlay is above the map's canvas, so a marker's 15 px hit circle and
+  its label own the pointer *everywhere they cover* — at world scale a storm's own
+  label lies across most of its wind field, which is why field hover looked dead.
+  Now the cell under the cursor answers unless the pointer is on the dot itself
+  (`DOT_CLAIM_PX = 9`; the click target is unchanged). And with the field present
+  the best-track dots shrink and only the storm's **current** position keeps the
+  ground-coloured halo, so the primary encoding is not competing with ~260 violet
+  dots.
+* **Tests**: `tests/test_tc_wind.py` 34 green — class boundaries, day windows
+  (dateline averaging, fast-mover window growth, polar clamping that slides and
+  never wraps), the RLE round-trip, missing-day → `days_no_data`, and the
+  placement contract end-to-end against a hermetic `FakeStore` shaped exactly like
+  ARCO (a blob at a known lat/lon lands at the exact row/col the browser will
+  paint). `tests/e2e/test_trackwind_fe.py` 5 green — the field is measured **A/B
+  against the same page with the asset aborted**, because the lane's best track is
+  violet too and a colour count alone proves nothing: the asset adds pixels, the
+  hit test agrees with the paint, the legend says "under-reads", hover shows the
+  field and the best-track peak as separate rows, and a missing asset loses the
+  field, keeps the tracks and raises no JS error. `tests/test_global_timeline.py`
+  pins the schema-3 track entries.
+* **Preview**: http://192.168.0.121:8053/ — `ops/tcmap_preview.sh`, a third tree
+  `/opt/ewb-live-tcmap` (like `dev_site.sh`'s /dev/ site): this worktree's
+  `dashboard/` + `ewb_live/`, big read-only inputs symlinked from
+  `/opt/ewb-live-dev`, systemd unit `ewb-live-tcmap-web`. Writes only under the
+  preview tree; `:8050` live and `:8051` dev untouched. (Not
+  `rsync --delete-excluded` — that flag deletes the *excluded* `data/`, `.venv`
+  and `third_party` on the receiver.)
+* **For the owner, honestly:** at world scale ERA5's storm-force envelope is
+  ~3–4° across, i.e. 6–8 px — now at a 3:1-contrast violet, but small, because
+  that is what the reanalysis says the storm's wind field is. If the lane should
+  read louder at the default zoom, the honest levers are IBTrACS wind radii
+  (need the D34/D50/D64 columns in the cache) or a region zoom, not a bigger
+  cell. Census on the current build: 4320 TS cells, 33 CAT 1, zero above —
+  the field's ceiling is CAT 1 while 24 storms peaked at CAT 1+ on the best
+  track, which is exactly the gap the labels state.
+* **Pre-existing, not from this branch**: the e2e suite has ~36 failures in
+  `test_dashboard_fe.py` + `test_guardian_fe.py` (synthetic `gd/dur` fixtures that
+  never mount the map). A reference run at `0a4673e` fails the same set; the chips
+  entry reports the same stale-fixture brief. `tests/test_viz_unit.py`,
+  `test_tc_events.py` et al. do not collect in my local venv (no `xarray`) — they
+  need the project venv on the ewb LXC.
+
+## [tc-map] 2026-11-18 20:10 UTC — the wind field now DISSIPATES with the storm (owner addition); commits on `aaTman/ne-tc-map`, same preview :8053
+
+**Root cause, measured before touching anything.** There was no end anywhere in the
+pipeline. The producer took the storm's *whole best-track envelope* (first fix to
+last fix — it never read the event's own `start`/`end`), built a per-cell daily
+maximum over it, and `tracklayer.js` painted that whole day's grid for **any frame
+whose date fell in the range**. So the field could not know the storm had ended.
+Four leaks on the shipped asset, all real:
+
+| leak | measured |
+|---|---|
+| pre-genesis: fixes before the event's first qualifying fix (the lane excludes them, the producer did not) | 35/44 storms had such fixes → **113 cells** shaded before the field existed |
+| ET tail: fixes after the event's end (`NATURE` ET/MX, excluded from the event) | 23/44 storms → **19 cells** after the last qualifying fix |
+| dead hours inside an end-day (storm dies 09Z, day shaded until 23:59) | **436 cells** on end-days |
+| cells with no live fix near them (stale interpolated centre, borrowed ambient wind) | **1.0%** of all cells, worst **8.3°** away |
+
+**What changed — the rule lives in the producer, and the layer refuses to override
+it.** (1) Alive = the lane's event window, first to last qualifying fix ≥34 kt with
+`NATURE` not ET/MX, i.e. exactly what `events/tc.py` publishes. (2) Only the
+00/06/12/18Z steps with `birth ≤ step < death` contribute — `step_fields()`
+replaced `day_max_kt()` as the read path, so a storm that dies at 09Z contributes
+00Z and 06Z and each day grid is the max of the hours that actually existed
+(`days[].steps` ships which). (3) The centre is interpolated **at the step**, never
+carried forward — a stale centre is how a dead storm's field kept extending.
+(4) Attribution is strict: a cell belongs to the nearest live centre *across all
+storms*, and only inside the ≥34 kt connected component holding that storm's core —
+ambient storm-force wind 6° off the track, or a neighbour's, is not this storm's
+field. (5) `life.ongoing` now means the **data** ran out, not the best track:
+`details.ongoing` is true for a storm that dissolved six weeks before the cutoff
+too, so it also requires a death at/after the last wind step with real values
+(`dissipation.cutoff`; ARCO's time axis is *not* the cutoff — it lists NaN-filled
+steps ahead of the data). One storm qualifies today: Xavier. The lane's own flag
+survives as `life.track_open`. (6) Front end: `aliveAt()`/`dissipatedAt()` gate the
+field, the cell hit test and the tooltips on the same window, so a stale or
+hand-edited asset cannot put wind behind a dead storm; a dissipated storm keeps its
+track, loses its field, and its marker goes hollow/dashed with a tooltip that says
+`dissipated <date> · no wind field now`, plus a legend swatch.
+
+**Numbers on the rebuilt asset (ewb LXC, 44 storms, 70 KB, schema 2):** 4031 drawn
+cells (3996 TS + 35 CAT 1) over 279 day grids, from 4353 — **322 cells of wind that
+belonged to no living storm**; 0 cells before birth, 0 after death, farthest cell
+4.98° from a live fix (was 8.3°); 147 of the 279 day grids are partial days and now
+say which steps they hold; 10/44 storms have no cell at all (ERA5 shows no
+storm-force core on their track — `ratio: null`, absence not measurement).
+`python -m ewb_live.viz.tc_wind --audit` prints the storm-by-storm table the owner
+asked for (days, cells, last-day cells, after-death, before-birth, max distance) and
+exits non-zero on a violation — **44 storms, 0 failing: clean**.
+
+**Also:** wired into the weekly cycle as step **6d** in `ewb_live/weekly.py`
+(spec-guarded, non-fatal, exactly the raw-exceedance step's shape — the track lines
+need no asset since the layer reads the fixes the events already carry). The
+`--audit` flag had been documented but never registered with argparse, so the CLI
+died on its first real run on the LXC; fixed and now covered by tests. Asset
+geometry origins snap onto the data lattice (symmetric boxes, odd cell counts).
+
+**Tests:** `tests/test_tc_wind.py` **48** green (dissipation: no cell on a day before
+birth or after death, end-days carry only alive steps, a cell 8° from any live centre
+belongs to nobody, `ongoing` only when the data runs out, the audit flags a doctored
+asset); `tests/e2e/test_trackwind_fe.py` **6** green; `test_tracklane_fe.py` 9 green
+unchanged. `scripts/tcmap_check.py` measures the live :8053 asset on a mid-day death
+(Choi-Wan, 2026-10-07T09Z, last steps 00Z/06Z): at the 06Z frame the field draws and
+hit-tests as Choi-Wan; at 12Z `field:false`, hit test empty, marker
+`data-state="dissipated"`, 255 violet pixels gone while still-living storms keep
+theirs — `notes/screenshots/tc_map_zoom_{last_day,after}_Choi-Wan.png`.
+
+**Preview:** http://192.168.0.121:8053/ (unchanged: `/opt/ewb-live-tcmap`, unit
+`ewb-live-tcmap-web`; `:8050`/`:8051` untouched). Rationale note: **`notes/tc_map.md`**.
+
+**Open questions for the owner**
+1. **Sub-daily dead hours on a day the storm survives into** — the asset is daily, so
+   a storm that dies at 09Z still shows that day's max-of-alive-steps at 12Z/18Z.
+   Honest fix is a 6-hourly asset (4× cells, 4× fetch). Want it?
+2. **Bias** (field peaks at 0.56× best-track median, n=34): label-only today, as
+   shipped. Options are a class-colour-only rescale (reads honest, invents wind — I'd
+   argue against) or real IBTrACS D34/D50/D64 radii, which need those columns in the
+   cache.
+3. **Max-over-day vs instantaneous** 6-hourly: today's daily max is what makes the
+   envelope visible at world scale; instantaneous is more literal and 4× the bytes.
+4. `days_no_data` = 2026-11-04, 11-09, 11-15, 11-16, 11-17 (absent, never zero);
+   `ongoing` cutoff = 2026-11-12T18:00Z. If Xavier matters for the demo, its window
+   has no wind data yet, so it draws a track with no field.
+
+## [tc-map] 2026-11-18 20:45 UTC — time-box rules adopted; dissipation is DEPLOYED on :8053 (short entry, 60-min cadence)
+
+Read `Time-box and process rules`. What changes for this lane:
+
+* **Ship-first is satisfied, and it is on my port, not :8052.** The owner-visible
+  artefact for this brief is the TC wind-field layer on **http://192.168.0.121:8053/**
+  (`/opt/ewb-live-tcmap`, unit `ewb-live-tcmap-web`) — live now, serving the
+  schema-2 asset whose source line reads "max over the steps a storm was alive".
+  :8052 is the chips lane's preview; I have not written to it or to its tree.
+  Current deployed state = dissipation (previous entry, 20:10 UTC): field ends with
+  the storm, 0 cells before birth / 0 after death across 44 storms, hollow
+  "dissipated" markers, `--audit` clean.
+* **No foreground command over 10 min, and mine now average seconds.** The build
+  that matters (ERA5 windows, ~5 min warm / 9m22s cold) runs on the ewb LXC under
+  `nohup` and is polled from the log. `ops/tcmap_preview.sh wind` *looked* like it
+  backgrounded but actually blocked until the build ended — the child inherited the
+  SSH stdin channel; `timeout 40` returned 124 and proved it. Fixed with `setsid …
+  < /dev/null`, plus `timeout 1800` on the build so it cannot outlive the hourly
+  watchdog (commit `dce758b`). Weekly step 6d already caps its subprocess at 60 min,
+  and the cold-cache measurement fits inside it.
+* **30-min stop rule**: nothing in this lane is currently in that state. The
+  decisions that are *not* converging on my own are already parked as owner
+  questions rather than iterated on: bias handling (label-only vs a colour-only
+  rescale vs real IBTrACS D34/D50/D64 radii), max-over-day vs instantaneous, and a
+  6-hourly asset for sub-daily dead hours — all written up in **`notes/tc_map.md`**
+  ("Limits and open decisions for the owner") and in the 20:10 entry.
+* **One agent per worktree**: this worktree (`aaTman/ne-tc-map`, preview :8053) has
+  exactly one agent, me. Nothing pushed; commits stay for the integrator.
+
+Running now: an idempotent refresh of `tc_wind.json` on the LXC (same code, to
+re-verify the 30-min cap end to end). Poll: `ssh root@192.168.0.121 'tail -3
+/opt/ewb-live-tcmap/logs/tc_wind.log'`. Next entry from me within 60 minutes if I
+am still active.
+
+## [tc-map] 2026-11-18 20:58 UTC — rebuilt on the LXC under the new cap, dissipation re-verified on :8053; one correction
+
+* Ran the whole loop again under the time-box rules: `tcmap_preview.sh wind`
+  detaches now (returns in ~1 s, build in the log), finished in **8.0 min** for
+  88 days / 44 storms, `--audit` → **"44 storms, 0 failing: clean"**, and
+  `scripts/tcmap_check.py` against the deployed asset at :8053 still measures the
+  dissipation: 06Z frame `field:true` + hit test = Choi-Wan (51 kt), 12Z frame
+  `field:false`, hit test empty, marker `data-state="dissipated"`, 1013 violet
+  pixels gone (device-scale 2) while still-living storms (Nolo et al.) keep their
+  fields. Nothing else pending on this lane; commits are local for the integrator.
+* **Correction, own goal:** my previous commit message reported "measured 5.8–24
+  s/day, ~35 min for 88 days" and used it to justify a 60-min cap. The 24 s/day was
+  a mispoll of a buffered log — the two real build durations are 8.0 and 8.5 min
+  (plus the 9m22s cold-cache build already in the channel). The cap stays at 3600 s,
+  but for the honest reason: that is what `ewb_live/weekly.py` gives the step, so
+  preview and pipeline agree on when the build counts as stuck, and 30 min would be
+  a 3x margin on a network-bound read. Commit `08e52c2` carries the corrected
+  message; the script echoes the same numbers. (The 20:45 entry above says
+  `timeout 1800` — superseded; the deployed script caps at 3600 s.)

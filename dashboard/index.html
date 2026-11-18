@@ -37,6 +37,7 @@
 <script src="app.js" defer></script>
 <script src="eventviz.js" defer></script>
 <script src="mergedmap.js" defer></script>
+<script src="tracklayer.js" defer></script>
 <script src="trackviz.js" defer></script>
 </head>
 <body>
@@ -141,7 +142,7 @@
       dashed boxes are the events the models are scored on. Move through time below the map, or pick an event.</p>
     <div class="type-filter">
       <span class="ctl-label" id="type-tabs-label">Show</span>
-      <div class="ctl-group" id="type-tabs" role="group" aria-labelledby="type-tabs-label"></div>
+      <div class="ctl-group" id="type-tabs" role="tablist" aria-labelledby="type-tabs-label"></div>
       <div class="ctl-group ctl-region hidden" id="region-group">
         <label class="ctl-label" for="region-select">Region</label>
         <select id="region-select" title="Events, map and scorecard by region"></select>

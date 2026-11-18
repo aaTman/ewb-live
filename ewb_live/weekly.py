@@ -238,6 +238,26 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001 — best-effort like viz
             logger.warning("region scorecard refresh failed (non-fatal): %s", exc)
 
+        # 6d. tropical-cyclone wind field (briefs-new-events/tc_map.md): the ERA5
+        # 10 m wind envelopes the dashboard's TC layer shades under each storm's
+        # track, in data/results/tc_wind.json. The track LINES need no asset — the
+        # layer reads the best-track fixes the TC lane already publishes on each
+        # event (ev.track.fixes). The field stops with the storm: only the 6-hourly
+        # steps inside the event's own life window are read, so a dead storm has no
+        # cells at all (see ewb_live/viz/tc_wind.py's dissipation rule).
+        # Non-fatal like viz; the layer hides itself when the asset is absent.
+        if importlib.util.find_spec("ewb_live.viz.tc_wind") is None:
+            logger.info("ewb_live.viz.tc_wind not present; skipping TC wind step")
+        else:
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "-m", "ewb_live.viz.tc_wind"],
+                    timeout=3600,
+                )
+                logger.info("ewb_live.viz.tc_wind exited %d", proc.returncode)
+            except Exception as exc:  # noqa: BLE001 — best-effort like viz
+                logger.warning("TC wind step failed (non-fatal): %s", exc)
+
         # 7. final public leak gate (re-check after meta/viz writes)
         if not _leak_gate("post-publish"):
             return 1
