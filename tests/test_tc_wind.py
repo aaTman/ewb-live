@@ -615,6 +615,31 @@ def test_an_ongoing_storm_is_marked_and_shaded_to_its_last_step(tmp_path):
     assert [d["d"] for d in storm["days"]] == ["2026-08-20"]
     assert day_entry(storm, "2026-08-20")["steps"] == ["00Z", "06Z", "12Z"]
     assert storm["era_peak_kt"] == 58           # 30 m/s at the only live position
+    assert storm["life"]["ongoing"] is True      # its death IS the last step there
+    assert storm["life"]["track_open"] is True
+    assert W.print_audit(W.audit(tmp_path))
+
+
+def test_a_storm_is_only_ongoing_if_the_DATA_runs_out(tmp_path):
+    """`details.ongoing` says the best track ends while the system was still
+    tropical — true for a storm that dissolved days before the data ended too.
+    The map must not present that as still alive, so the asset's `ongoing` also
+    requires a death at or after the last wind step with real values."""
+    days = [dt.date(2026, 8, 19), dt.date(2026, 8, 20), dt.date(2026, 8, 21)]
+    store = FakeStore(days, [(days[0], 20.0, 179.0, 30.0), (days[1], 24.0, 170.0, 30.0)])
+    # alive 19th 06Z .. 20th 06Z, while the wind data runs on to the 21st 18Z
+    write_events(tmp_path, [ev([fix("2026081906", 20.0, 179.0, 40.0),
+                                fix("2026082000", 21.0, 178.0, 40.0)],
+                               "2026-08-19T06:00:00Z", "2026-08-20T06:00:00Z",
+                               ongoing=True)])
+    doc = json.loads(W.build(tmp_path, store=store).read_text())
+    (storm,) = doc["storms"]
+    assert storm["life"]["track_open"] is True          # what the lane published
+    assert storm["life"]["ongoing"] is False            # the data went on without it
+    # the cutoff is the last step THIS BUILD read with real values: the weekly
+    # build's newest storms abut the archive's end, which is what makes it the
+    # data cutoff (a store with later days that nothing needed is not read)
+    assert doc["dissipation"]["cutoff"] == "2026-08-20T18:00:00Z"
     assert W.print_audit(W.audit(tmp_path))
 
 
@@ -656,6 +681,25 @@ def test_build_skips_a_storm_with_an_unusable_window(tmp_path):
     store = FakeStore([dt.date(2026, 8, 19)], [(dt.date(2026, 8, 19), 20.0, 179.0, 30.0)])
     doc = json.loads(W.build(tmp_path, store=store).read_text())
     assert [s["name"] for s in doc["storms"]] == ["Good"]
+
+
+def test_the_audit_cli_needs_no_network_and_fails_loudly(tmp_path, capsys):
+    """`python -m ewb_live.viz.tc_wind --audit` is the check the owner (and the
+    CI) can run anywhere: it parses, it skips the ewb-host guard (it reads nothing
+    but local JSON), and a field that outlives its storm is a non-zero exit."""
+    store = FakeStore([dt.date(2026, 8, 19)], [(dt.date(2026, 8, 19), 20.0, 179.0, 30.0)])
+    write_events(tmp_path, [ev([fix("2026081906", 20.0, 179.0, 40.0)],
+                               "2026-08-19T06:00:00Z", "2026-08-19T18:00:00Z")])
+    path = W.build(tmp_path, store=store)
+    assert W.main(["--audit", "--results", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "storm" in out.splitlines()[0] and out.rstrip().endswith("clean")
+
+    doc = json.loads(path.read_text())
+    doc["storms"][0]["days"].append({**doc["storms"][0]["days"][0], "d": "2099-01-01"})
+    path.write_text(json.dumps(doc))
+    assert W.main(["--audit", "--results", str(tmp_path)]) == 1
+    assert "FAIL" in capsys.readouterr().out
 
 
 def test_audit_flags_a_field_that_outlives_its_storm(tmp_path):

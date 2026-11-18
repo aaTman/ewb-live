@@ -79,10 +79,15 @@ The rule this build implements, in the producer so no client can get it wrong:
   and the other at 18Z, so the day's union can hold it in both names — one patch
   on the map (every cell of a class is filled in one path), and each storm's own
   field still ends on its own date.
-* **Ongoing storms** (``details.ongoing``: its last qualifying fix is its last
-  fix, i.e. still open at the data cutoff) are marked ``ongoing`` in the asset
-  and the map draws no dissipation for them; storms that ended before the
-  cutoff dissipate cleanly.
+* **Ongoing storms** are the ones still open when the *data* runs out: the lane's
+  ``details.ongoing`` only says the best track ends while the system was still
+  tropical — which is also true of a storm that dissipated six weeks before the
+  cutoff — so the asset marks ``ongoing`` only when that is combined with a death
+  at or after the last 10 m wind step that has real values (``dissipation.cutoff``
+  names that step; ``track_open`` keeps the lane's own flag). The map draws no
+  dissipation for those; storms that ended before the cutoff dissipate cleanly.
+  (ARCO's time axis is not the cutoff — it lists NaN-filled times ahead of the
+  data — so the cutoff is measured from the steps actually read.)
 
 The asset publishes the whole rule under ``"dissipation"`` and per-storm life
 under ``"life"``, so the layer states it instead of inventing it.
@@ -122,7 +127,8 @@ Output (one small asset next to the other map assets)
                  "era_peak_kt": 46, "ratio": 0.4,
                  "life": {"birth": "2026-08-19T00:00:00Z", "death": "...",
                           "first_fix": "...", "last_fix": "...",
-                          "ongoing": false, "alive_steps": 21},
+                          "ongoing": false, "track_open": true,
+                          "alive_steps": 21},
                  "days": [{"d": "2026-08-19", "max_kt": 46, "steps": ["06Z", "12Z"],
                            "lat0": 15.5,
                            "lon0": -173.5, "ny": 41, "nx": 41,
@@ -152,7 +158,6 @@ import json
 import logging
 import os
 import statistics
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -705,6 +710,7 @@ def build(results_dir: Path, *, days: int | None = None, half_deg: float = HALF_
 
     need = sorted({d for p in plans for d in p["wins"]})
     nodata: list[str] = []
+    data_end: int | None = None      # last 10 m wind step with real data (ms)
     if need:
         if store is None:
             store = open_wind_store()
@@ -715,6 +721,13 @@ def build(results_dir: Path, *, days: int | None = None, half_deg: float = HALF_
                 logger.warning("%s — skipping the day", exc)
                 nodata.append(day.isoformat())
                 continue
+            # NOT the store's axis maximum: ARCO lists times it has not filled
+            # yet (NaN), so the axis runs past the data. The last step this build
+            # read with real values is the cutoff — and in the weekly build the
+            # newest storms' windows abut it, which is the whole point.
+            data_end = max(data_end or 0,
+                           int(max(T for T, _ in steps)
+                               .replace(tzinfo=dt.timezone.utc).timestamp() * 1000))
             # every storm alive at this step, so a cell can be attributed to the
             # nearest live centre ACROSS storms (two storms, one envelope)
             for T, fld in steps:
@@ -773,7 +786,15 @@ def build(results_dir: Path, *, days: int | None = None, half_deg: float = HALF_
                        "life": {"birth": iso_z(life["birth"]), "death": iso_z(life["death"]),
                                 "first_fix": iso_z(life["first_fix"]),
                                 "last_fix": iso_z(life["last_fix"]),
-                                "ongoing": bool(life["ongoing"]),
+                                # `ongoing` = still OPEN at the end of the data, so the
+                                # map draws no dissipation for it. The lane's own
+                                # details.ongoing only says the best track ends while
+                                # the system was still tropical — true for a storm that
+                                # dissipated six weeks before the cutoff too, which the
+                                # map must NOT present as still alive.
+                                "ongoing": bool(life["ongoing"]) and data_end is not None
+                                and life["death"] >= data_end,
+                                "track_open": bool(life["ongoing"]),
                                 "alive_steps": int(life["alive_steps"])},
                        "days": entries})
         logger.info("tc_wind: %s %s best %s kt, field max %s kt (%s), alive %s..%s%s",
@@ -797,9 +818,10 @@ def build(results_dir: Path, *, days: int | None = None, half_deg: float = HALF_
                               "step, then the >=34 kt component connected to the "
                               "storm's own core — a detached monsoon/neighbor "
                               "patch and a post-tropical remnant shade nothing",
-               "ongoing": "storms whose last qualifying fix is their last fix "
-                          "(still open at the data cutoff) are marked "
-                          "life.ongoing; the map draws no dissipation for them"},
+               "ongoing": "storms still open at the last wind step with data "
+                          "(life.cutoff) are marked life.ongoing; the map draws "
+                          "no dissipation for them",
+               "cutoff": iso_z(data_end)},
            "bias": {"ratio_median": round(statistics.median(ratios), 2) if ratios else None,
                     "ratio_min": min(ratios) if ratios else None,
                     "ratio_max": max(ratios) if ratios else None, "n": len(ratios),
@@ -893,20 +915,21 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m ewb_live.viz.tc_wind")
     ap.add_argument("--results", type=Path,
                     default=Path(__file__).resolve().parents[2] / "data" / "results")
-    argv = list(sys.argv[1:] if argv is None else argv)
-    if "--audit" in argv:                       # local, read-only: no host guard
-        args = ap.parse_args(argv)
+    ap.add_argument("--audit", action="store_true",
+                    help="audit an existing asset for post-dissipation cells and exit "
+                         "(local read-only: no network, no ewb-host guard)")
+    ap.add_argument("--days", type=int, default=None,
+                    help="only storms starting in the last N days (default: all published)")
+    ap.add_argument("--half-deg", type=float, default=HALF_DEG,
+                    help="window half-width around a day's live positions (degrees)")
+    ap.add_argument("--limit", type=int, default=None, help="build only the first N storms")
+    args = ap.parse_args(argv)
+    if args.audit:
         return 0 if print_audit(audit(args.results)) else 1
 
     from ewb_live._guard import require_ewb_host      # network + CPU: ewb LXC only
 
     require_ewb_host()
-    ap.add_argument("--days", type=int, default=None,
-                    help="only storms starting in the last N days (default: all published)")
-    ap.add_argument("--half-deg", type=float, default=HALF_DEG,
-                    help="window half-width around a day's fixes (degrees)")
-    ap.add_argument("--limit", type=int, default=None, help="build only the first N storms")
-    args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     build(args.results, days=args.days, half_deg=args.half_deg, limit=args.limit)
     return 0
