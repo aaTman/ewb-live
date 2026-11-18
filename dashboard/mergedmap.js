@@ -292,6 +292,15 @@
     } catch (err) { console.warn('track layer:', err.message); }
   }
 
+  /* The wind asset can arrive AFTER the layer has drawn and the legend has been
+     built (it is a separate fetch). Repaint and rebuild the legend, so the
+     swatches and the canvas can never disagree about what is on the map. */
+  window.onTracksAssetReady = () => {
+    if (!mounted) return;
+    emitTracks('asset');
+    try { renderLegend(); } catch (err) { console.warn('track legend:', err.message); }
+  };
+
   function drawBase(ctx) {
     const dpr = window.devicePixelRatio || 1;
     ctx.save();

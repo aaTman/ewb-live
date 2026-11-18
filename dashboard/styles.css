@@ -1232,20 +1232,23 @@ html[data-theme="dark"] {
    means cyclone intensity, whether it comes from the best track (dots) or from
    the reanalysis field (fills) — which is why every label says which one it is.
    Measured at the alpha the canvas paints (0.88), on the map's own grounds —
-   #eef4f8 ocean / #ffffff land — the 6-step ordinal passes the dataviz gate:
-   monotone L, every adjacent ΔL ≥ .06, one hue (spread 1°), pale end ≥ 2:1:
-     ocean 2.03 2.58 3.34 4.37 5.81 8.11 · land 2.22 2.82 3.65 4.77 6.33 8.83
+   #eef4f8 ocean / #ffffff land — monotone L, adjacent steps 6% L apart, one hue:
+     ocean 4.08 4.97 5.74 6.59 7.45 8.37 · land 4.44 5.42 6.25 7.11 8.04 9.13
+   The bar is every class ≥ 3:1 blended, not just the pale end ≥ 2:1: a
+   storm-force envelope in ERA5 is ~3-4° across, which is 6-8 px on a world
+   sheet, so the LOWEST class has to survive at that size or the primary
+   encoding of the lane is invisible where the map is actually viewed.
    ========================================================================== */
 :root {
-  --tc-wind-1: #a59cd3;  --tc-wind-2: #9083c7;  --tc-wind-3: #7b6aba;
-  --tc-wind-4: #6851ac;  --tc-wind-5: #56379f;  --tc-wind-6: #451591;
+  --tc-wind-1: #7351c2;  --tc-wind-2: #6340b5;  --tc-wind-3: #57389f;
+  --tc-wind-4: #4c318c;  --tc-wind-5: #422a79;  --tc-wind-6: #382466;
 }
 html[data-theme="dark"] {
   /* dark mirrors the direction (extremes brightest, as the bin ramp above);
-     measured the same way on #0e1620 ocean / #262626 land:
-     ocean 2.92 3.88 5.04 6.53 8.35 10.57 · land 2.50 3.31 4.31 5.57 7.12 8.99 */
-  --tc-wind-1: #715eb3;  --tc-wind-2: #8674c8;  --tc-wind-3: #9b8bdc;
-  --tc-wind-4: #b1a3f1;  --tc-wind-5: #c7bdfd;  --tc-wind-6: #ded9fe;
+     measured the same way on #0e1620 ocean / #262626 land (same 3:1 floor):
+     ocean 3.52 4.48 5.65 7.04 8.66 10.55 · land 3.01 3.83 4.82 6.00 7.37 8.97 */
+  --tc-wind-1: #8568ca;  --tc-wind-2: #987fd2;  --tc-wind-3: #aa95da;
+  --tc-wind-4: #bcace2;  --tc-wind-5: #cec3ea;  --tc-wind-6: #e1d9f2;
 }
 .tv-root { margin: 0; }
 .tv-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;

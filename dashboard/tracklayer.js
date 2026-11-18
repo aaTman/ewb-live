@@ -60,6 +60,10 @@
      within a degree of each other would swallow each other and HIDE storms, so
      the marker is 30 px and keyboard access carries the rest. */
   const HIT_R = 15;
+  /* A marker's own claim on the TOOLTIP is the dot, not its hit circle: the
+     overlay sits above the map's canvas, so a label would otherwise swallow the
+     wind field that lies under it (at world scale, most of it). */
+  const DOT_CLAIM_PX = 9;
 
   /* ---------------- lanes ----------------
      A lane = colour + intensity ramp + wording. `strength` maps a fix's
@@ -130,9 +134,9 @@
      steps, so the legend never contradicts the producer's class list. Light-mode
      values; the dark theme overrides them with --tc-wind-*. */
   const WIND_FB = [
-    { id: 1, tok: '--tc-wind-1', fb: '#ab99d3' }, { id: 2, tok: '--tc-wind-2', fb: '#9782c7' },
-    { id: 3, tok: '--tc-wind-3', fb: '#856ab9' }, { id: 4, tok: '--tc-wind-4', fb: '#7352ac' },
-    { id: 5, tok: '--tc-wind-5', fb: '#61399e' }, { id: 6, tok: '--tc-wind-6', fb: '#511c90' }];
+    { id: 1, tok: '--tc-wind-1', fb: '#7351c2' }, { id: 2, tok: '--tc-wind-2', fb: '#6340b5' },
+    { id: 3, tok: '--tc-wind-3', fb: '#57389f' }, { id: 4, tok: '--tc-wind-4', fb: '#4c318c' },
+    { id: 5, tok: '--tc-wind-5', fb: '#422a79' }, { id: 6, tok: '--tc-wind-6', fb: '#382466' }];
 
   function windClassLut(classes) {
     const lut = new Uint8Array(256);
@@ -154,7 +158,10 @@
         WIND.classOf = windClassLut(d.classes);
         WIND.byId = new Map(d.storms.map((s) => [s.id, Object.assign({}, s,
           { dayByDate: new Map(s.days.map((e) => [e.d, e])) })]));
-        S && draw(S);                       // late arrival: repaint now
+        // late arrival (the usual case): ask the map to repaint AND rebuild the
+        // legend, which was written from the fallback class list
+        if (typeof window.onTracksAssetReady === 'function') window.onTracksAssetReady();
+        else S && draw(S);
       })
       .catch((err) => {
         WIND.failed = true;
@@ -298,6 +305,7 @@
   let last = null;              // {storms, date} of that paint, for field hover
   let tipEv = null, tipRaf = 0, windTip = false;
   let windSeen = null;        // classes painted at the last step, for the legend
+  let dotPts = [];            // marker positions in sheet px (the e2e's hover probe)
 
   function ensureDom() {
     if (svg && svg.isConnected) return true;
@@ -416,6 +424,8 @@
 
      Below-floor cells are 0 in the asset and are not drawn at all: the layer
      shows where the wind reached tropical-storm force, nowhere else. */
+  /* The alpha the ramp was validated at: the dataviz gate checks contrast AFTER
+     blending with the map ground, so the paint and the check must agree. */
   const WIND_ALPHA = 0.88;
   /* A 0.25° cell is about HALF a CSS pixel on a 700 px-wide world sheet: painted
      at its true size it disappears into anti-aliasing and the layer reads as
@@ -515,12 +525,13 @@
       for (const f of st.shown) {
         const p = st.spot[f.i];
         if (!p) continue;
-        ctx.globalAlpha = base * (f.live ? 1 : 0.5);
-        if (WIND.data && f.live) {
-          // a best-track dot can now sit ON a wind cell of its own colour, so the
-          // dots that matter carry a thin ring of the map's own ground. Live fixes
-          // only: the pre-window tail is already quiet, and a ring on every fix is
-          // a white ribbon laid along the whole track.
+        /* With the field on the map the dots are the LAST voice, not the first: the
+           day's wind is the primary encoding, so the fixes shrink and only the
+           storm's CURRENT position — the one that sits inside the day's cells —
+           keeps the halo that keeps it legible on a cell of its own colour. */
+        const here = WIND.data && f.live && f === st.shown[st.shown.length - 1];
+        ctx.globalAlpha = base * (f.live ? (WIND.data && !here ? 0.8 : 1) : 0.5);
+        if (here) {
           ctx.strokeStyle = colors().halo;
           ctx.lineWidth = 1.9;
           ctx.beginPath();
@@ -529,7 +540,7 @@
         }
         ctx.fillStyle = binColor(st.ev.type, f.bin);
         ctx.beginPath();
-        ctx.arc(p[0], p[1], f.live ? 1.9 : 1.2, 0, 6.2832);
+        ctx.arc(p[0], p[1], f.live ? (WIND.data ? 1.5 : 1.9) : 1.2, 0, 6.2832);
         ctx.fill();
       }
     }
@@ -568,12 +579,14 @@
     // strongest first, so labels go to the storms that matter most
     const rank = (st) => (st.peak && Number.isFinite(st.peak.v)
       ? LANES[st.ev.type].strength(st.peak.v) : -1);
+    dotPts = [];
     const live = storms.filter((st) => st.last && !st.ghost)
       .sort((a, b) => rank(b) - rank(a));
     for (const st of live) {
       const p = st.spot[st.last.i];
       if (!p || p[0] < -4 || p[1] < -4 || p[0] > W + 4 || p[1] > H + 4) continue;
       markOne(payload, st, p, placed, anySel);
+      dotPts.push(p);
       marks++;
     }
     if (keepId) {
@@ -640,8 +653,24 @@
         t.addEventListener('click', (e) => { e.stopPropagation(); openEvent(ev.id); });
       }
     }
-    g.addEventListener('pointerenter', () => { showTip(st, m); hoverRow(ev.id, true); });
-    g.addEventListener('pointermove', (e) => { if (window.moveTip) window.moveTip(e); });
+    const onDot = (e) => {
+      const r = cv.getBoundingClientRect(), k = payload.fit.W / (r.width || 1);
+      return Math.hypot((e.clientX - r.left) * k - p[0],
+        (e.clientY - r.top) * k - p[1]) <= DOT_CLAIM_PX;
+    };
+    /* the cell under the cursor speaks for the pointer; the dot keeps the storm
+       card, and the click target (HIT_R) is unchanged either way */
+    const fieldTakes = (e) => {
+      if (onDot(e) || !windAt(e)) return false;
+      tipEv = e; fieldTip(); return true;
+    };
+    g.addEventListener('pointerenter', (e) => {
+      hoverRow(ev.id, true);
+      if (!fieldTakes(e)) showTip(st, m);
+    });
+    g.addEventListener('pointermove', (e) => {
+      if (!fieldTakes(e) && window.moveTip) window.moveTip(e);
+    });
     g.addEventListener('pointerleave', () => { hideTip(); hoverRow(ev.id, false); });
     g.addEventListener('click', () => toggleSel(ev.id));
     g.addEventListener('keydown', (e) => {
@@ -916,12 +945,20 @@
 
   window.EwbTracks = {
     onMapTracks, legendHtml, splitAtDateline, LANES,
-    _dbg: () => ({ marks, lanes: Object.keys(LANES), census, wind: !!WIND.data,
-      windFailed: WIND.failed, windSeen }),
+    _dbg: () => {
+      const r = cv && cv.getBoundingClientRect();
+      const k = S && r && r.width ? r.width / S.fit.W : 0;
+      return { marks, lanes: Object.keys(LANES), census, wind: !!WIND.data,
+        windFailed: WIND.failed, windSeen,
+        dots: (r && k) ? dotPts.map((p) => [r.left + p[0] * k, r.top + p[1] * k]) : [] };
+    },
     // the field hit test on page coordinates (the e2e test's hook: the hover is
     // rAF-throttled and pointer-event driven, the lookup is not). The debug form
     // reports what the lookup saw, so a miss is diagnosable instead of mysterious.
-    _at: (x, y) => windAt({ clientX: x, clientY: y }),
+    _at: (x, y) => {
+      const h = windAt({ clientX: x, clientY: y });
+      return h && { kt: h.kt, cid: h.cid, d: h.d, id: h.st.ev.id, name: stormName(h.st.ev) };
+    },
     _why: (x, y) => ({
       have: !!WIND.data, drawn: !!last, date: last && last.date,
       storms: last ? last.storms.map((s) => s.ev.id) : [],
