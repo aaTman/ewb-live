@@ -369,3 +369,18 @@ chips are short-labelled.
    `tc_wind.json` exists only in that branch's own tree. The TC lane renders
    from TrackViz today (44 storms). Say the word and I will repoint :8052's data
    symlink at a tree that has them, or wait for the integrator's rebuild.
+
+## R2.7 :8052 is supervised now (it wasn't)
+
+The preview was launched as a bare `setsid nohup python3 -m ewb_live.serve`
+child of an ssh session, while its siblings on the same box (`ewb-live-dev-web`
+:8051, `ewb-live-tcmap-web` :8053) are systemd units. It survived only because
+of `setsid`; a reboot — or the box's own memory guard killing it — would have
+left **:8052 dead with nothing to bring it back**, which reads to the owner as
+"the agent's work vanished". Added `ewb-live-chips-web.service` on the LXC
+(`WorkingDirectory=/opt/ewb-preview-chips`, `/usr/bin/python3.12 -m
+ewb_live.serve --port 8052 --host 0.0.0.0`, `Restart=always`, enabled), and
+`scripts/deploy_preview.sh` now does `systemctl restart ewb-live-chips-web`
+instead of `pkill` + `setsid`. Verified: unit active + enabled, `:8052
+listening (active)`, HTTP 200, served CSS carries the round-2 tokens. Only this
+unit is touched; `ewb-live-web` (:8050) and `ewb-live-dev-web` (:8051) are not.
