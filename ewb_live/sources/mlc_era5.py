@@ -23,6 +23,10 @@ Units: ARCO MSLP is Pa; we divide by 100 and hand out **hPa**, the unit
 ``mlc_track`` and the PROOF recipe use. Latitude comes out ascending (ARCO is
 descending), longitude in [-180, 180) (ARCO is 0-360), the duplicated polar rows
 beyond +-88 deg dropped (the tracker never searches there and ERA5 repeats them).
+Both orders are *enforced* by ``check_axes``: the axis order is part of the
+tracker's contract, and a rotated longitude axis silently doubles the grid step
+its contour mapper derives, which cost this lane every event it should have
+published (mlc-fix 2026-11-18, ``notes/mlc_fix.md``).
 """
 
 from __future__ import annotations
@@ -60,14 +64,57 @@ def open_arco():
 
 
 def _to_repo_frame(mslp):
-    """Pa (time, lat desc, lon 0-360) -> hPa (time, lat asc, lon [-180, 180))."""
+    """Pa (time, lat desc, lon 0-360) -> hPa (time, lat asc, lon [-180, 180)).
+
+    Both axis orders are load-bearing, not cosmetic (mlc-fix 2026-11-18, the
+    0-event blocker in notes/mlc_fix.md):
+
+    * **latitude** — ARCO is 90 N-first (descending). The old guard flipped only
+      an *ascending* input, so ARCO came out descending and every consumer that
+      reads the documented ascending axis (``grid_spacing``, the gap-fill
+      distance field, the cached orography) was off by a reversal.
+    * **longitude** — shifting ``0..359.75`` by ``+180 mod 360`` does not sort
+      it, it ROTATES it: the axis becomes ``0, 0.25, …, 179.75, -180, …, -0.25``
+      with one ``-359.75`` jump. The data columns stay in physical order, but
+      ``mlc_track.contour_to_latlon`` rebuilds longitudes as
+      ``lon[0] + column * grid_spacing(lon)``, and ``grid_spacing`` averages
+      ``|diff|`` across that jump: ``0.4998 deg`` on a 0.25 deg grid, exactly
+      2x. Every closed-contour radius the tracker measures is then inflated by
+      up to ``2/cos(lat)`` — the ``centre + 3 hPa closes within 6 deg`` test
+      measured 8-51 deg for rings that are 1-4 deg across, so real ARCO MSLP
+      produced 0 nodes and the lane published nothing while the same frames in
+      the sorted frame gave 24-27 nodes per frame. Hence the explicit reorder.
+
+    The result is validated against the tracker's contract before it leaves
+    this module.
+    """
     da = mslp.rename("mslp")
-    if float(da.latitude.values[0]) < float(da.latitude.values[-1]):
+    if float(da.latitude.values[0]) > float(da.latitude.values[-1]):   # ARCO: 90N-first
         da = da.isel(latitude=slice(None, None, -1))
-    da = da.assign_coords(
-        longitude=(np.asarray(da.longitude.values, float) + 180.0) % 360.0 - 180.0)
-    # ARCO longitude is ascending 0..359.75, so the shifted axis is ascending too
-    return (da / 100.0).sel(latitude=slice(LAT_LIMIT, -LAT_LIMIT)).astype(np.float32)
+    da = da.sel(latitude=slice(-LAT_LIMIT, LAT_LIMIT))                 # ascending slice
+    shifted = (np.asarray(da.longitude.values, float) + 180.0) % 360.0 - 180.0
+    da = da.assign_coords(longitude=shifted).isel(longitude=np.argsort(shifted,
+                                                                         kind="stable"))
+    out = (da / 100.0).astype(np.float32)
+    check_axes(out.latitude.values, out.longitude.values)
+    return out
+
+
+def check_axes(lats: np.ndarray, lons: np.ndarray) -> None:
+    """Fail loudly if the lattice is not the ascending 0.25-style frame the
+    tracker's index math assumes (see :func:`_to_repo_frame`)."""
+    la = np.asarray(lats, float)
+    lo = np.asarray(lons, float)
+    if la.size < 2 or not np.all(np.diff(la) > 0):
+        raise ValueError(f"mlc_era5: latitude axis must be ascending, got "
+                         f"{la[0] if la.size else float('nan')}.."
+                         f"{la[-1] if la.size else float('nan')}")
+    d = np.diff(lo)
+    if lo.size < 2 or np.any(d <= 0) or np.max(d) - np.min(d) > 1e-6:
+        raise ValueError(f"mlc_era5: longitude axis must be ascending and uniform; "
+                         f"got first={lo[0] if lo.size else float('nan')} "
+                         f"last={lo[-1] if lo.size else float('nan')} "
+                         f"max|d|={np.max(np.abs(d)) if d.size else float('nan')}")
 
 
 def read_mslp_window(start: dt.datetime, end: dt.datetime, *,
@@ -184,7 +231,7 @@ def load_orography(cache_dir: str | Path | None = None, *, ds=None,
             raise ValueError(f"{TOPO_VAR} is all-NaN at every probed time step")
         lats = np.asarray(z.latitude.values, float)
         lons = np.asarray(z.longitude.values, float)
-        if lats[0] < lats[-1]:
+        if lats[0] > lats[-1]:      # ARCO is 90N-first; the repo frame is ascending
             arr, lats = arr[::-1], lats[::-1]
         lons = (lons + 180.0) % 360.0 - 180.0
         keep = (lats >= -LAT_LIMIT) & (lats <= LAT_LIMIT)

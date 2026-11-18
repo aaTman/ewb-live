@@ -72,7 +72,10 @@ out, no I/O) so they unit-test on a synthetic field in milliseconds;
 
 Conventions: latitude ascending, longitude ascending in [-180, 180), MSLP in
 **hPa** (upstream works in Pa; hPa keeps the contour numbers in the same units
-as the PROOF recipe), times naive UTC ``datetime`` on the 6-hourly grid.
+as the PROOF recipe), times naive UTC ``datetime`` on the 6-hourly grid. The
+axes are checked against these conventions by :func:`check_grid` — a rotated or
+non-uniform lattice used to be accepted silently and cost the lane every event
+on real ARCO MSLP (``notes/mlc_fix.md``).
 """
 
 from __future__ import annotations
@@ -302,6 +305,43 @@ def grid_spacing(coords: np.ndarray) -> float:
     return float(np.mean(np.abs(np.diff(c)))) if c.size > 1 else 1.0
 
 
+def check_grid(lats: np.ndarray, lons: np.ndarray, *, tol: float = 0.01) -> None:
+    """Raise unless the lattice is the one this module's index math assumes.
+
+    ``contour_to_latlon`` rebuilds a contour point's longitude as
+    ``lons[0] + column * grid_spacing(lons)`` and ``_degrees_to_gridpoints``
+    derives a cell size the same way, so both need a **strictly ascending,
+    uniform** longitude axis. A rotated axis (a 0-360 grid shifted by +180
+    without re-sorting is ``0 … 179.75, -180 … -0.25``) averages to twice the
+    true step and silently inflates every measured contour radius — which is
+    how the lane came to publish 0 events on real ARCO MSLP while its
+    synthetic-field tests stayed green (``notes/mlc_fix.md``). Latitude may be
+    either direction (``find_peaks_for_time_slice`` flips a 90N-first grid), but
+    must be monotonic and uniform.
+    """
+    lat = np.asarray(lats, float)
+    lon = np.asarray(lons, float)
+    if lon.ndim != 1 or lat.ndim != 1:
+        raise ValueError("mlc_track: lat/lon axes must be 1-D")
+    if lon.size < 2 or lat.size < 2:
+        raise ValueError("mlc_track: need at least 2 lat and 2 lon cells")
+    dl = np.diff(lon)
+    if np.any(dl <= 0):
+        raise ValueError(
+            f"mlc_track: longitude axis must be strictly ascending (got "
+            f"{lon[0]:.2f}..{lon[-1]:.2f}, max|dlon|={np.max(np.abs(dl)):.2f}); "
+            "a 0-360 grid must be shifted to [-180,180) AND re-sorted")
+    for name, c, d in (("longitude", lon, dl), ("latitude", lat, np.diff(lat))):
+        if name == "latitude" and not (np.all(d > 0) or np.all(d < 0)):
+            raise ValueError("mlc_track: latitude axis must be monotonic")
+        step = float(np.median(np.abs(d)))
+        if step <= 0 or np.max(np.abs(d)) - np.min(np.abs(d)) > max(1e-6,
+                                                                    tol * step):
+            raise ValueError(f"mlc_track: {name} axis must be uniform "
+                             f"(step {step:.4f}, spread "
+                             f"{np.max(np.abs(d)) - np.min(np.abs(d)):.4f})")
+
+
 def find_contours_from_point(field: np.ndarray, point: tuple[int, int], level: float,
                              halfwin: int, lon_halfwin: int) -> list[np.ndarray]:
     """Contours of ``field`` at ``level`` in the neighbourhood of ``point``.
@@ -435,6 +475,7 @@ def find_peaks_for_time_slice(mslp_slice: np.ndarray, current_time: dt.datetime,
         return []
     lat = np.asarray(lat_coords, float)
     lon = np.asarray(lon_coords, float)
+    check_grid(lat, lon)
     if lat[0] > lat[-1]:                                # descending latitude grid
         f = f[::-1]
         lat = lat[::-1]
