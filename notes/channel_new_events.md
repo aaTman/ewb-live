@@ -1963,3 +1963,101 @@ in **`notes/chips_design.md`**. Headline:
   ("Midlat. cyclone" short label; scroll-line vs phone grid; the one 2.47:1
   dark freeze glyph-on-selected-wash relief case and what fixing it would
   cost the CVD gate).
+
+## [tc-map] 2026-11-18 05:10 UTC — cyclones on the merged map, as a WIND FIELD: commits on `aaTman/ne-tc-map`, preview on :8053
+
+**The bug** (`briefs-new-events/tc_map.md`): 44 published tropical cyclones never
+appeared on the merged map. Three independent causes, all in shared files:
+`mergedmap.js`'s `TYPES` tuple had no cyclone lanes (so cyclone timeline events
+were filtered out before drawing), `global_timeline.json` carried no track
+geometry, and `TrackViz` was wired only into the event page — nothing drew a
+track on the world map. Fix is additive: cyclone lanes in `TYPES`, one compact
+`track` object per storm in the timeline asset (schema 3, 203 KB for 44 storms),
+and a new `dashboard/tracklayer.js` that the map calls through
+`window.onMapTracks(payload)` / `window.onTrackLegend(payload)`.
+
+**Owner direction 2026-11-18 (verbatim intent): the primary encoding is the wind
+field, not the line.** So the lane shades every grid cell where sustained 10 m
+wind reached tropical-storm force (≥ 34 kt / 39 mph), classed by Saffir-Simpson
+(TS 34–63, CAT 1 64–82, CAT 2 83–95, CAT 3 96–112, CAT 4 113–136, CAT 5 ≥ 137),
+daily maximum per cell; the best track stays on top as thin orientation.
+
+* **Producer `ewb_live/viz/tc_wind.py`** — ERA5 ARCO 10u/10v (sustained 10-min
+  mean, the quantity Saffir-Simpson is defined on; the gust field would overstate
+  every class). The local truth mirror has **no 10 m wind** (pressure levels
+  only), and IBTrACS wind radii are not in this repo's cache (15 columns, no
+  D34/D50/D64), so they are an option for later, not today's data. Reads stream
+  the global 6-hourly field once per day (~6 s/day; 44 storms = 9m22s on the ewb
+  LXC) and crop a ±5° window per storm per day in memory — windowed *reads* are
+  slower on ARCO, because its chunks are whole-globe-per-timestep. Output is
+  max-pooled onto the map's own **1° lattice** (a coarse cell means "some 0.25°
+  reading inside me reached this" — the OR-over-cells convention the raster lanes
+  already use; a 0.25° cell is half a CSS pixel on a 700 px world sheet) and
+  run-length packed, because the browser has no synchronous inflate: **67 KB for
+  44 storms.**
+* **Honesty is the load-bearing part.** ERA5 at 0.25° resolves no eyewall: across
+  the published storms the field's daily maximum near the peak fix is a **median
+  0.58× the IBTrACS best-track peak** (0.34× worst, n=35). No silent correction —
+  the ratio ships in the asset, the lane's legend unit reads
+  `ERA5 10 m wind · daily max · under-reads peaks`, the group's title carries the
+  measured ratio, the cell tooltip answers with class + kt + mph + storm + day
+  and keeps **best-track peak in its own row** under a note that the shading is
+  the wind field, never the official category. A day past the archive's cutoff
+  gets no entry at all and is listed in `days_no_data` — never drawn as a zero
+  field, which would read as "that day made no storm-force wind". 9 of the 44
+  storms have no storm-force cell anywhere: their `ratio` is `null`, not `0.00`.
+* **Rendering** (`tracklayer.js`, ~850 lines): one canvas under the SVG markers —
+  one `Path2D` per class (a day is at most six fills), rows cost four projections
+  (Equal Earth is linear in x at a fixed latitude), columns that cross 180° are
+  painted again at the other edge so the field wraps the dateline like the tracks
+  and the boxes. Reveal-by-time: cells and fixes appear only once the slider
+  reaches them. Legend groups come from the asset's own class list, so producer,
+  swatches and canvas cannot disagree; classes absent from the step are dimmed
+  like the raster lanes; the ramp is the same violet family as the lane's bin
+  ramp, re-validated with the dataviz gate **at the alpha the canvas paints**
+  (0.88) on the map's own grounds with a 3:1 floor on *every* class (light
+  4.08→8.37 ocean / 4.44→9.13 land; dark 3.52→10.55 / 3.01→8.97), because a
+  storm-force envelope is 6–8 px on a world sheet and the lowest class has to
+  survive at that size.
+* **Two pointer discoveries**, both worth knowing for any layer under the markers:
+  the SVG overlay is above the map's canvas, so a marker's 15 px hit circle and
+  its label own the pointer *everywhere they cover* — at world scale a storm's own
+  label lies across most of its wind field, which is why field hover looked dead.
+  Now the cell under the cursor answers unless the pointer is on the dot itself
+  (`DOT_CLAIM_PX = 9`; the click target is unchanged). And with the field present
+  the best-track dots shrink and only the storm's **current** position keeps the
+  ground-coloured halo, so the primary encoding is not competing with ~260 violet
+  dots.
+* **Tests**: `tests/test_tc_wind.py` 34 green — class boundaries, day windows
+  (dateline averaging, fast-mover window growth, polar clamping that slides and
+  never wraps), the RLE round-trip, missing-day → `days_no_data`, and the
+  placement contract end-to-end against a hermetic `FakeStore` shaped exactly like
+  ARCO (a blob at a known lat/lon lands at the exact row/col the browser will
+  paint). `tests/e2e/test_trackwind_fe.py` 5 green — the field is measured **A/B
+  against the same page with the asset aborted**, because the lane's best track is
+  violet too and a colour count alone proves nothing: the asset adds pixels, the
+  hit test agrees with the paint, the legend says "under-reads", hover shows the
+  field and the best-track peak as separate rows, and a missing asset loses the
+  field, keeps the tracks and raises no JS error. `tests/test_global_timeline.py`
+  pins the schema-3 track entries.
+* **Preview**: http://192.168.0.121:8053/ — `ops/tcmap_preview.sh`, a third tree
+  `/opt/ewb-live-tcmap` (like `dev_site.sh`'s /dev/ site): this worktree's
+  `dashboard/` + `ewb_live/`, big read-only inputs symlinked from
+  `/opt/ewb-live-dev`, systemd unit `ewb-live-tcmap-web`. Writes only under the
+  preview tree; `:8050` live and `:8051` dev untouched. (Not
+  `rsync --delete-excluded` — that flag deletes the *excluded* `data/`, `.venv`
+  and `third_party` on the receiver.)
+* **For the owner, honestly:** at world scale ERA5's storm-force envelope is
+  ~3–4° across, i.e. 6–8 px — now at a 3:1-contrast violet, but small, because
+  that is what the reanalysis says the storm's wind field is. If the lane should
+  read louder at the default zoom, the honest levers are IBTrACS wind radii
+  (need the D34/D50/D64 columns in the cache) or a region zoom, not a bigger
+  cell. Census on the current build: 4320 TS cells, 33 CAT 1, zero above —
+  the field's ceiling is CAT 1 while 24 storms peaked at CAT 1+ on the best
+  track, which is exactly the gap the labels state.
+* **Pre-existing, not from this branch**: the e2e suite has ~36 failures in
+  `test_dashboard_fe.py` + `test_guardian_fe.py` (synthetic `gd/dur` fixtures that
+  never mount the map). A reference run at `0a4673e` fails the same set; the chips
+  entry reports the same stale-fixture brief. `tests/test_viz_unit.py`,
+  `test_tc_events.py` et al. do not collect in my local venv (no `xarray`) — they
+  need the project venv on the ewb LXC.
