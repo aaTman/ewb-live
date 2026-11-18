@@ -77,14 +77,23 @@ def main() -> int:
             for tab in types_iter:
                 open_page(page, url)
                 page.wait_for_timeout(600)
-                # the tab control is JS-built buttons ("Floods 30") with no
-                # data-type attribute: click by position in TYPE_ORDER
-                chips = page.query_selector_all("#type-tabs button")
+                # click by data-tab (app.js mkTab sets it on every chip); the
+                # chip LABEL is abbreviated in the no-scroll grid ("Trop.
+                # cyclone"), and the positional fallback is only for a build
+                # that predates data-tab -- position depends on chip order.
                 want = 0 if tab == "all" else idx.get(tab)
-                if want is not None and len(chips) > want:
-                    try:
-                        chips[want].click(timeout=3000)
-                    except Exception as exc:      # hidden rail (phone) etc.
+                sel = f'#type-tabs button[data-tab="{tab}"]'
+                try:
+                    page.click(sel, timeout=3000)
+                except Exception as exc:          # hidden rail (phone) etc.
+                    chips = page.query_selector_all("#type-tabs button")
+                    if want is not None and len(chips) > want:
+                        try:
+                            chips[want].click(timeout=3000)
+                        except Exception as exc2:  # noqa: BLE001
+                            report.setdefault("click_failures", []).append(
+                                f"{vname}/{tab}: {exc} | positional: {exc2}")
+                    else:
                         report.setdefault("click_failures", []).append(f"{vname}/{tab}: {exc}")
                 page.wait_for_timeout(700)
                 state = page.evaluate("""() => {

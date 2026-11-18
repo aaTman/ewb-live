@@ -157,6 +157,13 @@ def _zero_fixture(root, mutate_meta):
     return web
 
 
+# the chip labels are abbreviated in the no-scroll grid ("Trop. cyclone", 2026-11-17
+# chips pass), so a text selector on the full lane name silently matches nothing.
+# data-tab is what the click handler keys on (app.js mkTab) — stable, and the
+# tooltip is not usable as a hook because the honest-zero note overwrites it.
+TC_TAB = '#type-tabs button[data-tab="tropical_cyclone"]'
+
+
 @pytest.fixture()
 def zero_page(tmp_path_factory):
     """Factory: dashboard with zero published TCs and a chosen meta.json."""
@@ -174,7 +181,7 @@ def zero_page(tmp_path_factory):
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.goto(f"http://127.0.0.1:{srv.server_address[1]}/index.html")
         pg.wait_for_selector("#event-table tbody tr", timeout=20000)
-        pg.click('#type-tabs button:has-text("Tropical cyclone")')
+        pg.click(TC_TAB)
         pg.wait_for_selector("#event-table .lane-empty", timeout=20000)
         opened.append((pw, pg, srv))
         return pg
@@ -189,7 +196,7 @@ def zero_page(tmp_path_factory):
 def test_honest_zero_when_lane_absent_from_release(zero_page):
     pg = zero_page(lambda m: m.pop("ibtracs", None))
     assert "not published in this data release" in pg.inner_text("#event-table")
-    tip = pg.get_attribute('#type-tabs button:has-text("Tropical cyclone")', "title")
+    tip = pg.get_attribute(TC_TAB, "title")
     assert tip and "not published" in tip, "the 0 badge carries the reason"
 
 
@@ -202,7 +209,7 @@ def test_honest_zero_reports_the_archive_reach(zero_page):
     pg = zero_page(mut)
     body = pg.inner_text("#event-table")
     assert "IBTrACS" in body and "2026-11-12" in body, body
-    tip = pg.get_attribute('#type-tabs button:has-text("Tropical cyclone")', "title")
+    tip = pg.get_attribute(TC_TAB, "title")
     assert tip and "IBTrACS" in tip
 
 
