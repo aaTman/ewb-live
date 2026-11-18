@@ -577,7 +577,7 @@ def test_type_filter_narrows_map_list_and_scorecard_together(live_url, page_ctx)
     page = page_ctx
     _home(page, live_url)
     n_all = page.locator("#event-table tbody tr[data-id]").count()
-    page.click("#type-tabs button:nth-child(5)")           # atmospheric rivers
+    page.click("#type-tabs button:nth-of-type(5)")           # atmospheric rivers
     # (child 5 since the chips redesign: All | Heat wave, Cold snap, Freeze | AR, Flood | TC, MLC)
     page.wait_for_timeout(600)
     st = page.evaluate("""() => ({ on: MergedMap._dbg().on, hash: location.hash,

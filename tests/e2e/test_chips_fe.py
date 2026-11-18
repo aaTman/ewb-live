@@ -92,8 +92,16 @@ def test_tablist_semantics_and_grouped_order(live_url, page_ctx):
     assert info[[t["tab"] for t in info].index(0)]["sel"] == "true"
     # grouped order: temperature | water | storms (chips redesign)
     assert [t["etype"] for t in info[1:]] == TYPE_KEYS
-    # quiet group dividers sit at the head of the water and storm groups
-    assert page.locator("#type-tabs [role=tab][data-div]").count() == 2
+    # labelled groups: Temperature | Water | Storms. Each group head is preceded
+    # by a presentational caption — role=none + aria-hidden, so the tablist still
+    # owns exactly one tab per type (the count above is unchanged) and the caption
+    # never enters the a11y tree.
+    caps = page.locator("#type-tabs .type-group")
+    assert caps.count() == 3
+    assert [c.strip().lower() for c in caps.all_inner_texts()] == [
+        "temperature", "water", "storms"]
+    assert page.get_attribute("#type-tabs .type-group", "aria-hidden") == "true"
+    assert page.get_attribute("#type-tabs .type-group", "role") == "none"
     assert page.errors == []
 
 
