@@ -72,9 +72,9 @@ REMOTE
   wind)
     r <<'REMOTE'
 cd "$PREV" && EWB_LIVE_CACHE="$LIVE/data/cache" \
-  setsid nohup timeout 1800 .venv/bin/python -m ewb_live.viz.tc_wind --results data/results \
+  setsid nohup timeout 3600 .venv/bin/python -m ewb_live.viz.tc_wind --results data/results \
   > logs/tc_wind.log 2>&1 < /dev/null &
-echo "tc_wind building in $PREV (logs/tc_wind.log, capped at 30 min)"
+echo "tc_wind building in $PREV (logs/tc_wind.log, capped at 60 min, the number weekly.py gives the step; measured 8-9.5 min for 88 days, so 30 min is only a 3x margin on a network-bound build)"
 REMOTE
     echo "poll:  ssh $BOX 'tail -3 $PREV/logs/tc_wind.log'   — never wait on it inside a foreground command"
     ;;
