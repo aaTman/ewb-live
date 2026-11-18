@@ -2005,8 +2005,13 @@ full; rationale + validator output in **`notes/chips_design.md` §"Round 2"**.
   legibility sheet.
 * **Tests.** `test_chips_fe.py` 12/12 green against :8052, rewritten for the
   grid (the old responsive test asserted the row *does* scroll). Wider suite on
-  :8052: 81 passed / 38 failed — those failures reproduce identically on :8050
-  and :8051, i.e. pre-existing on this data build, not from this round.
+  :8052: 81 passed / 38 failed, and they are **not from this round** —
+  `test_guardian_fe.py` is **8 failed / 66 passed on :8051** (the integration
+  dev site without these changes) and the same 8 on :8052; `test_dashboard_fe`
+  is 30 failed on :8052 with the :8051 comparison still running, and
+  `test_ar_ramp_legend_shows_5_steps` fails on :8050 too. Two dashboard tests
+  clicked the chip by its long label and are updated to `[data-tab=…]` now the
+  chips are short-labelled.
 * **Still nothing merged** by this role. Merging `ne-mlc-fix` / `ne-tc-map`
   would not put cyclone data on the preview: the dev data build has **0
   midlat_cyclone events** (hence MLC's honest zero) and `tc_wind.json` exists
