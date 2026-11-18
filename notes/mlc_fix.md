@@ -123,7 +123,13 @@ new tests fail on the pre-fix reader (verified by reverting `mlc_era5.py` only).
 Suite: **486 passed / 4 failed / 29 skipped**, all 4 failures pre-existing on the
 branch base (2 need `third_party/ExtremeWeatherBench/data_prep`, 1 is the local
 ARCO cutoff probe, 1 `test_flood.py::test_detect_events_routes_flood…` — each
-also fails at the base commit).
+also fails at the base commit). Incremental coverage of this branch's diff in
+`ewb_live/**`, measured with `coverage` over the four mlc-relevant test files:
+**108/127 statements = 85.0 %** (the 60 % gate) — `mlc.py` 10/10, `mlc_track.py`
+15/17, `mlc_era5.py` 40/47, `events/__init__.py` 36/45, `pipeline.py` 7/8. The
+uncovered lines are the defensive raises and fail-soft `except` arms
+(`_to_repo_frame`'s duplicate-axis guards, `check_axes`' uniform-lattice raises, the
+IBTrACS/orography `except` in the PROOF check), which is what they are for.
 
 ## 4. Re-validation on the ewb LXC (all through the ARCO reader path)
 
