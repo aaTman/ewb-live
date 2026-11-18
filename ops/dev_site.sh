@@ -17,6 +17,7 @@
 #                            --delete, so a sync can never remove built data)
 #   ops/dev_site.sh init     symlinks + data layout + seed results from live
 #   ops/dev_site.sh lanes    detection -> per-event viz -> publish (background)
+#   ops/dev_site.sh assets   meta.json -> timeline -> TC wind field (after lanes)
 #   ops/dev_site.sh web      install + start ewb-live-dev-web.service ($PORT)
 #   ops/dev_site.sh status   unit / port / log tail / per-type counts
 #   ops/dev_site.sh watch    follow the lane log
@@ -114,6 +115,30 @@ nohup sh -c '
   echo "=== $(date -u +%FT%TZ) done"
 ' > logs/lanes.log 2>&1 < /dev/null &
 echo "started (logs/lanes.log)"; sleep 3; tail -3 logs/lanes.log
+REMOTE
+    ;;
+  assets)
+    # derived assets the dashboard probes for, in the order that lets each one
+    # see the previous: meta.json for all lanes -> Gantt timeline -> TC wind field
+    # (the wind field needs the PUBLISHED storm list, so it comes after publish)
+    r <<'REMOTE'
+cd "$DEV" || exit 1
+. .venv/bin/activate
+export EWB_DATA_PREP_DIR="$DEV/third_party/ExtremeWeatherBench/data_prep"
+echo "=== $(date -u +%FT%TZ) publish (meta.json: event_counts, lane_status, thresholds)"
+python -m ewb_live.pipeline --publish-only --days 90 2>&1 | tail -5
+echo "=== $(date -u +%FT%TZ) timeline"
+python - <<'PY'
+from pathlib import Path
+from ewb_live.viz.timeline import build
+p = build(Path("data/results"))
+print("timeline ->", p, p.stat().st_size, "B")
+PY
+echo "=== $(date -u +%FT%TZ) tc_wind (detached, 60 min cap = the weekly.py step budget)"
+EWB_LIVE_CACHE=/opt/ewb-live/data/cache \
+  setsid nohup timeout 3600 python -m ewb_live.viz.tc_wind --results data/results \
+  > logs/tc_wind.log 2>&1 < /dev/null &
+echo "building in $DEV/logs/tc_wind.log (network-bound: ~9 min per 88 days)"
 REMOTE
     ;;
   web)
