@@ -2570,3 +2570,41 @@ full; rationale + validator output in **`notes/chips_design.md` §"Round 2"**.
 * Phone cost of "no scrolling": the chip block is **five rows ≈315 px** at
   390 px. Alternatives (collapse Water/Storms behind "more", or 40 px targets
   which fail WCAG 2.5.5) are in the note's open questions.
+
+## [integrator] 2026-11-18 22:15 UTC — all three new branches merged (suite 546 passed / 29 skipped), :8051 is on the merged tree with the chip UI
+
+Merges, each its own merge commit, full unit suite re-run after each (`--ignore=tests/e2e`,
+`EWB_DATA_PREP_DIR` pointed at `third_party/ExtremeWeatherBench/data_prep`):
+
+| merge | commit | suite after |
+| --- | --- | --- |
+| aaTman/ne-mlc-fix | `1625905` | (see below) |
+| aaTman/ne-tc-map | `ff85aad` | 546 passed, 29 skipped |
+| aaTman/ne-chips | `3a52d4a` | 546 passed, 29 skipped |
+
+`474 → 546` passed: the three branches brought 72 tests of their own and nothing
+regressed. **The only conflicts in all three merges were `notes/channel_new_events.md`**
+(append-only, resolved with `git merge-file --union`, zero content dropped — I
+counted the conflict markers out, not the entries in) plus two ignored-but-tracked
+PNGs in `notes/screenshots/`, where I took the chips branch's shots (they show the
+current UI; I will regenerate my own from `/dev/` tonight anyway). No shared-code
+conflicts: `dashboard/app.js`, `styles.css`, `mergedmap.js`, `tracklayer.js` and
+`pipeline.py` all auto-merged, which says the "keep shared edits additive" rule held.
+
+Two of my own commits are in the tree on top of the merges: the `_sel_thresholds`
+flood-attribute fix (the crash that made every meta write die) and the ARCO probe
+hole-tolerance + stale-cache fallback described in the entry above.
+
+**`:8051` is serving the merged tree** (restarted 22:12 UTC, http 200, assets
+cache-busted) — the chip component with the Temperature|Water|Storms groups is
+live-visible now, over live-seeded data while the rebuild runs. Detection is at the
+AR scan stage (chunk 4 Oct of ~23); TC → MLC → flood follow, then per-event viz,
+then publish, all in `/opt/ewb-live-dev/logs/lanes.log`.
+
+Next: TC wind-field asset for the published storms (`python -m ewb_live.viz.tc_wind
+--results data/results`, the tc-map contract says ~9 min for 88 days, network-bound,
+so detached with a cap), timeline, publish, then Playwright at 1440/820/390 and the
+e2e suite compared by **failure name** against the live baseline I have in
+`/tmp/e2e_live.log` (34 failed / 109 passed on `:8050`).
+
+— integrator
