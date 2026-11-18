@@ -53,10 +53,13 @@ const TYPE_ORDER = ['heat_wave', 'cold_snap', 'freeze', 'atmospheric_river',
    still owns exactly one tab per type and the a11y tree is unchanged. */
 const TYPE_GROUP_LABEL = { heat_wave: 'Temperature', atmospheric_river: 'Water',
   tropical_cyclone: 'Storms' };
-/* chip labels are short (one line at phone width); the full label + the
-   one-line detection rule ride in aria-label/title (About-dialog copy) */
+/* Which grid row a cell belongs to at ≥2 columns: All travels with the
+   Temperature group's row, Water + Storms share the second. CSS places them. */
+const TYPE_GROUP_SLOT = { Temperature: 'a', Water: 'b', Storms: 'c' };
+/* chip labels are short (one line in a four-across grid, not truncated); the
+   full label + the one-line detection rule ride the tooltip (About copy) */
 const TYPE_TAB_LABEL = { heat_wave: 'Heat wave', cold_snap: 'Cold snap', freeze: 'Freeze',
-  atmospheric_river: 'Atmospheric river', flood: 'Flood', tropical_cyclone: 'Tropical cyclone',
+  atmospheric_river: 'Atm. river', flood: 'Flood', tropical_cyclone: 'Trop. cyclone',
   midlat_cyclone: 'Midlat. cyclone' };
 /* monoline glyphs — identity never colour alone (dataviz): every lane reads
    by shape at 15 px, the series hue is only the third channel */
@@ -67,8 +70,14 @@ const TYPE_ICONS = {
   freeze: '<path d="M12 3v18"/><path d="m4.2 7.5 15.6 9"/><path d="m19.8 7.5-15.6 9"/><path d="m9.6 5.2 2.4 2 2.4-2"/><path d="m9.6 18.8 2.4-2 2.4 2"/>',
   atmospheric_river: '<path d="M2.5 7c2.8-2.8 5.6 2.4 8.4.2s5.6 2.4 8.4-.2"/><path d="M3.5 17.5h12"/><path d="m12.6 14.4 3.5 3.1-3.5 3.1"/>',
   flood: '<path d="M3 8c2.3-2.2 4.7 2 7 0s4.7 2.2 7 0"/><path d="M3 12.7c2.3-2.2 4.7 2 7 0s4.7 2.2 7 0"/><path d="M3 17.4c2.3-2.2 4.7 2 7 0s4.7 2.2 7 0"/>',
-  tropical_cyclone: '<path d="M3 8h10a3 3 0 1 0-3-3"/><path d="M3 12h14a3 3 0 1 1-3 3"/><path d="M3 16h7"/>',
-  midlat_cyclone: '<circle cx="12" cy="12" r="8.5"/><path d="M10 8v7.5h5"/>',
+  /* Hurricane symbol (owner 2026-11-18): the two-arm NHC swirl, not wind lines
+     — TC must read as a storm at 15 px, and wind lines collide with the AR
+     river glyph in the same row. */
+  tropical_cyclone: '<path d="M12 12c.3-3.6 2.7-6.3 6.2-6.7"/><path d="M12 12c-.3 3.6-2.7 6.3-6.2 6.7"/><path d="M17.4 4.6c.4 1.3.5 2.6.3 3.9M6.6 19.4c-.4-1.3-.5-2.6-.3-3.9"/><circle cx="12" cy="12" r="1.6"/>',
+  /* Frontal low: the open front (warm semicircle + cold triangle on a
+     stationary boundary) over the L of the low — its own shape, not a smaller
+     hurricane. */
+  midlat_cyclone: '<path d="M3.2 9.5h17.6"/><path d="M7.4 9.5a2.6 2.6 0 0 1 5.2 0"/><path d="M14.2 14.5h5.2l-2.6-3.2z"/><path d="M10 15.4v4.6h4.2"/>',
 };
 function typeIcon(etype) {
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"'
@@ -655,31 +664,28 @@ function setTab(id) {
 }
 
 /* tablist keyboard: roving tabindex, Arrow/Home/End move focus (manual
-   activation — Enter/Space/click select; arrows alone never re-render) */
+   activation — Enter/Space/click select; arrows alone never re-render).
+   The row is a wrapped grid, so Up/Down step by the column count — the cell
+   directly above/below — while Left/Right step to the neighbouring tab. */
 function tabsKeyNav(e) {
   const tabsEl = $('#type-tabs');
   if (!tabsEl.contains(e.target) || e.target.getAttribute('role') !== 'tab') return;
   const list = [...tabsEl.querySelectorAll('[role=tab]')];
   const i = list.indexOf(e.target);
+  let cols = 1;
+  try {
+    cols = Math.max(1, getComputedStyle(tabsEl).gridTemplateColumns.split(' ').filter(Boolean).length);
+  } catch (err) { cols = 1; }
   let j = null;
-  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') j = (i + 1) % list.length;
-  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') j = (i - 1 + list.length) % list.length;
+  if (e.key === 'ArrowRight') j = (i + 1) % list.length;
+  else if (e.key === 'ArrowLeft') j = (i - 1 + list.length) % list.length;
+  else if (e.key === 'ArrowDown') j = (i + cols) % list.length;
+  else if (e.key === 'ArrowUp') j = (i - cols + list.length) % list.length;
   else if (e.key === 'Home') j = 0;
   else if (e.key === 'End') j = list.length - 1;
   if (j === null) return;
   e.preventDefault();
   list[j].focus();
-  const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-  list[j].scrollIntoView({ block: 'nearest', inline: 'nearest', behavior });
-}
-
-/* edge fades on the scrollable tab row (same discovery pattern as the scorecard
-   tables): a fade only on the side that actually has more content */
-function tabsToggleFade() {
-  const t = $('#type-tabs');
-  const over = t.scrollWidth - t.clientWidth > 4;
-  t.classList.toggle('fade-l', over && t.scrollLeft > 4);
-  t.classList.toggle('fade-r', over && t.scrollLeft < t.scrollWidth - t.clientWidth - 4);
 }
 
 function renderControls() {
@@ -693,7 +699,7 @@ function renderControls() {
   const wasFocus = tabs.contains(document.activeElement);
   tabs.innerHTML = '';
   const inReg = (e) => state.region === 'global' || inRegion(e);
-  const mkTab = (id, tabLabel, n, iconKey) => {
+  const mkTab = (id, tabLabel, n, iconKey, slot) => {
     const b = el('button', 'etype-tab' + (iconKey === 'all' ? ' is-all' : '')
       + (n === 0 ? ' zero' : ''),
       typeIcon(iconKey) + `<span class="t-label">${esc(tabLabel)}</span>`
@@ -714,25 +720,39 @@ function renderControls() {
     b.title = (id === 'all' ? '' : (TYPE_META[id].label + ' — ')) + why + rule;
     b.dataset.tab = id;
     b.dataset.etype = id;   // CSS maps the lane hue onto the glyph ("all" stays neutral)
+    b.dataset.slot = slot;  // which chip row the wrapped grid puts this cell in
     b.onclick = () => setTab(id);
-    // Presentational group caption before each group head. role=none +
-    // aria-hidden keeps it out of the tablist's owned set and the a11y tree, so
-    // tab semantics and the roving-tabindex focus order are unchanged; the
-    // caption is NOT a button, so `button:nth-of-type()` selectors are stable.
+    // Presentational group header above its group (role=none + aria-hidden):
+    // not a tab, so the tablist's owned set, the a11y tree and the roving-tabindex
+    // order are unchanged, and `button:nth-of-type()` selectors stay stable.
     if (TYPE_GROUP_LABEL[id]) {
       const g = el('span', 'type-group', esc(TYPE_GROUP_LABEL[id]));
       g.setAttribute('role', 'none');
       g.setAttribute('aria-hidden', 'true');
+      g.dataset.slot = TYPE_GROUP_SLOT[TYPE_GROUP_LABEL[id]];
       tabs.appendChild(g);
     }
     tabs.appendChild(b);
+    return b;
   };
-  mkTab('all', 'All', state.events.filter(inReg).length, 'all');
+  mkTab('all', 'All', state.events.filter(inReg).length, 'all', 'a');
+  /* A two-column phone grid needs an even number of chips per group, or the
+     group's last row goes ragged. Temperature has three lanes, so its tail
+     chip spans both columns (a full row, not a hole). Counted, not assumed. */
+  const counts = TYPE_ORDER.reduce((m, t) => {
+    const g = TYPE_GROUP_LABEL[t] || 'other';
+    m[g] = (m[g] || 0) + 1; return m;
+  }, {});
+  const seen = {};
   for (const t of TYPE_ORDER) {
     const n = state.events.filter((e) => e.event_type === t && inReg(e)).length;
-    mkTab(t, TYPE_TAB_LABEL[t] || TYPE_META[t].short, n, t);
+    const grp = TYPE_GROUP_LABEL[t];
+    const b = mkTab(t, TYPE_TAB_LABEL[t] || TYPE_META[t].short, n, t,
+      grp && TYPE_GROUP_SLOT[grp] === 'a' ? 'a' : 'b');
+    seen[grp || 'other'] = (seen[grp || 'other'] || 0) + 1;
+    if (b && counts[grp || 'other'] % 2 === 1 && seen[grp || 'other'] === counts[grp || 'other'])
+      b.classList.add('is-tail');
   }
-  tabsToggleFade();
   if (wasFocus) {   // keyboard focus must survive a re-render (tab click, region switch)
     const sel = tabs.querySelector('[aria-selected="true"]');
     if (sel) sel.focus();
@@ -2593,17 +2613,9 @@ async function boot() {
   window.addEventListener('scroll', syncRailSoon, { passive: true });
   window.addEventListener('resize', syncRailSoon);
   syncRailSoon();
-  /* Show-tabs: tablist keyboard + wheel-over-row horizontal scroll + edge fades
-     (the row never wraps: one tidy scrollable line beats a ragged grid) */
+  /* Show-tabs: tablist keyboard over the wrapped grid (no scroller, so no edge
+     fades and no wheel-capture — the whole row set is always visible). */
   $('#type-tabs').addEventListener('keydown', tabsKeyNav);
-  $('#type-tabs').addEventListener('scroll', tabsToggleFade, { passive: true });
-  $('#type-tabs').addEventListener('wheel', (e) => {
-    const t = e.currentTarget;
-    if (t.scrollWidth - t.clientWidth > 4 && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-      t.scrollLeft += e.deltaY; e.preventDefault();
-    }
-  }, { passive: false });
-  window.addEventListener('resize', tabsToggleFade, { passive: true });
   /* RAIL (after owb.brightband.com): one toggle button, two jobs — it collapses the
      220 px column to a 58 px glyph rail on desktop and closes the drawer below 1100px,
      which is the width where the column becomes a drawer (a CSS breakpoint). */

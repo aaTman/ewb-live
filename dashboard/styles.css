@@ -23,24 +23,35 @@
   --alert-bg:      #fbe9e3;
   --alert-ink:     #9c311c;   /* 6.23 on --alert-bg */
 
-  /* ---- Series (§1/§7.1: exact hex, duplicated into JS) ---- */
-  --series-heat:          #c6493c;  --series-heat-soft:     #f1d5d2;
-  --series-freeze:        #1a4f96;  --series-freeze-soft:   #cbd7e6;
+  /* ---- Series (§1/§7.1: exact hex, duplicated into JS) ----
+     Categorical identity set, chips redesign 2026-11-18 (owner brief):
+     re-derived with the dataviz palette validator, in the tab order
+     heat_wave → cold_snap → freeze → atmospheric_river → flood →
+     tropical_cyclone → midlat_cyclone, which is also the Gantt lane order for
+     the first five. Every adjacent pair clears the skill's gates for BOTH
+     themes (normal-vision ΔE ≥15, CVD ΔE ≥8, L inside the theme band,
+     chroma ≥0.10, ≥3:1 on its own ground) — run output + the two weakest
+     pairs the owner still owns: notes/chips_design.md.
+     Identity is glyph + label + hue; the hue is never the only channel. */
+  /* heat wave orange (was #c6493c red): midlat_cyclone is RED now (owner), so
+     heat steps to orange — hue ~56° and 0.10 lighter, 3.16:1 on paper. */
+  --series-heat:          #c86906;  --series-heat-soft:     #fee6d5;
+  --series-freeze:        #194f96;  --series-freeze-soft:   #dfecff;  /* L 0.55 — the cold-family floor; cold_snap sits 0.10 above it */
   /* Cold snap (owner 2026-11-16; re-stepped 2026-11-17, chips redesign): the
      freeze rule without the 0 °C cap, so it keeps the cold family but a
      distinct teal. The old #0e6d78 sat under the dataviz chroma floor (C 0.08
      — it read grey, and ΔE 11.3 from freeze for normal vision); #0b859e keeps
      the hue, raises chroma to C 0.11 and clears the set's gates: ≥15.0 normal
      and ≥8 CVD against every touching lane (notes/chips_design.md).
-     Measured: 4.24:1 on paper, 3.89:1 on the light map ocean. */
-  --series-cold-snap:      #0b859e;  --series-cold-snap-soft:  #cfe2e4;
-  --series-ar:            #2e7d32;  --series-ar-soft:       #d0e4d1;  /* AR green (design 2026-11-08, measured 5.13:1) */
+     Measured: 3.16:1 on paper. */
+  --series-cold-snap:      #178bbc;  --series-cold-snap-soft:  #d6f0ff;
+  --series-ar:            #1e7729;  --series-ar-soft:       #ddf2dd;  /* AR green (design 2026-11-08), held; L stepped to 0.50 to clear the flood teal beside it */
   /* TC violet (tc lane 2026-11-16): 6.51:1 on paper. Chosen so the four lane
      hues stay separated by BOTH hue and lightness — freeze L* 34.0 < TC 39.8
      < AR 46.3 ≈ heat 48.4. Violet reads apart from red/green/blue for every
      common CVD type. Not a map-fill lane, so the AR < freeze < heat fill
      ladder is untouched. */
-  --series-tc:            #6f42c1;  --series-tc-soft:       #e0d5f2;
+  --series-tc:            #6f42c1;  --series-tc-soft:       #ece7ff;
   /* Flood berry (flood lane 2026-11-17; re-stepped the same day in the chips
      redesign): berry hue ~350 deg keeps it apart from every existing lane by
      hue AND lightness. The old #a01e56 collapsed against the AR green under
@@ -48,7 +59,7 @@
      slot being identity-critical); #9b255c pulls that pair to 8.1 and holds
      ≥8 against all touching lanes. Measured 7.33:1 on paper, 6.73:1 on the
      light map ocean. Not a map-fill lane (boxes + Gantt only). */
-  --series-flood:         #9b255c;  --series-flood-soft:    #f4dbe7;
+  --series-flood:         #10999c;  --series-flood-soft:    #d1f3f4;
   /* Mid-latitude low (mlc lane 2026-11-17). The mlc branch picked violet
      #5f3d99 — hue 262 deg against the TC lane's #6f42c1 at hue 261 deg, i.e.
      the two cyclone lanes were the SAME colour and indistinguishable in a
@@ -57,7 +68,7 @@
      333. Measured 6.82:1 on --paper and 6.15:1 on the light map ocean, L* 38.5.
      Not a map-fill lane (track + box rendering), so the heat < freeze < AR fill
      ladder is untouched. Easy to reverse: only these two lines. */
-  --series-mlc:           #7d5200;  --series-mlc-soft:      #f2e4c9;
+  --series-mlc:           #c13c3b;  --series-mlc-soft:      #ffe4e1;
   --series-alt:           #4f8c1f;  --series-alt-soft:      #d7e4cb;
   --series-unknown:       #848475;  --series-unknown-soft:  #e2e2de;
   --stone-grey:           #848475;
@@ -139,15 +150,19 @@ html[data-theme="dark"] {
   --alert-bg:      #3a251f;
   --alert-ink:     #f2a48d;   /* 7.15 on alert-bg */
 
-  --series-heat:          #e76761;  --series-heat-soft:     #4a332e;  /* chips redesign 2026-11-17: stepped into the dark OKLCH band (was L 0.70, outside 0.48–0.67); 5.18:1 on dark paper, 5.64:1 on the dark map ocean */
-  --series-freeze:        #4d73bf;  --series-freeze-soft:   #2d3c52;  /* L* 49.0 — 3.60 on dark paper, 3.92 on the ocean; the icon on the selected alabaster wash sits at 2.47 (label text is the relief channel) */
+  /* dark set, same identities, re-stepped into the dark OKLCH band (L 0.48–0.67)
+     and re-validated in the tab/Gantt order: adjacent ΔE ≥15 normal, ≥8 CVD,
+     ≥3:1 on dark paper. Lightness alternates high/low because a 0.19-wide band
+     cannot hold seven lightness steps — the ladder is carried by hue + L. */
+  --series-heat:          #d67620;  --series-heat-soft:     #4c311d;  /* orange, L 0.66 — 4.55:1 on dark paper */
+  --series-freeze:        #5468c8;  --series-freeze-soft:   #2f3652;  /* L 0.55 — 3.15:1 on dark paper; the icon on the selected alabaster wash sits under 3 (label text is the relief channel) */
   /* cold snap teal, dark: re-stepped into the dark band and away from freeze
      (the pair must read sibling-but-distinct: normal ΔE 15.1, CVD ≥8) */
-  --series-cold-snap:      #289f9d;  --series-cold-snap-soft:  #224247;  /* 5.20 on dark paper, 5.66 on the ocean */
-  --series-ar:            #76a729;  --series-ar-soft:       #2e4434;  /* AR green dark, stepped into the band (was L 0.72); 5.84 on dark paper, 6.35 on the ocean */
-  --series-tc:            #8c8dd1;  --series-tc-soft:       #3a2f52;  /* TC violet dark, de-pastelled into the band: 5.45 on dark paper, 5.93 on the ocean; keeps ≥9.5 CVD from the flood berry beside it */
-  --series-flood:         #da6b94;  --series-flood-soft:    #4a2a3c;  /* Flood berry dark, stepped into the band: 5.19 on dark paper, 5.64 on the ocean */
-  --series-mlc:           #c38823;  --series-mlc-soft:      #4a3a1e;  /* mid-latitude low amber, dark (mlc lane; re-hued off the TC violet, see the light-theme note), stepped into the band: 4.99 on dark paper, 5.95 on the ocean */
+  --series-cold-snap:      #0a9cbc;  --series-cold-snap-soft:  #143e4a;  /* ice-blue, L 0.64 — 5.18:1; 15.1 from freeze */
+  --series-ar:            #75a322;  --series-ar-soft:       #303d20;  /* AR green dark, L 0.66 — 4.86:1 on dark paper */
+  --series-tc:            #967fd0;  --series-tc-soft:       #3a324f;  /* TC violet dark, L 0.65 — 4.11:1; ≥11 CVD from both neighbours */
+  --series-flood:         #028b77;  --series-flood-soft:    #154038;  /* teal, L 0.57 — 3.70:1; 15.1 from the AR green beside it */
+  --series-mlc:           #c43d4d;  --series-mlc-soft:      #4f2d2e;  /* RED (owner), L 0.56 — 3.23:1; 25.1 from TC, 14.6 from heat wave */
   --series-alt:           #78b447;  --series-alt-soft:      #33402a;
   --series-unknown:       #acab9c;  --series-unknown-soft:  #3b3b34;
   --stone-grey:           #acab9c;
@@ -460,25 +475,29 @@ nav.controls {
 }
 .type-chip svg { width: 13px; height: 13px; flex: none; color: var(--etype, var(--stone-grey)); }
 
-/* The Show row: a real tablist that never ragged-wraps — one line, horizontal
-   scroll with snap + edge fades when it cannot fit (a 390 px phone scrolls,
-   it never clips a label or orphans one chip onto row four). */
-.type-filter { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-#type-tabs { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: nowrap;
-  align-items: center; gap: 8px;
-  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity; padding: 5px 5px 7px; margin: -5px -5px -7px; }
-#type-tabs::-webkit-scrollbar { display: none; }
-/* edge fades only where there IS more content (JS toggles the classes) */
-#type-tabs.fade-l { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 18px); }
-#type-tabs.fade-r { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent); }
-#type-tabs.fade-l.fade-r {
-  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 18px, #000 calc(100% - 18px), transparent); }
+/* The Show row: ONE component, wrapped equal-width GRID — never a scroller
+   (owner 2026-11-18: scrolling to find a lane was the complaint). Eight cells
+   (All + seven types) in four equal columns at ≥636px = two tidy rows of four;
+   two equal columns below that = four rows on a phone. Equal columns mean the
+   count badges line up down the row, no chip is wider than its neighbour and
+   there is never a ragged last row. Group captions are row headers inside the
+   same grid, so they cost no extra row height. */
+.type-filter { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px 12px; }
+.type-filter > .ctl-label { grid-column: 1; }
+.type-filter > .ctl-region { grid-column: 2; justify-self: end; }
+.type-filter > #type-tabs { grid-column: 1 / -1; }
+#type-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px 8px; align-items: end; min-width: 0; }
+@media (max-width: 719px) {          /* 8 cells / 2 = four even rows */
+  #type-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .etype-tab.is-all, .etype-tab.is-tail { grid-column: 1 / -1; }
+}
 
-.etype-tab { position: relative; flex: none; scroll-snap-align: start;
-  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px;
+.etype-tab { position: relative; display: inline-flex; align-items: center; gap: 7px;
+  min-width: 0; height: 32px; padding: 0 12px;
   border-radius: 999px; background: var(--bg-panel); border: 1px solid var(--border-strong);
   color: var(--matte-black); font: 400 var(--text-sm)/1 var(--font-sans); cursor: pointer; }
+.etype-tab .t-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .etype-tab svg { width: 15px; height: 15px; flex: none; color: var(--etype, var(--stone-grey)); }
 .etype-tab.is-all svg { color: var(--stone-grey); }   /* "All" has no identity hue */
 .etype-tab:hover { background: var(--tint); border-color: var(--border-strong); }
@@ -493,18 +512,30 @@ nav.controls {
   color: var(--ink-secondary); }                                    /* 5.4:1 on paper */
 .etype-tab[aria-selected="true"] .n { color: var(--matte-black); }  /* ink-secondary on the alabaster wash is 4.3 — the selected tab's count rides the label ink */
 .etype-tab.zero .n { color: var(--ink-muted); }                     /* honest zero: quieter, still selectable */
-/* Group captions: the Show row reads as three labelled groups — a hairline and
-   a small-caps group name before each group head. Purely presentational
-   (role=none + aria-hidden): it is not a tab, the tablist's owned set is
-   unchanged, and the roving-tabindex focus order skips it. */
-.type-group { display: inline-flex; align-items: center; flex: none;
-  margin-left: 4px; padding-left: 11px; border-left: 1px solid var(--border-strong);
-  height: 22px; font: 600 9px/1 var(--font-sans); letter-spacing: 0.09em;
-  text-transform: uppercase; color: var(--ink-muted); white-space: nowrap;
-  user-select: none; }
+/* Group captions: the row reads as three labelled groups — Temperature | Water
+   | Storms — not one undifferentiated line of pills (owner feedback). They are
+   GRID ROW HEADERS above the chips they name, so the grouping costs no extra
+   chip height. Purely presentational (role=none + aria-hidden): the tablist's
+   owned set is unchanged and the roving-tabindex order skips them. */
+.type-group { display: flex; align-items: flex-end; height: 13px; min-width: 0;
+  font: 600 9px/1 var(--font-sans); letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--ink-muted); white-space: nowrap; overflow: hidden; user-select: none;
+  grid-column: 1 / -1; }          /* phone: a caption row above its own group */
+.type-group::after { content: ""; flex: 1 1 auto; height: 0; margin-left: 6px;
+  border-top: 1px solid var(--border-strong); }
+/* ≥720px: four columns, two chip rows. Captions are pinned to the header row
+   above their own chips (chips auto-place into the two free rows in order). */
+@media (min-width: 720px) {
+  .type-group[data-slot="a"] { grid-row: 1; grid-column: 2 / -1; }
+  .type-group[data-slot="b"] { grid-row: 3; grid-column: 1 / 3; }
+  .type-group[data-slot="c"] { grid-row: 3; grid-column: 3 / -1; }
+  .etype-tab[data-slot="a"] { grid-row: 2; }
+  .etype-tab[data-slot="b"] { grid-row: 4; }
+}
 /* touch: 44 px targets (M7), same visual metrics */
 @media (pointer: coarse), (max-width: 479px) {
   .etype-tab { height: 44px; }
+  #type-tabs { gap: 8px; }
 }
 /* event-list rows: the glyph replaces the old colour dot (identity not colour-alone) */
 #event-table .type-ic { display: inline-flex; margin-top: 2px; color: var(--etype, var(--stone-grey)); }
@@ -1142,7 +1173,7 @@ html[data-theme="dark"] { --map-line: #6d7f92; }   /* 3.2:1 on the ocean fill; g
    Everything below is filled by JS after first paint; reserve the final box so the
    content under it never moves. Values are the measured settled heights. */
 nav.controls { min-height: 46px; }
-.type-filter { min-height: 44px; }   /* one tab row: 32 px chip + the scroll/focus bleed */
+.type-filter { min-height: 44px; }   /* room for the wrapped grid (measured, not fixed) */
 @media (pointer: coarse), (max-width: 479px) { .type-filter { min-height: 56px; } }
 .raw-map-wrap { min-height: 240px; }
 #gm-gantt { height: 62px; }
