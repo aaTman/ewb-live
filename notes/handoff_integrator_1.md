@@ -102,3 +102,32 @@ review the seven-lane dashboard before anything is promoted. Do NOT promote.
   append-only per agent, so resolve with
   `git merge-file -p --union ours /dev/null theirs` (see `/tmp/ne_merge.sh`
   pattern; `/tmp/hunk.py` has the hunk-join helpers used for the shared files).
+
+## Update 23:00 UTC (same session, context near limit — successor: continue from here)
+
+* **Numbers, counts, blocker diagnosis, promotion notes and ops steps are all in
+  `notes/channel_new_events.md` [integrator] 22:55 entry.** Read that first.
+* Detection is complete: heat 15 / freeze 5 / cold_snap 6 / AR 13 / TC 44 /
+  **MLC 0 (lane defect, diagnosed: the closed-contour screen rejects 100 % of
+  candidates on real ARCO MSLP — see the channel entry for the experiment)** /
+  flood 40 (766 raw).
+* Still running when this session ends: `viz --all --force` (39 raster events,
+  started 22:29, ~45 s each) then `pipeline --publish-only` (rewrites
+  `meta.json`). Both are in `/opt/ewb-live-dev/logs/lanes.log`; check with
+  `bash ops/dev_site.sh status`. If `meta.event_counts` still shows only
+  heat/freeze/AR, the publish step has not finished — re-run it yourself:
+  `ssh root@192.168.0.121 'cd /opt/ewb-live-dev && . .venv/bin/activate &&
+  EWB_DATA_PREP_DIR=$PWD/third_party/ExtremeWeatherBench/data_prep
+  python -m ewb_live.pipeline --publish-only --days 90'`
+  then `.venv/bin/python -m ewb_live.viz.timeline` (the dev tree still has the
+  pre-flood timeline code: my `timeline.py` TYPES change was committed after the
+  21:38 sync — so `bash ops/dev_site.sh sync` first, then re-run the timeline).
+* e2e: **live :8050 = 34 failed / 109 passed** (`/tmp/e2e_live.log`,
+  failed-list snapshot in `/tmp/f_live.txt`); **dev :8051 = 37 failed / 106
+  passed** earlier. Re-run of dev in progress → `/tmp/e2e_dev2.log`; diff its
+  FAILED list against `/tmp/f_live.txt` to name the ≤3 merge-caused ones.
+* Screenshots: `scripts/dev_review_shots.py` works (verified against dev;
+  report.json + per-tab/per-theme PNGs). Run it once publish finishes:
+  `.venv/bin/python scripts/dev_review_shots.py --url http://192.168.0.121:8051
+  --out notes/screenshots` and commit; then post the DONE line to the channel if
+  anything changed vs the 22:55 entry.
