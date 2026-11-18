@@ -485,18 +485,23 @@ nav.controls {
 /* Selected = the page's one selected state (§5): alabaster wash + 3 px ink
    key-line. Never an orange fill, never lane-coloured text. */
 .etype-tab[aria-selected="true"] {
-  background: var(--alabaster); border-color: var(--border); color: var(--matte-black);
-  font-weight: 500; box-shadow: inset 3px 0 0 var(--matte-black); }
+  background: var(--alabaster); border-color: var(--matte-black); color: var(--matte-black);
+  font-weight: 500; box-shadow: inset 0 0 0 0.5px var(--matte-black); }
 .etype-tab[aria-selected="true"]:hover { background: var(--alabaster); }
 .etype-tab .n { min-width: 3ch; text-align: right;                 /* counts don't jiggle (no CLS) */
   font: 400 var(--text-xs)/1 var(--font-mono); font-variant-numeric: tabular-nums;
   color: var(--ink-secondary); }                                    /* 5.4:1 on paper */
 .etype-tab[aria-selected="true"] .n { color: var(--matte-black); }  /* ink-secondary on the alabaster wash is 4.3 — the selected tab's count rides the label ink */
 .etype-tab.zero .n { color: var(--ink-muted); }                     /* honest zero: quieter, still selectable */
-/* quiet group affordance: one hairline between Temperature | Water | Storms,
-   a pseudo of the group head so the tablist keeps exactly one tab per child */
-.etype-tab[data-div]::before { content: ""; position: absolute; left: -5px; top: 5px; bottom: 5px;
-  width: 1px; background: var(--border-strong); }
+/* Group captions: the Show row reads as three labelled groups — a hairline and
+   a small-caps group name before each group head. Purely presentational
+   (role=none + aria-hidden): it is not a tab, the tablist's owned set is
+   unchanged, and the roving-tabindex focus order skips it. */
+.type-group { display: inline-flex; align-items: center; flex: none;
+  margin-left: 4px; padding-left: 11px; border-left: 1px solid var(--border-strong);
+  height: 22px; font: 600 9px/1 var(--font-sans); letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--ink-muted); white-space: nowrap;
+  user-select: none; }
 /* touch: 44 px targets (M7), same visual metrics */
 @media (pointer: coarse), (max-width: 479px) {
   .etype-tab { height: 44px; }

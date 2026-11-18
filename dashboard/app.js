@@ -46,7 +46,13 @@ function typeColor(etype) {
    cosmetic one. */
 const TYPE_ORDER = ['heat_wave', 'cold_snap', 'freeze', 'atmospheric_river',
   'flood', 'tropical_cyclone', 'midlat_cyclone'];
-const TYPE_GROUP_START = new Set(['atmospheric_river', 'tropical_cyclone']);   // quiet dividers
+/* Group heads carry a visible caption in the tab row so the row reads as three
+   labelled groups — Temperature | Water | Storms — not one undifferentiated
+   line of pills (owner feedback 2026-11-17: the grouping was too subtle). The
+   caption is a presentational span (role=none + aria-hidden), so the tablist
+   still owns exactly one tab per type and the a11y tree is unchanged. */
+const TYPE_GROUP_LABEL = { heat_wave: 'Temperature', atmospheric_river: 'Water',
+  tropical_cyclone: 'Storms' };
 /* chip labels are short (one line at phone width); the full label + the
    one-line detection rule ride in aria-label/title (About-dialog copy) */
 const TYPE_TAB_LABEL = { heat_wave: 'Heat wave', cold_snap: 'Cold snap', freeze: 'Freeze',
@@ -706,10 +712,19 @@ function renderControls() {
       : `No ${TYPE_META[id] ? TYPE_META[id].label.toLowerCase() : tabLabel.toLowerCase()}`
         + ' met the criteria this window. ') : '';
     b.title = (id === 'all' ? '' : (TYPE_META[id].label + ' — ')) + why + rule;
-    if (TYPE_GROUP_START.has(id)) b.dataset.div = '1';
     b.dataset.tab = id;
     b.dataset.etype = id;   // CSS maps the lane hue onto the glyph ("all" stays neutral)
     b.onclick = () => setTab(id);
+    // Presentational group caption before each group head. role=none +
+    // aria-hidden keeps it out of the tablist's owned set and the a11y tree, so
+    // tab semantics and the roving-tabindex focus order are unchanged; the
+    // caption is NOT a button, so `button:nth-of-type()` selectors are stable.
+    if (TYPE_GROUP_LABEL[id]) {
+      const g = el('span', 'type-group', esc(TYPE_GROUP_LABEL[id]));
+      g.setAttribute('role', 'none');
+      g.setAttribute('aria-hidden', 'true');
+      tabs.appendChild(g);
+    }
     tabs.appendChild(b);
   };
   mkTab('all', 'All', state.events.filter(inReg).length, 'all');
@@ -2216,7 +2231,10 @@ function selectEvent(id, fromMap, nav) {
   h2.textContent = humanTitle();
   h2.title = ev.title;
   const chips = $('#detail-chips');
-  chips.innerHTML = '';   // one story line below carries type/region/dates/peak (QA 2026-11-06)
+  /* The detail header carries the type as a lane chip (glyph + short label +
+     identity hue) — the chiclet surface the owner lists (2026-11-17). The story
+     line below still spells out type / region / dates / peak in words. */
+  chips.innerHTML = typeChipHtml(ev.event_type);
   const d = ev.details || {};
   void d;
   const story = $('#detail-story');
