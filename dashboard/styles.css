@@ -1100,7 +1100,17 @@ nav.controls .dd .dd-body {
    strip's own contract — its counts, widths and fixed height — is untouched */
 .lg-group[data-track] .lg-bin { width: 32px; }        /* 'C2–3' is the widest class */
 .lg-group[data-track] .lg-bin.wide { width: 40px; }   /* 'track' */
+.lg-group[data-track] .lg-bin.xwide { width: 58px; }  /* 'dissipated' */
 .lg-group .swatch.lg-line { height: 4px; margin-top: 3px; border-radius: 2px; }
+/* the dissipated marker's swatch: a hollow dashed ring, exactly what the map
+   draws where a storm's wind field has ended */
+.lg-group .swatch.lg-gone { width: 9px; height: 9px; margin-top: 1px;
+  border-radius: 50%; background: none; border: 1.6px dashed; opacity: .9; }
+/* A storm that had dissipated by the selected step: the ring goes hollow and
+   dashed, the dot's colour goes with the wind field it no longer has. Its track
+   stays — history does not disappear when a storm does. */
+#gm-track-marks .gm-mark.gone .gm-mark-ring { fill: none; stroke-dasharray: 2.6 2.2; }
+#gm-track-marks .gm-mark.gone .gm-mark-lab { opacity: .72; }
 @media (prefers-reduced-motion: reduce) {
   #gm-boxes .gm-bbox, #gm-gantt .gm-bar, #gm-track-marks .gm-mark { transition: none; }
   .raw-skeleton { animation: none; }

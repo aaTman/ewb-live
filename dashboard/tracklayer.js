@@ -15,8 +15,9 @@
    2. the TRACK, for orientation: a thin polyline (solid inside the event window,
       dashed for the rest of the system's life), one dot per best-track fix in
       the lane's own intensity ramp, and a ring at the storm's position at the
-      selected step — which is also the interactive object (hover/tap tooltip,
-      click selects, Enter then opens the event page).
+      selected step — hollow and dashed once the storm has dissipated — which is
+      also the interactive object (hover/tap tooltip, click selects, Enter then
+      opens the event page).
 
    Why this module exists at all: a cyclone is neither a raster lane nor a box.
    With 44 published storms the merged map drew ZERO of them — global_timeline
@@ -30,10 +31,16 @@
    wired for the same treatment and shows nothing until its lane publishes
    events — an honest empty state, no invented data.
 
-   Time semantics: the frame slider REVEALS the storm. The field shows the day
-   under the slider (that is what the asset holds: the day's maximum), the track
-   shows only fixes at or before the selected step — so playing back never shows
-   the future — and the ring sits on the last fix at or before it.
+   Time semantics: the frame slider REVEALS the storm. The track shows only
+   fixes at or before the selected step — so playing back never shows the future
+   — and the ring sits on the last fix at or before it. The WIND FIELD is drawn
+   only inside the storm's own life (the lane's event window: first to last
+   qualifying fix, published by the asset as `life.birth` / `life.death`): a
+   frame at or after the death step has no field for that storm, no cell lingers
+   on the day after it ends, and the marker goes hollow — but its track stays,
+   because where a storm has been is history, not a claim that it still is.
+   Nothing is held between frames: every payload repaints the canvas from the
+   asset, so a slider jump, play/animate and a jump back all read the same way.
 
    Layering: one transparent canvas over the raster canvas (field cells, lines,
    fix dots) under a small SVG with one interactive marker per positioned storm
@@ -124,7 +131,8 @@
   /* ---------------- the wind field (this lane's primary encoding) ----------
      data/results/tc_wind.json, written by ewb_live/viz/tc_wind.py: per storm,
      per UTC day, a ±5° window of u8 knots (0 = below the 34 kt floor, never
-     drawn) plus the class scale, the source string and the measured bias. Fetched
+     drawn) plus the class scale, the source string, the measured bias and each
+     storm's life window (the dissipation contract, above). Fetched
      lazily, once, and only because a track lane is on the map; a missing asset
      (a build that has not run yet) is not an error — the tracks still draw and
      the legend says the field is unavailable. */
@@ -176,6 +184,32 @@
   }
   const frameDateOf = (ts) => { const s = String(ts || ''); return s.length >= 8
     ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : null; };
+
+  /* ---------------- when a storm EXISTED (the dissipation contract) ---------
+     The producer owns the rule and publishes it: `life.birth` / `life.death` are
+     the lane's own event window — first to last qualifying fix (>= 34 kt,
+     NATURE not ET/MX), plus one fix step — and every cell in the asset comes
+     from a 6-hourly step inside it. The layer owns the other half: a storm's
+     field is NEVER drawn at or after its death step, even though the asset
+     holds a grid for that calendar day, and never before its birth step. The
+     daily-max grid is the day's maximum over the hours the storm was alive; a
+     slider position past the death time has no field, and scrubbing back brings
+     it back. Before the asset arrives (or if it never does) the event's own
+     start/end are the same window, so the gate holds either way. */
+  function lifeOf(ev) {
+    const s = WIND.byId && WIND.byId.get(ev.id);
+    const l = s && s.life;
+    return { birth: toMs(l ? l.birth : ev.start), death: toMs(l ? l.death : ev.end),
+      ongoing: !!(l && l.ongoing), lastFix: l ? l.last_fix : null };
+  }
+  const aliveAt = (ev, ms) => {
+    const { birth, death } = lifeOf(ev);
+    return ms != null && birth != null && death != null && ms >= birth && ms < death;
+  };
+  const dissipatedAt = (ev, ms) => {
+    const { death, ongoing } = lifeOf(ev);
+    return !ongoing && ms != null && death != null && ms >= death;
+  };
 
   /* ---------------- small helpers ---------------- */
   const esc = (s) => String(s == null ? '' : s)
@@ -451,11 +485,14 @@
   function drawField(payload, storms) {
     if (!WIND.data) return;
     const step = WIND.data.step_deg, proj = payload.proj, H = payload.fit.H;
-    const date = frameDateOf(payload.ts);
+    const date = frameDateOf(payload.ts), frameMs = toMs(payload.ts);
     const anySel = payload.sel.length > 0;
     const paths = new Map();                     // "class|alpha" -> Path2D
     for (const st of storms) {
       if (st.ghost) continue;
+      // DISSIPATION: past the storm's last live step there is no field, whatever
+      // day grid the asset happens to hold for that calendar day
+      if (!aliveAt(st.ev, frameMs)) continue;
       const e = fieldEntry(st.ev, date);
       if (!e) continue;
       const a = WIND_ALPHA * (anySel && !payload.sel.includes(st.ev.id) ? 0.3 : 1);
@@ -611,12 +648,15 @@
   function markOne(payload, st, p, placed, anySel) {
     const ev = st.ev, lane = LANES[ev.type], m = st.last;
     const on = payload.sel.includes(ev.id);
+    const gone = dissipatedAt(ev, toMs(payload.ts));       // field over, line kept
     const g = document.createElementNS(NS, 'g');
     g.setAttribute('class', 'gm-mark' + (on ? ' sel' : '')
-      + (anySel && !on ? ' dim' : '') + (payload.previewId === ev.id ? ' hov' : ''));
+      + (anySel && !on ? ' dim' : '') + (payload.previewId === ev.id ? ' hov' : '')
+      + (gone ? ' gone' : ''));
     g.setAttribute('data-id', ev.id);
     g.setAttribute('data-type', ev.type);
     g.setAttribute('data-name', `${stormName(ev)} (${lane.name.toLowerCase()})`);
+    g.setAttribute('data-state', gone ? 'dissipated' : (lifeOf(ev).ongoing ? 'ongoing' : 'live'));
     g.setAttribute('role', 'button');
     g.setAttribute('tabindex', '0');
     g.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -627,7 +667,7 @@
     hit.setAttribute('r', HIT_R);
     g.appendChild(hit);
     const ring = document.createElementNS(NS, 'circle');
-    ring.setAttribute('class', 'gm-mark-ring');
+    ring.setAttribute('class', 'gm-mark-ring' + (gone ? ' is-gone' : ''));
     ring.setAttribute('cx', p[0].toFixed(1)); ring.setAttribute('cy', p[1].toFixed(1));
     ring.setAttribute('r', on ? 7.5 : 6);
     ring.setAttribute('style', `stroke: var(--series-${lane.css})`);
@@ -636,7 +676,7 @@
     dot.setAttribute('class', 'gm-mark-dot');
     dot.setAttribute('cx', p[0].toFixed(1)); dot.setAttribute('cy', p[1].toFixed(1));
     dot.setAttribute('r', 3);
-    dot.setAttribute('fill', binColor(ev.type, m.bin));
+    dot.setAttribute('fill', gone ? 'none' : binColor(ev.type, m.bin));
     g.appendChild(dot);
     const lab = labelBox(st, p, payload.fit, placed, on || payload.previewId === ev.id);
     if (lab) {
@@ -702,6 +742,14 @@
       bits.push(`${lane.pressureLabel.toLowerCase()} ${round1(t.pressure)} hPa`);
     }
     bits.push(`at the selected step ${Number.isFinite(m.v) ? round1(m.v) + ' ' + lane.unit : 'no value'}`);
+    // the dissipation is part of the storm's identity, not a rendering detail
+    const L = lifeOf(ev);
+    if (dissipatedAt(ev, S && S.ts ? toMs(S.ts) : null)) {
+      bits.push(`dissipated ${fmtDay(L.death)} ${fmtHour(L.death)}`);
+      bits.push('no wind field at the selected step');
+    } else if (L.ongoing) {
+      bits.push('still open at the end of the data');
+    }
     bits.push('Select this storm');
     return bits.join(', ');
   }
@@ -752,6 +800,13 @@
     rows.push(row(`at ${fmtDay(m.ms)} ${fmtHour(m.ms)}`, Number.isFinite(m.v)
       ? `${round1(m.v)} ${lane.unit}${lane.bins[m.bin] ? ' · ' + lane.bins[m.bin].cat : ''}`
       : 'no value'));
+    const L = lifeOf(ev);
+    if (dissipatedAt(ev, S && S.ts ? toMs(S.ts) : null)) {
+      rows.push(row('status', `dissipated ${fmtDay(L.death)} ${fmtHour(L.death)}`
+        + ' · no wind field now'));
+    } else if (L.ongoing) {
+      rows.push(row('status', 'still open at the end of the data'));
+    }
     rows.push(row('fixes', `${st.fixes.length} · ${lane.unit}`));
     rows.push(row('click', 'select · then its name opens the event'));
     tip.innerHTML = `<div class="t-title">${esc(stormName(ev))} · ${esc(lane.name)}</div>`
@@ -779,6 +834,7 @@
     const step = WIND.data.step_deg;
     let best = null;
     for (const st of last.storms) {
+      if (!aliveAt(st.ev, last.frameMs)) continue;      // dead: nothing to answer
       const e = fieldEntry(st.ev, last.date);
       if (!e) continue;
       const i = Math.round((ll[1] - e.lat0) / step);
@@ -786,7 +842,7 @@
       if (i < 0 || j < 0 || i >= e.ny || j >= e.nx) continue;
       const kt = gridOf(e)[i * e.nx + j];
       const cid = WIND.classOf[kt];
-      if (cid && (!best || cid > best.cid)) best = { kt, cid, st, d: e.d };
+      if (cid && (!best || cid > best.cid)) best = { kt, cid, st, d: e.d, e };
     }
     return best;
   }
@@ -803,10 +859,16 @@
     const peak = Number.isFinite(t.peak)
       ? `${round1(t.peak)} ${t.units || 'kt'}${t.peak_label ? ' · CAT ' + t.peak_label : ''}`
       : 'not published';
+    // which hours the day's maximum was taken over: on a storm's last day that is
+    // only the steps before it dissipated, and the tooltip says so
+    const steps = Array.isArray(hit.e && hit.e.steps) ? hit.e.steps : [];
+    const stepRow = steps.length && steps.length < 4
+      ? row('steps in this max', steps.join(' ')) : '';
     tip.innerHTML = `<div class="t-title">${esc(c.label)} · ERA5 10 m wind</div>`
       + row('wind, daily max', `${hit.kt} kt · ${Math.round(hit.kt * 1.15078)} mph`)
       + row('storm', stormName(hit.st.ev))
       + row('day', hit.d)
+      + stepRow
       + row('best-track peak', peak)
       + `<div class="t-note">Reanalysis at 0.25° under-reads cyclone peaks: the `
       + `shading is the wind field, never the official category.</div>`;
@@ -868,8 +930,14 @@
       stops.push(`<span class="lg-bin wide"><i class="swatch lg-line" `
         + `style="background:var(--series-${lane.css})" title="The line is the best `
         + `track; solid inside the event window, dashed for the rest of the system's `
-        + `life. The ring is the storm's position at the selected step."></i>`
+        + `life. The ring is the storm's position at the selected step, hollow once `
+        + `it has dissipated."></i>`
         + `<span class="lg-t">track</span></span>`);
+      stops.push('<span class="lg-bin xwide"><i class="swatch lg-gone" '
+        + 'style="border-color:var(--series-' + lane.css + ')" title="A hollow marker: '
+        + 'this storm had dissipated by the selected step. Its track stays as history; '
+        + 'its wind field is gone."></i>'
+        + '<span class="lg-t">dissipated</span></span>');
       const bias = isWind && WIND.data.bias && WIND.data.bias.ratio_median != null
         ? ` It under-reads the peaks — the field's daily maximum is a median `
           + `${WIND.data.bias.ratio_median}× the best-track peak across the `
@@ -877,11 +945,13 @@
           + `or below the official category, which is the dot colour.` : '';
       const tip = isWind
         ? `Shaded cells are where ${WIND.data.source} reached that Saffir–Simpson `
-          + `class, as the daily maximum over the UTC day, drawn on a `
-          + `${WIND.data.step_deg}° grid (a cell is the maximum of the `
-          + `${WIND.data.read_deg}° readings inside it).${bias} Dots are best-track `
-          + `fixes (${n} published) and the ring is the storm's position at the `
-          + `selected step.`
+          + `class, drawn on a ${WIND.data.step_deg}° grid (a cell is the maximum of `
+          + `the ${WIND.data.read_deg}° readings inside it), and only for the `
+          + `${WIND.data.cadence_h}-hourly steps while the storm was alive: the field `
+          + `stops at the last tropical-storm-force fix, so nothing lingers after a `
+          + `storm dissipates, and a post-tropical remnant is not shaded in its name.`
+          + bias + ` Dots are best-track fixes (${n} published), the ring is the `
+          + `storm's position at the selected step, hollow once it has dissipated.`
         : lane.tip;
       const unit = isWind
         ? 'ERA5 10 m wind · daily max · under-reads peaks'
@@ -922,7 +992,7 @@
       for (const f of st.shown) if (f.bin >= 0) c[f.bin] = 1;
     }
     windSeen = WIND.data ? new Uint8Array(WIND.data.classes.length + 1) : null;
-    last = { storms, date: frameDateOf(payload.ts) };
+    last = { storms, date: frameDateOf(payload.ts), frameMs: toMs(payload.ts) };
     drawCanvas(payload, storms);
     drawMarks(payload, storms);
   }
@@ -958,6 +1028,17 @@
     _at: (x, y) => {
       const h = windAt({ clientX: x, clientY: y });
       return h && { kt: h.kt, cid: h.cid, d: h.d, id: h.st.ev.id, name: stormName(h.st.ev) };
+    },
+    // the dissipation gate, as the e2e can check it: is this storm's field drawn
+    // at the selected step, and has it dissipated?
+    _life: (id) => {
+      const ev = S && (S.events || []).find((e) => e.id === id);
+      if (!ev) return null;
+      const L = lifeOf(ev), ms = S.ts ? toMs(S.ts) : null;
+      return { birth: L.birth, death: L.death, ongoing: L.ongoing, ts: S.ts,
+        alive: aliveAt(ev, ms), dissipated: dissipatedAt(ev, ms),
+        field: !!(WIND.data && aliveAt(ev, ms)
+          && fieldEntry(ev, frameDateOf(S.ts))) };
     },
     _why: (x, y) => ({
       have: !!WIND.data, drawn: !!last, date: last && last.date,
