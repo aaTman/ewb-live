@@ -11,7 +11,10 @@
 # WRITES (results, per-window caches, IBTrACS archive, viz) is a real directory
 # inside the dev tree — the live tree is never written.
 #
-#   ops/dev_site.sh sync     rsync THIS repo's code -> $DEV (run locally)
+#   ops/dev_site.sh sync     rsync THIS repo's code -> $DEV (run locally; code
+#                            only -- data/, .venv, third_party and logs/ are
+#                            excluded from the transfer AND protected from
+#                            --delete, so a sync can never remove built data)
 #   ops/dev_site.sh init     symlinks + data layout + seed results from live
 #   ops/dev_site.sh lanes    detection -> per-event viz -> publish (background)
 #   ops/dev_site.sh web      install + start ewb-live-dev-web.service ($PORT)
@@ -43,11 +46,27 @@ r() { ssh -o ConnectTimeout=10 "$BOX" "DEV='$DEV' LIVE='$LIVE' PORT='$PORT' UNIT
 case "${1:-}" in
   sync)
     ssh "$BOX" "mkdir -p '$DEV'"
-    rsync -az --delete --delete-excluded \
+    # NO --delete-excluded. That flag deletes destination-side files that match
+    # an --exclude, and every excluded name here is a thing ONLY the dev tree
+    # has: data/ (the built results -- 107 MB of lane output, per-event viz and
+    # the live-seeded scorecard), .venv, third_party, logs. It wiped the whole
+    # dev data tree on 2026-11-18 21:55 (live was untouched; the tree was
+    # re-seeded and the lanes re-run). With --exclude alone, --delete skips them.
+    rsync -az --delete \
       --exclude .git --exclude .venv --exclude data --exclude logs \
       --exclude third_party --exclude __pycache__ --exclude .pytest_cache \
       --exclude '*.pyc' \
       "$REPO/" "$BOX:$DEV/" && echo "synced code -> $DEV"
+    # guard: a code sync must never leave the tree without its data/venv links
+    # (heredoc terminators must sit at column 0 -- an indented REMOTE silently
+    # swallows the next case arm, which is how `init` disappeared once)
+r <<'REMOTE'
+set -e
+for l in .venv third_party; do
+  [ -e "$DEV/$l" ] || { echo "MISSING $DEV/$l -- re-run: ops/dev_site.sh init"; exit 0; }
+done
+[ -d "$DEV/data/results" ] || echo "MISSING $DEV/data/results -- re-run: ops/dev_site.sh init"
+REMOTE
     ;;
   init)
     r <<'REMOTE'

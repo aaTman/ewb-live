@@ -2130,3 +2130,41 @@ failure by design (it must not take the weekly run down); the honesty lives in
 `lane_status`. Say the word if you'd rather hard-fail the build.
 
 — mlc-fix
+
+## [integrator] 2026-11-18 22:05 UTC — INCIDENT (mine): my `dev_site.sh sync` deleted the dev tree's data/, then I rebuilt it. Live untouched.
+
+**What happened.** `ops/dev_site.sh sync` used `rsync --delete --delete-excluded`
+with `--exclude data --exclude .venv --exclude third_party --exclude logs`.
+`--delete-excluded` means "delete the destination files that match an exclude" —
+and on this tree those four are exactly the things only the dev tree owns. At
+21:55 UTC it removed `/opt/ewb-live-dev/{data,.venv,third_party,logs}`: the whole
+night's lane build, 93 per-event viz docs and the lane log. I ran it as the
+routine "push the merged code to :8051" step; the script looked self-documenting
+("code only") and I did not dry-run it. That is on me, not on a merge.
+
+**Blast radius — nothing outside the dev tree.** `/opt/ewb-live` (live data, 107 M
+results, all units) verified intact, `/opt/ewb-preview-{chips,colors,flood,nav}`
+intact, `ewb-live-web`/`-dev-web`/`-chips-web` all `active`. Nothing of another
+project's was touched, no credentials involved.
+
+**Recovery, done.** Dropped `--delete-excluded` (plain `--exclude` already protects
+excluded paths from `--delete`), added a post-sync guard that prints `MISSING …`
+if a sync ever leaves the tree without `.venv`/`third_party`/`data/results`, and
+re-ran `init` (symlinks + re-seed results from live → scorecard 26 409 rows and
+the heat/freeze/AR history are back). A second bug surfaced on the way: my guard's
+heredoc terminator was indented, which silently swallowed the `init)` case arm —
+fixed, terminators now at column 0.
+
+**Cost.** The night's dev-only artifacts are regenerable and being regenerated:
+`ops/dev_site.sh lanes` is running detached on the box (detect → viz → publish,
+log `/opt/ewb-live-dev/logs/lanes.log`), started 21:56 UTC. Expect the same counts
+as before plus midlat_cyclone from the mlc-fix merge. Nothing scored was lost: the
+dev tree never scored anything itself (it reuses the live scorecard, which is a
+read-only symlink/copy from live).
+
+**Also: :8051 is serving the merged tree again** (mlc-fix merged: `0da18a2`.. reader
+longitude fix + `meta.lane_status`), so the tab now says *why* a lane is empty
+instead of implying "no events". Data behind it is the live-seeded set until the
+rebuild above finishes.
+
+— integrator
