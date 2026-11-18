@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
-"""tc_wind: the geometry contract between the producer and the map (tc-map).
+"""tc_wind: the geometry contract and the DISSIPATION rule (tc-map).
 
-The wind-field asset is a promise about cell placement — the map paints
-`kt[i, j]` at latitude lat0 + i*0.25 and longitude lon0 + j*0.25 wrapped to
-[-180, 180) — so a cell one row off here is a storm drawn 275 km off on the
-map, and nothing downstream would ever notice. The round trip is therefore
-tested end to end: a synthetic storm blob at a known meridian must come back at
-the exact row/column the front end will paint, for a window that straddles the
-dateline, with the classes, the census, the best-track bias and the missing-day
-behaviour pinned alongside.
+Two promises are tested here.
+
+1. PLACEMENT. The wind-field asset is a promise about cell placement — the map
+   paints `kt[i, j]` at latitude lat0 + i*step_deg and longitude lon0 + j*step_deg
+   wrapped to [-180, 180) — so a cell one row off here is a storm drawn ~111 km
+   off on the map, and nothing downstream would ever notice. The round trip is
+   therefore tested end to end: a synthetic storm blob at a known meridian must
+   come back at the exact row/column the front end will paint, for a window that
+   straddles the dateline, with the classes and the census pinned alongside.
+
+2. DISSIPATION (owner, 2026-11-18: "make sure the TCs dissipate after the storm
+   ends"). A storm's field exists only inside the lane's event window, only
+   around the position it had AT THAT STEP, and only where the wind is its own.
+   Every test in the second half asks the same question of a synthetic storm —
+   is there a single shaded cell after it is over? — for the cases that could
+   break it: an end in the middle of a UTC day, an end exactly at 00Z, an
+   extratropical tail that is still blowing 45 kt, two storms alive at once, a
+   storm still open at the data cutoff, and ambient wind 6° away.
 
 The store is a HERMETIC FAKE shaped like ERA5 ARCO — (time, lat descending
 90..-90, lon ascending 0..359.75) in m/s — exposing exactly the three things
-day_max_kt() asks of the real zarr (`sel(time=<exact labels>)`,
-`indexes["time"]`, `ds[var].values`), so the suite needs no xarray and no
+step_fields() asks of the real zarr (`sel(time=<exact labels>)`,
+indexes["time"], `ds[var].values`), so the suite needs no xarray and no
 network. The real read path is smoke-tested on the ewb box.
 
 Run: .venv/bin/python -m pytest tests/test_tc_wind.py -q
@@ -31,11 +41,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from ewb_live.viz import tc_wind as W                                       # noqa: E402
 from ewb_live.viz.tc_wind import (                                          # noqa: E402
-    CLASSES, NoWindData, class_of, crop, day_steps, day_windows, grid_geometry,
-    ms_to_kt, rebin_max, rle_grid, unpack_rle, window_indices,
+    CLASSES, CORE_DEG, KEEP_DEG, NoWindData, cell_axes, centre_at, class_of, crop,
+    day_steps, envelope, grid_geometry, keep_mask, life_window, live_rows, live_steps,
+    ms_to_kt, rebin_max, rle_grid, snap_lattice, step_windows, unpack_rle, window_for,
+    window_indices, wrap_lon,
 )
 
 STEP = 0.25
+OUT = 1.0                                  # the rendered cell (W.OUT_DEG)
 
 
 # ------------------------------------------------------------------ scale --
@@ -74,64 +87,110 @@ def test_day_steps_are_the_four_utc_synoptics():
     assert day_steps(d) == [dt.datetime(2026, 8, 19, h) for h in (0, 6, 12, 18)]
 
 
-# ---------------------------------------------------------------- windows --
+# ------------------------------------------------ life: when a storm EXISTED --
 def fix(t, lat, lon, v=45.0, p=1000.0):
     """Track row in the event format (ISO-Z, lat, lon, kt, hPa); `t` is the
     compact YYYYMMDDHH the timeline uses, so the fixtures stay readable."""
     return [f"{t[:4]}-{t[4:6]}-{t[6:8]}T{t[8:10]}:00:00Z", lat, lon, v, p]
 
 
-def test_day_windows_one_box_per_utc_day_centred_on_that_days_fixes():
-    w = day_windows([fix("2026081900", 20.0, 170.0), fix("2026081906", 21.0, 171.0),
-                     fix("2026082000", 22.0, 172.0)])
-    assert list(w) == [dt.date(2026, 8, 19), dt.date(2026, 8, 20)]
-    lat_c, lon_c, half = w[dt.date(2026, 8, 19)]
-    assert (round(lat_c, 4), round(lon_c, 4)) == (20.5, 170.5)
-    assert half == W.HALF_DEG
-    # 18Z belongs to the same UTC day; 00Z of the next day opens the next window
-    w2 = day_windows([fix("2026081918", 10.0, 10.0), fix("2026082000", 12.0, 10.0)])
-    assert list(w2) == [dt.date(2026, 8, 19), dt.date(2026, 8, 20)]
+def ev(rows, start, end, *, ongoing=False, step_h=6.0, eid="a", name="Lala",
+       peak=115.0):
+    """A published tropical_cyclone event: `start` is its first qualifying fix
+    and `end` its last qualifying fix + one step (exclusive), exactly as
+    ewb_live/events/tc.py builds them — that window IS the storm's life."""
+    return {"id": eid * 12, "event_type": "tropical_cyclone", "title": f"TC {name}",
+            "start": start, "end": end, "peak_value": peak,
+            "bbox": [15.0, 174.0, 26.0, -176.0],
+            "details": {"track": rows, "fix_step_h": step_h, "intensity_units": "kt",
+                        "peak_wind_kt": peak, "peak_category": "4", "name": name,
+                        "min_pressure_hpa": 960.0, "basin_name": "EP",
+                        "ongoing": ongoing, "track_crosses_antimeridian": True}}
 
 
-def test_day_windows_averages_longitudes_the_short_way_around():
-    # fixes at 179 E and 179 W straddle the dateline: the centre is ±180, NOT 0
-    w = day_windows([fix("2026081900", 5.0, 179.0), fix("2026081912", 5.0, -179.0)])
-    _, lon_c, _ = w[dt.date(2026, 8, 19)]
-    assert abs(abs(lon_c) - 180.0) < 1e-9
-    _, lon0, ny, _ = grid_geometry(5.0, lon_c, W.HALF_DEG, STEP)
+def test_life_window_is_the_event_window_and_counts_its_live_steps():
+    e = ev([fix("2026081900", 19.0, 178.0, 20.0),          # pre-genesis: outside
+            fix("2026081906", 20.0, 179.0, 35.0),
+            fix("2026082018", 22.0, -178.0, 40.0),
+            fix("2026082106", 23.0, -176.0, 45.0)],        # ET tail: outside
+           "2026-08-19T06:00:00Z", "2026-08-21T00:00:00Z")
+    life = life_window(e)
+    assert life["birth"] == W.to_ms("2026-08-19T06:00:00Z")
+    assert life["death"] == W.to_ms("2026-08-21T00:00:00Z")
+    assert life["first_fix"] == life["birth"]
+    assert life["last_fix"] == W.to_ms("2026-08-20T18:00:00Z")
+    assert life["alive_steps"] == 7          # 06/12/18Z + 00/06/12/18Z: no 00Z of
+    assert life["ongoing"] is False          # the 21st, the window ended at 00Z
+    assert [s.strftime("%d%H") for s in live_steps(life["birth"], life["death"])] \
+        == ["1906", "1912", "1918", "2000", "2006", "2012", "2018"]
+
+
+def test_live_rows_drop_the_pre_genesis_and_et_fixes():
+    """The rows outside the window cannot drag the interpolated centre, the
+    window or the shading: this is where the ET tail used to leak in."""
+    e = ev([fix("2026081900", 19.0, 178.0, 20.0), fix("2026081906", 20.0, 179.0, 35.0),
+            fix("2026082018", 22.0, -178.0, 40.0), fix("2026082106", 23.0, -176.0, 45.0)],
+           "2026-08-19T06:00:00Z", "2026-08-21T00:00:00Z")
+    rows = live_rows(e["details"]["track"], W.to_ms(e["start"]), W.to_ms(e["end"]))
+    assert [W.iso_z(r[0]) for r in rows] == ["2026-08-19T06:00:00Z",
+                                             "2026-08-20T18:00:00Z"]
+    assert rows[0][1:] == (20.0, 179.0)
+    assert rows[1][1] == 22.0 and rows[1][2] == pytest.approx(182.0)   # unwrapped
+    assert live_rows([[None, 1, 2, 3, 4], ["bad", 1, 2, 3, 4], [1, None, 2, 3, 4],
+                      [1, 91.0, 0.0, 3, 4], [1, 1.0, 999.0, 3, 4]], 0, 1e13) == []
+
+
+def test_centre_at_interpolates_between_live_fixes_and_clamps_at_the_ends():
+    rows = live_rows([fix("2026081906", 20.0, 179.0), fix("2026082018", 22.0, -178.0)],
+                     W.to_ms("2026-08-19T06:00:00Z"), W.to_ms("2026-08-21T00:00:00Z"))
+    mid = centre_at(rows, dt.datetime(2026, 8, 19, 18))     # 12 h of a 36 h run
+    assert (round(mid[0], 4), wrap_lon(mid[1])) == (20.6667, -180.0)
+    late = centre_at(rows, dt.datetime(2026, 8, 20, 19))    # past the last fix
+    assert (round(late[0], 2), wrap_lon(late[1])) == (22.0, -178.0)
+
+
+def test_step_windows_grow_to_hold_a_full_envelope_and_skip_dead_days():
+    cent = {dt.datetime(2026, 8, 19, h): (20.0 + h / 100.0, 170.0) for h in (0, 6, 12, 18)}
+    slow = step_windows(cent)
+    assert list(slow) == [dt.date(2026, 8, 19)]
+    _, _, half = slow[dt.date(2026, 8, 19)]
+    assert half == W.HALF_DEG                              # nothing to grow for
+    fast = step_windows({dt.datetime(2026, 8, 19, 0): (20.0, 170.0),
+                         dt.datetime(2026, 8, 19, 18): (20.0, 185.0)})
+    _, _, half_f = fast[dt.date(2026, 8, 19)]
+    assert half_f > W.HALF_DEG                             # 15° of travel
+    assert half_f >= 15.0 / 2 + KEEP_DEG                   # holds the envelope
+    assert half_f <= W.MAX_HALF_DEG
+    assert step_windows({}) == {}
+
+
+def test_window_for_centres_a_day_straddling_the_dateline_the_short_way():
+    lat_c, lon_c, _ = window_for([(5.0, 179.0), (5.0, -179.0)])
+    assert abs(abs(lon_c) - 180.0) < 1e-9 and lat_c == 5.0
+    lat0, lon0, ny, _ = grid_geometry(5.0, lon_c, W.HALF_DEG, STEP)
     assert lon0 == pytest.approx(175.0) and ny == 41
 
 
-def test_day_windows_grows_for_a_fast_mover_and_caps_at_max_half():
-    slow = day_windows([fix("2026081900", 20.0, 170.0)])
-    fast = day_windows([fix("2026081900", 20.0, 170.0), fix("2026081918", 20.0, 185.0)])
-    assert slow[list(slow)[0]][2] == W.HALF_DEG                  # nothing to grow for
-    assert fast[list(fast)[0]][2] > W.HALF_DEG                   # 15° of travel
-    assert fast[list(fast)[0]][2] <= W.MAX_HALF_DEG              # and capped
-
-
-def test_day_windows_skips_unusable_rows_and_empty_tracks():
-    assert day_windows([]) == {}
-    assert day_windows([[None, 1, 2], ["bad", 1, 2], [1, None, 2], [1, 1, None]]) == {}
-    assert day_windows([fix("2026081900", 91.0, 0.0)]) == {}     # impossible fix
-    assert day_windows([fix("2026081900", float("nan"), 0.0)]) == {}
-
-
-def test_day_windows_normalises_longitudes_into_the_maps_frame():
-    # some best-track sources quote 0-360 longitudes; the map frame is [-180, 180)
-    w = day_windows([fix("2026081900", 5.0, 185.0)])
-    assert round(w[dt.date(2026, 8, 19)][1], 6) == -175.0
-
-
+# ------------------------------------------------ geometry: the placement --
 def test_grid_geometry_is_the_southwest_centre_and_rows_run_north():
     lat0, lon0, ny, nx = grid_geometry(20.0, -168.0, 5.0, STEP)
     assert (lat0, lon0, ny, nx) == (15.0, -173.0, 41, 41)
     assert lat0 + (ny - 1) * STEP == pytest.approx(25.0)         # row 0 is southern
-    # the window is clamped to the grid: it slides, never runs off a pole
-    n = grid_geometry(86.0, 0.0, 5.0, STEP)
-    assert n[0] + (n[2] - 1) * STEP <= 89.875
-    s = grid_geometry(-86.0, 0.0, 5.0, STEP)
-    assert s[0] >= -89.875
+    n = grid_geometry(86.0, 0.0, 5.0, STEP)              # clamped: it slides
+    assert n[0] + (n[2] - 1) * STEP <= 90.0
+    assert grid_geometry(-86.0, 0.0, 5.0, STEP)[0] >= -90.0
+
+
+def test_grid_geometry_snaps_the_origin_onto_the_data_lattice():
+    # an origin between data cells would be ROUNDed by window_indices, and the
+    # published lat0/lon0 would then name a cell that was never read
+    for lat_c, lon_c in ((20.37, 175.42), (20.13, -179.94), (0.01, 0.01)):
+        lat0, lon0, ny, nx = grid_geometry(lat_c, lon_c, 5.13, STEP)
+        assert abs((lat0 + 90) % STEP) < 1e-9, lat0
+        assert abs((lon0 + 180) % STEP) < 1e-9, lon0
+        assert ny == nx and ny % 2, "the box is symmetric about its centre"
+    assert snap_lattice(175.12, STEP, -180.0) == 175.0
+    assert snap_lattice(175.13, STEP, -180.0) == 175.25
 
 
 def test_window_indices_picks_the_exact_cells():
@@ -153,9 +212,8 @@ def test_crop_wraps_the_dateline_and_never_wraps_latitude():
     assert sub.max() == 70
     # exactly where the placement contract says it must be, found BY the contract:
     # cell (i, j) is at lat0 + i*step, wrap(lon0 + j*step)
-    wrap = lambda x: ((x + 180.0) % 360.0) - 180.0        # noqa: E731
     i = round((20.0 - lat0) / STEP)
-    j = next(j for j in range(nx) if abs(wrap(lon0 + j * STEP) + 178.75) < 1e-9)
+    j = next(j for j in range(nx) if abs(wrap_lon(lon0 + j * STEP) + 178.75) < 1e-9)
     assert sub[i, j] == 70
     # latitude does not wrap: a polar window cannot see the other pole's storm
     assert crop(field, 79.875, 0.0, 41, 41).max() == 0
@@ -186,6 +244,64 @@ def test_rle_round_trips_and_stays_smaller_than_the_bytes():
         unpack_rle([0, 10], 11)                      # a short run is an error, not a zero
 
 
+# ---------------------------------------- the storm's OWN envelope (masks) --
+def test_keep_mask_keeps_the_core_and_drops_the_distant_and_the_detached():
+    ny = nx = 41
+    lats, lons = cell_axes(15.0, 175.0, ny, nx, STEP)        # 15–25 N, 175–185 E
+    sub = np.zeros((ny, nx), np.uint8)
+    near = (round((20.0 - 15.0) / STEP), round((179.0 - 175.0) / STEP))
+    sub[near] = 50                                            # the storm's core
+    sub[near[0], near[1] + 1] = 40                            # attached envelope
+    far = (round((20.0 - 15.0) / STEP), round((181.5 - 175.0) / STEP))
+    sub[far] = 45                                             # 1.5° east, detached
+    m = keep_mask(sub, lats, lons, (20.0, 179.0))
+    assert m[near] and m[near[0], near[1] + 1]
+    assert not m[far], "a >=34 kt patch not connected to the core is other weather"
+    assert int(m.sum()) == 2
+
+
+def test_keep_mask_drops_ambient_wind_beyond_keep_deg_and_a_displaced_core():
+    ny = nx = 81
+    lats, lons = cell_axes(10.0, 0.0, ny, nx, STEP)
+    sub = np.zeros((ny, nx), np.uint8)
+    far = (round((10.0 - 10.0) / STEP), round(6.0 / STEP))
+    sub[far] = 60                                             # 6° away, > KEEP_DEG
+    assert not keep_mask(sub, lats, lons, (10.0, 0.0))[far]
+    assert keep_mask(sub, lats, lons, (10.0, 0.0)).sum() == 0
+    # a core 3° from the best-track position is not the storm's: ERA5 can miss
+    # the centre entirely, and shading whatever is nearby is a lie
+    sub2 = np.zeros((ny, nx), np.uint8)
+    sub2[0, round(3.0 / STEP)] = 45
+    assert keep_mask(sub2, lats, lons, (10.0, 0.0)).sum() == 0
+    assert CORE_DEG == 2.0 and KEEP_DEG == 4.0
+
+
+def test_keep_mask_attributes_a_shared_cell_to_the_nearest_live_storm():
+    ny = nx = 41
+    lats, lons = cell_axes(18.0, 0.0, ny, nx, STEP)     # 18–28 N, 0–10 E
+    sub = np.ones((ny, nx), np.uint8) * 45              # storm force everywhere
+    west, east = (20.0, 2.0), (20.0, 8.0)
+    mw = keep_mask(sub, lats, lons, west, [east])
+    me = keep_mask(sub, lats, lons, east, [west])
+    d_w = W.dist_deg(lats[:, None], lons[None, :], *west)
+    d_e = W.dist_deg(lats[:, None], lons[None, :], *east)
+    assert np.array_equal(mw, (d_w < d_e) & (d_w <= KEEP_DEG))
+    assert np.array_equal(me, (d_e < d_w) & (d_e <= KEEP_DEG))
+    assert not (mw & me).any(), "one cell cannot be shaded in two storms' names"
+    # an exact tie belongs to neither, so the two halves simply touch
+    assert not mw[round((20.0 - 18.0) / STEP), round((5.0) / STEP)]
+
+
+def test_envelope_follows_a_thy_arm_and_stops_at_a_gap():
+    m = np.zeros((9, 9), bool)
+    m[4, 1:8] = True
+    m[4, 6] = False                                  # a one-cell gap
+    m[4, 7] = True
+    got = envelope(m, (4, 4))
+    assert got[4, 1:6].all() and not got[4, 7]
+    assert envelope(np.zeros((3, 3), bool), (1, 1)).sum() == 0
+
+
 # ------------------------------------------------- build against a fake ARCO --
 LATS = np.arange(90.0, -90.0 - STEP, -STEP)          # 721, DESCENDING (ARCO)
 LONS = np.arange(0.0, 360.0, STEP)                   # 1440, ASCENDING (ARCO)
@@ -208,25 +324,28 @@ class FakeSel:
 
 
 class FakeStore:
-    """ERA5 ARCO's shape and the whole API day_max_kt() uses: sel() with exact
+    """ERA5 ARCO's shape and the whole API step_fields() uses: sel() with exact
     labels (missing labels raise, exactly as xarray does), indexes["time"], and
-    ds[var].values as (time, lat, lon) m/s. `blobs` are (date, lat, lon, m/s)
-    spots on a `base` m/s background; `missing_days` are absent from the axis."""
+    ds[var].values as (time, lat, lon) m/s.
+
+    A blob is `(when, lat, lon, m/s)`: a `date` paints every step of that UTC
+    day, a `datetime` paints ONLY that step — which is the whole point, because
+    the dissipation tests need wind that exists on the 18Z step and not the 00Z
+    one. `missing_days` are absent from the time axis entirely.
+    """
 
     def __init__(self, days, blobs, base=5.0):
-        """`blobs` are (UTC date, lat, lon, m/s) in the MAP's [-180, 180) frame;
-        the store's own longitude axis is 0..359.75, and that is this fake's job."""
         times = [t for d in days for t in day_steps(d)]
         self.times = np.array([np.datetime64(t) for t in times])
         lat_g, lon_g = np.meshgrid(LATS, LONS, indexing="ij")
         sp = np.full((len(times), LATS.size, LONS.size), base, np.float32)
         for n, t in enumerate(times):
-            d = t.date()
-            for bd, blat, blon, bms in blobs:
-                if bd != d:
-                    continue
-                hit = (np.abs(lat_g - blat) <= 0.125) & (np.abs(lon_g - (blon % 360.0)) <= 0.125)
-                sp[n][hit] = bms
+            for bwhen, blat, blon, bms in blobs:
+                day_only = isinstance(bwhen, dt.date) and not isinstance(bwhen, dt.datetime)
+                if (t.date() == bwhen) if day_only else (np.datetime64(bwhen) == t):
+                    hit = ((np.abs(lat_g - blat) <= 0.125)
+                           & (np.abs(lon_g - (blon % 360.0)) <= 0.125))
+                    sp[n][hit] = bms
         self.sp = sp
         self.indexes = {"time": FakeIndex(self.times)}
         self.missing_days = ()
@@ -248,79 +367,269 @@ class FakeIndex:
         self.values = times
 
 
-def tc_event(eid, name, rows, peak_kt, *, start="2026-08-19", end="2026-08-21",
-             category="4"):
-    return {"id": eid, "event_type": "tropical_cyclone", "title": f"TC {name}",
-            "start": start, "end": end, "peak_value": peak_kt,
-            "bbox": [15.0, 174.0, 26.0, -176.0],
-            "details": {"track": rows, "track_step_h": 6, "intensity_units": "kt",
-                        "peak_wind_kt": peak_kt, "peak_category": category,
-                        "min_pressure_hpa": 960.0, "basin_name": "EP",
-                        "name": name, "track_crosses_antimeridian": True}}
+def write_events(path, events):
+    (path / "events_selected.json").write_text(json.dumps(events))
+
+
+def by_id(doc, i):
+    return next(s for s in doc["storms"] if s["id"] == i * 12)
+
+
+def day_entry(storm, day):
+    return next(d for d in storm["days"] if d["d"] == day)
+
+
+def grid_of(entry):
+    return unpack_rle(entry["rle"], entry["ny"] * entry["nx"]).reshape(entry["ny"],
+                                                                       entry["nx"])
+
+
+def entry_cells(entry):
+    return int(np.count_nonzero(grid_of(entry)))
+
+
+def centres_of(entry):
+    """The (lat, lon) centre of every non-zero rendered cell, by THE CONTRACT."""
+    lats, lons = cell_axes(entry["lat0"], entry["lon0"], entry["ny"], entry["nx"], OUT)
+    ii, jj = np.nonzero(grid_of(entry))
+    return [(float(lats[i]), float(lons[j])) for i, j in zip(ii, jj)]
 
 
 def test_build_places_the_wind_field_where_the_map_will_paint_it(tmp_path):
     """A 70 kt blob at 20.5 N / 178.75 E comes back at the row/column the map
     will paint, on the day it exists, with the best-track bias recorded."""
-    blob = (dt.date(2026, 8, 19), 20.5, 178.75, 36.0)      # 36 m/s = 70 kt = CAT 1
-    store = FakeStore([dt.date(2026, 8, 19), dt.date(2026, 8, 20)], [blob])
-    (tmp_path / "events_selected.json").write_text(json.dumps([tc_event(
-        "a" * 12, "Lala",
-        [fix("2026081900", 20.0, 179.0, 60.0, 985.0),
-         fix("2026081912", 21.0, -179.0, 65.0, 980.0),
-         fix("2026082000", 22.0, -178.0, 60.0, 985.0)], 115.0)]))
+    d19, d20 = dt.date(2026, 8, 19), dt.date(2026, 8, 20)
+    blob = (d19, 20.5, 178.75, 36.0)                       # 36 m/s = 70 kt = CAT 1
+    store = FakeStore([d19, d20], [blob])
+    write_events(tmp_path, [ev([fix("2026081900", 20.0, 179.0, 60.0, 985.0),
+                                fix("2026081912", 21.0, -179.0, 65.0, 980.0),
+                                fix("2026082000", 22.0, -178.0, 60.0, 985.0)],
+                               "2026-08-19", "2026-08-21")])
 
     doc = json.loads(W.build(tmp_path, store=store).read_text())
-    assert doc["schema"] == 1 and doc["units"] == "kt"
+    assert doc["schema"] == 2 and doc["units"] == "kt"
     assert doc["lane"] == "tropical_cyclone"      # which lane this field explains
     assert doc["cadence_h"] == 6 and doc["step_deg"] == 1.0 and doc["read_deg"] == 0.25
     assert doc["floor_kt"] == 34.0 and doc["half_deg"] == W.HALF_DEG
     assert "ERA5" in doc["source"] and "10 m" in doc["source"]
     assert "under" in doc["bias"]["note"].lower()          # the honest caveat
+    assert doc["dissipation"]["keep_deg"] == KEEP_DEG      # the rule, as data
+    assert "event window" in doc["dissipation"]["window"]
 
     (storm,) = doc["storms"]
     assert storm["id"] == "a" * 12 and storm["name"] == "Lala"
     assert storm["best_peak_kt"] == 115.0 and storm["best_category"] == "4"
     assert storm["era_peak_kt"] == 70 and storm["ratio"] == pytest.approx(0.61)
     assert storm["peak_day"] == "2026-08-19"
-    days = {d["d"]: d for d in storm["days"]}
-    assert set(days) == {"2026-08-19", "2026-08-20"}
+    assert {d["d"] for d in storm["days"]} == {"2026-08-19", "2026-08-20"}
 
-    d = days["2026-08-19"]
-    # window centred on that day's fixes: lat 20.5, lon ±180 -> 15.5 S, 175 W... west
-    # rendered at the map's 1° step (step_deg), read at 0.25° (read_deg)
-    assert (d["lat0"], d["lon0"], d["ny"], d["nx"]) == (15.5, 175.0, 11, 11)
-    g = unpack_rle(d["rle"], d["ny"] * d["nx"]).reshape(d["ny"], d["nx"])
-    # THE CONTRACT: cell (i, j) sits at lat0 + i*step_deg, wrap(lon0 + j*step_deg)
-    wrap = lambda x: ((x + 180.0) % 360.0) - 180.0        # noqa: E731
-    i = round((20.5 - d["lat0"]) / 1.0)
-    j = next(j for j in range(11) if abs(wrap(d["lon0"] + j * 1.0) - 179.0) < 1e-9)
-    assert (i, j) == (5, 4)
-    assert g[i, j] == 70, "the blob must land exactly where the map will draw it"
-    assert int(class_of(g)[i, j]) == 2
+    d = day_entry(storm, "2026-08-19")
+    # rendered at the map's 1° step (step_deg), read at 0.25° (read_deg); the box
+    # is centred on the day's LIVE STEP positions, snapped onto the read lattice
+    assert d["ny"] == d["nx"]                 # the coarse grid the map paints
+    assert abs((d["lat0"] + 90) % STEP) < 1e-9 and abs((d["lon0"] + 180) % STEP) < 1e-9
+    g = grid_of(d)
+    # THE CONTRACT: a coarse cell is the max of the fine cells that share its
+    # corner lattice — fine index (i*0.25) pooled by round(index / 4)
+    fi = round((20.5 - d["lat0"]) / STEP)
+    fj = round((178.75 - d["lon0"]) / STEP)
+    ci, cj = int(np.rint(fi / 4)), int(np.rint(fj / 4))
+    assert abs(d["lat0"] + ci * OUT - 20.5) <= 0.5          # the cell that holds it
+    assert abs(wrap_lon(d["lon0"] + cj * OUT) - 178.75) <= 0.5
+    assert g[ci, cj] == 70, "the blob must land exactly where the map will draw it"
+    assert int(class_of(g)[ci, cj]) == 2                    # CAT 1
     assert g.max() == 70 and int((g > 0).sum()) == 1 and d["max_kt"] == 70
     # the next day has no blob: an honest all-zero field, drawn as nothing
-    d2 = days["2026-08-20"]
-    assert d2["rle"] == [0, 121] and d2["max_kt"] == 0       # an honest empty day
-    # census counts cells at the source, per class; bias is the storm-level ratio
+    d2 = day_entry(storm, "2026-08-20")
+    assert d2["rle"] == [0, d2["ny"] * d2["nx"]] and d2["max_kt"] == 0
+    assert d2["steps"] == []
+    # census counts DRAWN cells at the source, per class; bias is the storm ratio
     assert doc["census"]["2"] == 1 and doc["census"]["1"] == 0
     assert doc["bias"] == {**doc["bias"], "ratio_median": 0.61, "n": 1,
                            "ratio_min": 0.61, "ratio_max": 0.61}
+    assert doc["days_no_data"] == []
 
 
-def test_build_records_a_day_with_no_wind_instead_of_a_false_zero(tmp_path):
+def test_step_fields_split_the_day_and_floor_the_rest():
+    """Below 34 kt a cell is 0 (the floor is the layer's own threshold) and each
+    step comes back on its own — the per-step split is what lets a field end when
+    the storm does."""
+    day = dt.date(2026, 8, 19)
+    store = FakeStore([day], [(dt.datetime(2026, 8, 19, 6), 20.0, -179.0, 10.0),
+                              (dt.datetime(2026, 8, 19, 12), 20.0, -178.75, 20.0)])
+    steps = dict((t, f) for t, f in W.step_fields(store, day))
+    assert [t.strftime("%H") for t, _ in W.step_fields(store, day)] == \
+        ["00", "06", "12", "18"]
+    j = int((-179.0 + 180) / STEP)
+    i = int((20.0 + 90) / STEP)
+    assert steps[dt.datetime(2026, 8, 19, 6)][i, j] == 0            # 19 kt: below
+    assert steps[dt.datetime(2026, 8, 19, 12)][i, j + 1] == 39      # 39 kt: TS
+    assert steps[dt.datetime(2026, 8, 19, 0)].max() == 0
+    assert W.day_max_kt(store, day)[i, j + 1] == 39                 # the day's max
+    with pytest.raises(NoWindData):
+        W.step_fields(store, dt.date(2026, 9, 1))                   # not in the store
+
+
+# ------------------------------------------------------- DISSIPATION tests --
+def test_a_storm_dies_midday_and_nothing_is_shaded_after_it(tmp_path):
+    """Alive 19th 06Z → 20th 06Z (exclusive). ERA5 is blowing storm force at
+    EVERY step of both days, including the 12Z and 18Z steps of the 20th, 4° and
+    8° east of the last live position — none of it may be shaded."""
+    d19, d20, d21 = dt.date(2026, 8, 19), dt.date(2026, 8, 20), dt.date(2026, 8, 21)
+    live = [dt.datetime(2026, 8, 19, 6), dt.datetime(2026, 8, 19, 12),
+            dt.datetime(2026, 8, 19, 18), dt.datetime(2026, 8, 20, 0)]
+    blobs = [(t, 20.0, 179.0 + n * 0.5, 30.0) for n, t in enumerate(live)]
+    blobs += [(dt.datetime(2026, 8, 20, 12), 20.0, 183.0, 35.0),      # after death
+              (dt.datetime(2026, 8, 20, 18), 20.0, 187.0, 40.0),
+              (d21, 20.0, 189.0, 45.0)]
+    store = FakeStore([d19, d20, d21], blobs)
+    write_events(tmp_path, [ev([fix("2026081906", 20.0, 179.0, 40.0),
+                                fix("2026082000", 20.0, 180.5, 40.0),
+                                fix("2026082012", 20.0, 183.0, 45.0),      # ET tail
+                                fix("2026082018", 20.0, 187.0, 50.0)],
+                               "2026-08-19T06:00:00Z", "2026-08-20T06:00:00Z")])
+
+    doc = json.loads(W.build(tmp_path, store=store).read_text())
+    (storm,) = doc["storms"]
+    assert storm["life"]["alive_steps"] == 4
+    assert [d["d"] for d in storm["days"]] == ["2026-08-19", "2026-08-20"]
+    # the end day carries ONLY the steps while the storm was alive
+    assert day_entry(storm, "2026-08-19")["steps"] == ["06Z", "12Z", "18Z"]
+    assert day_entry(storm, "2026-08-20")["steps"] == ["00Z"]
+    # nothing from the 12Z/18Z wind (183°/187° E) nor the 21st's (189° E): every
+    # drawn cell sits within an envelope of the live positions (179–181° E, and
+    # the rendered cell is 1° wide, so 182° is the first cell that would be news)
+    drawn = []
+    for e in storm["days"]:
+        drawn += [(lo if lo > 0 else lo + 360) for _, lo in centres_of(e)]
+    assert drawn and max(drawn) < 182.0 and min(drawn) > 177.0, drawn
+    # and the day AFTER the last live fix simply has no entry: nothing to draw
+    assert "2026-08-21" not in {d["d"] for d in storm["days"]}
+    assert W.print_audit(W.audit(tmp_path))
+
+
+def test_a_storm_that_ends_at_00z_leaves_its_final_day_untouched(tmp_path):
+    """`end` is exclusive, so a window ending at 2026-08-20T00Z has NO live step
+    on the 20th: the 20th gets no entry at all, and the 00Z wind — real, 45 kt,
+    6° east — is not shaded."""
+    d19, d20 = dt.date(2026, 8, 19), dt.date(2026, 8, 20)
+    store = FakeStore([d19, d20], [(d19, 20.0, 179.0, 30.0),
+                                   (dt.datetime(2026, 8, 20, 0), 20.0, 185.0, 45.0)])
+    write_events(tmp_path, [ev([fix("2026081900", 20.0, 179.0, 40.0),
+                                fix("2026081918", 20.0, 180.0, 40.0),
+                                fix("2026082000", 20.0, 185.0, 45.0)],
+                               "2026-08-19T00:00:00Z", "2026-08-20T00:00:00Z")])
+    doc = json.loads(W.build(tmp_path, store=store).read_text())
+    (storm,) = doc["storms"]
+    assert [d["d"] for d in storm["days"]] == ["2026-08-19"]
+    assert day_entry(storm, "2026-08-19")["steps"] == ["00Z", "06Z", "12Z", "18Z"]
+    assert all(abs(lo - 179.0) < 1.5 for _, lo in centres_of(day_entry(storm,
+                                                                       "2026-08-19")))
+    assert W.print_audit(W.audit(tmp_path))
+
+
+def test_the_extratropical_tail_shades_nothing(tmp_path):
+    """A storm that transitions and then re-deepens into a 55 kt extratropical
+    gale: the lane's window stops at the last tropical-storm-force fix, so the
+    gale is not this event's wind field. This was the owner's bug."""
+    days = [dt.date(2026, 8, 19), dt.date(2026, 8, 20), dt.date(2026, 8, 21),
+            dt.date(2026, 8, 22)]
+    store = FakeStore(days, [(d, la, lo, 32.0) for d, la, lo in
+                             [(days[0], 20.0, 179.0), (days[1], 22.0, 182.0),
+                              (days[2], 26.0, 186.0), (days[3], 30.0, 190.0)]])
+    write_events(tmp_path, [ev([fix("2026081900", 20.0, 179.0, 50.0),
+                                fix("2026082000", 22.0, 182.0, 45.0),      # last TS
+                                fix("2026082106", 26.0, 186.0, 55.0, 984.0),
+                                fix("2026082206", 30.0, 190.0, 55.0, 978.0)],
+                               "2026-08-19T00:00:00Z", "2026-08-20T06:00:00Z")])
+    doc = json.loads(W.build(tmp_path, store=store).read_text())
+    (storm,) = doc["storms"]
+    assert storm["life"]["last_fix"] == "2026-08-20T00:00:00Z"
+    assert [d["d"] for d in storm["days"]] == ["2026-08-19", "2026-08-20"]
+    pts = [p for e in storm["days"] for p in centres_of(e)]
+    assert max(la for la, _ in pts) == pytest.approx(22.0)    # never 26 N / 30 N
+    assert max(lo for _, lo in pts) < 184.0                   # never 186 E/190 E
+    assert W.print_audit(W.audit(tmp_path))
+
+
+def patch(when, lat, lon, ms=30.0, r=0.25):
+    """A contiguous storm-force patch around (lat, lon): a real wind field is
+    connected, and the envelope rule keeps only the part connected to the core,
+    so a fixture of isolated single cells would not exercise it."""
+    out = []
+    for di in (-r, 0.0, r):
+        for dj in (-r, 0.0, r):
+            out.append((when, lat + di, lon + dj, ms))
+    return out
+
+
+def test_two_storms_alongside_share_the_frontier_and_each_ends_its_own_day(tmp_path):
+    """One storm-force field, two storms: each cell goes to the nearer live
+    centre, and the storm that dies first stops being shaded on its own date even
+    though the other one is still blowing storm force 6° away."""
+    d19, d20 = dt.date(2026, 8, 19), dt.date(2026, 8, 20)
+    blobs = patch(d19, 20.0, 170.0) + patch(d19, 20.0, 171.0) \
+        + patch(d19, 20.0, 176.0) + patch(d19, 20.0, 177.0) \
+        + patch(d20, 20.0, 176.0) + patch(d20, 20.0, 177.0)
+    store = FakeStore([d19, d20], blobs)
+    west = ev([fix("2026081900", 20.0, 170.0, 40.0), fix("2026081918", 20.0, 171.0, 40.0)],
+              "2026-08-19T00:00:00Z", "2026-08-20T00:00:00Z", eid="w", name="West")
+    east = ev([fix("2026081900", 20.0, 176.0, 40.0), fix("2026081918", 20.0, 176.0, 40.0),
+               fix("2026082012", 20.0, 176.0, 40.0)],
+              "2026-08-19T00:00:00Z", "2026-08-20T18:00:00Z", eid="e", name="East")
+    write_events(tmp_path, [west, east])
+
+    doc = json.loads(W.build(tmp_path, store=store).read_text())
+    w = {d["d"]: centres_of(d) for d in by_id(doc, "w")["days"]}
+    e = {d["d"]: centres_of(d) for d in by_id(doc, "e")["days"]}
+    assert set(w) == {"2026-08-19"}                        # West is over on the 20th
+    assert set(e) == {"2026-08-19", "2026-08-20"}
+    # every drawn cell sits within one rendered cell of its own storm's track and
+    # no cell is in both storms' names
+    for cents, track in ((w["2026-08-19"], (170.0, 171.0)), (e["2026-08-19"], (176.0,))):
+        for la, lo in cents:
+            near = min(abs(W.dist_deg(np.array([la]), np.array([lo]), 20.0, t)[0])
+                       for t in track)
+            assert near < 1.6, (la, lo, track, near)
+    assert not (set(map(tuple, w["2026-08-19"])) & set(map(tuple, e["2026-08-19"]))), \
+        "one cell, one storm"
+    # East keeps shading on the 20th, from its own position — not from West's
+    assert all(min(abs(W.dist_deg(np.array([la]), np.array([lo]), 20.0, 176.0)[0]),
+                   abs(W.dist_deg(np.array([la]), np.array([lo]), 20.0, 177.0)[0])) < 1.6
+               for la, lo in e["2026-08-20"]), e["2026-08-20"]
+    assert W.print_audit(W.audit(tmp_path))
+
+
+def test_an_ongoing_storm_is_marked_and_shaded_to_its_last_step(tmp_path):
+    """Still open when the archive ran out: marked `ongoing`, so the map draws no
+    dissipation for it — while its field still stops with the data it has."""
+    d19, d20 = dt.date(2026, 8, 19), dt.date(2026, 8, 20)
+    store = FakeStore([d19, d20], [(d20, 20.0, 179.0, 30.0)])
+    write_events(tmp_path, [ev([fix("2026082000", 20.0, 179.0, 40.0),
+                                fix("2026082012", 20.0, 179.5, 45.0)],
+                               "2026-08-20T00:00:00Z", "2026-08-20T18:00:00Z",
+                               ongoing=True)])
+    doc = json.loads(W.build(tmp_path, store=store).read_text())
+    (storm,) = doc["storms"]
+    assert storm["life"]["ongoing"] is True
+    assert [d["d"] for d in storm["days"]] == ["2026-08-20"]
+    assert day_entry(storm, "2026-08-20")["steps"] == ["00Z", "06Z", "12Z"]
+    assert storm["era_peak_kt"] == 58           # 30 m/s at the only live position
+    assert W.print_audit(W.audit(tmp_path))
+
+
+def test_a_day_with_no_wind_data_leaves_no_entry_rather_than_a_false_zero(tmp_path):
     """Past the archive cutoff there is no wind at all. The honest output is NO
     entry for that day (the map draws nothing), never a zero field that would
     read as "the storm made no storm-force wind that day"."""
-    blob = (dt.date(2026, 8, 19), 20.0, 179.0, 36.0)
-    store = FakeStore([dt.date(2026, 8, 19), dt.date(2026, 8, 20)], [blob])
+    d19, d20 = dt.date(2026, 8, 19), dt.date(2026, 8, 20)
+    store = FakeStore([d19, d20], [(d19, 20.0, 179.0, 36.0)])
     store.times = store.times[store.times < np.datetime64("2026-08-20")]
     store.sp = store.sp[:len(store.times)]                # 20 Aug: not in the axis
     store.indexes = {"time": FakeIndex(store.times)}
-    (tmp_path / "events_selected.json").write_text(json.dumps([tc_event(
-        "b" * 12, "Saudel",
-        [fix("2026081900", 20.0, 179.0, 60.0, 985.0),
-         fix("2026082000", 21.0, 178.0, 60.0, 985.0)], 90.0)]))
+    write_events(tmp_path, [ev([fix("2026081900", 20.0, 179.0, 60.0),
+                                fix("2026082000", 21.0, 178.0, 60.0)],
+                               "2026-08-19", "2026-08-21")])
 
     doc = json.loads(W.build(tmp_path, store=store).read_text())
     (storm,) = doc["storms"]
@@ -329,24 +638,46 @@ def test_build_records_a_day_with_no_wind_instead_of_a_false_zero(tmp_path):
 
 
 def test_build_needs_a_published_cyclone_and_says_so(tmp_path):
-    (tmp_path / "events_selected.json").write_text(json.dumps(
-        [{"id": "c" * 12, "event_type": "heatwave", "details": {},
-          "start": "2026-08-19", "end": "2026-08-20"}]))
+    write_events(tmp_path, [{"id": "c" * 12, "event_type": "heatwave", "details": {},
+                             "start": "2026-08-19", "end": "2026-08-20"}])
     doc = json.loads(W.build(tmp_path, store=None).read_text())
     assert doc["storms"] == [] and doc["census"] and doc["bias"]["n"] == 0
     assert doc["bias"]["ratio_median"] is None and "ERA5" in doc["source"]
 
 
-def test_day_max_kt_takes_the_max_over_the_days_steps_and_floors_the_rest():
-    """Below 34 kt a cell is 0 (the floor is the layer's own threshold), a missing
-    step drops out of the max, and a day with no steps at all is an absence."""
-    lat_g, lon_g = np.meshgrid(LATS, LONS, indexing="ij")
-    day = dt.date(2026, 8, 19)
-    store = FakeStore([day], [(day, 20.0, -179.0, 10.0), (day, 20.0, -178.75, 20.0)])
-    # the field is in the map frame: col = (lon + 180)/0.25
-    field = W.day_max_kt(store, day)
-    assert field[int((20.0 + 90) / STEP), int((-179.0 + 180) / STEP)] == 0    # 19 kt
-    assert field[int((20.0 + 90) / STEP), int((-178.75 + 180) / STEP)] == 39   # 39 kt
-    assert field.max() == 39
-    with pytest.raises(NoWindData):
-        W.day_max_kt(store, dt.date(2026, 9, 1))            # not in the store at all
+def test_build_skips_a_storm_with_an_unusable_window(tmp_path):
+    """An event whose window cannot be read is skipped and reported, never
+    guessed at: a default life would be an invented dissipation date."""
+    good = ev([fix("2026081906", 20.0, 179.0, 40.0)], "2026-08-19T06:00:00Z",
+              "2026-08-20T06:00:00Z", eid="g", name="Good")
+    bad = ev([fix("2026081906", 20.0, 179.0, 40.0)], "2026-08-19", "2026-08-19",
+             eid="b", name="Bad")
+    write_events(tmp_path, [bad, good])
+    store = FakeStore([dt.date(2026, 8, 19)], [(dt.date(2026, 8, 19), 20.0, 179.0, 30.0)])
+    doc = json.loads(W.build(tmp_path, store=store).read_text())
+    assert [s["name"] for s in doc["storms"]] == ["Good"]
+
+
+def test_audit_flags_a_field_that_outlives_its_storm(tmp_path):
+    """The audit is the check the owner asked for; prove it can FAIL, or it is
+    not a check."""
+    d19, d20 = dt.date(2026, 8, 19), dt.date(2026, 8, 20)
+    store = FakeStore([d19, d20], [(d19, 20.0, 179.0, 30.0)])
+    write_events(tmp_path, [ev([fix("2026081906", 20.0, 179.0, 40.0),
+                                fix("2026082000", 20.0, 179.0, 40.0)],
+                               "2026-08-19T06:00:00Z", "2026-08-20T06:00:00Z")])
+    path = W.build(tmp_path, store=store)
+    (row,) = W.audit(tmp_path)
+    assert row["ok"] and row["cells_after"] == 0 and row["cells_before"] == 0
+    assert row["cells"] > 0 and row["ongoing"] is False
+
+    # now break it: draw the field on days after the storm's death, and 7° out
+    doc = json.loads(path.read_text())
+    entry = doc["storms"][0]["days"][0]
+    doc["storms"][0]["days"].append({**entry, "d": "2099-01-01"})
+    doc["storms"][0]["days"].append({**entry, "d": "2099-01-02",
+                                     "lat0": 26.0, "lon0": 172.0})
+    path.write_text(json.dumps(doc))
+    (row,) = W.audit(tmp_path)
+    assert row["cells_after"] == 2 * entry_cells(entry) and not row["ok"]
+    assert not W.print_audit([row])
