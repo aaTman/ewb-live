@@ -169,18 +169,28 @@ which `revalidate.py` re-checks independently for every event it lists).
 
 ### 90-day dev window, 2026-08-19 .. 2026-11-17
 
-| | before (pre-fix reader) | after |
-|---|---|---|
-| frames handed to the tracker | 385 (29 of them empty) | 356 (empty ones dropped: 11-04 00-18Z, 11-09 00-18Z, 11-12 00Z-11-17 00Z) |
-| nodes | **273** (0.71/frame) | **9004** (25.3/frame) |
-| tracks ≥ 48 h | 3 | 325 |
-| same-low dupes | 0 | 2 |
-| **events** | **0** | **143** |
-| bombs | 0 | 30 |
-| invalid events (shared validator) | — | **0** |
-| read / scan wall | 295 s / — | 252 s / 153 s (0.43 s/frame) |
-| peak RSS (whole process, includes the one-time 17 GB orography decode) | 21.8 GB | 21.5 GB |
-| published after curation | 0 | 80 (`TOP_N_BY_TYPE["midlat_cyclone"] = 80`, severity-ranked; see §7.2) |
+| | before (pre-fix reader) | axis fix only | after (both fixes) |
+|---|---|---|---|
+| frames handed to the tracker | 385 (29 of them empty) | 385 (29 of them empty) | 356 (empty ones dropped: 11-04 00-18Z, 11-09 00-18Z, 11-12 00Z-11-17 00Z) |
+| nodes | **273** (0.71/frame) | **9004** (23.4/frame) | **9004** (25.3/frame) |
+| tracks ≥ 48 h | 3 | 325 | 325 |
+| same-low dupes | 0 | 2 | 2 |
+| **events** | **0** | **143** | **143** |
+| bombs | 0 | 30 | 30 |
+| invalid events (shared validator) | — | **0** | **0** |
+| read / scan wall | 295 s / — | 280 s / 161 s | 252 s / 153 s (0.43 s/frame) |
+| peak RSS (whole process, includes the one-time 17 GB orography decode) | 21.8 GB | 21.6 GB | 21.5 GB |
+| published after curation | 0 | 80 (`TOP_N_BY_TYPE["midlat_cyclone"] = 80`, severity-ranked; see §7.2) | 80 |
+
+The middle column is the isolation run that attributes the blocker: with the
+sorted axis and nothing else changed (no frame filter), the same 385 frames go
+from 273 nodes to 9004 and from 0 events to 143. Dropping the all-NaN frames
+therefore changes no counts in this window — it is a correctness hardening (it
+keeps a NaN central pressure out of gap fill, and the effective window honest),
+not part of the fix's effect size. (The same read, before the frame filter,
+reported its own range as `mslp [nan,nan] hPa` — the reader's summary line was
+itself a symptom.) Artifacts: `notes/mlc_revalidate_before_prefix.log`,
+`notes/mlc_revalidate_20261118.log`.
 
 Population: median min MSLP **957.6 hPa**, deepest **912.2 hPa** (which is the
 global minimum of the whole 1.45 GB window — the tracker's headline number is the

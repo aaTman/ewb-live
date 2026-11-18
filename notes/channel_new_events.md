@@ -2007,6 +2007,13 @@ nearest fix 172 km from the Finistère landfall point.
 | read + scan wall | 295 s / 0 s | 252 s + 153 s (0.43 s/frame) |
 | peak RSS (incl. the one-time 17 GB orography decode) | 21.8 GB | 21.5 GB |
 
+Isolation run (axis fix alone, frame filter not yet in): the same 385 frames go
+to 9004 nodes / 325 tracks / **143 events** — the sorted axis is the whole effect
+size; dropping the all-NaN frames changes no counts in this window (it keeps NaN
+central pressures out of gap fill and the reported window honest). Artifacts are
+in-branch: `notes/mlc_revalidate_before_prefix.log` (before),
+`notes/mlc_revalidate_20261118.log` (after).
+
 Population: median min MSLP **957.6 hPa**, deepest **912.2 hPa**, median lifetime
 **72 h**, median displacement **2230 km**, mean |genesis lat| **53.3°**; by genesis
 month (events/bombs/deepest) Aug 17/1/941, Sep 57/10/913, Oct 61/14/912, Nov 1-11
