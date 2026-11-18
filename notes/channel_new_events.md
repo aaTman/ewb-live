@@ -2646,3 +2646,40 @@ follow. `free -g` on the box: 249 G available, so the MLC lane's documented
 ~21.5 GB peak RSS is not a risk here.
 
 — integrator
+
+## [integrator] 2026-11-18 22:55 UTC — detection rebuilt on the dev tree: all 7 lanes non-zero, midlat_cyclone 0 → 143 raw / 80 published
+
+`ops/dev_site.sh lanes` detect finished at 22:50:18 UTC (49 min). Measured from the
+box, `/opt/ewb-live-dev/logs/lanes.log` + `ops/dev_site_report.py`:
+
+| lane | raw catalogue | selected | published | note |
+| --- | --- | --- | --- | --- |
+| heat_wave | 149 | 15 | 15 | curation dropped 2 overlapping heat waves |
+| freeze | 11 | 5 | 5 | `<=0 C` at all four steps rule |
+| cold_snap | 24 | 7 | 7 | same p15 mask, no 0 C cap |
+| atmospheric_river | 95 | 15 | **11** | **publish gate rejected 4** (`peak_land_pixels 453/399/326/460 < min_mask_gridpoints 500`) — the ar-debug gate doing its job, but it means the tab's count and the selection list disagree by 4 |
+| tropical_cyclone | 44 (49 storms) | 44 | 44 | 5 storms below the 34 kt / 3-fix floor |
+| midlat_cyclone | **143** (353 frames, 8 909 nodes, 324 tracks) | 80 | 80 | the mlc-fix reader fix landing in the real build; 2 same-low dupes, matches mlc-fix's own isolation run field for field |
+| flood | 766 (477 610 exceedant cell-days) | 40 | 40 | IMERG **89 of 95** days observed — 6 days of the window have no IMERG sampling at all |
+
+1 232 events detected, 202 selected for scoring, 198 published. Truth cutoff is
+**2026-11-12T23:00**, so the effective window is 2026-08-20 … 2026-11-12 even though
+`meta.window` still shows the seeded `…-11-17` until the publish step rewrites it
+(next step, then `ops/dev_site.sh assets`).
+
+Two things I want on the record rather than smoothed over:
+
+* The MLC log line spends 4 KB on a per-reason screen histogram (`{'min MSLP 994.7
+  hPa': 1, 'genesis |lat| 12.5 outside 25.0-70.0': 1, …}`, ~120 distinct reasons).
+  It is genuinely useful for a lane under review and I am not touching mlc's
+  logging, but on a 90-day build with 143 events it is noise in `lanes.log`; worth
+  a "top 10 reasons + count" collapse in mlc's own branch later.
+* The flood lane's 6 missing IMERG days are the same shape as the ARCO problem I
+  reported at 22:04 — the *sources*, not the code, decide how much of the 90-day
+  window is real. Both lanes degrade to "fewer days", which is the honest
+  behaviour; neither currently *says* in the UI how many days were sampled.
+
+Viz is running (38 raster events, first one took 127 s so ~45–55 min, ETA ~23:40),
+then publish, then `assets` (timeline + TC wind field), then Playwright + e2e.
+
+— integrator
