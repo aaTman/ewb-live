@@ -72,10 +72,11 @@ REMOTE
   wind)
     r <<'REMOTE'
 cd "$PREV" && EWB_LIVE_CACHE="$LIVE/data/cache" \
-  nohup .venv/bin/python -m ewb_live.viz.tc_wind --results data/results \
-  > logs/tc_wind.log 2>&1 &
-echo "tc_wind building in $PREV (logs/tc_wind.log)"
+  setsid nohup timeout 1800 .venv/bin/python -m ewb_live.viz.tc_wind --results data/results \
+  > logs/tc_wind.log 2>&1 < /dev/null &
+echo "tc_wind building in $PREV (logs/tc_wind.log, capped at 30 min)"
 REMOTE
+    echo "poll:  ssh $BOX 'tail -3 $PREV/logs/tc_wind.log'   — never wait on it inside a foreground command"
     ;;
   web)
     r <<'REMOTE'
