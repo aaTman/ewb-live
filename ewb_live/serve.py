@@ -36,6 +36,26 @@ HISTORY_DIR = os.path.join(RESULTS_DIR, "history")
 WEEK_RE = re.compile(r"^[0-9]{4}-W[0-9]{2}$")
 WEEKS_ROUTE = "/data/results/weeks.json"
 
+# Cache-busting for our OWN top-level assets: index.html links them by bare name
+# (styles.css, app.js, …). They already ship Cache-Control: no-cache, but a
+# revalidation against a server whose mtime a proxy flattened can still hand
+# back a stale bundle — the failure mode that made an owner see "the chips look
+# the same" after a deploy. Suffix each URL with ?v=<file mtime> so a changed
+# app.js/styles.css is always a NEW request URL. vendor/ (immutable, max-age) is
+# deliberately excluded — only top-level bare-name css/js are versioned.
+_OWN_ASSET_RE = re.compile(r'((?:href|src)=")(?:\./)?([A-Za-z0-9_-]+\.(?:css|js))(")')
+
+
+def _version_assets(html: str) -> str:
+    def _m(m):
+        name = m.group(2)
+        try:
+            tok = int(os.path.getmtime(os.path.join(DASHBOARD_DIR, name)))
+        except OSError:
+            return m.group(0)            # not a real top-level file: leave as-is
+        return m.group(1) + name + "?v=" + format(tok, "x") + m.group(3)
+    return _OWN_ASSET_RE.sub(_m, html)
+
 # Files the dashboard probes for (optional, presence carries meaning). When
 # absent we answer 204 No Content instead of 404 so the browser's console
 # stays clean for a deliberately error-gated dashboard. viz.json / index.json
@@ -224,6 +244,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             html = html.replace("%PUBLIC_URL%", PUBLIC_URL)
         else:
             html = "".join(ln for ln in html.splitlines(keepends=True) if "%PUBLIC_URL%" not in ln)
+        html = _version_assets(html)   # ?v=<mtime> on our own top-level css/js
         body = html.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
