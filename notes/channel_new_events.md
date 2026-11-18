@@ -2061,3 +2061,85 @@ daily maximum per cell; the best track stays on top as thin orientation.
   entry reports the same stale-fixture brief. `tests/test_viz_unit.py`,
   `test_tc_events.py` et al. do not collect in my local venv (no `xarray`) — they
   need the project venv on the ewb LXC.
+
+## [tc-map] 2026-11-18 20:10 UTC — the wind field now DISSIPATES with the storm (owner addition); commits on `aaTman/ne-tc-map`, same preview :8053
+
+**Root cause, measured before touching anything.** There was no end anywhere in the
+pipeline. The producer took the storm's *whole best-track envelope* (first fix to
+last fix — it never read the event's own `start`/`end`), built a per-cell daily
+maximum over it, and `tracklayer.js` painted that whole day's grid for **any frame
+whose date fell in the range**. So the field could not know the storm had ended.
+Four leaks on the shipped asset, all real:
+
+| leak | measured |
+|---|---|
+| pre-genesis: fixes before the event's first qualifying fix (the lane excludes them, the producer did not) | 35/44 storms had such fixes → **113 cells** shaded before the field existed |
+| ET tail: fixes after the event's end (`NATURE` ET/MX, excluded from the event) | 23/44 storms → **19 cells** after the last qualifying fix |
+| dead hours inside an end-day (storm dies 09Z, day shaded until 23:59) | **436 cells** on end-days |
+| cells with no live fix near them (stale interpolated centre, borrowed ambient wind) | **1.0%** of all cells, worst **8.3°** away |
+
+**What changed — the rule lives in the producer, and the layer refuses to override
+it.** (1) Alive = the lane's event window, first to last qualifying fix ≥34 kt with
+`NATURE` not ET/MX, i.e. exactly what `events/tc.py` publishes. (2) Only the
+00/06/12/18Z steps with `birth ≤ step < death` contribute — `step_fields()`
+replaced `day_max_kt()` as the read path, so a storm that dies at 09Z contributes
+00Z and 06Z and each day grid is the max of the hours that actually existed
+(`days[].steps` ships which). (3) The centre is interpolated **at the step**, never
+carried forward — a stale centre is how a dead storm's field kept extending.
+(4) Attribution is strict: a cell belongs to the nearest live centre *across all
+storms*, and only inside the ≥34 kt connected component holding that storm's core —
+ambient storm-force wind 6° off the track, or a neighbour's, is not this storm's
+field. (5) `life.ongoing` now means the **data** ran out, not the best track:
+`details.ongoing` is true for a storm that dissolved six weeks before the cutoff
+too, so it also requires a death at/after the last wind step with real values
+(`dissipation.cutoff`; ARCO's time axis is *not* the cutoff — it lists NaN-filled
+steps ahead of the data). One storm qualifies today: Xavier. The lane's own flag
+survives as `life.track_open`. (6) Front end: `aliveAt()`/`dissipatedAt()` gate the
+field, the cell hit test and the tooltips on the same window, so a stale or
+hand-edited asset cannot put wind behind a dead storm; a dissipated storm keeps its
+track, loses its field, and its marker goes hollow/dashed with a tooltip that says
+`dissipated <date> · no wind field now`, plus a legend swatch.
+
+**Numbers on the rebuilt asset (ewb LXC, 44 storms, 70 KB, schema 2):** 4031 drawn
+cells (3996 TS + 35 CAT 1) over 279 day grids, from 4353 — **322 cells of wind that
+belonged to no living storm**; 0 cells before birth, 0 after death, farthest cell
+4.98° from a live fix (was 8.3°); 147 of the 279 day grids are partial days and now
+say which steps they hold; 10/44 storms have no cell at all (ERA5 shows no
+storm-force core on their track — `ratio: null`, absence not measurement).
+`python -m ewb_live.viz.tc_wind --audit` prints the storm-by-storm table the owner
+asked for (days, cells, last-day cells, after-death, before-birth, max distance) and
+exits non-zero on a violation — **44 storms, 0 failing: clean**.
+
+**Also:** wired into the weekly cycle as step **6d** in `ewb_live/weekly.py`
+(spec-guarded, non-fatal, exactly the raw-exceedance step's shape — the track lines
+need no asset since the layer reads the fixes the events already carry). The
+`--audit` flag had been documented but never registered with argparse, so the CLI
+died on its first real run on the LXC; fixed and now covered by tests. Asset
+geometry origins snap onto the data lattice (symmetric boxes, odd cell counts).
+
+**Tests:** `tests/test_tc_wind.py` **48** green (dissipation: no cell on a day before
+birth or after death, end-days carry only alive steps, a cell 8° from any live centre
+belongs to nobody, `ongoing` only when the data runs out, the audit flags a doctored
+asset); `tests/e2e/test_trackwind_fe.py` **6** green; `test_tracklane_fe.py` 9 green
+unchanged. `scripts/tcmap_check.py` measures the live :8053 asset on a mid-day death
+(Choi-Wan, 2026-10-07T09Z, last steps 00Z/06Z): at the 06Z frame the field draws and
+hit-tests as Choi-Wan; at 12Z `field:false`, hit test empty, marker
+`data-state="dissipated"`, 255 violet pixels gone while still-living storms keep
+theirs — `notes/screenshots/tc_map_zoom_{last_day,after}_Choi-Wan.png`.
+
+**Preview:** http://192.168.0.121:8053/ (unchanged: `/opt/ewb-live-tcmap`, unit
+`ewb-live-tcmap-web`; `:8050`/`:8051` untouched). Rationale note: **`notes/tc_map.md`**.
+
+**Open questions for the owner**
+1. **Sub-daily dead hours on a day the storm survives into** — the asset is daily, so
+   a storm that dies at 09Z still shows that day's max-of-alive-steps at 12Z/18Z.
+   Honest fix is a 6-hourly asset (4× cells, 4× fetch). Want it?
+2. **Bias** (field peaks at 0.56× best-track median, n=34): label-only today, as
+   shipped. Options are a class-colour-only rescale (reads honest, invents wind — I'd
+   argue against) or real IBTrACS D34/D50/D64 radii, which need those columns in the
+   cache.
+3. **Max-over-day vs instantaneous** 6-hourly: today's daily max is what makes the
+   envelope visible at world scale; instantaneous is more literal and 4× the bytes.
+4. `days_no_data` = 2026-11-04, 11-09, 11-15, 11-16, 11-17 (absent, never zero);
+   `ongoing` cutoff = 2026-11-12T18:00Z. If Xavier matters for the demo, its window
+   has no wind data yet, so it draws a track with no field.
