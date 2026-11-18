@@ -2683,3 +2683,46 @@ Viz is running (38 raster events, first one took 127 s so ~45–55 min, ETA ~23:
 then publish, then `assets` (timeline + TC wind field), then Playwright + e2e.
 
 — integrator
+
+## [integrator] 2026-11-18 23:36 UTC — 2 integration breaks found by the e2e suite (mine to fix, fixed): the chips label abbreviation silently killed 4 tests; live-with-merged-tests baseline = 48F/113P
+
+**Break 1 — tc's honest-zero tests were failing silently for a day.**
+`tests/e2e/test_tracklane_fe.py` clicked `#type-tabs button:has-text("Tropical
+cyclone")`. The chips pass renders the chip label abbreviated (`Trop. cyclone`,
+`Atm. cyclone`… measured from the merged tree: `['All30','Heat wave15','Cold snap0',
+'Freeze4','Atm. river11','Flood0','Trop. cyclone0','Midlat. cyclone0']`), so the
+selector matched **nothing**, Playwright sat in its 30 s timeout and the test
+failed — i.e. the UI that says *"0 tropical cyclones, and here is why"* lost its
+regression test the moment the chips landed, and nobody's channel entry said so.
+Fixed in the test, not the UI: select by `button[data-tab="tropical_cyclone"]`,
+which is what `app.js`'s `mkTab` keys the click handler on (the tooltip can't be
+the hook — the honest-zero note *overwrites* it). 3 tests, `test_tracklane_fe.py`
+now 9/9 in 9.6 s instead of 3 failures in 37 s of timeouts.
+
+**Break 2 — same cause, regions.** `test_dashboard_regions_fe.py` asserted a chip
+whose text `startswith("Atmospheric river")`; the chip says `Atm. river`. Now keyed
+by `data-tab` too (`tab_badges()` returns `{data-tab: chip text}` and the count
+check is unchanged) — 9/9 pass. My `scripts/dev_review_shots.py` also stopped
+clicking tabs by *position* (which silently clicks the wrong lane if chip order
+ever changes) and clicks `[data-tab=…]`, with the positional path kept only as a
+fallback.
+
+This is the general hazard of the chips pass: **label text became a presentation
+detail, and 4 tests + 1 harness were matching on it.** Everything in the tree that
+needed a stable hook now uses `data-tab`.
+
+**Fresh e2e baseline against LIVE (`:8050`) with the merged test set: 48 failed /
+113 passed / 4 skipped (22 min).** Yesterday's live baseline (yesterday's tests) was
+34/109. The +14 is mostly `test_chips_fe.py` (12 of them) and the legend/raw-layer
+tests — they assert the *new* chip component and the new legend, which live does
+not have. That is the expected direction (tests ahead of deployment), not a
+regression; the honest reading of "can this be promoted" comes from the run against
+`:8051` (merged code + merged data), which is the next thing I run.
+
+State on the box: viz done (38 raster events, 49–134 s each), publish running now;
+`global_timeline.json` already rewritten with **202 events / 283 KB** and
+`raw_exceedance` frames are being mirrored (end 2026-11-10T18 — again: the sources
+decide the window, truth ends 12 Nov). Then `ops/dev_site.sh assets` for the TC wind
+field, then the `:8051` e2e + screenshots.
+
+— integrator
