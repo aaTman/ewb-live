@@ -117,6 +117,20 @@ def check_axes(lats: np.ndarray, lons: np.ndarray) -> None:
                          f"max|d|={np.max(np.abs(d)) if d.size else float('nan')}")
 
 
+def _ranges(times: list[dt.datetime]) -> str:
+    """Compact contiguous-run summary of dropped timestamps."""
+    if not times:
+        return ""
+    out, s, p = [], times[0], times[0]
+    for t in times[1:]:
+        if (t - p).total_seconds() > 6 * 3600:
+            out.append(f"{s:%m-%d %H}Z..{p:%m-%d %H}Z")
+            s = t
+        p = t
+    out.append(f"{s:%m-%d %H}Z..{p:%m-%d %H}Z")
+    return ", ".join(out if len(out) <= 4 else out[:4] + [f"(+{len(out) - 4} more)"])
+
+
 def read_mslp_window(start: dt.datetime, end: dt.datetime, *,
                      chunk_hours: int = 24, ds=None,
                      ) -> tuple[list[dt.datetime], np.ndarray, np.ndarray, np.ndarray]:
@@ -151,6 +165,7 @@ def read_mslp_window(start: dt.datetime, end: dt.datetime, *,
     blocks: list[np.ndarray] = []
     lats = lons = None
     n_empty = 0
+    empty: list[dt.datetime] = []
     step = max(1, int(chunk_hours) // 6)
     for i in range(0, want.size, step):
         block = want[i:i + step]
@@ -161,7 +176,9 @@ def read_mslp_window(start: dt.datetime, end: dt.datetime, *,
                for t in np.asarray(da.time.values)]
         ok = np.any(np.isfinite(arr), axis=(1, 2))      # ARCO index ahead of data
         if not ok.all():
-            n_empty += int(np.count_nonzero(~ok))
+            gone = [t for t, k in zip(got, ok) if not k]
+            n_empty += len(gone)
+            empty += gone
             arr, got = arr[ok], [t for t, k in zip(got, ok) if k]
         if arr.shape[0]:
             blocks.append(arr)
@@ -176,10 +193,10 @@ def read_mslp_window(start: dt.datetime, end: dt.datetime, *,
         return [], np.zeros((0, 0, 0), np.float32), np.zeros(0), np.zeros(0)
     mslp = blocks[0] if len(blocks) == 1 else np.concatenate(blocks, axis=0)
     del blocks
+    gap = f" ({n_empty} empty ARCO frames skipped: {_ranges(empty)})" if empty else ""
     logger.info("mlc_era5: %d frames %s..%s (%.2f GB), mslp [%.1f, %.1f] hPa%s",
                 mslp.shape[0], times[0], times[-1], mslp.nbytes / 1e9,
-                float(np.nanmin(mslp)), float(np.nanmax(mslp)),
-                f" ({n_empty} empty ARCO frames skipped)" if n_empty else "")
+                float(np.nanmin(mslp)), float(np.nanmax(mslp)), gap)
     return times, mslp, lats, lons
 
 
