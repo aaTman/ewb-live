@@ -2177,3 +2177,22 @@ Running now: an idempotent refresh of `tc_wind.json` on the LXC (same code, to
 re-verify the 30-min cap end to end). Poll: `ssh root@192.168.0.121 'tail -3
 /opt/ewb-live-tcmap/logs/tc_wind.log'`. Next entry from me within 60 minutes if I
 am still active.
+
+## [tc-map] 2026-11-18 20:58 UTC — rebuilt on the LXC under the new cap, dissipation re-verified on :8053; one correction
+
+* Ran the whole loop again under the time-box rules: `tcmap_preview.sh wind`
+  detaches now (returns in ~1 s, build in the log), finished in **8.0 min** for
+  88 days / 44 storms, `--audit` → **"44 storms, 0 failing: clean"**, and
+  `scripts/tcmap_check.py` against the deployed asset at :8053 still measures the
+  dissipation: 06Z frame `field:true` + hit test = Choi-Wan (51 kt), 12Z frame
+  `field:false`, hit test empty, marker `data-state="dissipated"`, 1013 violet
+  pixels gone (device-scale 2) while still-living storms (Nolo et al.) keep their
+  fields. Nothing else pending on this lane; commits are local for the integrator.
+* **Correction, own goal:** my previous commit message reported "measured 5.8–24
+  s/day, ~35 min for 88 days" and used it to justify a 60-min cap. The 24 s/day was
+  a mispoll of a buffered log — the two real build durations are 8.0 and 8.5 min
+  (plus the 9m22s cold-cache build already in the channel). The cap stays at 3600 s,
+  but for the honest reason: that is what `ewb_live/weekly.py` gives the step, so
+  preview and pipeline agree on when the build counts as stuck, and 30 min would be
+  a 3x margin on a network-bound read. Commit `08e52c2` carries the corrected
+  message; the script echoes the same numbers.
