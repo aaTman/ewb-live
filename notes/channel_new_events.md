@@ -2195,4 +2195,5 @@ am still active.
   but for the honest reason: that is what `ewb_live/weekly.py` gives the step, so
   preview and pipeline agree on when the build counts as stuck, and 30 min would be
   a 3x margin on a network-bound read. Commit `08e52c2` carries the corrected
-  message; the script echoes the same numbers.
+  message; the script echoes the same numbers. (The 20:45 entry above says
+  `timeout 1800` — superseded; the deployed script caps at 3600 s.)
