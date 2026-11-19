@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 
 from . import regions
+from .events.types import EVENT_TYPES   # single source of truth for the type list
 
 logger = logging.getLogger("ewb_live.pipeline")
 
@@ -36,6 +37,42 @@ RESULTS = Path("data/results")
 
 # G-31: keys stripped from the PUBLIC meta.json (served at /data/results/).
 PUBLIC_META_DROP = ("perf", "host", "hostname")
+
+
+def _ibtracs_meta(window: "tuple | None" = None,
+                  published_sids: "list | None" = None) -> "dict | None":
+    """TC-lane source freshness for meta.json (see run(): meta.ibtracs).
+
+    Fail-soft: a freshness note must never fail a publish; None is itself
+    the honest "archive unreachable" marker.
+
+    ``window``/``published_sids`` (ne-fix-tc 2026-11-19) additionally report
+    the storm universe in the window and the systems still live at the
+    archive's edge, so the UI can say what it did not publish (audit TC-3/4).
+    """
+    try:
+        from .sources.ibtracs import source_status
+
+        return source_status(window=window, published_sids=published_sids)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ibtracs source_status failed (meta.ibtracs=null): %s", exc)
+        return None
+
+
+def _lane_status_meta() -> dict:
+    """Per-lane scan outcomes for the UI's honest zero (meta.lane_status).
+
+    Fail-soft like :func:`_ibtracs_meta`: a status note must never fail a
+    publish, and an empty dict means "nothing was reported", which the UI reads
+    as before (the plain empty-lane line), not as a failure.
+    """
+    try:
+        from .events import lane_status_report
+
+        return lane_status_report()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("lane_status_report failed (meta.lane_status={}): %s", exc)
+        return {}
 
 
 def public_meta(meta: dict) -> dict:
@@ -116,12 +153,25 @@ def _heartbeat(**fields) -> None:
 def _sel_thresholds() -> dict:
     """Effective selection quantiles for the current run (meta record)."""
     from .events.temperature import _mode_clim
+    from .events import flood
 
     clim = _mode_clim()
     return {
         "heat_wave": {"q_lower": float(clim["heat_wave"]["q_lower"])},
         "freeze": {"q_upper": float(clim["freeze"]["q_upper"])},
+        # cold snap = the freeze p15 rule without the <=0C cap (same quantile)
+        "cold_snap": {"q_upper": float(clim["cold_snap"]["q_upper"])},
         "atmospheric_river": {"q_upper": "p90 ivt (EWB default)"},
+        # flood: ERA5 wet-day percentile of the daily total and of the trailing
+        # 72 h, plus the absolute plausibility floors per window
+        # (events/flood.py). Integration fix 2026-11-18: this used to read
+        # flood.p95 / flood.FLOOR_MM as module constants; the lane exposes
+        # DEFAULT_QUANTILE (env-overridable) and a per-window FLOOR_MM dict, and
+        # the bad attribute raised AttributeError inside every pipeline run that
+        # writes meta.json -- i.e. the whole detect/publish step died here.
+        "flood": {"q_upper": flood.DEFAULT_QUANTILE,
+                  "floor_mm": {str(k): float(v)
+                               for k, v in flood.FLOOR_MM.items()}},
     }
 
 
@@ -597,6 +647,9 @@ def run(
     if BASELINE not in models:
         logger.warning("baseline model %s not in sources; scorecard skill will be null", BASELINE)
 
+    from .events.select import UNSCORED_TYPES   # observation lanes (best-track
+    # tropical_cyclone, IMERG flood) are published, never scored
+
     # 2. incremental bookkeeping
     scores_path = RESULTS / "scores.parquet"
     old = pd.read_parquet(scores_path) if scores_path.exists() and not force else pd.DataFrame(
@@ -620,10 +673,20 @@ def run(
     logger.info("cached scores: %d rows; done pairs: %d", len(cached), len(done))
 
     todo = []
+    unscored_obs: list = []   # observation lanes (tropical_cyclone, flood):
+                              # published and rendered, never scored
     for e in events:
         pending = [m for m in models if (e.id, m) not in done]
-        if pending:
-            todo.append((e, pending))
+        if not pending:
+            continue
+        if e.event_type in UNSCORED_TYPES:
+            # published and rendered, never scored (tropical_cyclone,
+            # midlat_cyclone, flood) — held aside so the pair_status block below
+            # can DOCUMENT each pair instead of the lane sitting as phantom
+            # pending work that keeps full_run_complete false forever
+            unscored_obs.append((e, pending))
+            continue
+        todo.append((e, pending))
     if max_events:
         ids = _select_event_ids(todo, max_events)
         todo = [(e, ms) for e, ms in todo if e.id in ids]
@@ -675,6 +738,7 @@ def run(
     # prune to the live universe (ids churn across selection rebuilds) and
     # sweep orphaned atomic-write temps from SIGKILLed writers
     pair_status = _prune_pair_status(pair_status, events, models)
+
     # sidecars of churned-out events are dead weight: every run re-parses
     # every file ever written (ponytail 2026-11-08 SHOULD: unbounded growth)
     if not force:
@@ -700,8 +764,56 @@ def run(
     def _pair(eid: str, model: str) -> dict:
         return pair_status.get(f"{eid}|{model}", {})
 
+    # Unscored lanes (tropical_cyclone 2026-11-16, flood 2026-11-17,
+    # midlat_cyclone 2026-11-17) have no EWB metric set: they are published and
+    # rendered, never scored. Record a DOCUMENTED zero-row status per pair so
+    # the pair_coverage contract and full_run_complete stay decidable
+    # (mirrors how a model with no 2 m temperature on heat/freeze is documented,
+    # not left missing).
+    _UNSCORED_REASON = {
+        "tropical_cyclone": "no EWB benchmark for best-track events "
+                            "(tropical_cyclone is published, not scored)",
+        "midlat_cyclone": "no EWB benchmark for tracked mid-latitude lows "
+                          "(midlat_cyclone is published, not scored)",
+        "flood": "no EWB benchmark for IMERG-accumulation events "
+                 "(flood is published, not scored)",
+    }
+    if unscored_obs:
+        for e, ms in unscored_obs:
+            for m in ms:
+                pair_status[f"{e.id}|{m}"] = {
+                    "status": "unsupported", "rows": 0,
+                    "fp": f"{fp_by_event[e.id]}|{truth_by_event[e.id]}",
+                    "reason": _UNSCORED_REASON[e.event_type]}
+        logger.info("unscored lanes: %d events published without scoring "
+                    "(%d documented 'unsupported' pairs)",
+                    len(unscored_obs), sum(len(ms) for _e, ms in unscored_obs))
+        _persist_pair_status()
+
     failed_after_retry: set[str] = set()
     last_sig = ""  # blocker sig from the most recent _write_outputs (untruncated)
+
+    # TC-lane source freshness for the UI's honest zero (owner rule
+    # 2026-11-17): an empty tropical_cyclone lane must be distinguishable
+    # from "no cyclones happened" — IBTrACS publication lags real time by
+    # days. Published in meta as `ibtracs`: a dict = the archive's reach;
+    # null = lane ran but the archive was unreachable; the KEY ABSENT means
+    # the release was built by pre-lane code (the UI says so instead of
+    # printing an unqualified 0).
+    # ne-fix-tc 2026-11-19 (audit TC-3/4): the same block now also carries the
+    # storm universe, so a NON-empty lane can say how many storms the archive
+    # held, how many became events, and which systems were still live at the
+    # archive's edge (not yet judgeable). Additive keys only.
+    ibtracs_meta = _ibtracs_meta(
+        window=(start, end),
+        published_sids=[e.details.get("sid") for e in events
+                        if e.event_type == "tropical_cyclone"
+                        and e.details.get("sid")])
+    # Same rule, generalised (mlc-fix 2026-11-18): every lane that can fail
+    # soft reports how it ended — {"midlat_cyclone": {"status": "ok"|"failed"
+    # |"no-data", "reason": ...}}. Absent type = the lane reports nothing (or
+    # the release predates it), which the UI must not read as a failure.
+    lane_status = _lane_status_meta()
 
     def _write_outputs(frames: list) -> int:
         """Concat + (re)write scores/scorecard/meta atomically. Called
@@ -764,6 +876,8 @@ def run(
                 "fallback": "ifs_hres_analysis",
                 "note": "ARCO lags ~6 days; events ending after the cutoff are scored against IFS HRES 0-h analysis",
             },
+            "ibtracs": ibtracs_meta,
+            "lane_status": lane_status,
             "climatology": _clim_meta(),
             # owner decision 2026-11-08 (G-40): documented deviation — the AR
             # lane keeps the upstream EWB mask filters verbatim and ADDS an
@@ -788,7 +902,7 @@ def run(
             "selection_thresholds": _sel_thresholds(),
             "event_counts": {
                 et: sum(1 for e in events if e.event_type == et)
-                for et in ("heat_wave", "freeze", "atmospheric_river")
+                for et in EVENT_TYPES
             },
             "n_score_rows": len(scores),
             "n_scored_pairs": int(len({(r[0], r[1]) for r in zip(scores['event_id'], scores['model'])})),

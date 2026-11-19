@@ -37,6 +37,8 @@
 <script src="app.js" defer></script>
 <script src="eventviz.js" defer></script>
 <script src="mergedmap.js" defer></script>
+<script src="tracklayer.js" defer></script>
+<script src="trackviz.js" defer></script>
 </head>
 <body>
 
@@ -135,16 +137,16 @@
       <h2>Extreme events — last 90 days
         <span class="sec-badge" id="raw-badge" hidden>IFS analysis (ERA5 lag)</span></h2>
       <span class="count" id="gm-count"></span>
+      <div class="ctl-group ctl-region hidden" id="region-group">
+        <label class="ctl-label" for="region-select">Region</label>
+        <select id="region-select" title="Events, map and scorecard by region"></select>
+      </div>
     </div>
     <p class="sec-lede">Shading shows where the heat, freeze and atmospheric-river detectors fired;
       dashed boxes are the events the models are scored on. Move through time below the map, or pick an event.</p>
     <div class="type-filter">
       <span class="ctl-label" id="type-tabs-label">Show</span>
-      <div class="ctl-group" id="type-tabs" role="group" aria-labelledby="type-tabs-label"></div>
-      <div class="ctl-group ctl-region hidden" id="region-group">
-        <label class="ctl-label" for="region-select">Region</label>
-        <select id="region-select" title="Events, map and scorecard by region"></select>
-      </div>
+      <div class="ctl-group" id="type-tabs" role="tablist" aria-labelledby="type-tabs-label"></div>
     </div>
   </div>
 
@@ -194,7 +196,7 @@
     </div>
     <div class="table-wrap tall">
       <table id="event-table">
-        <thead><tr><th><span class="sr-only">Type</span></th><th>Event</th><th class="num" title="Heat/freeze: ERA5 daily-mean 2 m temperature at the peak day. Atmospheric river: peak IVT.">Peak</th></tr></thead>
+        <thead><tr><th><span class="sr-only">Type</span></th><th>Event</th><th class="num" title="Heat/freeze/cold snap: ERA5 daily-mean 2 m temperature at the peak day. Atmospheric river: peak IVT. Tropical cyclone: peak sustained wind (kt). Flood: trailing 72 h precipitation accumulation (mm) from the lane's rain source (AI-estimated Google PARDIG, or GPM IMERG on fallback builds).">Peak</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -284,12 +286,50 @@
       <li><b>Heat wave</b> — ERA5 2&nbsp;m temperature above the 85th percentile of the
       Operational WeatherBench ERA5 1990–2019 climatology (per day of year and hour) at <em>every</em>
       6-hourly step of a UTC day, over land, tracked into events by the rule set out below.</li>
-      <li><b>Freeze</b> — the same rule below the 15th percentile. A window with no freeze is a
+      <li><b>Freeze</b> — the same rule below the 15th percentile, <em>and</em> 2&nbsp;m temperature
+      at or below 0&nbsp;°C at all four 6-hourly steps (owner 2026-11-16). A window with no freeze is a
       valid result.</li>
+      <li><b>Cold snap</b> — the freeze rule <em>without</em> the 0&nbsp;°C requirement: below the
+      15th percentile at every 6-hourly step of a UTC day, over land, same tracker and same area
+      floors. Because a freeze is always also a cold snap, a cold snap that overlaps a freeze in
+      time and space is dropped in favour of the freeze (the more specific claim), so the two never
+      publish the same spell twice; cold snaps that stayed above 0&nbsp;°C are the part the freeze
+      lane cannot describe.</li>
       <li><b>Atmospheric river</b> — EWB’s AR mask: integrated vapour transport (IVT) of at least
       400&nbsp;kg&nbsp;m⁻¹&nbsp;s⁻¹ with a ridge criterion. The river must start over the ocean and
       reach land — making landfall on at least one day; objects entirely over land are excluded,
       and tropical cyclones are screened out using IBTrACS best tracks.</li>
+      <li><b>Tropical cyclone</b> — one IBTrACS best-track storm is one event: at least three
+      3-hourly fixes at tropical-storm force (34&nbsp;kt sustained wind) spanning at least
+      12&nbsp;hours, with extratropical and mixed fixes excluded. The event window runs from the
+      first to the last storm-force fix; the detail view draws the storm’s whole track, coloured
+      by wind. These are best-track <em>observations</em>, so the lane carries no model scorecard
+      — it is published for context, not benchmarked.</li>
+      <li><b>Midlatitude cyclone</b> — a closed low in 6-hourly ERA5 mean sea
+      level pressure: the lowest pressure within 6° with a <b>+3&nbsp;hPa</b> isobar
+      closing around it inside 6°, followed while it stays within 6° per 6-hour step
+      (gaps up to 12&nbsp;h are bridged). A low becomes an event when it lives at least
+      <b>48&nbsp;h</b>, travels at least <b>1000&nbsp;km</b>, reaches <b>≤990&nbsp;hPa</b>,
+      was born between <b>25–70°</b> latitude and <b>under 500&nbsp;m</b> elevation
+      (no phantom lows off the Tibetan Plateau or the Andes), and did not begin life as a
+      tropical cyclone. Peak value is the lowest central pressure; a <b>bomb</b> tag marks
+      a fall of ≥24&nbsp;hPa in 24&nbsp;h at 60° latitude. Tracked from ERA5, so this lane
+      has no model scorecard yet — it is drawn as a track, like a tropical cyclone.</li>
+      <li><b>Flood</b> — an <em>observation-lane</em> product, not an ERA5 lane: rain is
+      <b>AI-estimated precipitation (Google PARDIG, CC BY 4.0)</b> — 15-minute instantaneous
+      rates summed to a daily total — averaged <b>up</b> onto the ERA5 0.25&deg; land lattice;
+      PARDIG is an experimental model estimate, not an official observation, and is credited
+      to Google. Builds may fall back to GPM IMERG (which the code still supports); each
+      event&rsquo;s own detail panel names the source it was detected on. The ERA5 climatology
+      is the same in both modes. A cell exceeds when its daily total <em>or</em> its trailing
+      72&nbsp;h accumulation reaches the 95th percentile of that calendar day in the ERA5
+      1990&ndash;2019 wet-day climatology <em>and</em> at least 20&nbsp;mm/day (50&nbsp;mm per
+      72&nbsp;h). The absolute floor is not decoration: the rain source and ERA5 are different
+      products, so an exceedance means &ldquo;this source measured more rain than ERA5&rsquo;s
+      p95 for this cell and day of year&rdquo;. Cells whose ERA5 percentile is undefined
+      (hyper-arid) can never exceed, the ocean is excluded, and a day with incomplete sampling
+      is dropped rather than read as dry. EWB has no flood benchmark, so floods are published
+      and mapped but <b>no model is scored on them</b>.</li>
       <li>The raw detector map shades each cell by its consecutive <b>completed</b> UTC days
       meeting the daily rule. Heat shades only cells reaching the detector’s 3-day minimum
       (heat ramp 3–7+) — below that a cell can never become a heat wave, so it stays blank —
@@ -302,15 +342,19 @@
       threshold for one 6-hour step keeps its id; that step shows its previous footprint with a
       lighter fill (bridged — display only, the river was not physically detected there).</li>
       <li>Parts of one system are merged, no two events overlap in time and space, and each type
-      is capped at 15 events.</li>
+      is capped at 15 events — except the lanes whose 90-day windows hold many more objects:
+      tropical cyclones 60 (a storm is a single object that is never merged and a whole season
+      must fit), midlatitude cyclones 80 and floods 40.</li>
     </ul>
 
     <h3>How a spell becomes an event</h3>
-    <p>Heat waves and freezes are found in two stages. A <b>daily rule</b> picks the pixels:
+    <p>Heat waves, freezes and cold snaps are found in two stages. A <b>daily rule</b> picks the
+    pixels:
     a cell counts on a UTC day when 2&nbsp;m temperature is past the climatology bound (p85 for heat,
-    p15 for freeze) at <em>all four</em> 6-hourly steps and the cell is on land. A <b>tracker</b> then
+    p15 for freeze and cold snap — freeze also needing 0&nbsp;°C or below) at <em>all four</em>
+    6-hourly steps and the cell is on land. A <b>tracker</b> then
     decides which pixels belong to the same event, and when the event is over — the same numbers for
-    both hazards.</p>
+    all three hazards.</p>
     <ol class="method-steps">
       <li><b>Group</b> the counting cells of the day into regions. A cell belongs to a region when it
       is counting, or when it sits in a hole the closing fills (up to 12 cells wide) and at least

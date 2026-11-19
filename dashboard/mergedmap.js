@@ -21,7 +21,12 @@
    streak reaches the lane minimum (heat = detector MIN_CONSECUTIVE_DAYS = 3,
    freeze = 1; index.dur.min overrides the built-in LAYERS[].min)) and
    data/results/global_timeline.json (events[]: id,type,title,start,end,bbox,
-   grid,day,days,masks[,qualified_at]).
+   grid,day,days,masks[,qualified_at]). The flood lane rides its OWN daily
+   class frames, flood_<YYYYMMDD>.cls (zlib u8 on the same grid: 0 = no
+   evidence, 1..5 = accumulation classes over the detector's union rule —
+   ewb_live/viz/flood_frames.py), advertised additively as index.flood and
+   fetched only for days it lists (defect F0, owner 2026-11-19: floods were
+   invisible on the map while other lanes' shading leaked under the chip).
    Reduced motion: playback is frame-stepping only; nothing auto-plays.
    ========================================================================== */
 (function () {
@@ -44,6 +49,13 @@
       tip: 'Detected atmospheric rivers, shaded by IVT magnitude (kg m-1 s-1): 250-500, 500-750, 750-1000, 1000-1250, >=1250.'
         + ' Only cells the EWB AR detector flags (and the tropical/cyclone screens keep) are drawn; IVT outside an AR is never shown.'
         + ' Pale green = a track\'s gap-bridge footprint (display only).' },
+    // flood (defect F0, owner 2026-11-19): the lane's own daily raster —
+    // union-rule cells (>= 20 mm/day OR >= 50 mm/72 h over the ERA5 P95
+    // wet-day climatology, land only) from flood_<YYYYMMDD>.cls, shaded by
+    // accumulation. Not bit-packed .bin planes: IMERG is a DAILY product,
+    // so the grid is constant across the four frames of its UTC day.
+    { key: 'l', name: 'flood',  label: 'Flood — mm/day-equiv', ramp: true, bins: 5, min: 1,
+      tip: 'Precipitation over the detector rule: daily >= the ERA5 P95 wet-day threshold AND >= 20 mm, OR trailing 72 h >= P95 AND >= 50 mm (land only, fully observed cells only). Shaded by the mm/day-equivalent accumulation max(daily, 72 h total / 3): 20-50, 50-100, 100-200, 200-350, >=350. Cells that qualify only through the 72 h rule ride the lightest stop. One frame per UTC day (the rain product is daily); blank where the source has no day. The index (raw.flood.tip) restates the actual build source — Google PARDIG AI estimate (CC BY 4.0) or GPM IMERG.' },
   ];
   // bin opacities: ONE constant alpha per lane (all lanes 200) — the ramps'
   // lightness carries the scale (light theme: even L* steps, darker = more
@@ -54,7 +66,7 @@
   // additionally re-stroked above the raster in paintFrame (owner review
   // 2026-11-11, complaint 1: opaque AR sheets hid the oceans' grid).
   const RUN_ALPHA = { heat: [200, 200, 200, 200, 200, 200, 200], freeze: [200, 200, 200],
-                      ar: [200, 200, 200, 200, 200] };
+                      ar: [200, 200, 200, 200, 200], flood: [200, 200, 200, 200, 200] };
   // qualification gate per lane: heat = the detector's MIN_CONSECUTIVE_DAYS,
   // freeze = 1 completed day (context; events still need 3). index.dur.min
   // (published with the v2 sidecars) wins; otherwise the built-in LAYERS[].min.
@@ -63,18 +75,40 @@
   const minDays = (L) => (raw && raw.dur && raw.dur.min && raw.dur.min[L.name] != null)
     ? raw.dur.min[L.name] : (L.min || 0);
   const runBin = (count, bins) => Math.min(count - 1, bins - 1);   // bins: 1..bins
+  const isTrack = (e) => !!(e && e.track);   // TRACK lane → tracklayer.js draws it
   const TYPES = {
-    heat_wave:          { css: 'heat',   short: 'Heat' },
-    freeze:             { css: 'freeze', short: 'Freeze' },
-    atmospheric_river:  { css: 'ar',     short: 'AR' },
+    heat_wave:          { css: 'heat',      short: 'Heat' },
+    freeze:             { css: 'freeze',    short: 'Freeze' },
+    // cold snap = the freeze rule without the 0 °C cap: its own colour, but it
+    // shares the P15 raw layer, which IS its mask (no third temperature lane)
+    cold_snap:          { css: 'cold-snap', short: 'Cold snap' },
+    atmospheric_river:  { css: 'ar',        short: 'AR' },
+    // flood rides BOTH: the daily class raster below (LAYERS key l) and the
+    // event boxes — the raster is the evidence field, the boxes the events
+    flood:              { css: 'flood',     short: 'Flood' },
+    /* TRACK lanes (tc-map 2026-11-18): a cyclone entry carries its own `track`
+       geometry, so it is drawn by the additive tracklayer.js layer (polyline,
+       intensity fixes, position at the selected step) and NEVER as a bbox box —
+       a rectangle around a 3,000 km track is not information. These entries give
+       that layer the lane colour and the Gantt short label. */
+    tropical_cyclone:   { css: 'tc',        short: 'Tropical cyclone', track: true },
+    midlat_cyclone:     { css: 'mlc',       short: 'Midlat. cyclone', track: true },
   };
-  const LANE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river'];
+  // Gantt lanes. midlat_cyclone stays out until its lane publishes events (an
+  // always-empty lane would be its own small lie); a track lane gets bars like
+  // every other lane, from qualified_at → end, which is how a storm becomes
+  // findable on the time strip at all.
+  // Grouped in the chips' order (Temperature | Water | Storms): the lane adjacency is
+  // part of what the identity palette was validated against — if this order
+  // changes, re-run the palette check (notes/chips_design.md).
+  const LANE_ORDER = ['heat_wave', 'cold_snap', 'freeze', 'atmospheric_river',
+    'flood', 'tropical_cyclone'];
   const SPEEDS = [2, 5, 10];               // fps choices
 
   let raw = null;                          // raw_exceedance index.json
   let tl = null;                           // global_timeline.json (null = unavailable)
   let idx = 0;                             // current frame index
-  let on = { h: true, f: true, a: true };  // layer toggles
+  let on = { h: true, f: true, a: true, l: true };  // layer toggles
   const sel = new Set();                   // selected event ids (multi-highlight)
   let previewId = null;                    // event pointed at in the page's event list (outline only)
   let mounted = false;
@@ -104,7 +138,7 @@
     + String(d.getUTCHours()).padStart(2, '0');
   const urlLayers = () => {                // positive list, only when not all-on
     const k = LAYERS.filter((L) => on[L.key]).map((L) => L.key);
-    return k.length === 3 ? null : k.join(',');
+    return k.length === LAYERS.length ? null : k.join(',');
   };
   function fmtReadout(ts) {
     const d = tsToDate(ts);
@@ -216,6 +250,38 @@
   const prefetch = (i) => { [i - 1, i + 1].forEach((j) => {
     if (raw && j >= 0 && j < raw.frames.length) getFrame(j).catch(() => {}); }); };
 
+  /* ---------------- flood day frames (defect F0) ----------------
+     flood_<YYYYMMDD>.cls: one u8 class grid per UTC day on the raw grid
+     (ewb_live/viz/flood_frames.py). Cached per DAY (the four frames of a day
+     share it); a day absent from index.flood.days never fetches, and a
+     failed fetch caches null — the lane draws nothing, honestly. */
+  const flCache = new Map();               // day -> Uint8Array | null
+  function getFl(i) {
+    if (!raw || !raw.flood || !Array.isArray(raw.flood.days)) return Promise.resolve(null);
+    const ts = raw.frames[i];
+    if (!ts) return Promise.resolve(null);
+    const day = ts.slice(0, 8);
+    const days = raw.flood._set || (raw.flood._set = new Set(raw.flood.days));
+    if (!days.has(day)) return Promise.resolve(null);
+    if (flCache.has(day)) return Promise.resolve(flCache.get(day));
+    return inflateUrl(`data/results/raw_exceedance/flood_${day}.cls`)
+      .then((u) => {
+        const g = raw.grid;
+        if (u.length !== g.ny * g.nx) {            // grid skew: never paint garbage
+          console.warn('flood class frame size mismatch:', day, u.length);
+          u = null;
+        }
+        if (flCache.size >= 12) flCache.delete(flCache.keys().next().value);
+        flCache.set(day, u);
+        return u;
+      })
+      .catch((err) => {
+        console.warn('flood class frame unavailable:', day, err.message);
+        flCache.set(day, null);
+        return null;
+      });
+  }
+
   /* ---------------- projection / fit ---------------- */
   function fitProjection() {
     const wrap = $('#raw-map-wrap');
@@ -245,7 +311,38 @@
     const bx = $('#gm-boxes');                     // overlay tracks the canvas exactly
     bx.setAttribute('width', W); bx.setAttribute('height', H);
     bx.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    emitTracks('resize');      // the track layer is sized/projection-matched here
   }
+
+  /* ---------------- TRACK lanes: the seam to tracklayer.js ----------------
+     A cyclone entry carries its own geometry, and drawing it (canvas lines +
+     fix dots, plus one interactive SVG marker per positioned storm) is that
+     module's business, not the merged map's. This hands it what only the map
+     knows — the live projection, the fit, the selected step, the region/tab
+     filter, the selection — at every state change the map owns. Absent module
+     (or a timeline with no track entries) is a no-op: nothing here assumes it.
+     See notes/tc_map.md for the layer's own contract. */
+  function emitTracks(reason) {
+    if (typeof window.onMapTracks !== 'function') return;
+    try {
+      window.onMapTracks({
+        reason, proj, fit, mounted,
+        ts: raw ? raw.frames[idx] : null,
+        readout: raw ? fmtReadout(raw.frames[idx]).replace(/^Valid time: /, '') : '',
+        region, tab: pageTab(), sel: Array.from(sel), previewId,
+        events: tl ? tlEvents() : [],
+      });
+    } catch (err) { console.warn('track layer:', err.message); }
+  }
+
+  /* The wind asset can arrive AFTER the layer has drawn and the legend has been
+     built (it is a separate fetch). Repaint and rebuild the legend, so the
+     swatches and the canvas can never disagree about what is on the map. */
+  window.onTracksAssetReady = () => {
+    if (!mounted) return;
+    emitTracks('asset');
+    try { renderLegend(); } catch (err) { console.warn('track legend:', err.message); }
+  };
 
   function drawBase(ctx) {
     const dpr = window.devicePixelRatio || 1;
@@ -283,6 +380,7 @@
       ghostCache = null;   // packed colours: one cache per theme
   let curIvt = null;                                   // AR IVT class plane of the painted frame (hover)
   let curPaint = null;   // {u8, plane, ghostPlane, ivtS2} of the painted frame (hover reads the AR bit)
+  let curFl = null;      // flood class grid (u8) of the painted day, null = no flood evidence layer
   const IVT_BINS = [250, 500, 750, 1000, 1250];        // kg m-1 s-1 class edges (index.ivt.bins)
   function buildLut() {
     const g = raw.grid, nx = g.nx, ny = g.ny, stride = Math.ceil(nx / 8);
@@ -331,15 +429,18 @@
     drawBase(ctx);
     curIvt = null;                                    // no frame → nothing for hover to read
     curPaint = null;
-    if (!frame || !raw || !fit) { dimOutside(ctx); return; }
-    const u8 = frame.bin;                        // binary exceedance bits (4 planes)
-    const run = (raw.dur && frame.run) ? frame.run : null;   // null → binary paint (fallback)
+    const fl = curFl;      // flood day frame paints even past the ERA5 cutoff (the rain source
+                                       // — PARDIG by default — reaches later than ERA5 truth)
+    if (!raw || (!frame && !fl)) { dimOutside(ctx); return; }
+    const u8 = frame ? frame.bin : null;              // binary exceedance bits (4 planes)
+    const run = (frame && raw.dur && frame.run) ? frame.run : null;   // null → binary paint (fallback)
+    if (!fit) { dimOutside(ctx); return; }
     if (!lut || lut.cw !== cv.width || lut.ch !== cv.height) buildLut();
     const g = raw.grid, plane = g.ny * Math.ceil(g.nx / 8), cells = g.ny * g.nx;
     // plane 3 'bridged' (v8 assets): AR cells that are only a carried-over
     // footprint across a 1-step mask dropout. Feature-detected on the payload
     // length, so pre-v8 3-plane assets still paint exactly as before.
-    const ghostPlane = u8.length >= 4 * plane ? 3 * plane : -1;
+    const ghostPlane = u8 && u8.length >= 4 * plane ? 3 * plane : -1;
     // .ivt schema 2: class in the low 3 bits, bit 7 = IVT >= index.ivt.ar_min
     // (the AR threshold). Schema 1 sidecars were class-only AND were zeroed
     // wherever the AR layer did not paint — which is how "IVT values just
@@ -374,7 +475,7 @@
     const packed = packedCache, ramp = rampCache, ghostCol = ghostCache;
     const durV2 = !!(raw.dur && String(raw.dur.rev || '').indexOf('v2') === 0);
     const act = LAYERS.map((L, li) => (on[L.key] ? li : -1)).filter((li) => li >= 0);
-    const ivt = curIvt = (raw.ivt && frame.ivt) ? frame.ivt : null;   // IVT class plane (u8, per-cell; hover reads curIvt)
+    const ivt = curIvt = (frame && raw.ivt && frame.ivt) ? frame.ivt : null;   // IVT class plane (u8, per-cell; hover reads curIvt)
     curPaint = { u8, plane, ghostPlane, ivtS2 };
     const n = cw * ch;
     for (let p = 0; p < n; p++) {
@@ -383,7 +484,13 @@
       const m = bitMask[p];
       for (let a = 0; a < act.length; a++) {                  // later layers paint over earlier
         const li = act[a];
-        if (li === 2) {
+        if (li === 3) {
+          // flood: a daily CLASS grid, not bit planes — class > 0 IS the rule
+          // (union exceedance), the class is the accumulation bin
+          const v = fl ? fl[cellIdx[p]] : 0;
+          if (v > 0 && ramp[3]) px[p] = ramp[3][Math.min(v, LAYERS[3].bins) - 1];
+        } else if (li === 2) {
+          if (!u8) continue;                       // past-cutoff frame: no AR bits
           // AR: the binary bit says PAINT, the class plane says how strong.
           // Never index run[] for AR — .run has 2 planes (heat, freeze);
           // reading plane 2 is undefined = the AR-outage bug class of
@@ -408,7 +515,7 @@
             && ((((p % cw) >> 1) + ((p / cw) | 0) >> 1) & 1);
           px[p] = ramp[li][runBin(done + (prov ? 1 : 0), L.bins)];
           continue;
-        } else if (u8[li * plane + bi] & m) px[p] = packed[li];
+        } else if (u8 && (u8[li * plane + bi] & m)) px[p] = packed[li];
       }
     }
     rctx.putImageData(img, 0, 0);
@@ -546,14 +653,16 @@
     const anySel = sel.size > 0;
     // list preview of an event that is not on screen at this time step: a
     // non-interactive outline, so pointing at a row always shows WHERE it is
+    // (a TRACK event's preview outline is drawn by tracklayer.js instead)
     const ghost = previewId && !active.some((e) => e.id === previewId)
       ? tl.events.find((e) => e.id === previewId) : null;
-    if (ghost) {
+    if (ghost && !isTrack(ghost)) {
       const gd = bboxPaths(ghost), gt = TYPES[ghost.type] || { css: 'heat' };
       if (gd) mk('path', { class: 'gm-ghost', d: gd, 'aria-hidden': 'true',
                            style: `stroke: var(--series-${gt.css}); fill: var(--series-${gt.css})` }, g);
     }
     for (const ev of active) {
+      if (isTrack(ev)) continue;             // TRACK lane → tracklayer.js
       const t = TYPES[ev.type] || { css: 'heat' };
       const cls = 'gm-ev' + (sel.has(ev.id) ? ' sel' : '') + (anySel && !sel.has(ev.id) ? ' dim' : '')
         + (previewId === ev.id ? ' hov' : '');
@@ -618,17 +727,26 @@
       if (t) t.focus({ preventScroll: true });
     }
     if (typeof window.onMapEvents === 'function') window.onMapEvents(active.map((e) => e.id), Array.from(sel));
-    const nHeat = active.filter((e) => e.type === 'heat_wave').length;
-    const nFrz = active.filter((e) => e.type === 'freeze').length;
-    const nAr = active.filter((e) => e.type === 'atmospheric_river').length;
+    // the canvas describes what the CANVAS paints (layers + boxes); a track
+    // lane is a separate layer with its own aria-label on #gm-track-marks
+    const boxed = active.filter((e) => !isTrack(e));
+    const nHeat = boxed.filter((e) => e.type === 'heat_wave').length;
+    const nFrz = boxed.filter((e) => e.type === 'freeze').length;
+    const nCold = boxed.filter((e) => e.type === 'cold_snap').length;
+    const nAr = boxed.filter((e) => e.type === 'atmospheric_river').length;
+    const nFl = boxed.filter((e) => e.type === 'flood').length;
+    const nTk = active.length - boxed.length;
     const parts = [];
     if (nHeat) parts.push(`${nHeat} heat`);
     if (nFrz) parts.push(`${nFrz} freeze`);
+    if (nCold) parts.push(`${nCold} cold snap`);
     if (nAr) parts.push(`${nAr} AR`);
+    if (nFl) parts.push(`${nFl} flood`);
     $('#raw-canvas').setAttribute('aria-label',
       `Equal Earth world map — raw detector layers and event boxes: `
-      + `${active.length} event${active.length === 1 ? '' : 's'} visible`
-      + (parts.length ? ` (${parts.join(', ')})` : ''));
+      + `${boxed.length} event${boxed.length === 1 ? '' : 's'} visible`
+      + (parts.length ? ` (${parts.join(', ')})` : '')
+      + (nTk ? ` — plus ${nTk} cyclone track${nTk === 1 ? '' : 's'} in the track layer` : ''));
   }
   const spanLon = (b) => (b[2] <= b[3] ? b[3] - b[2] : 360);
   function hoverRow(id, on) {                  // map box → its row in the event list
@@ -638,11 +756,18 @@
   function preview(id) {                       // event list → outline on map + timeline (no canvas repaint)
     if (!mounted || !raw || previewId === id) return;
     previewId = id;
-    renderBoxes(); renderGantt();
+    renderBoxes(); renderGantt(); emitTracks('preview');
   }
   function layersForTab(tab) {                 // the page's type filter narrows the raw layers too
-    const key = { heat_wave: 'h', freeze: 'f', atmospheric_river: 'a' }[tab];
-    for (const L of LAYERS) on[L.key] = !key || L.key === key;
+    // Owner F0 (2026-11-19): a single chip shows ONLY its own lane's raw
+    // shading — heat/AR sheets under a flood chip read as flood evidence.
+    // cold_snap has no raw layer of its own: the P15 (freeze) lane IS its
+    // mask; flood has its own daily class frames (key 'l'). Lanes with no
+    // raster at all (the cyclone TRACK lanes) turn every raster OFF: their
+    // evidence is tracks and boxes, never another lane's shading.
+    const key = { heat_wave: 'h', freeze: 'f', cold_snap: 'f',
+                  atmospheric_river: 'a', flood: 'l' }[tab];
+    for (const L of LAYERS) on[L.key] = tab === 'all' || (!!key && L.key === key);
   }
 
   /* ---------------- Gantt strip (qualified → end, shared time scale) ---------------- */
@@ -652,7 +777,7 @@
     if (!tl) return;
     const W = Math.max(320, $('#raw-map-wrap').clientWidth);
     const LANE_H = 12, GAP = 4, LAB = 44, TOP = 2, AX = 16;
-    const H = TOP + LANE_H * 3 + GAP * 2 + AX;
+    const H = TOP + LANE_H * LANE_ORDER.length + GAP * (LANE_ORDER.length - 1) + AX;
     svg.setAttribute('width', W); svg.setAttribute('height', H);
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     const t0 = tsToDate(raw.frames[0]).getTime();
@@ -721,14 +846,17 @@
     badge.textContent = past ? `raw layers end ${fmtShort(raw.cutoff)} ${raw.cutoff.slice(8, 10)}Z · ERA5 lag` : '';
     renderBoxes();
     renderGantt();
-    getFrame(idx).then((frame) => {
+    emitTracks('frame');       // track lanes follow the step, the tab and the region
+    Promise.all([getFrame(idx), getFl(idx)]).then(([frame, fl]) => {
       if (seq !== renderSeq) return;
+      curFl = fl;                          // flood day frame of THIS step (flood_frames contract)
       const note = $('#raw-note');
       if (frame === null && ts && !past) {
         note.classList.remove('hidden');
         note.textContent = `Frame ${fmtReadout(ts)} is not available yet — `
           + 'the raw exceedance build has not produced it.';
-        legStats = null; paintFrame(null);
+        legStats = censusFrame(frame);     // a flood day frame still answers
+        paintFrame(frame);
       } else {
         note.classList.add('hidden');
         legStats = censusFrame(frame);        // legend describes THIS painted frame
@@ -791,7 +919,7 @@
     if ('layers' in params) {                        // positive list of ON layers
       const keep = new Set((params.layers || '').split(',').filter(Boolean));
       for (const L of LAYERS) { const v = keep.has(L.key); if (on[L.key] !== v) { on[L.key] = v; changed = true; } }
-      if (!on.h && !on.f && !on.a) on.h = on.f = on.a = true;
+      if (LAYERS.every((L) => !on[L.key])) LAYERS.forEach((L) => { on[L.key] = true; });
       // no widget: the type tabs are the only layer toggles (complaint 3);
       // #layers= deep links ride the state alone. render() below repaints.
     }
@@ -821,9 +949,15 @@
       flat: 'below P15', flatTip: 'Below P15 — the duration sidecar is unavailable, so one flat colour paints every exceeded cell' },
     ar:     { name: 'AR IVT', unit: 'kg m⁻¹ s⁻¹',
       flat: 'AR mask', flatTip: 'AR mask — the IVT class sidecar is unavailable, so one flat green paints every masked cell' },
+    flood:  { name: 'Flood', unit: 'mm/day-equiv',
+      flat: 'over threshold', flatTip: 'Over the flood rule — the accumulation class frame is unavailable, so one flat colour paints every exceeded cell' },
   };
+  // fallback legend edges when index.flood.bins_mm is absent (kept in sync
+  // with ewb_live/viz/flood_frames.BINS_MM)
+  const FLOOD_BINS_FALLBACK = [20, 50, 100, 200, 350];
   let legStats = null;                         // lane census of the painted frame
   let legHtml = '';                            // last rendered markup (playback: no reflow churn)
+  let legOpen = false;                         // "Scales" expanded (labelled ramps) vs compact swatches
 
   const legStop = (bg, label, title, out, extraCls) =>
     `<span class="lg-bin${out ? ' out' : ''}">`
@@ -844,20 +978,36 @@
      what to show), and it is cached on the frame object, recomputed when the
      Region changes. */
   function censusFrame(frame) {
-    if (!raw || !frame || !frame.bin) return null;
+    if (!raw) return null;
     const key = region ? region.key : 'global';
+    const fl = curFl;
+    if (!frame || !frame.bin) {
+      if (!fl) return null;
+      // past the ERA5 cutoff (or a missing .bin): only the flood day frame
+      // can still describe what paints — every other lane draws nothing
+      const s = { key, durV2: false,
+                  ramp: { heat: false, freeze: false, ar: false, flood: true },
+                  n: LAYERS.map((L) => new Uint8Array(L.bins)), prov: LAYERS.map(() => 0) };
+      for (let c = 0; c < fl.length; c++) {
+        const v = fl[c];
+        if (v > 0) s.n[3][Math.min(v, LAYERS[3].bins) - 1] = 1;
+      }
+      if (frame) { frame.leg = s; frame.legKey = key; }
+      return s;
+    }
     if (frame.legKey === key) return frame.leg;
     const g = raw.grid, nx = g.nx, ny = g.ny, cells = nx * ny;
     const durV2 = !!(raw.dur && String(raw.dur.rev || '').indexOf('v2') === 0);
     const run = (raw.dur && frame.run) ? frame.run : null;
     const ivt = (raw.ivt && frame.ivt) ? frame.ivt : null;
-    const s = { key, durV2, ramp: { heat: !!run, freeze: !!run, ar: !!ivt },
-                n: LAYERS.map((L) => new Uint8Array(L.bins)), prov: [0, 0, 0] };
-    const clampGate = (li) => (li === 2 ? 1
+    const s = { key, durV2, ramp: { heat: !!run, freeze: !!run, ar: !!ivt, flood: !!fl },
+                n: LAYERS.map((L) => new Uint8Array(L.bins)), prov: LAYERS.map(() => 0) };
+    const clampGate = (li) => (li >= 2 ? 1
       : Math.min(Math.max(minDays(LAYERS[li]), 1), LAYERS[li].bins));
     const reach = (li) => (li === 2 ? (ivt ? LAYERS[2].bins : 1)
+      : li === 3 ? (fl ? LAYERS[3].bins : 0)
       : !run ? 1 : LAYERS[li].bins - clampGate(li) + 1 + (durV2 ? 1 : 0));
-    const need = [reach(0), reach(1), reach(2)];    // stops still missing per lane
+    const need = LAYERS.map((L, li) => reach(li));    // stops still missing per lane
     const hit = (li, b) => { if (!s.n[li][b]) { s.n[li][b] = 1; need[li]--; } };
     const bin = frame.bin, stride = Math.ceil(nx / 8), planeB = ny * stride;
     const stride4 = bin.length >= 4 * planeB;         // v8+ carries the bridged plane
@@ -908,9 +1058,13 @@
           // in the light ramp anyway.
           else if (bin[2 * planeB + byte] & m) hit(2, 0);
         }
+        if (need[3] && fl) {                          // flood: daily class grid
+          const v = fl[c];
+          if (v > 0) hit(3, Math.min(v, LAYERS[3].bins) - 1);
+        }
       }
     };
-    for (let j = j0; j <= j1 && need[0] + need[1] + need[2] > 0; j++) {
+    for (let j = j0; j <= j1 && need.reduce((a, b) => a + b, 0) > 0; j++) {
       if (i0 <= i1) span(j, i0, i1);
       else { span(j, i0, nx - 1); span(j, 0, i1); }         // dateline-crossing region
     }
@@ -926,11 +1080,16 @@
       const cen = legStats;
       LAYERS.forEach((L, li) => {
         if (!on[L.key]) return;                            // off the map → off the legend
+        if (L.name === 'flood' && !raw.flood) return;      // no asset on this site: no phantom group
         const M = LEGEND[L.name];
         const n = cen ? cen.n[li] : null;                  // null = nothing painted yet
         const ramp = !cen || cen.ramp[L.name];
         const live = n ? n.reduce((a, b) => a + b, 0) : -1;  // stops present in this frame
         const from = L.name === 'ar' ? 1 : Math.min(Math.max(minDays(L), 1), L.bins);
+        // flood legend stops are mm/day-equivalent ranges, not day counts
+        const fe = L.name === 'flood'
+          ? ((raw.flood && Array.isArray(raw.flood.bins_mm) && raw.flood.bins_mm.length === L.bins
+              && raw.flood.bins_mm) || FLOOD_BINS_FALLBACK) : null;
         const stops = [];
         if (ramp) {
           // only stops the lane can paint: days below the gate never reach the canvas
@@ -940,10 +1099,16 @@
               `var(--dur-${L.name}-${b})`,
               // top class reads '1250+' — same '+ suffix as the day ramps; the
               // caption column stays narrow enough that the digits never touch
-              L.name === 'ar' ? (b < L.bins ? String(lo) : `${lo}+`) : dayLbl(b, L.bins),
+              L.name === 'ar' ? (b < L.bins ? String(lo) : `${lo}+`)
+                : fe ? (b < L.bins ? `${fe[b - 1]}\u2013${fe[b]}` : `${fe[L.bins - 1]}+`)
+                : dayLbl(b, L.bins),
               L.name === 'ar'
                 ? (b < L.bins ? `${lo}\u2013${IVT_BINS[b]} kg m\u207b\u00b9 s\u207b\u00b9` : `\u2265${lo} kg m\u207b\u00b9 s\u207b\u00b9`)
-                : dayTip(L, b),
+                : fe
+                  ? (b < L.bins
+                     ? `${fe[b - 1]}\u2013${fe[b]} mm/day-equivalent \u2014 max(daily rain, 72 h total / 3)`
+                     : `\u2265${fe[L.bins - 1]} mm/day-equivalent \u2014 max(daily rain, 72 h total / 3)`)
+                  : dayTip(L, b),
               !!n && n[b - 1] === 0));
           }
           // 'today so far' rides as a dithered shade, never a new colour (dur rev v2)
@@ -958,15 +1123,38 @@
           stops.push(legStop(`var(--series-${L.name})`, M.flat, M.flatTip, !!n && live === 0));
         }
         const none = !!n && live === 0;
+        const tip = (L.key === 'l' && raw && raw.flood && raw.flood.tip) || L.tip || M.name;
         groups.push(`<span class="lg-group${none ? ' none' : ''}" data-layer="${L.key}"`
-          + ` title="${L.tip || M.name}">`
+          + ` title="${tip}">`
           + `<span class="lg-head"><span class="lg-name">${M.name}</span>`
           + `<span class="lg-unit">${M.unit}</span>`
           + (none ? '<span class="lg-none">none in view</span>' : '') + '</span>'
           + `<span class="lg-stops">${stops.join('')}</span></span>`);
       });
     }
-    const html = groups.join('');
+    /* TRACK lanes contribute their own groups (tracklayer.js): a lane only
+       appears when it has published events, so the raster-only pages keep
+       their exact legend contract (counts, widths, fixed height). */
+    if (typeof window.onTrackLegend === 'function') {
+      try {
+        const extra = window.onTrackLegend({ tab: pageTab(), ts: raw && raw.frames[idx],
+          region, events: tl ? tlEvents() : [], sel: Array.from(sel) });
+        if (extra) groups.push(extra);
+      } catch (err) { console.warn('track legend:', err.message); }
+    }
+    /* COMPACT by default once three or more lanes share the strip (owner
+       2026-11-19: the 7-lane legend was 154 px of the first screen): only each
+       lane's name and its colour swatches — every swatch keeps its tooltip, the
+       lane's group keeps its own — and a "Scales" control opens the labelled ramps
+       (the old layout). One or two lanes (a type tab) are already one short row
+       and always show their labels. */
+    const compact = groups.length >= 3 && !legOpen;
+    const toggle = groups.length >= 3
+      ? `<button type="button" class="lg-toggle" aria-expanded="${legOpen}" `
+        + `title="${legOpen ? 'Hide' : 'Show'} the numbers under each colour scale">`
+        + `Scales <span aria-hidden="true">${legOpen ? '▴' : '▾'}</span></button>` : '';
+    const html = toggle + groups.join('');
+    leg.classList.toggle('compact', compact);
     if (html === legHtml) return;              // same legend: no reflow per frame
     legHtml = html;
     leg.innerHTML = html;
@@ -987,6 +1175,12 @@
     if (mounted) return;
     const slider = $('#raw-slider');
     $('#raw-play').onclick = togglePlay;
+    $('#gm-legend').addEventListener('click', (ev) => {     // the "Scales" expander
+      if (!ev.target.closest('.lg-toggle')) return;
+      legOpen = !legOpen;
+      legHtml = '';                                          // force the repaint
+      renderLegend();
+    });
     $('#raw-prev').onclick = () => { stopPlay(); if (idx > 0) { idx--; writeUrl(false); render(); } };
     $('#raw-next').onclick = () => { stopPlay(); if (idx < (raw && raw.frames.length - 1)) { idx++; writeUrl(true); render(); } };
     $('#raw-speed').onchange = (e) => {
@@ -998,6 +1192,7 @@
     new MutationObserver(() => {
       packedCache = null; rampCache = null; ghostCache = null;   // theme flip: repack colours
       if (raw && fit) paintFrame(frameCache.get(raw.frames[idx]) || null);
+      emitTracks('theme');     // the track layer bakes lane/ramp colours too
     })
       .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
@@ -1137,6 +1332,10 @@
 
   window.MergedMap = { mount, urlParams, applyUrl,
     preview,
+    /* the two ways another layer may act on the map (tracklayer.js): select an
+       event (the same multi-highlight + #sel= a box click does) and open its
+       detail page; hover mirrors the box ↔ event-list row highlight. */
+    select: toggleSel, open: openEvent, hover: hoverRow,
     /* Region view (app.js Region dropdown): null/`global` = whole world.
        Refits the projection + repaints; before mount it just parks the view
        (mount's fitProjection picks it up). */
@@ -1170,5 +1369,8 @@
       arAt: (j, i) => { if (!raw || !curPaint) return 0;
         const nx = raw.grid.nx, stride = Math.ceil(nx / 8);
         return (curPaint.u8[2 * curPaint.plane + j * stride + (i >> 3)]
-                >> (7 - (i & 7))) & 1; } }) };
+                >> (7 - (i & 7))) & 1; },
+      // the flood CLASS of a cell in the painted day frame (0 = no evidence):
+      // the flood layer answers from the daily grid, not the 6-hourly bits
+      flAt: (j, i) => (curFl && raw ? (curFl[j * raw.grid.nx + i] || 0) : 0) }) };
 })();

@@ -16,6 +16,7 @@ dependencies = [
     "icechunk>=2.3.1",
     "matplotlib>=3.11.2",
     "ruamel-yaml>=0.19.1",
+    "scikit-image>=0.26.0",  # mlc lane: peak_local_max + find_contours (direct import; also an extremeweatherbench dep)
     "s3fs>=2026.9.0",
     "virtualizarr>=2.8.0",
     "zarr>=3.4.2",

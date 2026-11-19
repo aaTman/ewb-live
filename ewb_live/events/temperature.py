@@ -1,4 +1,4 @@
-"""Heat-wave / freeze detection: exceedance masks + the footprint/core tracker.
+"""Heat-wave / freeze / cold-snap detection: exceedance masks + the tracker.
 
 Thresholds and masks are EWB's (climatology percentiles, the daily rule "all
 four 6-hourly steps pass", land only). Tracking is the product owner's
@@ -11,6 +11,12 @@ replaced, in order: the upstream EWB blob tracker (unbounded 1 deg-per-edge
 expansion, "blob vanished or <50% of own peak" ending, no seed suppression;
 notes/ewb.md) and the same morning's interim 200k-seed/+250 km-box rule
 (notes/temperature_area_rule.md, superseded by notes/footprint_tracker.md).
+
+`cold_snap` (owner 2026-11-16) is the freeze rule with the <=0 degC cap removed —
+the same p15 clip, the same masks and the same tracker, so it runs through this
+module as a third `event_type` rather than a copy of the scanner; the only
+difference is its entry in ``MAX_C_BY_TYPE`` (see ``ewb_live/events/cold_snap.py``
+for how the two lanes are kept from duplicating each other).
 
 Daily masks come from the published raw-exceedance frames when the lane spans
 the window (``frame_masks.py`` — the same bytes the map paints and
@@ -72,10 +78,14 @@ EVENT_CLIP_MODES: dict[str, Any] = {
         # qualify); was p95/p05 during the 2026-11-06 comparison runs.
         "heat_wave": dict(q_lower=0.85, op_lower=">", q_upper=None, op_upper="<"),
         "freeze": dict(q_lower=None, op_lower=">", q_upper=0.15, op_upper="<"),
+        # owner 2026-11-16: cold snap = the freeze rule minus the <=0C cap
+        # (ewb_live/events/cold_snap.py), so it shares the p15 clip exactly.
+        "cold_snap": dict(q_lower=None, op_lower=">", q_upper=0.15, op_upper="<"),
     },
     "ewb_default": {
         "heat_wave": dict(q_lower=0.85, op_lower=">", q_upper=None, op_upper="<"),
         "freeze": dict(q_lower=None, op_lower=">", q_upper=0.15, op_upper="<"),
+        "cold_snap": dict(q_lower=None, op_lower=">", q_upper=0.15, op_upper="<"),
     },
 }
 
@@ -101,6 +111,11 @@ def _mode_clim(mode: str | None = None) -> dict:
         "freeze": {**table["freeze"],
                    "q_upper": _clip_override(table["freeze"]["q_upper"],
                                              "EWB_LIVE_FREEZE_CLIP")},
+        # cold snap follows the freeze quantile: one env var moves both p15
+        # lanes together, so they cannot drift apart (they share a mask)
+        "cold_snap": {**table["cold_snap"],
+                      "q_upper": _clip_override(table["cold_snap"]["q_upper"],
+                                                "EWB_LIVE_FREEZE_CLIP")},
     }
 
 
@@ -174,7 +189,7 @@ def _cell_area_km2(lats: np.ndarray, step_deg: float, nx: int) -> np.ndarray:
     return np.broadcast_to(col[:, None], (col.size, nx))
 
 
-def _mirror_t2m_daily(dates, lats, lons) -> np.ndarray | None:
+def _mirror_t2m_daily(dates, lats, lons, reduce: str = "mean") -> np.ndarray | None:
     """Daily-mean t2m (degC) on the mask grid from the local ERA5 truth mirror.
 
     The mirror holds exactly the four 6-hourly anchors (00/06/12/18) per day,
@@ -226,12 +241,22 @@ def _mirror_t2m_daily(dates, lats, lons) -> np.ndarray | None:
         return None
     sub = t2m.sel(time=stamps).isel(latitude=i_lat, longitude=i_lon)
     arr = sub.transpose("time", "latitude", "longitude").data
-    daily = arr.reshape(len(dates), 4, *arr.shape[1:]).mean(axis=1)
+    daily = getattr(arr.reshape(len(dates), 4, *arr.shape[1:]), reduce)(axis=1)
     with dask.config.set(scheduler="threads"):
         out = np.asarray(daily.compute(), dtype=np.float32)
     logger.info("event temperatures: daily-mean t2m from the truth mirror "
                 "(%d days, %s)", len(dates), out.shape[1:])
     return out - 273.15
+
+
+FREEZE_MAX_C = 0.0   # freeze cells: t2m <= this (degC) at all four 6-hourly steps
+
+# Per-type temperature ceiling applied to the daily mask before tracking
+# (owner 2026-11-16). Absent/None == no ceiling: cold_snap is the same p15 rule
+# WITHOUT the <=0C requirement, so it tracks the raw p15 mask (see
+# ewb_live/events/cold_snap.py for how the two lanes relate).
+MAX_C_BY_TYPE: dict[str, float | None] = {"freeze": FREEZE_MAX_C,
+                                          "cold_snap": None}
 
 
 def _temp_stats(active: np.ndarray, event_type: str) -> dict | None:
@@ -295,7 +320,7 @@ def scan_temperature_events(
     frames_dir=None,
     params: Params | None = None,
 ) -> list[Event]:
-    """Scan [start, end] (inclusive) for heat_wave or freeze events.
+    """Scan [start, end] (inclusive) for heat_wave / freeze / cold_snap events.
 
     Daily masks come from the published raw-exceedance frames when the lane
     spans the window and the active clip matches the lane's p85/p15
@@ -341,6 +366,7 @@ def scan_temperature_events(
                     event_type, reason)
 
     t2m_daily: np.ndarray | None = None
+    t2m_dmax: np.ndarray | None = None
     t2m_source = "era5_arco"
     if lane_ok:
         # ------------------------------------------------ frames-first path --
@@ -349,24 +375,35 @@ def scan_temperature_events(
         if not sel:
             return []
         dates = [dates[i] for i in sel]
-        mask = masks[event_type][sel]
+        mask = masks[frame_masks.MASK_ALIAS.get(event_type, event_type)][sel]
         keep = (lats >= lat_min) & (lats <= lat_max)
         lats, mask = lats[keep], mask[:, keep]
         cell_area = _cell_area_km2(lats, float(np.abs(lons[1] - lons[0])), lons.size)
         # the lane stores booleans only; the peak/mean/min temperatures come
         # from the local ERA5 mirror on the same grid and days
         t2m_daily = _mirror_t2m_daily(dates, lats, lons)
+        t2m_dmax = _mirror_t2m_daily(dates, lats, lons, "max")
         t2m_source = "era5_mirror"
         logger.info("scan %s: %s %s..%s from the raw-exceedance lane "
                     "(%d days, %d x %d grid)", event_type, _clim_mode(),
                     quantile, dates[0], dates[-1], len(dates), *mask.shape[1:])
     else:
         # --------------------------------------------------- ERA5 ARCO path --
-        dates, lats, lons, mask, cell_area, t2m_daily = _scan_masks_from_arco(
+        dates, lats, lons, mask, cell_area, t2m_daily, t2m_dmax = _scan_masks_from_arco(
             start, end, event_type, clip, n_workers=n_workers,
             lat_min=lat_min, lat_max=lat_max)
         if mask is None or not len(dates):
             return []
+
+    max_c = MAX_C_BY_TYPE.get(event_type)
+    if max_c is not None:
+        # owner 2026-11-16: a freeze cell must also be <= 0 degC at all four
+        # 6-hourly steps (daily max <= 0), on top of the p15 exceedance.
+        # cold_snap has no ceiling (MAX_C_BY_TYPE) and skips this entirely.
+        if t2m_dmax is None:
+            raise RuntimeError(f"{event_type} needs 6-hourly temperatures for "
+                               "the <=0C rule; truth mirror unavailable")
+        mask = mask & (t2m_dmax <= max_c)
 
     raw = track_events(mask, dates, cell_area, p, event_type)
     logger.info("  tracked %s: %d valid events (%d cells-days valid)",
@@ -423,8 +460,19 @@ def scan_temperature_events(
             logger.warning("dropping %s %s..%s: no finite temperature in its box",
                            event_type, ev.start, end_excl)
             continue
+        # cold_snap only: how much of this p15 spell was actually sub-zero
+        # (the freeze/cold-snap relationship, see cold_snap.py). Empty dict
+        # when there is no 6-hourly temperature field for the window.
+        subzero: dict[str, Any] = {}
+        if event_type == "cold_snap" and t2m_dmax is not None:
+            from .cold_snap import subzero_flags
+
+            sub_dmax = t2m_dmax[d0:d1 + 1][:, ev.box.i0:ev.box.i1 + 1][:, :, cols]
+            subzero = subzero_flags(sub[d0:d1 + 1], sub_dmax)
+
         details: dict[str, Any] = {
             "quantile": quantile,
+            **subzero,
             "clim_source": _clim_mode(),
             "operator": clip["op_lower"] if event_type == "heat_wave"
             else clip["op_upper"],
@@ -481,7 +529,7 @@ def _scan_masks_from_arco(start: dt.date, end: dt.date, event_type: str,
                           lat_max: float):
     """Daily exceedance masks streamed from ERA5 ARCO (the fallback path).
 
-    Returns ``(dates, lats, lons, mask, cell_area, t2m_daily_c)``; ``mask`` is
+    Returns ``(dates, lats, lons, mask, cell_area, t2m_daily_c, t2m_dmax_c)``; ``mask`` is
     None when the window has no data. Loads extend back by upstream's
     TEMPORAL_LOAD_BUFFER_DAYS so in-progress events keep true start dates.
     """
@@ -522,6 +570,7 @@ def _scan_masks_from_arco(start: dt.date, end: dt.date, event_type: str,
     chunks = [(a, b) for a, b in chunks if a <= b]
     exc_parts: list = []
     t2m_parts: list = []
+    tmax_parts: list = []
     with dask.config.set(scheduler="threads", num_workers=n_workers):
         for ms_d, me_d in chunks:
             t2m_chunk = t2m.sel({tdim: slice(str(ms_d), str(me_d))})
@@ -532,15 +581,18 @@ def _scan_masks_from_arco(start: dt.date, end: dt.date, event_type: str,
                 op_lower=clip["op_lower"], op_upper=clip["op_upper"],
             )
             t2m_lazy = t2m_chunk.resample({tdim: "1D"}).mean()
-            exc_da, t2m_daily_da = dask.compute(exc_lazy, t2m_lazy)
+            tmax_lazy = t2m_chunk.resample({tdim: "1D"}).max()
+            exc_da, t2m_daily_da, tmax_da = dask.compute(exc_lazy, t2m_lazy, tmax_lazy)
             exc_parts.append(exc_da)
             t2m_parts.append(t2m_daily_da)
+            tmax_parts.append(tmax_da)
             logger.info("  chunk %s..%s done", ms_d, me_d)
 
         if not exc_parts:
-            return [], None, None, None, None, None
+            return [], None, None, None, None, None, None
         exc_da = xr.concat(exc_parts, dim=tdim)
         t2m_daily_da = xr.concat(t2m_parts, dim=tdim)
+        tmax_da = xr.concat(tmax_parts, dim=tdim)
         del exc_parts, t2m_parts
 
         mask = exc_da.values.astype(bool)
@@ -548,7 +600,8 @@ def _scan_masks_from_arco(start: dt.date, end: dt.date, event_type: str,
         lats = exc_da.latitude.values
         lons = exc_da.longitude.values
         t2m_daily = (t2m_daily_da.values - 273.15).astype(np.float32)
-    return dates, lats, lons, mask, area_grid, t2m_daily
+        t2m_dmax = (tmax_da.values - 273.15).astype(np.float32)
+    return dates, lats, lons, mask, area_grid, t2m_daily, t2m_dmax
 
 
 def recompute_merged_max_consec(events: list[Event], cutoff) -> int:
@@ -563,7 +616,7 @@ def recompute_merged_max_consec(events: list[Event], cutoff) -> int:
 
     n = 0
     for e in events:
-        if e.event_type not in ("heat_wave", "freeze"):
+        if e.event_type not in ("heat_wave", "freeze", "cold_snap"):
             continue
         d = e.details or {}
         if (d.get("merged_count") or 1) < 2:
@@ -580,6 +633,10 @@ def recompute_merged_max_consec(events: list[Event], cutoff) -> int:
             land = vb.land_mask(lat, lon)
             passed = ((t > thr) if e.event_type == "heat_wave" else (t < thr)) & land
             daily = passed.reshape(len(times) // 4, 4, len(lat), len(lon)).min(axis=1)
+            if e.event_type == "freeze":
+                tmax = (t.reshape(len(times) // 4, 4, len(lat), len(lon))
+                        .max(axis=1) - 273.15)
+                daily = daily & (tmax <= FREEZE_MAX_C)
             d["max_consecutive_days"] = int(vb.consecutive_days(daily).max())
             n += 1
         except Exception as exc:  # noqa: BLE001 — keep member-max, never fail detection

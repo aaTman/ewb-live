@@ -23,10 +23,53 @@
   --alert-bg:      #fbe9e3;
   --alert-ink:     #9c311c;   /* 6.23 on --alert-bg */
 
-  /* ---- Series (§1/§7.1: exact hex, duplicated into JS) ---- */
-  --series-heat:          #c6493c;  --series-heat-soft:     #f1d5d2;
-  --series-freeze:        #1a4f96;  --series-freeze-soft:   #cbd7e6;
-  --series-ar:            #2e7d32;  --series-ar-soft:       #d0e4d1;  /* AR green (design 2026-11-08, measured 5.13:1) */
+  /* ---- Series (§1/§7.1: exact hex, duplicated into JS) ----
+     Categorical identity set, chips redesign 2026-11-18 (owner brief):
+     re-derived with the dataviz palette validator, in the tab order
+     heat_wave → cold_snap → freeze → atmospheric_river → flood →
+     tropical_cyclone → midlat_cyclone, which is also the Gantt lane order for
+     the first five. Every adjacent pair clears the skill's gates for BOTH
+     themes (normal-vision ΔE ≥15, CVD ΔE ≥8, L inside the theme band,
+     chroma ≥0.10, ≥3:1 on its own ground) — run output + the two weakest
+     pairs the owner still owns: notes/chips_design.md.
+     Identity is glyph + label + hue; the hue is never the only channel. */
+  /* heat wave orange (was #c6493c red): midlat_cyclone is RED now (owner), so
+     heat steps to orange — hue ~56° and one step lighter, 3.83:1 on paper. */
+  --series-heat:          #c86906;  --series-heat-soft:     #fee8d9;
+  --series-freeze:        #194f96;  --series-freeze-soft:   #e2eeff;  /* L 0.55 — the cold-family floor; cold_snap sits 0.10 above it */
+  /* Cold snap (owner 2026-11-16; re-stepped 2026-11-18, chips redesign v3): the
+     freeze rule without the 0 °C cap, so it keeps the cold family but a
+     distinct step. It used to be the set's TEAL (#0b859e) — with flood moving
+     to teal (owner) that hue was needed elsewhere, so cold_snap steps to the
+     cold family's lighter end: ice-blue, one full lightness step above the
+     freeze blue (sibling-but-distinct: ΔE 15.0 normal / ≥12 CVD) and clear of
+     the flood teal it sits diagonally across from in the chip grid (12.7).
+     Measured: 3.28:1 on paper. */
+  --series-cold-snap:      #4090ea;  --series-cold-snap-soft:  #e1eefe;  /* ice-blue (was teal): flood owns teal now, so this steps to the cold family's lighter end; 3.28:1 on paper, ΔE 15.0 from freeze and 12.7 from the flood teal below it */
+  --series-ar:            #1e7729;  --series-ar-soft:       #dff4df;  /* AR green (design 2026-11-08), held; L stepped to 0.50 to clear the flood teal beside it */
+  /* TC violet (tc lane 2026-11-16): 6.51:1 on paper. Chosen so the four lane
+     hues stay separated by BOTH hue and lightness — freeze L* 34.0 < TC 39.8
+     < AR 46.3 ≈ heat 48.4. Violet reads apart from red/green/blue for every
+     common CVD type. Not a map-fill lane, so the AR < freeze < heat fill
+     ladder is untouched. */
+  --series-tc:            #6f42c1;  --series-tc-soft:       #eee9ff;
+  /* Flood (flood lane 2026-11-17; hue changed 2026-11-18, owner): TEAL /
+     blue-green. The berry #9b255c it replaces read as a lighter twin of the TC
+     violet one chip away. The lane has no raw raster of its own (mergedmap.js:
+     its evidence is IMERG accumulation behind the box, so it draws as boxes +
+     Gantt rows only), which means this hue is pure identity — nothing on the
+     map had to be re-derived with it. ΔE 18.0 from the AR green beside it,
+     15.4 from the TC violet, 3.26:1 on paper. */
+  --series-flood:         #0f9ea4;  --series-flood-soft:    #d3f4f6;  /* teal / blue-green (owner: was magenta, which read as TC-adjacent): ΔE 18.0 from the AR green beside it, 3.26:1 on paper */
+  /* Mid-latitude low (mlc lane 2026-11-17; hue changed 2026-11-18, owner): RED.
+     The earlier amber re-hue was another warm mark next to heat's warm mark and read as
+     "warning" everywhere else on this site; a mid-latitude cyclone is a named
+     windstorm, so it owns the storm colour. Red is the skill's reserved
+     critical-status hue, which is legal here because identity is never colour
+     alone (every chip carries a glyph + label). heat_wave moved to orange at
+     the same time so the two warm marks stay apart. ΔE 14.6 from the TC violet
+     beside it, 7.07:1 on paper. */
+  --series-mlc:           #a0312d;  --series-mlc-soft:      #ffe6e3;  /* RED (owner): the deep end of red so it holds 7.07:1 and stays a step dark from heat orange; ΔE 14.6 from TC, glyph + label carry it against heat */
   --series-alt:           #4f8c1f;  --series-alt-soft:      #d7e4cb;
   --series-unknown:       #848475;  --series-unknown-soft:  #e2e2de;
   --stone-grey:           #848475;
@@ -47,6 +90,13 @@
      Greens sequential, equal L* steps; distinct hue family from heat (warm)
      and freeze (cool). */
   --dur-ar-1: #a9dca3;  --dur-ar-2: #73c476;  --dur-ar-3: #3ba458;  --dur-ar-4: #157f3b;  --dur-ar-5: #005321;
+  /* flood accumulation ramp (ne-fix-flood 2026-11-19, defect F0): teal =
+     the lane identity family (mm/day-equiv max(daily, 72h/3)), darker =
+     more rain. Every stop >= 3:1 (WCAG AA non-text) on BOTH map grounds
+     (#ffffff land, #eef4f8 ocean); L* steps 3.6-5.5 monotone. The low end
+     sits dark ON PURPOSE — a pale first stop cannot pass AA on a light
+     basemap (freeze/AR predate the requirement). */
+  --dur-flood-1: #0d9488;  --dur-flood-2: #0c7f76;  --dur-flood-3: #0d675f;  --dur-flood-4: #0b4f4a;  --dur-flood-5: #093836;
 
   /* Lightness ladder is fixed: AR 26.1 < freeze 34.0 < heat 48.4 (L*), never inverted. */
 
@@ -70,10 +120,16 @@
   --text-dim: var(--ink-secondary);
   --accent-ui: var(--accent-link); /* links/focus use the darkened orange, never #ff6000 text */
   --better: 26, 79, 150;   /* rgb — series-freeze (better-than-baseline) */
-  --worse:  198, 73, 60;   /* rgb — series-heat (worse-than-baseline)  */
+  --worse:  198, 73, 60;   /* rgb — the worse-than-baseline STATUS red (a
+                                                        status pair, not the
+                                                        heat_wave identity, which
+                                                        is orange now) */
   --heat:   var(--series-heat);
   --freeze: var(--series-freeze);
+  --cold-snap: var(--series-cold-snap);
   --ar:     var(--series-ar);
+  --tc:     var(--series-tc);
+  --flood:  var(--series-flood);  --mlc:    var(--series-mlc);
   --shadow: 0 1px 2px rgba(38, 38, 32, .06);
   --mono: var(--font-mono);
 
@@ -105,9 +161,19 @@ html[data-theme="dark"] {
   --alert-bg:      #3a251f;
   --alert-ink:     #f2a48d;   /* 7.15 on alert-bg */
 
-  --series-heat:          #f57160;  --series-heat-soft:     #4a332e;  /* L* 63.4 */
-  --series-freeze:        #4d73bf;  --series-freeze-soft:   #2d3c52;  /* L* 49.0 */
-  --series-ar:            #66bb6a;  --series-ar-soft:       #2e4434;  /* AR green dark (design 2026-11-08, 6.40:1) */
+  /* dark set, same identities, re-stepped into the dark OKLCH band (L 0.48–0.67)
+     and re-validated in the tab/Gantt order: adjacent ΔE ≥15 normal, ≥8 CVD,
+     ≥3:1 on dark paper. Lightness alternates high/low because a 0.19-wide band
+     cannot hold seven lightness steps — the ladder is carried by hue + L. */
+  --series-heat:          #d67620;  --series-heat-soft:     #4a301c;  /* orange (was red), L 0.66 — 4.66:1 on dark paper */
+  --series-freeze:        #5468c8;  --series-freeze-soft:   #2d3551;  /* L 0.55 — 3.02:1 on dark paper; the icon on the selected alabaster wash sits under 3 (label text is the relief channel) */
+  /* cold snap teal, dark: re-stepped into the dark band and away from freeze
+     (the pair must read sibling-but-distinct: normal ΔE 15.1, CVD ≥8) */
+  --series-cold-snap:      #0a9cbc;  --series-cold-snap-soft:  #123d48;  /* ice-blue (was teal), L 0.64 — 4.68:1; 15.2 from freeze, 12.7 from the flood teal */
+  --series-ar:            #75a322;  --series-ar-soft:       #2f3c1f;  /* AR green dark, L 0.66 — 5.06:1 on dark paper */
+  --series-tc:            #967fd0;  --series-tc-soft:       #39314e;  /* TC violet dark, L 0.65 — 4.50:1 on dark paper; 12.6 CVD from the teal beside it */
+  --series-flood:         #028b77;  --series-flood-soft:    #143f36;  /* teal (owner), L 0.57 — 3.58:1 on dark paper; 15.1 from the AR green beside it */
+  --series-mlc:           #cf4a55;  --series-mlc-soft:      #4d2c2c;  /* RED (owner), L 0.58 — 3.43:1 on dark paper; 24.7 from TC, 13.2 from heat orange (the one non-adjacent pair that leans on glyph + label) */
   --series-alt:           #78b447;  --series-alt-soft:      #33402a;
   --series-unknown:       #acab9c;  --series-unknown-soft:  #3b3b34;
   --stone-grey:           #acab9c;
@@ -123,6 +189,10 @@ html[data-theme="dark"] {
   --dur-freeze-1: #083c7d;  --dur-freeze-2: #4191c6;  --dur-freeze-3: #b7d4ea;
   /* AR IVT ramp, dark */
   --dur-ar-1: #005321;  --dur-ar-2: #19833e;  --dur-ar-3: #45ad5f;  --dur-ar-4: #87cd86;  --dur-ar-5: #bee5b8;
+  /* flood ramp, dark: the same teal path REVERSED (brightest = most rain,
+     extremes never recede into the dark map); every stop >= 3:1 on the
+     dark grounds (#262626 land, #0e1620 ocean) */
+  --dur-flood-1: #0f8a80;  --dur-flood-2: #16a396;  --dur-flood-3: #35c8b3;  --dur-flood-4: #6fdfc9;  --dur-flood-5: #b2f2df;
 
   --bg: var(--canvas);
   --bg-panel: var(--paper);
@@ -135,7 +205,10 @@ html[data-theme="dark"] {
   --worse:  232, 124, 110; /* #e87c6e — 5.43 on dark paper */
   --heat:   var(--series-heat);
   --freeze: var(--series-freeze);
+  --cold-snap: var(--series-cold-snap);
   --ar:     var(--series-ar);
+  --tc:     var(--series-tc);
+  --flood:  var(--series-flood);  --mlc:    var(--series-mlc);
   --shadow: 0 1px 4px rgba(0, 0, 0, .40);
 
   --warn-ink: #e0b95f;  --warn-bg: #332e1c;  --warn-border: #55492a;
@@ -395,14 +468,84 @@ nav.controls {
   text-transform: uppercase; letter-spacing: 0.08em; line-height: 1.1;
 }
 
-#type-tabs button { border-radius: 999px; padding: 4px 12px; display: inline-flex; align-items: center; gap: 6px; }
-#type-tabs .n { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-secondary);
-  font-variant-numeric: tabular-nums; }
-#type-tabs button.on .n { color: inherit; }   /* ink-secondary on the selected wash is 4.3:1 */
-.type-filter { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* ---------- event-type chips — ONE component (owner 2026-11-17, chips-design) ----------
+   Identity = glyph + label + hue, in that order: colour is never the only
+   channel (dataviz). Text always wears text tokens, never a series colour;
+   the hue rides the glyph (tab/tag) and the lane's raw products. The seven
+   series hues are a CATEGORICAL palette in a FIXED order (the chips' group
+   order below) and were validated for both themes with the dataviz palette
+   validator — see notes/chips_design.md for the run output. */
+[data-etype="heat_wave"]          { --etype: var(--series-heat);         --etype-soft: var(--series-heat-soft); }
+[data-etype="cold_snap"]          { --etype: var(--series-cold-snap);    --etype-soft: var(--series-cold-snap-soft); }
+[data-etype="freeze"]             { --etype: var(--series-freeze);       --etype-soft: var(--series-freeze-soft); }
+[data-etype="atmospheric_river"]  { --etype: var(--series-ar);           --etype-soft: var(--series-ar-soft); }
+[data-etype="flood"]              { --etype: var(--series-flood);        --etype-soft: var(--series-flood-soft); }
+[data-etype="tropical_cyclone"]   { --etype: var(--series-tc);           --etype-soft: var(--series-tc-soft); }
+[data-etype="midlat_cyclone"]     { --etype: var(--series-mlc);          --etype-soft: var(--series-mlc-soft); }
+.type-chip {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  height: 24px; padding: 0 10px; border-radius: 999px; white-space: nowrap;
+  background: var(--etype-soft, var(--bg-inset)); color: var(--matte-black);
+  font: 500 var(--text-xs)/1 var(--font-sans); letter-spacing: 0;
+}
+.type-chip svg { width: 13px; height: 13px; flex: none; color: var(--etype, var(--stone-grey)); }
+
+/* The Show row: ONE component, a compact wrapped flex row — never a scroller
+   (owner 2026-11-18: scrolling to find a lane was the complaint) and, since
+   2026-11-19, never two tidy rows of four either: the first screen is the
+   budget (test_controls_live_in_the_section_they_change), so the chips are
+   content-sized (icon + short label + count) and all eight sit on ONE row at
+   desktop widths; narrower shells wrap them, they never scroll or truncate.
+   The "Show" caption is screen-reader-only (the tablist is still labelled by
+   it) and the group captions (Temperature | Water | Storms) become hairline
+   dividers where the row is one line — the group name rides each chip's
+   tooltip. Region lives in the section header row (index.html). */
+.type-filter { display: block; }
+.type-filter > .ctl-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }   /* sr-only */
+#type-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 5px; min-width: 0; }
+
+.etype-tab { position: relative; display: inline-flex; align-items: center; gap: 6px;
+  flex: 0 1 auto; min-width: 0; height: 30px; padding: 0 9px;
+  border-radius: 999px; background: var(--bg-panel); border: 1px solid var(--border-strong);
+  color: var(--matte-black); font: 400 var(--text-sm)/1 var(--font-sans); cursor: pointer; }
+.etype-tab .t-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.etype-tab svg { width: 14px; height: 14px; flex: none; color: var(--etype, var(--stone-grey)); }
+.etype-tab.is-all svg { color: var(--stone-grey); }   /* "All" has no identity hue */
+.etype-tab:hover { background: var(--tint); border-color: var(--border-strong); }
+/* Selected = the page's one selected state (§5): alabaster wash + 3 px ink
+   key-line. Never an orange fill, never lane-coloured text. */
+.etype-tab[aria-selected="true"] {
+  background: var(--alabaster); border-color: var(--matte-black); color: var(--matte-black);
+  font-weight: 500; box-shadow: inset 0 0 0 0.5px var(--matte-black); }
+.etype-tab[aria-selected="true"]:hover { background: var(--alabaster); }
+.etype-tab .n { min-width: 2ch; text-align: right;                  /* counts don't jiggle (no CLS) */
+  font: 400 var(--text-xs)/1 var(--font-mono); font-variant-numeric: tabular-nums;
+  color: var(--ink-secondary); }                                    /* 5.4:1 on paper */
+.etype-tab[aria-selected="true"] .n { color: var(--matte-black); }  /* ink-secondary on the alabaster wash is 4.3 — the selected tab's count rides the label ink */
+.etype-tab.zero .n { color: var(--ink-muted); }                     /* honest zero: quieter, still selectable */
+/* Group captions: presentational only (role=none + aria-hidden), so the
+   tablist's owned set is unchanged and the roving-tabindex order skips them.
+   On the one-line desktop row each is a hairline divider (the text stays in the
+   DOM for the a11y-hidden caption, zero-sized visually); where chips wrap
+   (phone / narrow shells) the divider has no honest place and is not drawn. */
+.type-group { display: none; }
+@media (min-width: 1400px) {
+  .type-group { display: block; flex: none; width: 1px; height: 18px; margin: 0 3px;
+    background: var(--border-strong); font-size: 0; overflow: hidden; user-select: none; }
+  .type-group[data-group="temperature"] { display: none; }   /* nothing before the first group */
+}
+/* touch: 44 px targets (M7), same visual metrics; chips share the row evenly */
+@media (pointer: coarse), (max-width: 479px) {
+  .etype-tab { height: 44px; flex: 1 1 auto; justify-content: center; }
+  #type-tabs { gap: 8px; }
+}
+/* event-list rows: the glyph replaces the old colour dot (identity not colour-alone) */
+#event-table .type-ic { display: inline-flex; margin-top: 2px; color: var(--etype, var(--stone-grey)); }
+#event-table .type-ic svg { width: 16px; height: 16px; }
 /* Region control (OWB-style): tracked label above, native select below — the
    one page-wide filter besides the type tabs (map + list + scorecard). */
-.ctl-region { flex-direction: column; align-items: flex-start; gap: 4px; }
+.ctl-region { flex-direction: row; align-items: center; gap: 8px; margin-left: auto; flex-wrap: nowrap; }
 .type-filter:has(#type-tabs:empty), nav.controls:has(#lead-chips:empty) > * { visibility: hidden; }
 .sec-lede { color: var(--ink-secondary); font-size: var(--text-sm); margin: 4px 0 12px; max-width: 86ch; }
 .home-only { }
@@ -412,12 +555,9 @@ nav.controls {
    still lets the 56 px desktop box measure itself. */
 .detail-open .tagline, .deeplink .tagline { display: none; }
 .detail-open header.top, .deeplink header.top { min-height: 48px; }
-/* Selected = --alabaster + 3px matte-black left bar (inset for pill radius). Never orange fill, never orange text. */
-#type-tabs button.on {
-  background: var(--alabaster); border-color: var(--border); color: var(--matte-black);
-  font-weight: 500; box-shadow: inset 3px 0 0 var(--matte-black);
-}
-#type-tabs button.on:hover { background: var(--alabaster); }
+/* (the Show tab row + the .type-chip tag live together in the event-type
+   chips component block above — selected state, focus ring and touch sizes
+   are defined once there) */
 
 .pill { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px;
   padding: 3px 12px; border: 1px solid var(--border-strong); background: var(--bg-panel); cursor: pointer;
@@ -488,8 +628,6 @@ section { margin-bottom: 24px; }
 .verdict-item { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; }
 .verdict-item b { color: var(--matte-black); font-weight: 500; }
 .verdict-item .v-text { font-variant-numeric: tabular-nums; }
-.verdict-item .type-chip { flex: none; font-size: var(--text-2xs); font-weight: 500; padding: 1px 6px;
-  border-radius: 999px; color: #fff; letter-spacing: 0.05em; text-transform: uppercase; }
 .verdict-item .v-cells { color: var(--ink-muted); font-family: var(--font-mono);
   font-variant-numeric: tabular-nums; }
 
@@ -516,9 +654,6 @@ section { margin-bottom: 24px; }
 #scorecard-tables { display: flex; flex-direction: column; gap: 24px; }
 .sc-block h3 { margin: 0 0 8px; font-size: var(--text-base); font-weight: 500; letter-spacing: -0.01em;
   display: flex; align-items: center; gap: 8px; }
-.sc-block h3 .type-chip {
-  font-size: var(--text-2xs); font-weight: 500; padding: 2px 8px; border-radius: 999px;
-  color: #fff; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.1; }
 
 /* §6.3 table treatment: panel = 6px radius + --border; internals --alabaster-mid */
 .table-wrap { overflow-x: auto; background: var(--bg-panel); border: 1px solid var(--border);
@@ -638,9 +773,6 @@ tbody tr:hover td.model-col { background: var(--tint); }
 .etype-block { margin-bottom: 16px; }
 .etype-block > h3 { font-size: var(--text-base); font-weight: 500; letter-spacing: -0.01em;
   margin: 16px 0 8px; display: flex; align-items: center; gap: 8px; }
-.etype-block > h3 .type-chip {
-  font-size: var(--text-2xs); font-weight: 500; padding: 2px 8px; border-radius: 999px;
-  color: #fff; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.1; }
 
 /* ---------- events ---------- */
 #event-search { font: 400 var(--text-sm)/1.5 var(--font-sans); padding: 4px 12px; border-radius: 3px;
@@ -681,8 +813,6 @@ tbody tr:hover td.model-col { background: var(--tint); }
   font-variant-numeric: tabular-nums; }
 #event-table .ev-live { color: var(--matte-black); white-space: nowrap; }
 #event-table .ev-unit { display: block; margin-top: 2px; font-size: var(--text-2xs); color: var(--ink-muted); }
-#event-table .type-dot { margin-top: 4px; }
-.type-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
 td.id-cell { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-secondary);
   letter-spacing: 0; font-variant-numeric: tabular-nums; }
 
@@ -752,6 +882,10 @@ footer a:hover { color: var(--matte-black); }
 }
 #tooltip .t-title { font-weight: 500; margin-bottom: 4px; }
 #tooltip .t-row { display: flex; justify-content: space-between; gap: 16px; font-family: var(--font-mono); }
+/* provenance line: what a number actually is (the wind field names its source and
+   says it under-reads), never a second measurement the reader must reconcile */
+#tooltip .t-note { margin-top: 5px; font-size: var(--text-2xs); line-height: 1.35;
+  color: var(--ink-muted); max-width: 250px; }
 #tooltip .t-rel { font-weight: 500; }
 #tooltip .t-rel.pos { color: rgb(var(--better)); }
 #tooltip .t-rel.neg { color: rgb(var(--worse)); }
@@ -914,7 +1048,14 @@ nav.controls .dd .dd-body {
 .gm-legend .swatch { width: 20px; height: 10px; border: 1px solid var(--border-strong);
   border-radius: 2px; display: block; }
 /* one group per lane: stacked name+unit, then the ramp of stops to its right */
-.lg-group { display: flex; align-items: center; gap: 8px; flex: none; position: relative; }
+.lg-group { display: flex; align-items: center; gap: 8px; flex: none; position: relative;
+  /* the storm ramps are long (T DT SC1 C2–3 C4–5 track dissipated = 7 keys) and
+     one group is wider than a 320–430 px column, which pushed the whole page
+     73 px sideways at 390 (measured 2026-11-18, once TC/MLC had published
+     events). Wrap INSIDE the group: the contract is that from 320 up the strip
+     never scrolls and every ON lane is fully inside it
+     (tests/e2e/test_dashboard_fe.py::test_legend_never_hides_a_lane_behind_a_scroll). */
+  flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .lg-head { display: grid; gap: 1px; }
 .lg-name { font-size: var(--text-2xs); font-weight: 500; letter-spacing: .08em;
   text-transform: uppercase; color: var(--text-dim); white-space: nowrap; }
@@ -927,19 +1068,37 @@ nav.controls .dd .dd-body {
   font-size: var(--text-2xs); color: var(--warn-ink);
   background: var(--bg-panel); border: 1px solid var(--border);
   border-radius: 999px; padding: 0 5px; line-height: 1.4; white-space: nowrap; }
-.lg-stops { display: flex; align-items: flex-start; gap: 3px; }
+.lg-stops { display: flex; align-items: flex-start; gap: 3px; flex-wrap: wrap; }
 /* equal-width columns per ramp (widest label of that lane), label centred */
 .lg-bin { display: grid; justify-items: center; gap: 2px; width: 22px; }
 .lg-group[data-layer="a"] .lg-bin { width: 34px; }   /* '1250+' sets the IVT column */
+.lg-group[data-layer="l"] .lg-bin { width: 50px; }   /* '200\u2013350' sets the flood mm column (F0) */
 .lg-bin.prov { width: 22px; margin-left: 8px; }   /* a texture, not the next step of the ramp */
 .lg-t { font-size: var(--text-2xs); color: var(--ink-muted); font-family: var(--font-mono);
   white-space: nowrap; }
-.lg-bin.out { opacity: .32; }
-.lg-bin.out .swatch { border-style: dashed; }
-.lg-group.none { opacity: .6; }
+/* A stop this frame does not paint. The dim rides the SWATCH only: putting
+   opacity on the bin dimmed its 10.5 px mono label too, which resolved to
+   #6e6e60-on-paper at 1.5:1 (light) / 2.1:1 (dark) and failed axe
+   `color-contrast` — it failed silently for a month because the TC ramp only
+   renders once the lane has published events (owner brief 2026-11-19;
+   tests/e2e/test_guardian_fe.py::test_axe_zero_violations is the gate).
+   "not on this frame" is carried by the dashed edge + dim swatch; the label
+   keeps --ink-muted (5.25:1 light, 6.9:1 dark — AA either way). */
+.lg-bin.out .swatch { opacity: .32; border-style: dashed; }
+/* A lane with nothing in view: every one of its stops is already `.out` (see
+   renderLegend — live === 0 marks them all), so the old whole-group opacity
+   added nothing the stops do not say, and it dimmed the lane NAME, unit and
+   ramp labels with it: 7 axe `color-contrast` nodes, reachable from any
+   Region/frame where a lane paints nothing. Same rule as above — ink, not
+   opacity. */
+.lg-group.none .swatch { opacity: .32; }
 @container (min-width: 680px) {   /* one row when the map column can hold all three lanes */
   #gm-legend { flex-direction: row; align-items: center; gap: 20px;
-    min-height: 48px; padding: 6px 8px 4px; }
+    min-height: 48px; padding: 6px 8px 4px;
+    /* a track lane adds a group; the strip still NEVER scrolls horizontally
+       (test_legend_never_hides_a_lane_behind_a_scroll), it wraps instead — the
+       only promise a fourth lane can keep without hiding a colour */
+    flex-wrap: wrap; row-gap: 4px; }
   .lg-bin.prov { width: auto; }
   .lg-bin.prov .lg-t { display: none; }   /* the dither texture + its title carry it in one row */
   /* one row has no vertical air between the lanes: a hairline divider keeps
@@ -948,6 +1107,32 @@ nav.controls .dd .dd-body {
   .lg-group + .lg-group::before { content: ""; position: absolute; left: -11px;
     top: 3px; bottom: 3px; width: 1px; background: var(--border); }
 }
+
+/* COMPACT legend (default whenever 3+ lanes share the strip — owner 2026-11-19,
+   first-screen budget): lane name + its colour swatches on ONE wrapped line,
+   numbers/units hidden (every swatch and group keeps its title; the "Scales"
+   control restores the labelled ramps). Same at every width — it wraps, it
+   never scrolls. */
+#gm-legend.compact { flex-direction: row; flex-wrap: wrap; align-items: center;
+  gap: 4px 18px; min-height: 48px; padding: 5px 8px; }   /* = the one-lane strip's height: a tab switch never moves what is below */
+#gm-legend.compact .lg-group { flex-wrap: nowrap; gap: 6px; }
+#gm-legend.compact .lg-head { display: block; }
+#gm-legend.compact .lg-unit, #gm-legend.compact .lg-t { display: none; }
+#gm-legend.compact .lg-stops { flex-wrap: nowrap; gap: 2px; }
+#gm-legend.compact .lg-bin, #gm-legend.compact .lg-bin.prov,
+#gm-legend.compact .lg-group[data-layer] .lg-bin,
+#gm-legend.compact .lg-group[data-track] .lg-bin,
+#gm-legend.compact .lg-group[data-track] .lg-bin.wide { width: auto; margin-left: 0; }
+#gm-legend.compact .swatch { width: 14px; }
+#gm-legend.compact .swatch.lg-line { width: 18px; }
+#gm-legend.compact .lg-none { top: -6px; }
+.lg-toggle { order: 99; margin-left: auto; padding: 1px 8px; border-radius: 999px;
+  font: 400 var(--text-2xs)/1.6 var(--font-sans); letter-spacing: .04em; color: var(--ink-secondary); }
+#gm-legend:not(.compact) .lg-toggle { order: 0; align-self: flex-start; margin-left: 0; }
+@media (pointer: coarse), (max-width: 479px) {
+  .lg-toggle { min-height: 44px; min-width: 44px; padding: 0 12px; }
+}
+@container (min-width: 680px) { #gm-legend:not(.compact) .lg-toggle { margin-left: auto; align-self: center; order: 99; } }
 
 /* base map primitives live in the canvas paint — see mergedmap.js drawBase */
 
@@ -974,9 +1159,38 @@ nav.controls .dd .dd-body {
 #gm-gantt text { font-family: var(--font-mono); font-size: var(--text-2xs); fill: var(--ink-muted); }
 #gm-gantt .gm-lane-lab { fill: var(--ink-muted); }
 
+/* ---- TRACK lanes on the merged map (tracklayer.js, tc-map 2026-11-18) ----
+   A transparent canvas over the raster canvas (tracks + intensity fixes) and,
+   above it, one interactive marker per positioned storm. Both layers cover the
+   map exactly and never take pointer events except on a marker, so the event
+   boxes painted underneath stay clickable. Colours come from tokens only — the
+   lane hue (--series-tc / --series-mlc) and the lane's own bin ramp — so light
+   and dark need no separate rules and a theme flip just repaints. */
+#gm-tracks { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+#gm-track-marks { position: absolute; inset: 0; pointer-events: none;
+  overflow: visible; z-index: 3; }
+#gm-track-marks .gm-mark { pointer-events: auto; cursor: pointer; }
+#gm-track-marks .gm-mark:focus-visible { outline: 2px solid var(--accent-focus);
+  outline-offset: 2px; border-radius: 50%; }
+#gm-track-marks .gm-mark-hit { fill: transparent; }
+#gm-track-marks .gm-mark-ring { fill: var(--paper); stroke-width: 2; }
+#gm-track-marks .gm-mark.sel .gm-mark-ring { stroke-width: 2.6; }
+#gm-track-marks .gm-mark.dim { opacity: .35; }
+#gm-track-marks .gm-mark.hov .gm-mark-ring { stroke-width: 3; }
+#gm-track-marks .gm-mark-lab { font-family: var(--font-mono);
+  font-size: var(--text-2xs); paint-order: stroke; stroke: var(--paper);
+  stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+#gm-track-marks .gm-mark-lab.is-open { pointer-events: auto; cursor: pointer;
+  text-decoration: underline; }
+/* the legend groups those lanes add (data-track, never data-layer): the raster
+   strip's own contract — its counts, widths and fixed height — is untouched */
+.lg-group[data-track] .lg-bin { width: 32px; }        /* 'C2–3' is the widest class */
+.lg-group[data-track] .lg-bin.wide { width: 40px; }   /* 'track' */
+.lg-group .swatch.lg-line { height: 4px; margin-top: 3px; border-radius: 2px; }
 @media (prefers-reduced-motion: reduce) {
-  #gm-boxes .gm-bbox, #gm-gantt .gm-bar { transition: none; }
+  #gm-boxes .gm-bbox, #gm-gantt .gm-bar, #gm-track-marks .gm-mark { transition: none; }
   .raw-skeleton { animation: none; }
+  #gm-track-marks .gm-mark-ring, #gm-track-marks .gm-mark-lab { transition: none; }
 }
 
 /* ==========================================================================
@@ -1031,9 +1245,9 @@ html[data-theme="dark"] { --map-line: #6d7f92; }   /* 3.2:1 on the ocean fill; g
 .leaflet-bar { border: 1px solid var(--border); box-shadow: var(--shadow); }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-/* dark: chip ground is the lightened series hue — ink must flip (axe: white on #f57160 = 2.8:1) */
-html[data-theme="dark"] .sc-block h3 .type-chip, html[data-theme="dark"] .etype-block > h3 .type-chip,
-html[data-theme="dark"] .verdict-item .type-chip { color: #1a1a16; }
+/* the old dark-chip ink flips (white ⇄ dark on a saturated series ground) are
+   GONE by design: the chip component carries text in ink tokens on the lane's
+   soft ground, so no per-series special cases survive (chips redesign) */
 
 /* loading: no half-built chrome while data is in flight (empty filters, blank scorecard) */
 #scorecard-tables:empty, #skill-charts:empty { min-height: 0; }
@@ -1041,16 +1255,13 @@ html[data-theme="dark"] .verdict-item .type-chip { color: #1a1a16; }
   background-image: linear-gradient(90deg, transparent, var(--bg-inset), transparent); background-size: 200% 100%;
   animation: gm-shimmer 1.4s infinite; }
 @media (prefers-reduced-motion: reduce) { #scorecard-tables:empty { animation: none; } }
-/* dark freeze chip: mid-tone blue keeps WHITE ink (4.8:1); dark ink gives 3.75:1 */
-html[data-theme="dark"] .sc-block h3 .type-chip[style*="series-freeze"],
-html[data-theme="dark"] .etype-block > h3 .type-chip[style*="series-freeze"],
-html[data-theme="dark"] .verdict-item .type-chip[style*="series-freeze"] { color: #fff; }
 
 /* ---- layout-shift reservations (guardian-frontend, CLS 0.20 → <0.05) -------------
    Everything below is filled by JS after first paint; reserve the final box so the
    content under it never moves. Values are the measured settled heights. */
 nav.controls { min-height: 46px; }
-.type-filter { min-height: 31px; }
+.type-filter { min-height: 30px; }   /* one chip row; wrapping rows grow it (measured, not fixed) */
+@media (pointer: coarse), (max-width: 479px) { .type-filter { min-height: 44px; } }
 .raw-map-wrap { min-height: 240px; }
 #gm-gantt { height: 62px; }
 .tl-head { min-height: 30px; }
@@ -1077,3 +1288,80 @@ header.top { min-height: 78px; }        /* measured settled height: 24 pad + 26/
 .deeplink .explore { margin: 0; }
 .detail-open .explore { margin: 0; gap: 0; }
 .deeplink main { min-height: 100vh; }
+
+/* ==========================================================================
+   tc lane (2026-11-16): best-track panel in the event detail view
+   (dashboard/trackviz.js). The TC lane has no viz.json asset — it carries its
+   own geometry in details.track — so it gets its own small map. It reuses the
+   merged-map grounds (--map-ocean / --paper / --map-line) so it reads as the
+   same product, and the violet ramp tokens below are the lane's single hue
+   (darker = stronger wind in light, brighter = stronger in dark, the same
+   direction rule as the duration ramps).
+   ========================================================================== */
+:root {
+  /* intensity bins (kt): <34 depression · 34-63 TS · 64-83 CAT1 · 84-112 CAT2-3 · 113+ CAT4-5
+     measured on the light map grounds (#eef4f8 ocean / #ffffff land):
+     3.49 4.64 6.72 10.46 15.69 — every bin clears the 3:1 non-text floor */
+  --tc-bin-1: #9371c6;  --tc-bin-2: #8763ba;  --tc-bin-3: #5f35a3;  --tc-bin-4: #45227f;  --tc-bin-5: #2b0f55;
+}
+html[data-theme="dark"] {
+  /* dark mirrors the direction (extremes brightest); measured on #0e1620 ocean / #262626 land:
+     3.22 4.28 6.59 9.27 13.35 */
+  --tc-bin-1: #7a55ab;  --tc-bin-2: #9670c8;  --tc-bin-3: #b18cd8;  --tc-bin-4: #c9aee8;  --tc-bin-5: #e7d6fb;
+}
+/* ==========================================================================
+   WIND-FIELD ramp — the merged map's cyclone lanes (tc-map, 2026-11-18).
+   The classes are published by ewb_live/viz/tc_wind.json (--tc-wind-1 = TS …
+   --tc-wind-6 = CAT 5), and tracklayer.js reads them from the asset, so the
+   producer's class list, the legend swatches and the canvas cannot disagree.
+   Same violet family as the lane's own bin ramp above: on this map violet
+   means cyclone intensity, whether it comes from the best track (dots) or from
+   the reanalysis field (fills) — which is why every label says which one it is.
+   Measured at the alpha the canvas paints (0.88), on the map's own grounds —
+   #eef4f8 ocean / #ffffff land — monotone L, adjacent steps 6% L apart, one hue:
+     ocean 4.08 4.97 5.74 6.59 7.45 8.37 · land 4.44 5.42 6.25 7.11 8.04 9.13
+   The bar is every class ≥ 3:1 blended, not just the pale end ≥ 2:1: a
+   storm-force envelope in ERA5 is ~3-4° across, which is 6-8 px on a world
+   sheet, so the LOWEST class has to survive at that size or the primary
+   encoding of the lane is invisible where the map is actually viewed.
+   ========================================================================== */
+:root {
+  --tc-wind-1: #7351c2;  --tc-wind-2: #6340b5;  --tc-wind-3: #57389f;
+  --tc-wind-4: #4c318c;  --tc-wind-5: #422a79;  --tc-wind-6: #382466;
+}
+html[data-theme="dark"] {
+  /* dark mirrors the direction (extremes brightest, as the bin ramp above);
+     measured the same way on #0e1620 ocean / #262626 land (same 3:1 floor):
+     ocean 3.52 4.48 5.65 7.04 8.66 10.55 · land 3.01 3.83 4.82 6.00 7.37 8.97 */
+  --tc-wind-1: #8568ca;  --tc-wind-2: #987fd2;  --tc-wind-3: #aa95da;
+  --tc-wind-4: #bcace2;  --tc-wind-5: #cec3ea;  --tc-wind-6: #e1d9f2;
+}
+.tv-root { margin: 0; }
+.tv-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  font-size: var(--text-sm); color: var(--text-dim); margin-bottom: 6px; }
+.tv-head b { font-size: var(--text-base); font-weight: 500; color: var(--text); }
+.tv-map-wrap { position: relative; background: var(--map-ocean); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden; }
+.tv-map-wrap svg { display: block; max-width: 100%; }
+.tv-sphere { fill: var(--map-ocean); stroke: var(--map-line); stroke-width: 1; }
+.tv-land { fill: var(--paper); stroke: var(--map-line); stroke-width: .6; }
+.tv-grat { fill: none; stroke: var(--map-line); stroke-width: .4; opacity: .35; }
+/* the track polyline itself is stroked in the lane colour (fixed by TrackViz);
+   the faded under-draw is the pre/post-qualifying life */
+.tv-line-qual { fill: none; stroke: var(--series-tc); stroke-width: 1.6; stroke-linejoin: round; opacity: .95; }
+.tv-line-pre { fill: none; stroke: var(--series-tc); stroke-width: 1.2; stroke-dasharray: 3 3; opacity: .45; }
+.tv-fix { stroke: var(--paper); stroke-width: .8; cursor: crosshair; }
+.tv-fix-out { stroke: var(--paper); stroke-width: .6; opacity: .5; }
+.tv-fix-peak { stroke: var(--paper); stroke-width: 1.6; }
+.tv-lab { font-family: var(--font-mono); font-size: 11px; fill: var(--text); paint-order: stroke;
+  stroke: var(--paper); stroke-width: 2.5px; stroke-linejoin: round; }
+.tv-tip { position: absolute; pointer-events: none; z-index: 3; max-width: 240px;
+  background: var(--paper); color: var(--text); border: 1px solid var(--border-strong);
+  border-radius: 6px; padding: 6px 8px; font-size: var(--text-xs); line-height: 1.45;
+  box-shadow: var(--shadow); transform: translate(-50%, -100%); }
+.tv-tip[hidden] { display: none; }
+.tv-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px;
+  font-size: var(--text-xs); color: var(--text-dim); }
+.tv-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.tv-sw { width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--border); }
+.tv-note { font-size: var(--text-xs); color: var(--ink-muted); margin: 6px 0 0; }

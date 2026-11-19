@@ -37,6 +37,20 @@ for i, e in enumerate(d):
         extra = ("ofr%.2f/%.2f lfp%.2f merged%d"
                  % (det["ocean_frac_start"], det["ocean_frac_max"],
                     det["land_frac_peak"], det.get("merged_count", 1)))
+    elif e["event_type"] == "flood":
+        # observation lane (IMERG): no temperature fields, and a flood that
+        # fires on the 72 h lane alone legitimately has no rain in its window
+        for f in ("peak_3day_mm", "peak_area_km2", "quantile", "data_source",
+                  "provisional"):
+            if f not in det:
+                bad.append(e["id"][:8] + " missing " + f)
+        extra = ("3d%s 1d%s %.2fMkm2 r%s prov%d merged%d"
+                 % (det.get("peak_3day_mm"), det.get("peak_daily_mm"),
+                    det.get("peak_area_km2", 0) / 1e6,
+                    det.get("peak_excess_ratio"), det.get("provisional", 0),
+                    det.get("merged_count", 1)))
+        if det.get("peak_3day_mm") is None and (det.get("peak_daily_mm") or 0) < 20:
+            bad.append(e["id"][:8] + " flood reached no lane floor")
     else:
         extra = "%+.1fC max%.1fMkm2 q%.2f %s merged%d" % (
             det["mean_temp_c"], det["peak_area_km2"] / 1e6,
@@ -52,7 +66,10 @@ for i, e in enumerate(d):
 print(Counter(e["event_type"] for e in d))
 for r in rows:
     print("%-6s %s %-13s %2dd %-32s %s" % r)
-cap = {"atmospheric_river": 19, "heat_wave": 26, "freeze": 26}
+cap = {"atmospheric_river": 19, "heat_wave": 26, "freeze": 26, "cold_snap": 26,
+       # a rain spell is short; select._passes_floor allows 21 d and the merge
+       # cap is 9 d, so anything past 12 is worth a look (live max: 8)
+       "flood": 12}
 for e in d:
     dur = (dt.date.fromisoformat(e["end"][:10]) - dt.date.fromisoformat(e["start"][:10])).days
     if dur > cap[e["event_type"]]:

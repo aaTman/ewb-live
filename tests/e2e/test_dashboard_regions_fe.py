@@ -191,8 +191,14 @@ def lane(page, chip):
                         has=page.locator(".type-chip", has_text=chip))
 
 
-def tab_labels(page):
-    return page.eval_on_selector_all("#type-tabs button", "els => els.map(e => e.textContent)")
+def tab_badges(page):
+    """{data-tab: chip text incl. its count}. Key by data-tab, not by label: the
+    no-scroll chip grid abbreviates labels ("Atm. river", "Trop. cyclone"), so a
+    prefix match on the full lane name is a test that can only fail. data-tab is
+    what app.js's click handler keys on, so it is the contract."""
+    return page.eval_on_selector_all(
+        "#type-tabs button",
+        "els => Object.fromEntries(els.map(e => [e.dataset.tab, e.textContent]))")
 
 
 KV_EVENTS = """() => [...document.querySelectorAll('#kv-line .kv')]
@@ -246,7 +252,7 @@ def test_merged_map_region_view(dash):
     corner = page.evaluate("() => window.MergedMap._dbg().project([-12.5, 35])")
     assert corner and 0 <= corner[0] <= w and 0 <= corner[1], f"corner {corner} off canvas (W={w})"
     # region view survives a type-tab repaint (counts are region-filtered)
-    page.locator("#type-tabs button", has_text="Heat waves").click()
+    page.locator("#type-tabs button", has_text="Heat wave").click()
     assert page.evaluate("() => window.MergedMap._dbg().region") == "europe"
     page.locator("#type-tabs button", has_text="All").click()
     page.select_option("#region-select", "global")
@@ -301,10 +307,11 @@ def test_region_filters_lists_and_counts(dash):
     assert page.inner_text("#gm-count").startswith("Europe · 2 events")
     assert page.evaluate(sec_aria).startswith("Europe")
     assert page.evaluate(KV_EVENTS) == "2"      # matches the contract's n_events
-    labels = tab_labels(page)
-    assert any(l.startswith("Heat waves") and l.strip().endswith("1") for l in labels)
-    assert any(l.startswith("Freezes") and l.strip().endswith("1") for l in labels)
-    assert any(l.startswith("Atmospheric rivers") and l.strip().endswith("0") for l in labels)
+    badges = tab_badges(page)
+    assert badges["heat_wave"].startswith("Heat wave") and badges["heat_wave"].strip().endswith("1")
+    assert badges["freeze"].startswith("Freeze") and badges["freeze"].strip().endswith("1")
+    # the AR chip is labelled "Atm. river" in the grid; data-tab is the identity
+    assert badges["atmospheric_river"].strip().endswith("0"), badges["atmospheric_river"]
     assert page.inner_text("#event-count").startswith("2 event")
     titles = page.eval_on_selector_all("#event-table tbody tr td:nth-child(2)",
                                        "els => els.map(e => e.textContent)")
@@ -330,7 +337,7 @@ def test_region_deep_link_waits_for_lazy_file(page_ctx, base):
     page.goto(base + "/#region=north_america", wait_until="domcontentloaded")
     # first paint (Global rows) lands before the lazy region file resolves; the
     # region view must apply once it does — no manual reload.
-    page.wait_for_function("() => window.__debug.state.region === 'north_america'", timeout=8000)
+    page.wait_for_function("() => window.__debug && window.__debug.state.region === 'north_america'", timeout=8000)
     assert "No freezes in North America" in page.content()
     assert "region=north_america" in page.evaluate("() => location.hash")
     assert errs == []

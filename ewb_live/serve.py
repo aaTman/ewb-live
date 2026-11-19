@@ -36,12 +36,38 @@ HISTORY_DIR = os.path.join(RESULTS_DIR, "history")
 WEEK_RE = re.compile(r"^[0-9]{4}-W[0-9]{2}$")
 WEEKS_ROUTE = "/data/results/weeks.json"
 
+# Cache-busting for our OWN top-level assets: index.html links them by bare name
+# (styles.css, app.js, …). They already ship Cache-Control: no-cache, but a
+# revalidation against a server whose mtime a proxy flattened can still hand
+# back a stale bundle — the failure mode that made an owner see "the chips look
+# the same" after a deploy. Suffix each URL with ?v=<file mtime> so a changed
+# app.js/styles.css is always a NEW request URL. vendor/ (immutable, max-age) is
+# deliberately excluded — only top-level bare-name css/js are versioned.
+_OWN_ASSET_RE = re.compile(r'((?:href|src)=")(?:\./)?([A-Za-z0-9_-]+\.(?:css|js))(")')
+
+
+def _version_assets(html: str) -> str:
+    def _m(m):
+        name = m.group(2)
+        try:
+            tok = int(os.path.getmtime(os.path.join(DASHBOARD_DIR, name)))
+        except OSError:
+            return m.group(0)            # not a real top-level file: leave as-is
+        return m.group(1) + name + "?v=" + format(tok, "x") + m.group(3)
+    return _OWN_ASSET_RE.sub(_m, html)
+
 # Files the dashboard probes for (optional, presence carries meaning). When
 # absent we answer 204 No Content instead of 404 so the browser's console
 # stays clean for a deliberately error-gated dashboard. viz.json / index.json
 # apply to nested paths under data/results/events/ (per-event viz assets).
 OPTIONAL_FILES = {"events_selected.json", "viz.json", "index.json", "pair_status.json",
-                  "scorecard_by_region.json"}
+                  "scorecard_by_region.json",
+                  # tc-map's wind field: absent until ewb_live.viz.tc_wind has run
+                  # (and legitimately absent on a tree that never runs it). The
+                  # client already draws tracks + an "unavailable" legend on any
+                  # non-OK response, so this only stops a build-in-progress from
+                  # writing a red 404 into the console every page load.
+                  "tc_wind.json"}
 
 # Segment whitelist for nested results paths (event ids are hex-ish; keep it
 # boring anyway). normpath() has already collapsed "." / ".." by validation
@@ -166,11 +192,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     # weekly snapshot: history/<YYYY-WW>/<file>.json (no sample fallback)
                     return os.path.join(HISTORY_DIR, sub[1], sub[2])
                 if (len(sub) == 2 and sub[0] == "raw_exceedance"
-                        and re.fullmatch(r"\d{10}\.(?:bin|trk|run|ivt)|index\.json", sub[1])):
-                    # raw 6-hourly exceedance frames (design lane): exact
-                    # YYYYMMDDHH.bin/.trk/.run/.ivt or index.json only — strict
-                    # allowlist, no listing. Bodies are pre-zlib'd; served
-                    # octet-stream.
+                        and re.fullmatch(r"\d{10}\.(?:bin|trk|run|ivt)|"
+                                         r"flood_\d{8}\.cls|index\.json", sub[1])):
+                    # raw 6-hourly exceedance frames (design lane) + the flood
+                    # lane's daily class frames (flood_frames.py): exact
+                    # YYYYMMDDHH.bin/.trk/.run/.ivt, flood_YYYYMMDD.cls or
+                    # index.json only — strict allowlist, no listing. Bodies
+                    # are pre-zlib'd; served octet-stream.
                     return os.path.join(RESULTS_DIR, *sub)
                 if _is_safe_nested_json(sub):
                     # per-event viz assets: events/<event_id>/viz.json, events/index.json
@@ -224,6 +252,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             html = html.replace("%PUBLIC_URL%", PUBLIC_URL)
         else:
             html = "".join(ln for ln in html.splitlines(keepends=True) if "%PUBLIC_URL%" not in ln)
+        html = _version_assets(html)   # ?v=<mtime> on our own top-level css/js
         body = html.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")

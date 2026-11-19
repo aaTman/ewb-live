@@ -14,6 +14,11 @@ THE DETECTION CRITERIA. Definition (SPEC §2):
   (e.g. the frames end at the ERA5 mirror cutoff before the event start),
   qualified_at falls back to 00:00 UTC of the event start date.
 
+`cold_snap` (owner 2026-11-16) reads the freeze frame layer: the lane's p15 bit
+IS the cold-snap mask (cold snap = the freeze rule minus the <=0C cap), so the
+200k km^2 frame gate is exactly this event type's own frame-level criterion —
+no new lane, no new floor (see ewb_live/events/cold_snap.py).
+
 Frames are the published data/results/raw_exceedance/ assets — the same
 bytes the raw map serves — so qualification cannot drift from the map.
 """
@@ -63,6 +68,12 @@ def _layer_at(path: Path, grid: dict, layer: int,
 
 def qualified_at(event, frames_dir: Path | None = None) -> str:
     """ISO 8601 (6-hourly step) for one Event; see module docstring."""
+    # observation-backed lanes have no raster exceedance layer to qualify
+    # against: tropical_cyclone's first qualifying fix IS the qualification
+    # instant at its own 3/6-hourly resolution (tc lane, 2026-11-16), a daily
+    # lane such as flood qualifies at 00:00 UTC of its first qualifying day.
+    if event.event_type not in ("heat_wave", "freeze", "atmospheric_river"):
+        return f"{event.start:%Y-%m-%dT%H:%M:%SZ}"
     frames_dir = Path(frames_dir or DIRNAME)
     idx_p = frames_dir / "index.json"
     fallback = f"{event.start:%Y-%m-%d}T00:00:00Z"
@@ -84,7 +95,8 @@ def qualified_at(event, frames_dir: Path | None = None) -> str:
         return fallback
     if not frames:
         return fallback
-    layer = {"heat_wave": 0, "freeze": 1, "atmospheric_river": 2}[event.event_type]
+    layer = {"heat_wave": 0, "freeze": 1, "cold_snap": 1,
+             "atmospheric_river": 2}[event.event_type]
     lat_min, lat_max, lon_min, lon_max = event.bbox
     if event.event_type == "atmospheric_river":
         floor_px = AR_MIN_PX
@@ -110,4 +122,11 @@ def qualify_events(events, frames_dir: Path | None = None) -> None:
     """Attach e.qualified_at (a plain attribute: not a dataclass field, so
     to_dict/fingerprint/scoring caches are untouched)."""
     for e in events:
-        e.qualified_at = qualified_at(e, frames_dir)
+        # mlc lane (2026-11-17): track lanes have no exceedance raster to
+        # qualify against — the first qualifying fix IS the qualifying instant,
+        # at its own 6-hourly resolution (same rule the tc lane uses for
+        # tropical_cyclone; if that lane's equivalent branch lands, keep one).
+        if e.event_type == "midlat_cyclone":
+            e.qualified_at = f"{e.start:%Y-%m-%dT%H:%M:%SZ}"
+        else:
+            e.qualified_at = qualified_at(e, frames_dir)

@@ -5,14 +5,32 @@
 /* constants                                                           */
 /* ------------------------------------------------------------------ */
 const TYPE_META = {
-  heat_wave:          { label: 'Heat waves',         short: 'Heat wave',          color: 'var(--series-heat)' },
-  freeze:             { label: 'Freezes',            short: 'Freeze',             color: 'var(--series-freeze)' },
-  atmospheric_river:  { label: 'Atmospheric rivers', short: 'Atmospheric river',  color: 'var(--series-ar)' },
+  heat_wave:          { label: 'Heat waves',         short: 'Heat wave',
+                        rule: 'ERA5 2 m temperature above the p85 climatology at every 6-hourly step of a UTC day, over land.' },
+  freeze:             { label: 'Freezes',            short: 'Freeze',
+                        rule: 'Below the p15 climatology and at or below 0 °C at every 6-hourly step of a UTC day, over land.' },
+  cold_snap:          { label: 'Cold snaps',         short: 'Cold snap',
+                        rule: 'Below the p15 climatology at every 6-hourly step of a UTC day, over land — the freeze rule without its 0 °C cap.' },
+  atmospheric_river:  { label: 'Atmospheric rivers', short: 'Atmospheric river',
+                        rule: 'IVT peaking at ≥400 kg m⁻¹ s⁻¹ with a ridge criterion; starts over ocean and makes landfall.' },
+  tropical_cyclone:   { label: 'Tropical cyclones',  short: 'Tropical cyclone',
+                        rule: 'One IBTrACS storm: ≥3 fixes at tropical-storm force (≥34 kt) spanning ≥12 h. Published, not scored.',
+                        noScores: true,      // observation lane: published, not benchmarked
+                        noScoresNote: (n) => tcNotScoredNote(n) },
+  flood:              { label: 'Floods',             short: 'Flood',
+                        rule: 'AI-estimated daily or 72 h rain (Google PARDIG, CC BY 4.0) past the ERA5 p95 wet-day climatology AND ≥20 mm/day. Published, not scored. (IMERG rain is the fallback source.)',
+                        noScores: true,      // observation lane (PARDIG/IMERG): published, not benchmarked
+                        noScoresNote: (n) => `Not scored — ${n} flood${n === 1 ? '' : 's'} tracked from AI-estimated precipitation (Google PARDIG, CC BY 4.0); no EWB benchmark for this lane yet.` },
+  midlat_cyclone:     { label: 'Midlatitude cyclones', short: 'Midlatitude cyclone',
+                        rule: 'A closed ERA5 MSLP low ≤990 hPa living ≥48 h and travelling ≥1000 km, born between 25° and 70°. Track lane — no scorecard yet.',
+                        noScores: true },   // mlc track lane: published, not benchmarked
 };
 /* AR green (design 2026-11-08, owner request): all type colors resolve
    through CSS tokens — dual-theme values, no hardcoded hex in JS. */
 const TYPE_SERIES_VAR = { heat_wave: '--series-heat', freeze: '--series-freeze',
-  atmospheric_river: '--series-ar' };
+  cold_snap: '--series-cold-snap', atmospheric_river: '--series-ar',
+  tropical_cyclone: '--series-tc', flood: '--series-flood',
+  midlat_cyclone: '--series-mlc' };
 function cssVar(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || fallback;
@@ -20,19 +38,143 @@ function cssVar(name, fallback) {
 function typeColor(etype) {
   return cssVar(TYPE_SERIES_VAR[etype] || '--series-unknown', '#848475');
 }
-const TYPE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river'];
+/* Chips order + Gantt lanes group related types (owner 2026-11-17):
+   Temperature (heat, cold snap, freeze) | Water (AR, flood) | Storms
+   (tropical, midlatitude). The same order is the palette's fixed hue order —
+   the identity colours were validated against THIS adjacency (both themes,
+   notes/chips_design.md), so re-ordering them is a palette change, not a
+   cosmetic one. */
+const TYPE_ORDER = ['heat_wave', 'cold_snap', 'freeze', 'atmospheric_river',
+  'flood', 'tropical_cyclone', 'midlat_cyclone'];
+/* Group heads carry a visible caption in the tab row so the row reads as three
+   labelled groups — Temperature | Water | Storms — not one undifferentiated
+   line of pills (owner feedback 2026-11-17: the grouping was too subtle). The
+   caption is a presentational span (role=none + aria-hidden), so the tablist
+   still owns exactly one tab per type and the a11y tree is unchanged. */
+const TYPE_GROUP_LABEL = { heat_wave: 'Temperature', atmospheric_river: 'Water',
+  tropical_cyclone: 'Storms' };
+/* Which grid row a chip belongs to: All travels with the Temperature row, and
+   Water + Storms share the second. Captions are keyed by group name. */
+const TYPE_GROUP_KEY = { Temperature: 'temperature', Water: 'water', Storms: 'storms' };
+/* chip labels are short (one line in a four-across grid, not truncated); the
+   full label + the one-line detection rule ride the tooltip (About copy) */
+const TYPE_TAB_LABEL = { heat_wave: 'Heat wave', cold_snap: 'Cold snap', freeze: 'Freeze',
+  atmospheric_river: 'Atm. river', flood: 'Flood', tropical_cyclone: 'Trop. cyclone',
+  midlat_cyclone: 'Midlat. cyclone' };
+/* monoline glyphs — identity never colour alone (dataviz): every lane reads
+   by shape at 15 px, the series hue is only the third channel */
+const TYPE_ICONS = {
+  all: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 9.5h17M3.5 14.5h17"/><path d="M12 3.5a13 13 0 0 1 0 17M12 3.5a13 13 0 0 0 0 17"/>',
+  heat_wave: '<circle cx="12" cy="12" r="4"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7"/>',
+  cold_snap: '<path d="M12 3v9.5"/><path d="m8.4 8.6 3.6 3.9 3.6-3.9"/><path d="M4.5 18h15"/>',
+  freeze: '<path d="M12 3v18"/><path d="m4.2 7.5 15.6 9"/><path d="m19.8 7.5-15.6 9"/><path d="m9.6 5.2 2.4 2 2.4-2"/><path d="m9.6 18.8 2.4-2 2.4 2"/>',
+  atmospheric_river: '<path d="M2.5 7c2.8-2.8 5.6 2.4 8.4.2s5.6 2.4 8.4-.2"/><path d="M3.5 17.5h12"/><path d="m12.6 14.4 3.5 3.1-3.5 3.1"/>',
+  flood: '<path d="M3 8c2.3-2.2 4.7 2 7 0s4.7 2.2 7 0"/><path d="M3 12.7c2.3-2.2 4.7 2 7 0s4.7 2.2 7 0"/><path d="M3 17.4c2.3-2.2 4.7 2 7 0s4.7 2.2 7 0"/>',
+  /* Hurricane symbol (owner 2026-11-18): the two-arm NHC swirl with a filled
+     eye — not wind lines, which read as the AR river glyph one chip away.
+     Two strokes only, so it stays legible at the 15 px chip size. */
+  tropical_cyclone: '<path d="M12.6 10.9c.6-4 3.4-6.6 7.2-6.7"/><path d="M19.8 4.2c.6 1.2.6 2.5-.1 3.5"/><path d="M11.4 13.1c-.6 4-3.4 6.6-7.2 6.7"/><path d="M4.2 19.8c-.6-1.2-.6-2.5.1-3.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
+  /* Frontal low: an open circulation (the broken isobar) around a bold L —
+     a low-pressure centre mark, its own shape, not a smaller hurricane. */
+  midlat_cyclone: '<path stroke-width="2" d="M18.4 6.4a8.6 8.6 0 1 0-.2 11.4"/><path stroke-width="2" d="M10.2 8.2v7.4h5.2"/>',
+};
+function typeIcon(etype) {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"'
+    + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + (TYPE_ICONS[etype] || '') + '</svg>';
+}
+/* one chip component for every static type tag (lane headers, verdict strip,
+   chart captions): soft lane ground + ink text + lane glyph. */
+function typeChipHtml(etype) {
+  const tm = TYPE_META[etype] || {};
+  return `<span class="type-chip" data-etype="${esc(etype)}">${typeIcon(etype)}`
+    + `<span>${esc(tm.short || etype)}</span></span>`;
+}
 
 /* Owner 2026-11-07: empty lanes are legitimate (freezes may be empty at p15).
    Criteria wording mirrors ewb_live/events/temperature.py + ar.py thresholds —
    keep in sync if detection parameters change. */
 const TYPE_CRITERIA = {
   heat_wave: 'Every 6-hourly step of a UTC day has 2 m temperature above the 85th percentile of the ERA5 1990-2019 climatology (per day of year and hour), over land. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). The map shades only cells that reach the same 3-consecutive-day minimum (consecutive COMPLETED days; cells below it are blank because they can never become an event), dithered = today so far on an already-qualifying cell.',
-  freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), over land. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). On the map the freeze layer shades cells from their first consecutive COMPLETED day (cold runs are short, so 1–2-day cells stay visible for context; a freeze still needs 3+ days), dithered = today so far on a cell with at least one completed day.',
+  freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour) and at or below 0 °C, over land. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). On the map the freeze layer shades cells from their first consecutive COMPLETED day (cold runs are short, so 1–2-day cells stay visible for context; a freeze still needs 3+ days), dithered = today so far on a cell with at least one completed day.',
+  cold_snap: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), over land — the freeze rule without its ≤0 °C requirement. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). Where a freeze covers the same window and box the freeze is published instead of the cold snap, so the two never double-count a spell. The cold-snap lane has no raw layer of its own — it reads the same P15 layer as freeze, shading cells from their first consecutive COMPLETED day (dithered = today so far on a cell with at least one completed day).',
   atmospheric_river: 'Integrated water-vapour transport peaking at ≥400 kg m⁻¹ s⁻¹ and reaching land.',
+  // observation lane (PARDIG rain by default — AI-estimated, not ERA5): published, never scored — EWB has no flood benchmark
+  flood: 'Rain from Google PARDIG-NRT — an AI-estimated precipitation product (CC BY 4.0), 15-minute instantaneous rates summed to a daily total and averaged up onto the ERA5 0.25° land lattice; GPM IMERG remains a supported fallback source. A cell exceeds when its daily total or its trailing 72 h accumulation reaches the 95th percentile of that calendar day in the ERA5 1990–2019 wet-day climatology AND at least 20 mm/day (or 50 mm per 72 h) — the floor is mandatory because the rain product and ERA5 are different instruments. Cells with no ERA5 percentile (hyper-arid) can never exceed, ocean cells are excluded, and a day whose frames are incomplete is dropped rather than read as dry. A region ≥10,000 km² becomes an event once its footprint reaches 50,000 km² and ends under 10,000 km². There is no EWB benchmark for flood, so floods are published and mapped but no model is scored on them.',
+  tropical_cyclone: 'One IBTrACS best-track storm = one event: at least 3 track fixes at tropical-storm force (≥34 kt sustained) spanning at least 12 hours, extratropical/mixed fixes excluded. The wind is the archive’s 1-minute best estimate (USA/JTWC-informed) and one storm never mixes averaging periods — a storm only an RSMC reports is published on that agency’s basis and says so (details.wind_basis). Peak value is the strongest sustained wind in the tropical-storm window (kt); the detail view draws the full track, coloured by intensity. Best-track observations, so there is no model scorecard for this lane yet.',
+  midlat_cyclone: 'A closed low in 6-hourly ERA5 mean sea level pressure: a centre that is the lowest pressure within 6° with a +3 hPa isobar closing around it inside 6°, tracked forward while it stays within 6° per step (gaps up to 12 h are bridged). It becomes an event when it lives ≥48 h, travels ≥1000 km, reaches ≤990 hPa, was born between 25–70° and under 500 m elevation, and did not start as a tropical cyclone. Peak value is the lowest central pressure (hPa); a bomb tag marks a fall of ≥24 hPa in 24 h at 60° latitude. Tracked from ERA5, so there is no model scorecard for this lane yet.',
 };
-const emptyLaneLine = (t) => t === 'all'
-  ? 'No events met the criteria this window'
-  : `No ${TYPE_META[t].label.toLowerCase()} met the criteria this window`;
+/* ------------------------------------------------------------------ */
+/* EMPTY-LANE COPY — ONE PLACE (owner rule 2026-11-17 / mlc-fix 2026-11-18)     */
+/* Every lane's "nothing here" sentence is written here and read from here:     */
+/* the event list, the scorecard lane blocks and the lane tabs/chips (ne-chips) */
+/* must not duplicate this copy — call emptyLaneLine(type).                     */
+/* ------------------------------------------------------------------ */
+
+/* A lane that can fail must never read as an empty sky. meta.lane_status is
+   written by pipeline.py from each lane's own report (ewb_live/events/__init__.py
+   → mlc.lane_status): 'failed' = the scan ran and broke, 'no-data' = the source
+   has nothing for the window, 'ok' = the zero is genuine. */
+function laneStatusNote(t) {
+  const st = (state.meta && state.meta.lane_status) || null;
+  const s = st && st[t];
+  if (!s || (s.status !== 'failed' && s.status !== 'no-data')) return null;
+  const label = TYPE_META[t] ? TYPE_META[t].label : t;
+  const why = s.reason ? ` — ${s.reason}` : '';
+  return s.status === 'failed'
+    ? `${label}: lane failed, so this window has no numbers${why}.`
+    : `${label}: not computed, the source had nothing for this window${why}.`;
+}
+
+const emptyLaneLine = (t) => {
+  const broken = t === 'all' ? null : laneStatusNote(t);
+  if (broken) return broken;
+  return t === 'all'
+    ? 'No events met the criteria this window'
+    : t === 'tropical_cyclone' ? tcEmptyNote()
+    : `No ${TYPE_META[t].label.toLowerCase()} met the criteria this window`;
+};
+
+/* Honest zero for the tropical-cyclone lane (owner rule 2026-11-17): a bare
+   "0" reads as "the sky was empty", but IBTrACS publishes with a lag of days
+   to weeks, and a data release can also predate the lane itself. meta.json
+   carries the truth (pipeline.py: meta.ibtracs) — say which it is. */
+function tcEmptyNote() {
+  const m = state.meta || {};
+  const ib = m.ibtracs;
+  if (!('ibtracs' in m)) {
+    return 'Tropical cyclones are not published in this data release yet — the IBTrACS lane goes live with a future weekly build.';
+  }
+  if (!ib) {
+    return 'The IBTrACS best-track archive was unreachable when this data was built, so tropical cyclones could not be checked this window.';
+  }
+  const d = String(ib.latest_fix || '').slice(0, 10);
+  return `No qualifying storm in the IBTrACS archive through ${d} — best-track publication lags real time (the archive runs ~${ib.lag_days} days behind today).`;
+}
+
+/* TC lane, non-empty (ne-fix-tc 2026-11-19, audit TC-3/4). The old line printed
+   the published count and called it "storms tracked" — those are different
+   numbers: the archive's storm universe, the published events and the systems
+   still live at the archive's edge (too new for the ≥3-fix/≥12-h rule to be
+   judged) are three things, and meta.ibtracs now carries all three. `n` is the
+   published count IN THE CURRENT VIEW, so it is quoted as events here. */
+function tcNotScoredNote(n) {
+  const ib = (state.meta || {}).ibtracs;
+  const here = `${n} tropical cyclone${n === 1 ? '' : 's'} here`;
+  if (!ib || !Number.isFinite(ib.storms_in_window)) {
+    return `Not scored — ${here}; no EWB benchmark for IBTrACS best-track events yet.`;
+  }
+  const d = String(ib.latest_fix || '').slice(0, 10);
+  let s = `Not scored — ${here}; the IBTrACS archive holds ${ib.storms_in_window} storm`
+    + `${ib.storms_in_window === 1 ? '' : 's'} for this window through ${d}`
+    + ` (~${ib.lag_days} days behind today). No EWB benchmark for best-track events yet.`;
+  if (Number.isFinite(ib.pending) && ib.pending > 0) {
+    const who = (ib.pending_names || []).filter(Boolean).join(', ');
+    s += ` ${ib.pending} system${ib.pending === 1 ? '' : 's'} still live at the archive's edge`
+      + `${who ? ` (${who})` : ''} cannot be judged until the next publication.`;
+  }
+  return s;
+}
 
 const MODEL_COLORS = {
   ifs_hres: '#8f9bb3', graphcast: '#4f8ff7', pangu_weather: '#21b8a0',
@@ -567,28 +709,120 @@ function saveState() {
 function setTab(id) {
   state.tab = id; saveState(); renderControls(); renderAll();
   if (window.MergedMap) MergedMap.onTabChange(id);
+  syncUrl(false);   // the type filter is URL state, like Region and the date (2026-11-17)
+}
+
+/* tablist keyboard: roving tabindex, Arrow/Home/End move focus (manual
+   activation — Enter/Space/click select; arrows alone never re-render).
+   The row is content-sized and wraps (one line on a wide shell), so Up/Down move
+   to the chip directly above/below by geometry — the nearest centre in the
+   adjacent visual row — and stay put when there is no row that way; Left/Right
+   step to the neighbouring tab. */
+function tabsKeyNav(e) {
+  const tabsEl = $('#type-tabs');
+  if (!tabsEl.contains(e.target) || e.target.getAttribute('role') !== 'tab') return;
+  const list = [...tabsEl.querySelectorAll('[role=tab]')];
+  const i = list.indexOf(e.target);
+  const box = (n) => n.getBoundingClientRect();
+  const vertical = (dir) => {
+    const me = box(list[i]), cx = me.left + me.width / 2;
+    let best = null;
+    for (let k = 0; k < list.length; k++) {
+      const b = box(list[k]);
+      if (dir > 0 ? b.top <= me.top + 4 : b.top >= me.top - 4) continue;   // same row or wrong way
+      const rowGap = Math.abs(b.top - me.top);
+      const d = Math.abs(b.left + b.width / 2 - cx);
+      // the nearest row first, then the nearest column inside it
+      if (!best || rowGap < best.rowGap - 4 || (rowGap <= best.rowGap + 4 && d < best.d)) {
+        best = { k, rowGap, d };
+      }
+    }
+    return best ? best.k : i;
+  };
+  let j = null;
+  if (e.key === 'ArrowRight') j = (i + 1) % list.length;
+  else if (e.key === 'ArrowLeft') j = (i - 1 + list.length) % list.length;
+  else if (e.key === 'ArrowDown') j = vertical(1);
+  else if (e.key === 'ArrowUp') j = vertical(-1);
+  else if (e.key === 'Home') j = 0;
+  else if (e.key === 'End') j = list.length - 1;
+  if (j === null) return;
+  e.preventDefault();
+  list[j].focus();
 }
 
 function renderControls() {
   const tabs = $('#type-tabs');
+  /* The event-type filter is the one page-wide control: it narrows the map
+     (layers + boxes), the timeline, the event list and the scorecard together.
+     A real tablist (owner 2026-11-17): aria-selected + aria-controls naming
+     what it changes, roving tabindex, Arrow/Home/End move focus and Enter/
+     Space select — manual activation, because arrows must not re-render the
+     whole page. A zero tab stays selectable and says why in its tooltip. */
+  const wasFocus = tabs.contains(document.activeElement);
   tabs.innerHTML = '';
-  /* Toggle buttons, not tabs: the choice narrows the map layers, the timeline,
-     the event list and the scorecard all at once, so there is no single panel a
-     tab could control (APG tabs would need one tabpanel + aria-controls + a
-     roving tabindex for a filter that acts on four regions of the page).
-     aria-pressed on a labelled group says exactly what this is. */
-  const mkTab = (id, label) => {
-    const b = el('button', state.tab === id ? 'on' : '', label);
-    b.type = 'button';
-    b.setAttribute('aria-pressed', String(state.tab === id));
-    b.onclick = () => setTab(id);
-    tabs.appendChild(b);
-  };
   const inReg = (e) => state.region === 'global' || inRegion(e);
-  mkTab('all', `All <span class="n">${state.events.filter(inReg).length}</span>`);
+  const mkTab = (id, tabLabel, n, iconKey, slot) => {
+    const b = el('button', 'etype-tab' + (iconKey === 'all' ? ' is-all' : '')
+      + (n === 0 ? ' zero' : ''),
+      typeIcon(iconKey) + `<span class="t-label">${esc(tabLabel)}</span>`
+      + `<span class="n">${n}</span>`);
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-controls', 'explore scorecard-sec');
+    b.setAttribute('aria-selected', String(state.tab === id));
+    b.tabIndex = state.tab === id ? 0 : -1;
+    /* accessible name = the visible text ("Heat wave 15"): the count rides the
+       name, and axe's label-content-name-mismatch stays honest. The long label
+       and the one-line detection rule (About copy) ride the tooltip. */
+    const rule = id === 'all'
+      ? 'Every event published this window, all types.' : (TYPE_META[id].rule || '');
+    const why = n === 0 ? (id === 'tropical_cyclone' ? tcEmptyNote() + ' '
+      : `No ${TYPE_META[id] ? TYPE_META[id].label.toLowerCase() : tabLabel.toLowerCase()}`
+        + ' met the criteria this window. ') : '';
+    b.title = (id === 'all' ? '' : (TYPE_META[id].label + ' — ')) + why + rule;
+    b.dataset.tab = id;
+    b.dataset.etype = id;   // CSS maps the lane hue onto the glyph ("all" stays neutral)
+    b.dataset.slot = slot;  // "a" / "b": which chip row the wrapped grid puts this cell in
+    b.onclick = () => setTab(id);
+    // Presentational group header above its group (role=none + aria-hidden):
+    // not a tab, so the tablist's owned set, the a11y tree and the roving-tabindex
+    // order are unchanged, and `button:nth-of-type()` selectors stay stable.
+    if (TYPE_GROUP_LABEL[id]) {
+      const g = el('span', 'type-group', esc(TYPE_GROUP_LABEL[id]));
+      g.setAttribute('role', 'none');
+      g.setAttribute('aria-hidden', 'true');
+      g.dataset.group = TYPE_GROUP_KEY[TYPE_GROUP_LABEL[id]];
+      tabs.appendChild(g);
+    }
+    tabs.appendChild(b);
+    return b;
+  };
+  mkTab('all', 'All', state.events.filter(inReg).length, 'all', 'a');
+  /* Group membership is inherited until the next caption: only a group HEAD
+     carries TYPE_GROUP_LABEL, so cold_snap/freeze belong to Temperature, and so
+     on. Derived from TYPE_ORDER, not restated (one source of truth). */
+  const groups = [];
+  for (const t of TYPE_ORDER) {
+    if (TYPE_GROUP_LABEL[t]) groups.push({ label: TYPE_GROUP_LABEL[t], members: [t] });
+    else groups[groups.length - 1].members.push(t);
+  }
+  const slotOf = {}, tailOf = {};
+  for (const g of groups) {
+    const key = TYPE_GROUP_KEY[g.label];
+    for (const t of g.members) slotOf[t] = key === 'temperature' ? 'a' : 'b';
+    /* A two-column phone grid needs an even number of chips per group or the
+       group's last row goes ragged: an odd group's tail chip spans the row. */
+    if (g.members.length % 2 === 1) tailOf[g.members[g.members.length - 1]] = true;
+  }
   for (const t of TYPE_ORDER) {
     const n = state.events.filter((e) => e.event_type === t && inReg(e)).length;
-    mkTab(t, `<i class="type-dot" style="background:${TYPE_META[t].color}"></i>${TYPE_META[t].label} <span class="n">${n}</span>`);
+    const b = mkTab(t, TYPE_TAB_LABEL[t] || TYPE_META[t].short, n, t, slotOf[t]);
+    if (tailOf[t]) b.classList.add('is-tail');
+  }
+  if (wasFocus) {   // keyboard focus must survive a re-render (tab click, region switch)
+    const sel = tabs.querySelector('[aria-selected="true"]');
+    if (sel) sel.focus();
   }
 
   const pills = $('#model-pills');
@@ -795,6 +1029,7 @@ function metricsFor(etype) {
   // headline = the metric that reads as skill by lead (RMSE for heat/freeze, CSI for AR); the signed
   // event-level duration error stays behind 'more metrics' (G-10)
   const pref = { heat_wave: 'RootMeanSquaredError', freeze: 'RootMeanSquaredError',
+    cold_snap: 'RootMeanSquaredError',
     atmospheric_river: 'CriticalSuccessIndex' }[etype];
   if (!state.scMore && all.length > 1) return [all.includes(pref) ? pref : all[0]];
   return all;
@@ -869,7 +1104,7 @@ function renderVerdictStrip(idx) {
   if (!parts.length) { host.hidden = true; host.innerHTML = ''; return; }
   host.hidden = false;
   host.innerHTML = parts.map((p) => {
-    const chip = `<span class="type-chip" style="background:${TYPE_META[p.etype].color}">${esc(TYPE_META[p.etype].short)}</span>`;
+    const chip = typeChipHtml(p.etype);
     const sign = p.meanRel >= 0 ? '+' : '';
     const txt = `<b>${esc(p.model)}</b> best · ${sign}${p.meanRel.toFixed(1)}% vs ${esc(B)}` +
       ` · won ${p.cells}/${p.total} cells`;
@@ -958,13 +1193,24 @@ function renderScorecard() {
     // contract (n_events/by_type, centroid rule owned by ewb_live/regions.py);
     // Global counts the curated catalog (same universe as before this feature).
     const re = regionEntry();
-    const nEv = re ? (re.by_type || {})[etype] || 0
+    /* Honest counts, two ways. The region contract's n_events/by_type is a
+       SCORED-event split (centroid rule owned by ewb_live/regions.py), so it can
+       only answer 0 for a lane this build has no score rows for — a track lane by
+       design (tc 2026-11-16), and equally a lane the current data release simply
+       never scored (cold_snap in a build made before it existed, or a dev tree
+       that re-publishes live score rows without new scoring). For those the
+       honest number is the published count through the same region map the tables
+       were built from; the block below then says "Not scored — …". Where the lane
+       DOES have score columns, the contract split is the right answer. */
+    const nEv = (re && (!cols || TYPE_META[etype]?.noScores))
+      ? state.events.filter((e) => e.event_type === etype && inRegion(e)).length
+      : re ? (re.by_type || {})[etype] || 0
       : state.events.filter((e) => e.event_type === etype).length;
 
     const block = el('div', 'sc-block');
     const smallLane = nEv > 1 && nEv < minSample();
     block.appendChild(el('h3', '',
-      `<span class="type-chip" style="background:${TYPE_META[etype].color}">${esc(TYPE_META[etype].short)}</span>` +
+      typeChipHtml(etype) +
       `${nEv} event${nEv === 1 ? '' : 's'}` +
       (nEv === 1 ? ' · indicative' : smallLane ? ' · small sample' : '')));
 
@@ -973,16 +1219,36 @@ function renderScorecard() {
     if (!nEv) {
       const note = el('p', 'lane-empty');
       const re2 = regionEntry();
-      note.textContent = re2
-        ? `No ${TYPE_META[etype].label.toLowerCase()} in ${re2.label} this window`
-        : emptyLaneLine(etype);
-      note.title = re2 ? 'Events are assigned to regions by the centroid of their bounding box'
+      const broken = laneStatusNote(etype);   // a failed lane outranks the region wording
+      note.textContent = broken
+        ? broken
+        : re2
+          ? `No ${TYPE_META[etype].label.toLowerCase()} in ${re2.label} this window`
+          : emptyLaneLine(etype);
+      note.title = re2 && !broken
+        ? 'Events are assigned to regions by the centroid of their bounding box'
         : TYPE_CRITERIA[etype];
       block.appendChild(note);
       host.appendChild(block);
       continue;
     }
-    if (!cols) continue;
+    if (!cols) {
+      // No score columns for this lane in THIS build. Either it is published
+      // without a scorecard by design (the observation lanes: no EWB benchmark)
+      // or the release simply has no score rows for it (e.g. cold_snap against a
+      // scorecard built before the lane existed). Say which, instead of dropping
+      // the lane silently.
+      const note = el('p', 'lane-empty');
+      note.textContent = TYPE_META[etype]?.noScoresNote
+        ? TYPE_META[etype].noScoresNote(nEv)
+        : TYPE_META[etype]?.noScores
+          ? `Not scored — ${nEv} event${nEv === 1 ? '' : 's'}; no EWB benchmark for this lane yet.`
+          : `Not scored in this data release — ${nEv} published event${nEv === 1 ? '' : 's'}; no score rows for this lane yet.`;
+      note.title = TYPE_CRITERIA[etype];
+      block.appendChild(note);
+      host.appendChild(block);
+      continue;
+    }
 
     const wrap = el('div', 'table-wrap');
     const table = el('table');
@@ -1348,7 +1614,7 @@ function renderSkillCharts() {
     if (!metrics.length) continue;
     const block = el('div', 'etype-block');
     block.appendChild(el('h3', '',
-      `<span class="type-chip" style="background:${TYPE_META[etype].color}">${esc(TYPE_META[etype].short)}</span>mean over events`));
+      typeChipHtml(etype) + 'mean over events'));
     const grid = el('div', '');
     grid.id = 'skill-grid-' + etype;
     block.appendChild(grid);
@@ -1600,11 +1866,29 @@ function storyLabel(ev, viz) {
   };
   const parts = [(TYPE_META[ev.event_type] || {}).short || ev.event_type,
     region, `${short(ev.start)} \u2013 ${short(eventLastDay(ev))}`];
-  if (ev.event_type === 'atmospheric_river') {
+  if (ev.event_type === 'tropical_cyclone') {
+    // track lane (tc 2026-11-16): the storm's own numbers, not ERA5 daily means
+    if (d.name && d.name !== 'Unnamed') parts.push(d.name);
+    if (Number.isFinite(ev.peak_value)) {
+      parts.push(Math.round(ev.peak_value) + ' kt' + (d.peak_category ? ' ' + d.peak_category : ''));
+    }
+    if (Number.isFinite(d.min_pressure_hpa)) parts.push(Math.round(d.min_pressure_hpa) + ' hPa');
+    if (d.basin_name) parts.push(d.basin_name);
+  } else if (ev.event_type === 'atmospheric_river') {
     if (Number.isFinite(ev.peak_value)) parts.push('peak IVT ' + Math.round(ev.peak_value) + ' kg m⁻¹ s⁻¹');
     // landfall_days can exceed the event length upstream (G-28): print the landfall date instead
     const lf = parseISO(d.landfall_time);
     if (lf) parts.push('landfall ' + lf.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }));
+  } else if (ev.event_type === 'flood') {
+    // the flood peak is a TRAILING 72 h accumulation in mm (details.peak_value_units)
+    if (Number.isFinite(ev.peak_value)) parts.push('peak 72 h ' + Math.round(ev.peak_value) + ' mm');
+    if (Number.isFinite(d.peak_daily_mm)) parts.push('peak day ' + Math.round(d.peak_daily_mm) + ' mm');
+    if (Number.isFinite(d.peak_area_km2)) parts.push(Math.round(d.peak_area_km2).toLocaleString('en-US') + ' km² at peak');
+  } else if (ev.event_type === 'midlat_cyclone') {
+    // track lane (mlc 2026-11-17): depth, not temperature, is the headline
+    if (Number.isFinite(ev.peak_value)) parts.push(Math.round(ev.peak_value) + ' hPa centre');
+    if (Number.isFinite(d.displacement_km)) parts.push(Math.round(d.displacement_km / 111.195) + '\u00b0 travelled');
+    if (d.bomb) parts.push('bomb \u00d7' + (Number.isFinite(d.bomb_ratio) ? d.bomb_ratio.toFixed(1) : '1'));
   } else {
     // peak is the ERA5 daily-mean peak (see About) — say so (G-27)
     if (Number.isFinite(ev.peak_value)) parts.push('peak daily-mean ' + ev.peak_value.toFixed(1) + ' °C');
@@ -1682,6 +1966,7 @@ function syncUrl(push) {
   if (state.detailLayers) params.lyr = state.detailLayers;
   if (state.detailDay != null) params.day = state.detailDay;
   if (state.region && state.region !== 'global') params.region = state.region;
+  if (state.tab && state.tab !== 'all') params.tab = state.tab;   // type filter is shareable state
   // the merged global map's #map/#layers/#sel ride along so Back from a
   // detail restores the slider/selection state (URL is the source of truth)
   if (window.MergedMap) Object.assign(params, MergedMap.urlParams());
@@ -1707,7 +1992,10 @@ window.applyBboxFix = function (id, bbox) {
 /* Human name for a list row / detail title: "Heat wave · Iran". Region comes
    from the bbox vote once the country table is loaded (vague band before). */
 function eventName(ev, viz) {
-  const t = (TYPE_META[ev.event_type] || {}).short || ev.event_type;
+  let t = (TYPE_META[ev.event_type] || {}).short || ev.event_type;
+  // the track lane names its storm (IBTrACS NAME); the area lanes stay anonymous
+  const nm = ev.details && ev.details.name;
+  if (ev.event_type === 'tropical_cyclone' && nm && nm !== 'Unnamed') t += ' ' + nm;
   let region;
   if (viz) region = eventRegion(ev, viz);
   else {
@@ -1736,11 +2024,13 @@ function eventDurationDays(ev) {
 
 /* ev.end is exclusive (last scored instant = end - 6 h; viz renders
    end - 1 min) — display the last ACTIVE day, matching the detector's own
-   title and the viz frame range. */
+   title and the viz frame range. Track lanes end mid-day (a cyclone ending at
+   09:00 is still active that day), so step back one instant rather than one
+   day; for the midnight-aligned heat/freeze/AR ends that is the same day. */
 function eventLastDay(ev) {
   const b = parseISO(ev.end);
   if (!b) return ev.end;
-  return new Date(b.getTime() - 86400000).toISOString();
+  return new Date(b.getTime() - 1000).toISOString();
 }
 
 function renderEventTable() {
@@ -1754,7 +2044,6 @@ function renderEventTable() {
     n += 1;
     if (drawn >= EVENT_TABLE_MAX_ROWS) continue;   // count all, render a bounded prefix
     drawn += 1;
-    const tm = TYPE_META[ev.event_type] || { color: '#999' };
     const peakUnitFull = ev.details?.peak_value_units
       || (ev.event_type === 'atmospheric_river' ? 'kg m⁻¹ s⁻¹' : '°C');
     // DR2 minor: column-abbreviated unit so Peak isn't clipped at 1440; full unit in title
@@ -1783,7 +2072,7 @@ function renderEventTable() {
     const short = (iso) => fmtDate(iso).replace(/, \d{4}$/, '');
     const days = eventDurationDays(ev);
     tr.innerHTML =
-      `<td><span class="type-dot" style="background:${tm.color}" title="${esc(ev.event_type.replace('_', ' '))}"></span></td>` +
+      `<td><span class="type-ic" data-etype="${esc(ev.event_type)}" title="${esc(ev.event_type.replace('_', ' '))}">${typeIcon(ev.event_type)}</span></td>` +
       `<td><span class="ev-name">${esc(eventName(ev))}</span>` +
       `<span class="ev-sub">${short(ev.start)} \u2013 ${short(eventLastDay(ev))}${days ? ` \u00b7 ${days} day${days === 1 ? '' : 's'}` : ''}` +
       `<span class="ev-live" hidden> \u00b7 on map now</span></span></td>` +
@@ -1805,12 +2094,14 @@ function renderEventTable() {
     const tr = el('tr', 'lane-empty-row');
     const searching = !!(state.search && state.search.trim());
     const re = regionEntry();
+    const broken = state.tab === 'all' ? null : laneStatusNote(state.tab);
     const note = searching ? 'No events match your search'
+      : broken ? broken
       : re && state.tab === 'all' ? `No events in ${re.label} this window`
       : re ? `No ${TYPE_META[state.tab] ? TYPE_META[state.tab].label.toLowerCase() : ''} in ${re.label} this window`
       : emptyLaneLine(state.tab);
     const crit = searching ? ''
-      : re ? 'Events are assigned to regions by the centroid of their bounding box'
+      : re && !broken ? 'Events are assigned to regions by the centroid of their bounding box'
       : state.tab === 'all' ? 'Events must clear the detection criteria for their type in the 90-day window.' : TYPE_CRITERIA[state.tab];
     tr.innerHTML = `<td></td><td colspan="2"><span class="lane-empty"${crit ? ` title="${esc(crit)}"` : ''}>${esc(note)}${crit ? ' <span class="crit-mark" aria-hidden="true">ⓘ</span>' : ''}</span></td>`;
     tbody.appendChild(tr);
@@ -2033,7 +2324,10 @@ function selectEvent(id, fromMap, nav) {
   h2.textContent = humanTitle();
   h2.title = ev.title;
   const chips = $('#detail-chips');
-  chips.innerHTML = '';   // one story line below carries type/region/dates/peak (QA 2026-11-06)
+  /* The detail header carries the type as a lane chip (glyph + short label +
+     identity hue) — the chiclet surface the owner lists (2026-11-17). The story
+     line below still spells out type / region / dates / peak in words. */
+  chips.innerHTML = typeChipHtml(ev.event_type);
   const d = ev.details || {};
   void d;
   const story = $('#detail-story');
@@ -2058,7 +2352,17 @@ function selectEvent(id, fromMap, nav) {
   $('#detail-charts').innerHTML = '';
 
   const vizHost = $('#detail-viz');
-  if (vizHost && window.EventViz) {
+  /* Track lanes (tropical_cyclone, tc 2026-11-16) carry their own geometry in
+     details.track (shared 5-slot row schema, documented in the tc lane module)
+     and have no viz.json asset: draw the best-track map instead of loading an
+     event visual. One renderer serves every lane that publishes a track. */
+  if (vizHost && window.TrackViz && Array.isArray(ev.details?.track) && ev.details.track.length) {
+    if (window.EventViz) EventViz.teardown();
+    vizHost.style.minHeight = '';
+    vizHost.innerHTML = '';
+    state._viz = null; state._vizFor = id;
+    TrackViz.render(vizHost, ev, { color: typeColor(ev.event_type) });
+  } else if (vizHost && window.EventViz) {
     vizHost.innerHTML = '<div class="sec-note">loading event visual\u2026</div>';
     vizHost.style.minHeight = '520px';   // CLS: reserve the panel area while the viz JSON loads
     /* Owner 2026-11-08 + Ponytail: a missing/broken viz never leaves a blank
@@ -2190,6 +2494,7 @@ function closeDetail(nav) {
   state.detailDay = null;
   state.detailChartsPending = null;
   if (window.EventViz) { EventViz.onLead = null; EventViz.onModels = null; EventViz.onLayers = null; EventViz.onDay = null; EventViz.initialLead = null; EventViz.teardown(); }
+  if (window.TrackViz) TrackViz.teardown();
   syncUrl(!!nav.push);
   $('#detail-sec').classList.add('hidden');
   document.body.classList.remove('detail-open');
@@ -2381,6 +2686,9 @@ async function boot() {
   window.addEventListener('scroll', syncRailSoon, { passive: true });
   window.addEventListener('resize', syncRailSoon);
   syncRailSoon();
+  /* Show-tabs: tablist keyboard over the wrapped grid (no scroller, so no edge
+     fades and no wheel-capture — the whole row set is always visible). */
+  $('#type-tabs').addEventListener('keydown', tabsKeyNav);
   /* RAIL (after owb.brightband.com): one toggle button, two jobs — it collapses the
      220 px column to a 58 px glyph rail on desktop and closes the drawer below 1100px,
      which is the width where the column becomes a drawer (a CSS breakpoint). */
@@ -2531,6 +2839,15 @@ async function boot() {
       setHashParam('lead', null);
       pendingNote = 'That event is not in the current 90-day window (events roll over weekly) — showing the catalog.';
     }
+    /* Type filter from the URL (#tab=): the URL wins over the stored
+       preference; an unknown value never survives in the address bar. */
+    {
+      const urlTab = hashParams().tab;
+      if (urlTab != null) {
+        if (urlTab === 'all' || TYPE_META[urlTab]) state.tab = urlTab;
+        else setHashParam('tab', null);
+      }
+    }
     /* Region from the URL (#region=), validated against the data contract: a deep
        link restores the region view; an unknown key is dropped from the URL and
        never silently kept (URL/state must agree after boot). The region file is
@@ -2570,6 +2887,20 @@ async function boot() {
      (popstate) and a pasted/edited #event=… link (hashchange). App-initiated
      pushState/replaceState fire neither, so this never echoes. */
   const syncFromLocation = () => {
+    /* The Show tab follows the URL on Back/Forward (and pasted #tab= links).
+       syncUrl writes the tab from state, so an invalid value rewrites itself
+       out via the next state write; here it just falls back to All. */
+    const tabP = hashParams().tab;
+    if (tabP !== undefined) {
+      const valid = tabP === 'all' || TYPE_META[tabP];
+      if (!valid) setHashParam('tab', null);   // an unknown value never survives the address bar
+      const want = valid ? tabP : 'all';
+      if (want !== state.tab) {
+        state.tab = want; saveState();
+        renderControls(); renderAll();
+        if (window.MergedMap) MergedMap.onTabChange(want);
+      }
+    }
     /* Region follows the URL on Back/Forward (and pasted #region= links) without
        writing back; an unknown or dropped key falls back to Global. */
     const reg = hashParams().region || 'global';

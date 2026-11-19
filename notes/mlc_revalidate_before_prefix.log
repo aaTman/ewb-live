@@ -1,0 +1,8 @@
+INFO gcsfs: gcsfs experimental features enabled via GCSFS_EXPERIMENTAL_ZB_HNS_SUPPORT.
+/opt/ewb-live/.venv/lib/python3.12/site-packages/gribapi/__init__.py:23: UserWarning: ecCodes 2.42.0 or higher is recommended. You are running version 2.34.1
+  warnings.warn(
+INFO ewb_live.sources.mlc_era5: mlc_era5: 385 frames 2026-08-13 00:00:00..2026-11-17 00:00:00 (1.56 GB), mslp [912.2, 1061.1] hPa
+read 385 frames 2026-08-13 00:00:00..2026-11-17 00:00:00 in 295 s
+all-NaN frames: 29 of 385
+INFO ewb_live.events.mlc: midlat_cyclone 2026-08-19..2026-11-17: 385 frames, 273 nodes, 3 tracks -> 0 events (0 same-low dupes; screened out {'genesis |lat| 72.5 outside 25.0-70.0': 1, 'genesis |lat| 72.8 outside 25.0-70.0': 1, 'genesis |lat| 74.2 outside 25.0-70.0': 1})
+BEFORE (pre-fix reader): events 0  peak RSS 21.8 GB
