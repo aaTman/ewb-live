@@ -3542,3 +3542,91 @@ check it at publish).
 
 My state meanwhile: all TC fixes committed (`51bb9bb`, probes + verdicts
 `a97931a`), unit suite 555/29 here; nothing else is blocked on the dev site.
+## [ne-fix-tc] 2026-11-19 12:59 UTC — DONE: TC-1..6 fixed & verified on an isolated :8054 build (shared :8051 was in a clobber race — integrator to republish); TC-7 handed to the dateline owner; TC-8 measured, owner decision asked
+
+**Branch:** `fix/tc`, REBASED (per orchestrator) onto `fix/flood` (⊇ `fix/mlc`
+RULE_REV mlc-v3 ⊇ `fix/round2-legend-tc-wind`); conflict-free except two
+append-only merges (channel file; app.js kept MY TC criteria line + THEIR
+PARDIG flood copy; `node --check` ok). No push anywhere.
+
+**Unit:** `592 passed / 29 skipped after the rebase onto `fix/flood` (the tree's own flood+MLC tests included), 0 failures; the TC-lane files are byte-identical across the rebase except the merged app.js lines.`
+
+**Verification site:** shared **:8051 is unusable for a clean pass** — it sits
+in a multi-agent code clobber race (`dev_site.sh sync` has no lock; see the
+INCIDENT entry; MLC/flood builds ran there concurrently). I built an isolated
+tree on the LXC, `/opt/ewb-live-tc`, serving **:8054** (own tree, own
+results; shared :8051 untouched by me after 03:36). Integrator: republish
+:8051 from the merged tree when the freeze lifts.
+
+**Before → after evidence (same 90-day window rolled one day):**
+* TC-1 ingest: build downloaded `ibtracs.last3years.list.v04r01.csv`
+  (11.9 MB) instead of the 333 MB ALL file; `meta.ibtracs.source` now says
+  which product served; a failed refresh falls back to the other cache; old
+  windows still choose ALL (`uri_for`, tested).
+* TC-2 basis: all 44 published events carry `details.wind_basis` ("1-min") +
+  `off_basis_fixes` (total 0 in this window — the audit's "0 events affected
+  today, latent after" holds); off-basis fixes cannot qualify or peak (unit
+  test proves a 140 kt 10-min null-fill cannot set a 95 kt 1-min storm's
+  peak); a 10-min-only storm publishes `wind_basis_note` ("category is a
+  lower bound"); TrackViz header reads `wind: USA agency (1-min)`.
+* TC-3/4 universe: lane note says "44 … here; the IBTrACS archive holds 49
+  storms … through 2026-11-17 (~2.5 days behind today) … 1 system still live
+  at the archive's edge (Akvan) cannot be judged until the next publication"
+  — verified rendered in-browser, all four viewport/theme combos.
+* TC-5: criteria text names the 1-minute basis and the no-mixing rule (now
+  enforced by code, not just copy).
+* TC-6 truncation: 5 events flagged `window_truncated` (Saudel 20, Lala 88,
+  Julio 8, Moke 20, Narra 2 fixes before the window start); the two window-
+  edge events' published start/peak moved exactly as the clip implies
+  (Saudel/Lala start 08-20→08-21, Lala peak 100→85 kt) **and the detail
+  panel now says so** — before, this happened silently every day. All other
+  42 events byte-identical (name/peak/category/start/end) to the pre-fix
+  build.
+* Real browser on :8054 (playwright, `notes/tc_site_check.py`): tab badge 44,
+  table 44 rows, detail header + truncation note above, screenshots
+  `notes/screenshots/tc-{1440,390}-{light,dark}.png`, report
+  `tc_site_check.json`; console errors: only a flood-lane viz-doc 404
+  (`raw_exceedance/flood_*.cls` — the isolated tree lacks the flood lane's
+  per-event viz docs; being generated, nothing in TC files; zero on :8051's
+  own build per the flood agent).
+* lane e2e: **the TC/track lane files pass 25/25**
+  (`test_tracklane_fe.py` + `test_trackviz_fe.py` + `test_trackwind_fe.py`,
+  incl. the three honest-zero tests and the scorecard-note test after commit
+  "honest-universe fallback keeps naming the source"). FULL suite on :8054:
+  61F/107P vs baseline 41F/122P — by-name diff, the extra failures are NOT TC
+  files: 12x `test_chips_fe` (the SAME file passes 11+1skip against :8051
+  minutes later — the isolated single-threaded :8054 serve stalls under the
+  module's back-to-back page loads; all 12 are 30 s selector timeouts); ~4 are
+  the SAME guardian tests renamed with a `[chromium]` param suffix; several
+  guardian/dashboard ones (deep-link console noise, flood chip/layer) ran
+  BEFORE the flood viz docs finished building on the isolated tree (the only
+  404 the browser check saw was `raw_exceedance/flood_*.cls`; they exist now);
+  busiest-day + dateline failures are the baseline's own (busiest-day = TC-7,
+  the dateline-wrapped AR, the round2 owner's file). A full-parity re-run on
+  the republished :8051 belongs to the integrator's pass; nothing in the
+  TC-lane files fails anywhere.
+
+
+**TC-7 (busiest-day missing box):** NOT this lane — it is the dateline-wrapped
+AR bbox in the merged map (ne-fix-round2 owner); my audit §4 carries the
+measured bbox. Track-lane TC events draw on `#gm-track-marks` by design.
+**TC-8 (scoring):** MEASURED (probe + JSON committed): virtual store answers
+36/36 track probes at 0.9 s/read (~8 min/lane-pass/week); MSLP-min within
+300 km of the best track in 32/36 → **track presence is verifiable**;
+intensity is NOT at 0.25° (−14…−24 kt resolution floor at ≥48 h). Smallest
+honest version = per-event `details["archive_check"]` track-presence note; it
+is a new metric needing an owner-signed threshold, so it is documented in
+`notes/audit_tc.md` §5 instead of shipped — **owner decision requested**
+(also pending from SHIP 1: nothing else).
+
+**Findings for other lanes (not my files):** (a) a fresh tree WITHOUT
+`data/pardig/daily` CRASHES the whole detect (`PardigError` aborts
+`--events-only`, taking TC/MLC down with it) — flood lane should fail-soft
+like every other lane or the init script should seed it; I seeded by copy.
+(b) `dev_site.sh sync` + `lanes` need a flock (live deploy has one). (c)
+`third_party/ExtremeWeatherBench` is missing in fresh worktrees →
+`test_ar_floors_match_upstream_ar_bounds` fails there pre-existing.
+
+**Open / needs owner:** TC-8 track-presence metric decision (above);
+:8051 republish after the clobber freeze; promotion of `fix/tc` remains
+owner-gated (no push/PR per brief).
