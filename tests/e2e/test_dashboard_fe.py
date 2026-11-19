@@ -430,6 +430,17 @@ class _QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self, *a):  # silence
         pass
 
+    def do_GET(self):
+        # mirror ewb_live/serve.py OPTIONAL_FILES: the tc-map wind field is a
+        # probe file, absent = 204 (a 404 is a red console error and trips the
+        # errors == [] gates of every fixture-served merged-map test)
+        path = self.translate_path(self.path.split("?")[0])
+        if self.path.split("?")[0].endswith("/tc_wind.json") and not os.path.exists(path):
+            self.send_response(204)
+            self.end_headers()
+            return
+        super().do_GET()
+
 
 def _build_freeze_fixture(tmpdir):
     """dashboard/ + snapshot data/results + synthesized freeze event."""
@@ -714,13 +725,15 @@ def test_ar_type_color_token_both_themes(live_url, page_ctx):
     page.goto(live_url + "/")
     light = page.evaluate(
         "getComputedStyle(document.documentElement).getPropertyValue('--series-ar').trim()")
-    assert light == "#2e7d32", light
+    # light AR re-stepped to #1e7729 by the same chips redesign (fd4fafb): the
+    # light pin had been left at the pre-redesign #2e7d32
+    assert light == "#1e7729", light
     page.click("#theme-ctl button[data-pref='dark']")   # segmented control (rail footer)
     dark = page.evaluate(
         "getComputedStyle(document.documentElement).getPropertyValue('--series-ar').trim()")
-    # dark AR re-stepped into the dark OKLCH band by the chips redesign 2026-11-17
+    # dark AR re-stepped into the dark OKLCH band by the chips redesign 2026-11-17 (final #75a322; #76a729 was the interim step)
     # (was #66bb6a, L 0.72 outside 0.48–0.67); see notes/chips_design.md
-    assert dark == "#76a729", dark
+    assert dark == "#75a322", dark
 
 # ---------------------------------------------------------------- global ----
 # Owner 2026-11-08: GLOBAL EVENT DASHBOARD. Synthetic deterministic timeline so

@@ -590,7 +590,32 @@
       const days = (viz.window && viz.window.days) || [];
       let d = viz.obs ? Math.max(0, days.indexOf(viz.obs.anchor_day)) : 0;
       const o = opts && opts.day != null ? Math.round(+opts.day) : NaN;
-      if (isFinite(o) && days.length) d = Math.max(0, Math.min(days.length - 1, o));
+      if (isFinite(o) && days.length) { d = Math.max(0, Math.min(days.length - 1, o)); return d; }
+      /* Duration layers paint nothing under the minimum run (heat: 3 d), and runs
+         truncate at the window start — so for an event that starts at the window
+         start the largest-footprint ("anchor") day can sit on day 1-2 with every
+         trailing run below the minimum: the OBS raster opened fully transparent
+         (heat 806ecbe64103, integrator2 2026-11-19). If the anchor day paints no
+         cell, open on the day with the most painted cells instead. */
+      try {
+        const bits = viz.obs && viz.obs.daily;
+        if (!isAR && bits && bits.length && viz.grid) {
+          const gny = viz.grid.lat.length, minRun = viz.event_type === 'heat_wave' ? 3 : 1;
+          let prev = null, best = -1, bestN = 0, anchorN = 0;
+          for (let k = 0; k < bits.length; k++) {
+            const bit = unpackMask(bits[k], gny);
+            const run = bit.map(function (row, j) {
+              return row.map(function (b, i) { return b ? 1 + (prev ? prev[j][i] : 0) : 0; });
+            });
+            let n = 0;
+            run.forEach(function (row) { row.forEach(function (v) { if (v >= minRun) n += 1; }); });
+            if (k === d) anchorN = n;
+            if (n > bestN) { bestN = n; best = k; }
+            prev = run;
+          }
+          if (!anchorN && best >= 0) d = best;
+        }
+      } catch (e) { /* keep the anchor day */ }
       return d;
     })();
     /* ---- scaffolding: root, toolbar (lead + time slider), AR colorbar row,
