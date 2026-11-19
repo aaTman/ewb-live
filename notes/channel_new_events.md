@@ -2726,3 +2726,130 @@ decide the window, truth ends 12 Nov). Then `ops/dev_site.sh assets` for the TC 
 field, then the `:8051` e2e + screenshots.
 
 — integrator
+
+## [integrator] 2026-11-19 00:45 UTC — DONE (pass 2): /dev/ has all 7 lanes with real data, wind field on the map, console clean; e2e 41F/122P on dev vs 48F/113P on live; 3 named defects + what promoting means
+
+**URL: http://192.168.0.121:8051/** (ewb LXC, systemd `ewb-live-dev-web.service`,
+tree `/opt/ewb-live-dev`, own `data/results`; `/opt/ewb-live` never written,
+:8052/:8053 previews untouched). No promotion, no push, no PR.
+
+### Per-type counts (dev tree, window 2026-08-20 …, truth cutoff 2026-11-12T23Z)
+
+| lane | raw catalogue | published (= tab badge) | newest event end |
+| --- | --- | --- | --- |
+| heat_wave | 149 | 15 | 2026-11-13 |
+| freeze | 11 | 5 | 2026-11-08 |
+| cold_snap | 24 | 7 | 2026-11-13 |
+| atmospheric_river | 95 | 11 | 2026-11-13 |
+| tropical_cyclone | 44 (49 storms) | 44 | 2026-11-17 (IBTrACS, 2 d lag) |
+| midlat_cyclone | **143** | 80 (cap) | 2026-11-13 |
+| flood | 766 | 40 (cap) | 2026-11-16 (IMERG reach) |
+
+1 232 detected → 202 published. `meta.json` now carries all 7 `event_counts`,
+`lane_status` (MLC: `ok`, 353 frames / 8 909 nodes / 324 tracks / 143 events —
+mlc-fix's mechanism working in a real build), `ibtracs` freshness (latest fix
+2026-11-17T00Z, lag 2.0 d) and the flood thresholds (`q_upper 0.95`,
+`floor_mm {"1":20,"3":50}` — the record that the `_sel_thresholds` crash used to
+prevent). 93 per-event viz docs, `global_timeline.json` 202 events / 284 KB,
+`tc_wind.json` **44 storms / 6 classes**.
+
+### Verified in a real browser (not assumed)
+
+* Tab counts as above, **identical at 1440 and 390**, `report.json` committed; TC
+  and MLC detail panels render **TrackViz** (`svg.tv-svg`, 114 track marks), heat
+  /freeze/cold_snap/AR render the EventViz panel, flood renders its honest empty
+  state (`div.lane-empty`) because flood has no viz asset.
+* **TC wind field on the merged map**: `#gm-tracks` canvas painted (2 179 non-clear
+  px of 240×129 in the shot), legend ramp `TS C1 C2 C3 C4 C5 track dissipated`,
+  asset HTTP 200. Screenshot `notes/screenshots/dev-wind-tc-1440.png`.
+* **0 console errors** across every tab × desktop/phone × light/dark.
+* Chips grid: 2 rows at 1440/820, 5 rows at 390, uniform heights, **horizontal
+  overflow 0 px in all six combinations** — that is a *fix*, see below.
+
+### Fixes I made in this pass beyond the merges
+
+1. `_sel_thresholds` flood attribute crash (killed every `meta.json` write) — 21:56 entry.
+2. ARCO probe hole-tolerance + cached-cutoff fallback (killed every lane build) — 22:04 entry.
+3. `dev_site.sh sync` `--delete-excluded` deleted the dev data tree → removed, plus a
+   post-sync guard; and the indented heredoc terminator that swallowed `init)`.
+4. `serve.py`: `tc_wind.json` is an optional probe file (204, not 404).
+5. **Legend overflow (new, measured tonight)**: at 390 px the page scrolled 73 px
+   sideways. One `.lg-group` — the storm ramp, 426 px wide — could not wrap: the
+   contract says from 320 up the strip never scrolls and every ON lane is inside it.
+   It only bit once TC/MLC had published events, which is why no preview caught it.
+   Fixed by wrapping inside `.lg-group`/`.lg-stops`; overflow back to 0, and the 5
+   legend e2e tests behave exactly as on `main` (checked in a detached worktree at
+   `e492a52`: same 5 failures before my CSS change — pre-existing, not merge damage).
+6. 4 e2e tests + my screenshot harness were matching on **chip label text**, which
+   the chips pass abbreviated; all now key on `data-tab` — 22:36 entry.
+
+### e2e: dev vs live, by name (same merged test set)
+
+* **dev `:8051`: 41 failed / 122 passed / 2 skipped** (17 min).
+* **live `:8050`: 48 failed / 113 passed / 4 skipped** (22 min).
+* The 12 `test_chips_fe.py` tests fail on **live** and pass on **dev**: they assert
+  the chip component, which live does not have yet. Same for
+  `test_type_filter_narrows_map_list_and_scorecard_together`, `test_open_then_esc`,
+  `test_open_then_close_button`. Direction: tests ahead of deployment, not regressions.
+* **7 dev-only failures** (pass on live, fail on dev) — all three causes are the new
+  *data*, not the merges, and each is now named:
+  1. `test_axe_zero_violations` (×2): axe `color-contrast` on 5 nodes, all
+     `#gm-legend .lg-bin.out > .lg-t` in the **tropical_cyclone** ramp (`C1`–`C5`,
+     computed `rgb(110,110,96)` at 10.5 px). It cannot fail on live today because
+     live has no published TCs to draw that group; **the moment the TC lane is
+     promoted with events, live fails it too.** Needs chips/tc-map (owner call):
+     darken `.out .lg-t` or document a gate exception.
+  2. `test_dateline_event_renders_sanely_on_every_surface` +
+     `test_degenerate_full_band_bbox_is_recovered_from_footprint`: **TC
+     `be0db546bb72`** (2026-08-20…28, bbox `17.4, 43.1, 175.9, −165.4`) crosses the
+     antimeridian. TrackViz unwraps it correctly (its own antimeridian test passes),
+     but the **merged map** draws no node/box for it and the wrapped bbox degrades
+     to a full band `[-180, 180]`. A real FE gap for dateline-crossing track lanes —
+     first event of that kind in the data, which is why every preview missed it.
+  3. `test_global_map_opens_on_the_busiest_day`: busiest day is 2026-10-26 with 22
+     published events, of which **12 are track-lane** (5 TC + 7 MLC) and render marks
+     on `#gm-track-marks`, not boxes in `#gm-boxes`. The test's premise (one box per
+     event) predates the track lanes. By my own count the box lanes should draw 10
+     that day and 9 are drawn, so there is still one box-lane event missing — most
+     plausibly another dateline case; I did not chase it (time-box) and it is not
+     mine to assert.
+  4. `test_unrecoverable_full_band_bbox_draws_no_band` fails on a Playwright
+     timeout waiting for `#detail-viz .ev3-panel` — the event it opens is a flood,
+     which has no viz by design; the test assumes every lane has a viz panel.
+* The rest of the failures are common to both sites (legend/raw-layer/AR-ramp set,
+  several documented by earlier agents as asserting the pre-redesign contract, and
+  the 5 legend ones that fail on `main` too).
+
+### Promoting to live would mean (NOT done)
+
+1. Merge `aaTman/ne-integration` → main **minus `e4fd539`** (`ne-subsets`: MLWP
+   virtual-store-only scoring + subsets-cache removal, owner marked DEV-ONLY) — i.e.
+   merge the lane branches (ar-debug, coldsnap, tc, flood-detect, mlc-impl, mlc-fix,
+   chips, tc-map) and leave that one out, or revert it after the merge. It rewrites
+   `ewb_live/sources/*`, `scoring/`, `weekly/`.
+2. Live must **score** the lanes it has never scored: dev reused the live scorecard,
+   and only **13 events** in the dev selection actually have score rows (8 heat,
+   4 freeze, 1 AR) because event ids are content hashes and re-deriving the window
+   changed most of them. That is why dev shows honest "Not scored — 44 storms
+   tracked from IBTrACS best tracks…" notes. A real promotion runs the full
+   `python -m ewb_live.weekly --days 90` on live (heavy, hours), not just a code sync.
+3. Expect 3 things to change on live: the two storm lanes start drawing (with the
+   axe contrast failure above moving to live too), the legend needs tonight's wrap
+   fix on small screens, and any dateline-crossing storm will not paint a box.
+4. Decide the MLC hue question: this tree carries my earlier amber re-hue and chips'
+   palette gives `midlat_cyclone` red `#a0312d` — one of the two should win before
+   live (design call).
+5. `meta.window` still says `…2026-11-18` while no lane has data past 2026-11-17 and
+   the temperature/AR/MLC lanes stop at 2026-11-13. Per-lane source reach is real
+   and honest; **saying it in the UI is a design decision I did not make.**
+
+### Ops for whoever picks this up
+
+* `bash ops/dev_site.sh status|watch|assets|sync|web` — `assets` = publish → timeline
+  → detached `tc_wind` (60 min cap). Idempotent; `sync` is code-only and now guarded.
+* Handoff doc: `notes/handoff_integrator_2.md`. Unit suite: 546 passed / 29 skipped.
+* Evidence committed: `notes/screenshots/report.json` (per-tab counts + detail
+  probes + console), `chips_final_metrics.json` (grid + overflow),
+  `dev-wind-tc-1440.png`, per-lane tabs light+dark, phone shots.
+
+— integrator
