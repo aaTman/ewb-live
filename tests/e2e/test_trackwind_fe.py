@@ -532,8 +532,8 @@ def _marks(pg):
 
 def test_track_marks_leave_the_map_after_the_last_fix(pw, wind_server):
     """Owner, 2026-11-19: a TC's / MLC's track marks must not outlive the system.
-    Marks exist exactly over [first fix, last fix]: absent before genesis, drawn
-    mid-track, gone one step after the last fix — the canvas line/dots too — and
+    Marks exist exactly over [first fix, max(last fix, end)): absent before genesis,
+    drawn mid-track, gone once the frame is past both the last fix and the end — the canvas line/dots too — and
     back when the slider is pulled back."""
     b = pw.chromium.launch()
     pg = _open(b, wind_server)
@@ -546,16 +546,14 @@ def test_track_marks_leave_the_map_after_the_last_fix(pw, wind_server):
     _goto(pg, "2026010400")                                   # one step after
     assert FADE["id"] not in _marks(pg), "a finished storm still has its ring"
     assert _mark_state(pg, FADE["id"]) is None
-    # Fieldwide's last fix is 3 Jan 00Z -> its marks are gone at 06Z while the
-    # tracked asset (wind field, life window to 5 Jan) is untouched by this rule
-    _goto(pg, "2026010300")
-    assert TC["id"] in _marks(pg)
+    # Fieldwide's last fix is 3 Jan 00Z but its life (end) runs to 5 Jan: the
+    # mark stays while the event is live — the list's active set and the map agree
     _goto(pg, "2026010306")
-    assert TC["id"] not in _marks(pg)
-    # SEAM (a different lane geometry): last fix 2 Jan 18Z
+    assert TC["id"] in _marks(pg)
+    # SEAM: last fix 2 Jan 18Z, end 3 Jan 00Z (exclusive)
     _goto(pg, "2026010218"); assert SEAM["id"] in _marks(pg)
     _goto(pg, "2026010300"); assert SEAM["id"] not in _marks(pg)
-    # the MLC lane, same rule: first fix 2 Jan 06Z, last fix 3 Jan 06Z
+    # the MLC lane, same rule: first fix 2 Jan 06Z, last fix 3 Jan 06Z, end 3 Jan 12Z
     _goto(pg, "2026010300"); assert MLC["id"] in _marks(pg)
     assert _mark_state(pg, MLC["id"])["state"] == "live"
     _goto(pg, "2026010306"); assert MLC["id"] in _marks(pg)
@@ -573,14 +571,26 @@ def test_track_marks_leave_the_map_after_the_last_fix(pw, wind_server):
 
 
 def test_no_line_or_dot_is_painted_after_every_storm_ended(pw, nowind_server):
-    """Without the wind asset the canvas holds ONLY lines and dots, so a frame
-    after the last storm's last fix must leave it empty (the ring is on the SVG
-    layer, covered above); at the last fix it is not."""
+    """Without the wind asset the canvas holds ONLY lines and dots. With the
+    long-lived Fieldwide taken off the timeline, a frame after every other
+    system's last fix and end leaves the canvas AND the ring layer empty; at
+    Fadeaway's last fix neither is."""
+    import urllib.request
+    tl = json.load(urllib.request.urlopen(nowind_server + "/data/results/global_timeline.json"))
+    tl["events"] = [e for e in tl["events"] if e["id"] != TC["id"]]
+    body = json.dumps(tl)
     b = pw.chromium.launch()
-    pg = _open(b, nowind_server)
+    pg = b.new_page(viewport={"width": 1400, "height": 1000})
+    pg.errors = []                                            # type: ignore[attr-defined]
+    pg.on("pageerror", lambda e: pg.errors.append(str(e)))    # type: ignore[attr-defined]
+    pg.route("**/global_timeline.json", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=body))
+    pg.goto(nowind_server + "/index.html")
+    pg.wait_for_selector("#gm-track-marks [data-id]", timeout=20000)
+    pg.wait_for_timeout(800)
     _goto(pg, "2026010318")                                   # Fadeaway's last fix
-    assert pg.evaluate(CANVAS_PX) > 0
-    _goto(pg, "2026010400")                                   # every storm is over
+    assert pg.evaluate(CANVAS_PX) > 0 and FADE["id"] in _marks(pg)
+    _goto(pg, "2026010400")                                   # every system is over
     assert pg.evaluate(CANVAS_PX) == 0, "a dead storm's line/dots still paint"
     assert _marks(pg) == set()
     assert not pg.errors, pg.errors

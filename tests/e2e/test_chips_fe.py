@@ -10,8 +10,9 @@ Covers the streamlined chip contract on the deployed dashboard
     and writes the selection to the URL (#tab=), like Region does
   * an honest zero tab stays selectable and its tooltip says why
   * one component: identical heights per viewport, no page-level horizontal
-    overflow at 390 px, and NO scroller — the wrapped equal-column grid keeps
-    every chip on screen at every width (owner 2026-11-18)
+    overflow at 390 px, and NO scroller — a compact content-sized row (one
+    line from ~1300 px, wrapping below) keeps every chip on screen at every width
+    (owner 2026-11-18; compressed 2026-11-19)
   * identity colour tokens: flood teal, midlat_cyclone red, heat orange, and
     two visually distinct storm glyphs
   * text tokens, not series colours: every chip label clears WCAG AA on its
@@ -101,7 +102,7 @@ def test_tablist_semantics_and_grouped_order(live_url, page_ctx):
     # never enters the a11y tree.
     caps = page.locator("#type-tabs .type-group")
     assert caps.count() == 3
-    assert [c.strip().lower() for c in caps.all_inner_texts()] == [
+    assert [c.strip().lower() for c in caps.all_text_contents()] == [
         "temperature", "water", "storms"]
     assert page.get_attribute("#type-tabs .type-group", "aria-hidden") == "true"
     assert page.get_attribute("#type-tabs .type-group", "role") == "none"
@@ -192,11 +193,13 @@ def _grid(page):
                      e.querySelector('.n').getBoundingClientRect().right - box(e).right)))] }; }""")
 
 
-@pytest.mark.parametrize("w,h,rows,cols", [(1440, 900, [4, 4], 4), (1100, 900, [4, 4], 4),
-                                           (820, 1100, [4, 4], 4), (390, 844, [1, 2, 1, 2, 2], 2)])
-def test_chips_grid_is_never_scrolled_or_ragged(live_url, w, h, rows, cols):
-    """The owner complaint was scrolling to find a lane: every chip is on screen
-    at every width, in equal columns, with no ragged last row."""
+@pytest.mark.parametrize("w,h,rows,dividers", [(1440, 900, [8], 2), (1366, 768, [8], 0),
+                                                (820, 1100, [6, 2], 0), (390, 844, [3, 3, 2], 0)])
+def test_chips_row_is_compact_never_scrolled_or_clipped(live_url, w, h, rows, dividers):
+    """Round 3 (owner 2026-11-19: COMPRESS the chips): content-sized chips on ONE
+    row at desktop widths (all 7 types + All visible, group captions become
+    hairline dividers from 1400 px), wrapping — never scrolling or truncating —
+    on narrower shells. The old equal-column 4x2 grid cost 108 px."""
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = browser.new_page(viewport={"width": w, "height": h})
@@ -205,16 +208,27 @@ def test_chips_grid_is_never_scrolled_or_ragged(live_url, w, h, rows, cols):
         m = _grid(page)
         assert m["pageScroll"] <= 0, m                      # no horizontal page overflow
         assert m["rowScroll"] == 0, m                       # the row cannot scroll at all
-        assert list(m["rows"].values()) and [len(r) for r in m["rows"].values()] == rows, m
-        assert m["cols"] == cols, m
+        assert [len(r) for r in m["rows"].values()] == rows, m
         assert not [c for r in m["rows"].values() for c in r if c["over"]], m
         assert m["clipped"] == [], m                        # short labels, never truncated
         assert len(m["heights"]) == 1, m                    # one chip height per viewport
-        assert m["caps"] == 3, m                            # grouping visible at every width
-        assert len(m["badges"]) == 1, m                     # counts align down each column
-        # equal columns: inside a row every chip is the same width
-        for r in m["rows"].values():
-            assert len({c["w"] for c in r}) == 1, m
+        assert m["caps"] == dividers, m                     # group dividers only on the one-line row
+        browser.close()
+
+
+def test_chips_leave_room_for_the_first_screen(live_url):
+    """The point of the compression: chips + legend + Region leave the map and
+    the event list inside 900 px at 1440x900 (see the dashboard first-screen test)."""
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
+        page.goto(live_url, wait_until="networkidle")
+        page.wait_for_selector("#type-tabs [role=tab]")
+        m = page.evaluate("""() => ({
+            chips: document.querySelector('#type-tabs').getBoundingClientRect().height,
+            list: document.querySelector('#events-sec').getBoundingClientRect().bottom })""")
+        assert m["chips"] <= 36, m                          # one 30 px row (was 108)
+        assert m["list"] <= 900, m
         browser.close()
 
 
@@ -229,23 +243,35 @@ def test_phone_touch_targets_are_44px(live_url):
         browser.close()
 
 
-def test_arrow_keys_walk_the_grid(live_url, page_ctx):
-    """Left/Right step a chip, Up/Down step a whole row-stride (the wrapped grid
-    has no scroller, so focus must reach every row by hand)."""
-    page = page_ctx
-    page.goto(live_url, wait_until="networkidle")
-    page.wait_for_selector("#type-tabs [role=tab]")
-    page.evaluate("document.querySelector('#type-tabs [role=tab]').focus()")
-    seq = []
-    for key in ["ArrowRight", "ArrowDown", "ArrowDown", "ArrowUp", "Home", "End"]:
-        page.keyboard.press(key)
-        seq.append(page.evaluate("document.activeElement.dataset.tab"))
-    assert seq[0] == "heat_wave", seq
-    assert seq[1] == "flood", seq                           # a 4-column stride down
-    assert seq[2] == "flood", seq                           # no row below: stays put
-    assert seq[3] == "heat_wave", seq                       # and back up the same column
-    assert seq[4] == "all" and seq[5] == "midlat_cyclone", seq
-    assert page.errors == []
+def test_arrow_keys_walk_the_chips(live_url):
+    """Left/Right step a chip; Up/Down step to the chip in the visual row
+    above/below and stay put when there is none (one row at 1440 -> no row)."""
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        # one row: Down/Up have nowhere to go
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
+        page.goto(live_url, wait_until="networkidle")
+        page.wait_for_selector("#type-tabs [role=tab]")
+        page.evaluate("document.querySelector('#type-tabs [role=tab]').focus()")
+        seq = []
+        for key in ["ArrowRight", "ArrowDown", "ArrowUp", "Home", "End"]:
+            page.keyboard.press(key)
+            seq.append(page.evaluate("document.activeElement.dataset.tab"))
+        assert seq == ["heat_wave", "heat_wave", "heat_wave", "all", "midlat_cyclone"], seq
+        page.close()
+        # two rows (820 wide: 6 + 2): Down from a first-row chip reaches the
+        # second row, Up returns to the first
+        page = browser.new_page(viewport={"width": 820, "height": 1100})
+        page.goto(live_url, wait_until="networkidle")
+        page.wait_for_selector("#type-tabs [role=tab]")
+        page.evaluate("document.querySelector('#type-tabs [role=tab][data-tab=flood]').focus()")
+        top0 = page.evaluate("document.activeElement.getBoundingClientRect().top")
+        page.keyboard.press("ArrowDown")
+        top1 = page.evaluate("document.activeElement.getBoundingClientRect().top")
+        assert top1 > top0, (top0, top1)
+        page.keyboard.press("ArrowUp")
+        assert page.evaluate("document.activeElement.getBoundingClientRect().top") == top0
+        browser.close()
 
 
 # ------------------------------------------------------------- contrast ----

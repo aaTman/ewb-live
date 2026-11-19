@@ -957,6 +957,7 @@
   const FLOOD_BINS_FALLBACK = [20, 50, 100, 200, 350];
   let legStats = null;                         // lane census of the painted frame
   let legHtml = '';                            // last rendered markup (playback: no reflow churn)
+  let legOpen = false;                         // "Scales" expanded (labelled ramps) vs compact swatches
 
   const legStop = (bg, label, title, out, extraCls) =>
     `<span class="lg-bin${out ? ' out' : ''}">`
@@ -1141,7 +1142,19 @@
         if (extra) groups.push(extra);
       } catch (err) { console.warn('track legend:', err.message); }
     }
-    const html = groups.join('');
+    /* COMPACT by default once three or more lanes share the strip (owner
+       2026-11-19: the 7-lane legend was 154 px of the first screen): only each
+       lane's name and its colour swatches — every swatch keeps its tooltip, the
+       lane's group keeps its own — and a "Scales" control opens the labelled ramps
+       (the old layout). One or two lanes (a type tab) are already one short row
+       and always show their labels. */
+    const compact = groups.length >= 3 && !legOpen;
+    const toggle = groups.length >= 3
+      ? `<button type="button" class="lg-toggle" aria-expanded="${legOpen}" `
+        + `title="${legOpen ? 'Hide' : 'Show'} the numbers under each colour scale">`
+        + `Scales <span aria-hidden="true">${legOpen ? '▴' : '▾'}</span></button>` : '';
+    const html = toggle + groups.join('');
+    leg.classList.toggle('compact', compact);
     if (html === legHtml) return;              // same legend: no reflow per frame
     legHtml = html;
     leg.innerHTML = html;
@@ -1162,6 +1175,12 @@
     if (mounted) return;
     const slider = $('#raw-slider');
     $('#raw-play').onclick = togglePlay;
+    $('#gm-legend').addEventListener('click', (ev) => {     // the "Scales" expander
+      if (!ev.target.closest('.lg-toggle')) return;
+      legOpen = !legOpen;
+      legHtml = '';                                          // force the repaint
+      renderLegend();
+    });
     $('#raw-prev').onclick = () => { stopPlay(); if (idx > 0) { idx--; writeUrl(false); render(); } };
     $('#raw-next').onclick = () => { stopPlay(); if (idx < (raw && raw.frames.length - 1)) { idx++; writeUrl(true); render(); } };
     $('#raw-speed').onchange = (e) => {

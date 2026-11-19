@@ -490,34 +490,27 @@ nav.controls {
 }
 .type-chip svg { width: 13px; height: 13px; flex: none; color: var(--etype, var(--stone-grey)); }
 
-/* The Show row: ONE component, wrapped equal-width GRID — never a scroller
-   (owner 2026-11-18: scrolling to find a lane was the complaint). Eight cells
-   (All + seven types) in four equal columns at ≥636px = two tidy rows of four;
-   two equal columns below that = four rows on a phone. Equal columns mean the
-   count badges line up down the row, no chip is wider than its neighbour and
-   there is never a ragged last row. Group captions are row headers inside the
-   same grid, so they cost no extra row height. */
-.type-filter { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px 12px; }
-.type-filter > .ctl-label { grid-column: 1; }
-.type-filter > .ctl-region { grid-column: 2; justify-self: end; }
-.type-filter > #type-tabs { grid-column: 1 / -1; }
-#type-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px 8px; align-items: end; min-width: 0; }
-@media (min-width: 720px) {          /* cap the cell so a wide shell doesn't
-                                       stretch four pills across the page */
-  #type-tabs { grid-template-columns: repeat(4, minmax(0, 236px)); }
-}
-@media (max-width: 719px) {          /* 8 cells / 2 = four even rows */
-  #type-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .etype-tab.is-all, .etype-tab.is-tail { grid-column: 1 / -1; }
-}
+/* The Show row: ONE component, a compact wrapped flex row — never a scroller
+   (owner 2026-11-18: scrolling to find a lane was the complaint) and, since
+   2026-11-19, never two tidy rows of four either: the first screen is the
+   budget (test_controls_live_in_the_section_they_change), so the chips are
+   content-sized (icon + short label + count) and all eight sit on ONE row at
+   desktop widths; narrower shells wrap them, they never scroll or truncate.
+   The "Show" caption is screen-reader-only (the tablist is still labelled by
+   it) and the group captions (Temperature | Water | Storms) become hairline
+   dividers where the row is one line — the group name rides each chip's
+   tooltip. Region lives in the section header row (index.html). */
+.type-filter { display: block; }
+.type-filter > .ctl-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }   /* sr-only */
+#type-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 5px; min-width: 0; }
 
-.etype-tab { position: relative; display: inline-flex; align-items: center; gap: 7px;
-  min-width: 0; height: 32px; padding: 0 12px;
+.etype-tab { position: relative; display: inline-flex; align-items: center; gap: 6px;
+  flex: 0 1 auto; min-width: 0; height: 30px; padding: 0 9px;
   border-radius: 999px; background: var(--bg-panel); border: 1px solid var(--border-strong);
   color: var(--matte-black); font: 400 var(--text-sm)/1 var(--font-sans); cursor: pointer; }
 .etype-tab .t-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.etype-tab svg { width: 15px; height: 15px; flex: none; color: var(--etype, var(--stone-grey)); }
+.etype-tab svg { width: 14px; height: 14px; flex: none; color: var(--etype, var(--stone-grey)); }
 .etype-tab.is-all svg { color: var(--stone-grey); }   /* "All" has no identity hue */
 .etype-tab:hover { background: var(--tint); border-color: var(--border-strong); }
 /* Selected = the page's one selected state (§5): alabaster wash + 3 px ink
@@ -526,34 +519,25 @@ nav.controls {
   background: var(--alabaster); border-color: var(--matte-black); color: var(--matte-black);
   font-weight: 500; box-shadow: inset 0 0 0 0.5px var(--matte-black); }
 .etype-tab[aria-selected="true"]:hover { background: var(--alabaster); }
-.etype-tab .n { min-width: 3ch; text-align: right; margin-left: auto;   /* counts don't jiggle (no CLS) and line up down each grid column */
+.etype-tab .n { min-width: 2ch; text-align: right;                  /* counts don't jiggle (no CLS) */
   font: 400 var(--text-xs)/1 var(--font-mono); font-variant-numeric: tabular-nums;
   color: var(--ink-secondary); }                                    /* 5.4:1 on paper */
 .etype-tab[aria-selected="true"] .n { color: var(--matte-black); }  /* ink-secondary on the alabaster wash is 4.3 — the selected tab's count rides the label ink */
 .etype-tab.zero .n { color: var(--ink-muted); }                     /* honest zero: quieter, still selectable */
-/* Group captions: the row reads as three labelled groups — Temperature | Water
-   | Storms — not one undifferentiated line of pills (owner feedback). They are
-   GRID ROW HEADERS above the chips they name, so the grouping costs no extra
-   chip height. Purely presentational (role=none + aria-hidden): the tablist's
-   owned set is unchanged and the roving-tabindex order skips them. */
-.type-group { display: flex; align-items: flex-end; height: 13px; min-width: 0;
-  font: 600 9px/1 var(--font-sans); letter-spacing: 0.09em; text-transform: uppercase;
-  color: var(--ink-muted); white-space: nowrap; overflow: hidden; user-select: none;
-  grid-column: 1 / -1; }          /* phone: a caption row above its own group */
-.type-group::after { content: ""; flex: 1 1 auto; height: 0; margin-left: 6px;
-  border-top: 1px solid var(--border-strong); }
-/* ≥720px: four columns, two chip rows. Captions are pinned to the header row
-   above their own chips (chips auto-place into the two free rows in order). */
-@media (min-width: 720px) {
-  .type-group[data-group="temperature"] { grid-row: 1; grid-column: 2 / -1; }
-  .type-group[data-group="water"] { grid-row: 3; grid-column: 1 / 3; }
-  .type-group[data-group="storms"] { grid-row: 3; grid-column: 3 / -1; }
-  .etype-tab[data-slot="a"] { grid-row: 2; }
-  .etype-tab[data-slot="b"] { grid-row: 4; }
+/* Group captions: presentational only (role=none + aria-hidden), so the
+   tablist's owned set is unchanged and the roving-tabindex order skips them.
+   On the one-line desktop row each is a hairline divider (the text stays in the
+   DOM for the a11y-hidden caption, zero-sized visually); where chips wrap
+   (phone / narrow shells) the divider has no honest place and is not drawn. */
+.type-group { display: none; }
+@media (min-width: 1400px) {
+  .type-group { display: block; flex: none; width: 1px; height: 18px; margin: 0 3px;
+    background: var(--border-strong); font-size: 0; overflow: hidden; user-select: none; }
+  .type-group[data-group="temperature"] { display: none; }   /* nothing before the first group */
 }
-/* touch: 44 px targets (M7), same visual metrics */
+/* touch: 44 px targets (M7), same visual metrics; chips share the row evenly */
 @media (pointer: coarse), (max-width: 479px) {
-  .etype-tab { height: 44px; }
+  .etype-tab { height: 44px; flex: 1 1 auto; justify-content: center; }
   #type-tabs { gap: 8px; }
 }
 /* event-list rows: the glyph replaces the old colour dot (identity not colour-alone) */
@@ -561,7 +545,7 @@ nav.controls {
 #event-table .type-ic svg { width: 16px; height: 16px; }
 /* Region control (OWB-style): tracked label above, native select below — the
    one page-wide filter besides the type tabs (map + list + scorecard). */
-.ctl-region { flex-direction: column; align-items: flex-start; gap: 4px; }
+.ctl-region { flex-direction: row; align-items: center; gap: 8px; margin-left: auto; flex-wrap: nowrap; }
 .type-filter:has(#type-tabs:empty), nav.controls:has(#lead-chips:empty) > * { visibility: hidden; }
 .sec-lede { color: var(--ink-secondary); font-size: var(--text-sm); margin: 4px 0 12px; max-width: 86ch; }
 .home-only { }
@@ -1124,6 +1108,32 @@ nav.controls .dd .dd-body {
     top: 3px; bottom: 3px; width: 1px; background: var(--border); }
 }
 
+/* COMPACT legend (default whenever 3+ lanes share the strip — owner 2026-11-19,
+   first-screen budget): lane name + its colour swatches on ONE wrapped line,
+   numbers/units hidden (every swatch and group keeps its title; the "Scales"
+   control restores the labelled ramps). Same at every width — it wraps, it
+   never scrolls. */
+#gm-legend.compact { flex-direction: row; flex-wrap: wrap; align-items: center;
+  gap: 4px 18px; min-height: 48px; padding: 5px 8px; }   /* = the one-lane strip's height: a tab switch never moves what is below */
+#gm-legend.compact .lg-group { flex-wrap: nowrap; gap: 6px; }
+#gm-legend.compact .lg-head { display: block; }
+#gm-legend.compact .lg-unit, #gm-legend.compact .lg-t { display: none; }
+#gm-legend.compact .lg-stops { flex-wrap: nowrap; gap: 2px; }
+#gm-legend.compact .lg-bin, #gm-legend.compact .lg-bin.prov,
+#gm-legend.compact .lg-group[data-layer] .lg-bin,
+#gm-legend.compact .lg-group[data-track] .lg-bin,
+#gm-legend.compact .lg-group[data-track] .lg-bin.wide { width: auto; margin-left: 0; }
+#gm-legend.compact .swatch { width: 14px; }
+#gm-legend.compact .swatch.lg-line { width: 18px; }
+#gm-legend.compact .lg-none { top: -6px; }
+.lg-toggle { order: 99; margin-left: auto; padding: 1px 8px; border-radius: 999px;
+  font: 400 var(--text-2xs)/1.6 var(--font-sans); letter-spacing: .04em; color: var(--ink-secondary); }
+#gm-legend:not(.compact) .lg-toggle { order: 0; align-self: flex-start; margin-left: 0; }
+@media (pointer: coarse), (max-width: 479px) {
+  .lg-toggle { min-height: 44px; min-width: 44px; padding: 0 12px; }
+}
+@container (min-width: 680px) { #gm-legend:not(.compact) .lg-toggle { margin-left: auto; align-self: center; order: 99; } }
+
 /* base map primitives live in the canvas paint — see mergedmap.js drawBase */
 
 /* ---- raw exceedance map (briefs/raw_exceedance_map.md) ---- */
@@ -1250,8 +1260,8 @@ html[data-theme="dark"] { --map-line: #6d7f92; }   /* 3.2:1 on the ocean fill; g
    Everything below is filled by JS after first paint; reserve the final box so the
    content under it never moves. Values are the measured settled heights. */
 nav.controls { min-height: 46px; }
-.type-filter { min-height: 44px; }   /* room for the wrapped grid (measured, not fixed) */
-@media (pointer: coarse), (max-width: 479px) { .type-filter { min-height: 56px; } }
+.type-filter { min-height: 30px; }   /* one chip row; wrapping rows grow it (measured, not fixed) */
+@media (pointer: coarse), (max-width: 479px) { .type-filter { min-height: 44px; } }
 .raw-map-wrap { min-height: 240px; }
 #gm-gantt { height: 62px; }
 .tl-head { min-height: 30px; }

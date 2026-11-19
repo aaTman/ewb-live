@@ -714,24 +714,36 @@ function setTab(id) {
 
 /* tablist keyboard: roving tabindex, Arrow/Home/End move focus (manual
    activation — Enter/Space/click select; arrows alone never re-render).
-   The row is a wrapped grid, so Up/Down step by the column count — the cell
-   directly above/below — while Left/Right step to the neighbouring tab. */
+   The row is content-sized and wraps (one line on a wide shell), so Up/Down move
+   to the chip directly above/below by geometry — the nearest centre in the
+   adjacent visual row — and stay put when there is no row that way; Left/Right
+   step to the neighbouring tab. */
 function tabsKeyNav(e) {
   const tabsEl = $('#type-tabs');
   if (!tabsEl.contains(e.target) || e.target.getAttribute('role') !== 'tab') return;
   const list = [...tabsEl.querySelectorAll('[role=tab]')];
   const i = list.indexOf(e.target);
-  let cols = 1;
-  try {
-    cols = Math.max(1, getComputedStyle(tabsEl).gridTemplateColumns.split(' ').filter(Boolean).length);
-  } catch (err) { cols = 1; }
+  const box = (n) => n.getBoundingClientRect();
+  const vertical = (dir) => {
+    const me = box(list[i]), cx = me.left + me.width / 2;
+    let best = null;
+    for (let k = 0; k < list.length; k++) {
+      const b = box(list[k]);
+      if (dir > 0 ? b.top <= me.top + 4 : b.top >= me.top - 4) continue;   // same row or wrong way
+      const rowGap = Math.abs(b.top - me.top);
+      const d = Math.abs(b.left + b.width / 2 - cx);
+      // the nearest row first, then the nearest column inside it
+      if (!best || rowGap < best.rowGap - 4 || (rowGap <= best.rowGap + 4 && d < best.d)) {
+        best = { k, rowGap, d };
+      }
+    }
+    return best ? best.k : i;
+  };
   let j = null;
   if (e.key === 'ArrowRight') j = (i + 1) % list.length;
   else if (e.key === 'ArrowLeft') j = (i - 1 + list.length) % list.length;
-  /* Up/Down step a column-stride and CLAMP: a wrapped grid has no next row, and
-     wrapping would drop the focus three chips sideways. */
-  else if (e.key === 'ArrowDown') { const k = i + cols; j = k < list.length ? k : i; }
-  else if (e.key === 'ArrowUp') { const k = i - cols; j = k >= 0 ? k : i; }
+  else if (e.key === 'ArrowDown') j = vertical(1);
+  else if (e.key === 'ArrowUp') j = vertical(-1);
   else if (e.key === 'Home') j = 0;
   else if (e.key === 'End') j = list.length - 1;
   if (j === null) return;

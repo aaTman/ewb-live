@@ -228,17 +228,19 @@
     const { death, ongoing } = lifeOf(ev);
     return !ongoing && ms != null && death != null && ms >= death;
   };
-  /* A system leaves the map after its LAST FIX: no ring, line or node once the
-     frame is past the track's final fix (owner, 2026-11-19 — the wind field
-     already dissipated at the storm's death, but the marks used to linger as
-     "history" for the rest of the window). The track runs through the
-     post-tropical tail, so a frame between death and the last fix still shows the
-     tail's ring (without a field). A still-open system (life.ongoing) stays, and
-     before its first fix there is nothing to reveal (layoutStorm returns null),
-     so a system's marks exist exactly over [first fix, last fix]. */
+  /* A system leaves the map when its life is over: no ring, line or node once
+     the frame is past the track's LAST FIX *and* at or after its published end
+     (life.death for a TC, the event end for any other track lane — exclusive,
+     like the list's active set, so a row reads live exactly while its mark is on
+     the map). Owner 2026-11-19: the field already dissipated at the storm's
+     death but the marks used to linger as "history" for the rest of the window.
+     The track runs through the post-tropical tail, so a frame between death and
+     the last fix still shows the tail's ring (without a field). A still-open
+     system (life.ongoing) stays; before its first fix there is nothing to reveal
+     (layoutStorm returns null). */
   const expiredAt = (ev, fixes, ms) => {
     if (ms == null || !fixes.length || lifeOf(ev).ongoing) return false;
-    return ms > fixes[fixes.length - 1].ms;
+    return ms > fixes[fixes.length - 1].ms && dissipatedAt(ev, ms);
   };
 
   /* ---------------- small helpers ---------------- */
