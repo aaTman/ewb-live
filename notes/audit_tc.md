@@ -165,3 +165,11 @@ TC-1 (window-aware source, 333 MB → 11.9 MB), TC-2 (one wind basis per storm +
 `details.wind_basis`), TC-3 (`meta.ibtracs`: storms in window / published /
 systems pending qualification, surfaced in the UI), TC-4 + TC-5 (lane and
 criteria copy), TC-6 (`details.window_truncated` + detail-panel note).
+TC-7: handed to the dateline/legend owner (it is not this lane's file).
+TC-8: measured feasibility + documented verdict (§5), owner decision asked.
+Branch `fix/tc` rebased 2026-11-19 onto `fix/flood` (⊇ `fix/mlc` ⊇
+`fix/round2-legend-tc-wind`); TC-lane files are byte-identical across the
+rebase. Verification ran on an ISOLATED dev tree (`/opt/ewb-live-tc`,
+port 8054) because the shared :8051 tree was in a multi-agent clobber race
+(see the INCIDENT channel entry); :8051 re-publication is left to the
+integrator.
