@@ -6,7 +6,7 @@
    1. the WIND FIELD (the primary encoding, owner direction 2026-11-18): every
       cell where the storm's wind reached tropical-storm force (≥ 34 kt / 39 mph),
       shaded by Saffir-Simpson class — TS, CAT 1…CAT 5. The numbers come from
-      ewb_live/viz/tc_wind.py (ERA5 10 m wind, max per cell over the UTC day) in
+      ewb_live/viz/tc_wind.py (ERA5 10 m wind at the displayed 6-hourly step) in
       data/results/tc_wind.json. The field is REANALYSIS: ERA5 at 0.25° reads
       systematically below the best-track peak (measured 0.69× median on the
       published storms), so the layer, its legend and every tooltip name the
@@ -35,10 +35,14 @@
    fixes at or before the selected step — so playing back never shows the future
    — and the ring sits on the last fix at or before it. The WIND FIELD is drawn
    only inside the storm's own life (the lane's event window: first to last
-   qualifying fix, published by the asset as `life.birth` / `life.death`): a
-   frame at or after the death step has no field for that storm, no cell lingers
-   on the day after it ends, and the marker goes hollow — but its track stays,
-   because where a storm has been is history, not a claim that it still is.
+   qualifying fix, published by the asset as `life.birth` / `life.death`), and
+   the frame shows the storm's field AT ITS OWN STEP: the slider sits on a
+   00/06/12/18Z synoptic hour and the asset stores one grid per such step, so
+   the wind painted at 06Z is the wind that blew at 06Z — nothing is maxed over
+   the day or held across hours (owner direction 2026-11-19). A frame at or
+   after the death step has no field for that storm, no cell lingers on the day
+   after it ends, and the marker goes hollow — but its track stays, because
+   where a storm has been is history, not a claim that it still is.
    Nothing is held between frames: every payload repaints the canvas from the
    asset, so a slider jump, play/animate and a jump back all read the same way.
 
@@ -130,9 +134,10 @@
 
   /* ---------------- the wind field (this lane's primary encoding) ----------
      data/results/tc_wind.json, written by ewb_live/viz/tc_wind.py: per storm,
-     per UTC day, a ±5° window of u8 knots (0 = below the 34 kt floor, never
-     drawn) plus the class scale, the source string, the measured bias and each
-     storm's life window (the dissipation contract, above). Fetched
+     per UTC day, a ±5° window shared by ONE GRID PER LIVE 6-HOURLY STEP — u8
+     knots (0 = below the 34 kt floor, never drawn) — plus the class scale, the
+     source string, the measured bias and each storm's life window (the
+     dissipation contract, above). A frame draws only its own step's grid. Fetched
      lazily, once, and only because a track lane is on the map; a missing asset
      (a build that has not run yet) is not an error — the tracks still draw and
      the legend says the field is unavailable. */
@@ -177,13 +182,25 @@
         S && draw(S);
       });
   }
-  /* the day's field under the slider: the asset holds one grid per UTC day */
+  /* the day entry holding the frame's field: schema 3 stores one grid per live
+     6-hourly step inside it, and pickGrid takes the frame's OWN step — a storm
+     with no grid at that hour paints nothing at that frame. A schema-2 asset
+     (one daily-max grid per day, pre-2026-11-19) draws its grid at every step,
+     which is exactly what that schema promised and keeps a not-yet-rebuilt
+     deploy rendering while the new asset builds. */
   function fieldEntry(ev, frameDate) {
     const s = WIND.byId && WIND.byId.get(ev.id);
     return s && frameDate ? (s.dayByDate.get(frameDate) || null) : null;
   }
   const frameDateOf = (ts) => { const s = String(ts || ''); return s.length >= 8
     ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : null; };
+  const frameHourOf = (ts) => { const s = String(ts || ''); return s.length >= 10
+    ? +s.slice(8, 10) : null; };
+  function pickGrid(e, hour) {
+    if (!e) return null;
+    if (Array.isArray(e.grids)) return e.grids.find((g) => g.h === hour) || null;
+    return e.rle ? e : null;                    // schema 2: the day's one grid
+  }
 
   /* ---------------- when a storm EXISTED (the dissipation contract) ---------
      The producer owns the rule and publishes it: `life.birth` / `life.death` are
@@ -191,10 +208,10 @@
      NATURE not ET/MX), plus one fix step — and every cell in the asset comes
      from a 6-hourly step inside it. The layer owns the other half: a storm's
      field is NEVER drawn at or after its death step, even though the asset
-     holds a grid for that calendar day, and never before its birth step. The
-     daily-max grid is the day's maximum over the hours the storm was alive; a
-     slider position past the death time has no field, and scrubbing back brings
-     it back. Before the asset arrives (or if it never does) the event's own
+     holds grids for that calendar day, and never before its birth step. Each
+     frame carries only its own step's grid, so a slider position past the
+     death time has no grid at all and scrubbing back brings the field back.
+     Before the asset arrives (or if it never does) the event's own
      start/end are the same window, so the gate holds either way. */
   function lifeOf(ev) {
     const s = WIND.byId && WIND.byId.get(ev.id);
@@ -468,17 +485,20 @@
      Where the geometry is bigger than the floor (region views, zoomed maps)
      nothing is dilated, and the tooltip always quotes the cell's own number. */
   const WIND_MIN_PX = 1.15;
-  function gridOf(e) {                           // [v, n, v, n, …] -> Uint8Array, once
-    if (!e._g) {
+  /* decode ONE step grid (or a whole schema-2 day entry) once; the geometry
+     (ny/nx) lives on the day entry and is shared by every grid of that day */
+  function gridOf(e, s) {
+    const o = s || e;                            // [v, n, v, n, …] -> Uint8Array
+    if (!o._g) {
       const g = new Uint8Array(e.ny * e.nx);
       let k = 0;
-      for (let i = 0; i < e.rle.length; i += 2) {
-        e.rle[i + 1] && g.fill(e.rle[i], k, k + e.rle[i + 1]);
-        k += e.rle[i + 1];
+      for (let i = 0; i < o.rle.length; i += 2) {
+        o.rle[i + 1] && g.fill(o.rle[i], k, k + o.rle[i + 1]);
+        k += o.rle[i + 1];
       }
-      e._g = g;
+      o._g = g;
     }
-    return e._g;
+    return o._g;
   }
   const wrapLon = (x) => ((x + 180) % 360 + 360) % 360 - 180;
 
@@ -486,17 +506,20 @@
     if (!WIND.data) return;
     const step = WIND.data.step_deg, proj = payload.proj, H = payload.fit.H;
     const date = frameDateOf(payload.ts), frameMs = toMs(payload.ts);
+    const hour = frameHourOf(payload.ts);
     const anySel = payload.sel.length > 0;
     const paths = new Map();                     // "class|alpha" -> Path2D
     for (const st of storms) {
       if (st.ghost) continue;
-      // DISSIPATION: past the storm's last live step there is no field, whatever
-      // day grid the asset happens to hold for that calendar day
+      // DISSIPATION + STEP SELECTION: the frame paints the storm's grid FOR THIS
+      // HOUR ONLY — a step the storm did not live through has no grid, and no
+      // day-level field exists to linger on after the storm's last live step
       if (!aliveAt(st.ev, frameMs)) continue;
       const e = fieldEntry(st.ev, date);
-      if (!e) continue;
+      const grid = pickGrid(e, hour);
+      if (!grid) continue;
       const a = WIND_ALPHA * (anySel && !payload.sel.includes(st.ev.id) ? 0.3 : 1);
-      const g = gridOf(e);
+      const g = gridOf(e, grid);
       const seen = windSeen;
       for (let i = 0; i < e.ny; i++) {
         const lat = e.lat0 + i * step;
@@ -836,13 +859,14 @@
     for (const st of last.storms) {
       if (!aliveAt(st.ev, last.frameMs)) continue;      // dead: nothing to answer
       const e = fieldEntry(st.ev, last.date);
-      if (!e) continue;
+      const grid = pickGrid(e, last.hour);
+      if (!grid) continue;                              // not drawn at this hour
       const i = Math.round((ll[1] - e.lat0) / step);
       const j = Math.round((((ll[0] - e.lon0 + 540) % 360) - 180) / step);
       if (i < 0 || j < 0 || i >= e.ny || j >= e.nx) continue;
-      const kt = gridOf(e)[i * e.nx + j];
+      const kt = gridOf(e, grid)[i * e.nx + j];
       const cid = WIND.classOf[kt];
-      if (cid && (!best || cid > best.cid)) best = { kt, cid, st, d: e.d, e };
+      if (cid && (!best || cid > best.cid)) best = { kt, cid, st, d: e.d, e, g: grid };
     }
     return best;
   }
@@ -859,19 +883,16 @@
     const peak = Number.isFinite(t.peak)
       ? `${round1(t.peak)} ${t.units || 'kt'}${t.peak_label ? ' · CAT ' + t.peak_label : ''}`
       : 'not published';
-    // which hours the day's maximum was taken over: on a storm's last day that is
-    // only the steps before it dissipated, and the tooltip says so
-    const steps = Array.isArray(hit.e && hit.e.steps) ? hit.e.steps : [];
-    const stepRow = steps.length && steps.length < 4
-      ? row('steps in this max', steps.join(' ')) : '';
+    // THE INSTANT READING: the cell's own number at the frame's own 6-hourly
+    // step — the wind that blew at that hour, not a maximum over the day
+    const when = hit.d + (hit.g && hit.g.label ? ' \u00b7 ' + hit.g.label : '');
     tip.innerHTML = `<div class="t-title">${esc(c.label)} · ERA5 10 m wind</div>`
-      + row('wind, daily max', `${hit.kt} kt · ${Math.round(hit.kt * 1.15078)} mph`)
+      + row('wind, instantaneous', `${hit.kt} kt · ${Math.round(hit.kt * 1.15078)} mph`)
       + row('storm', stormName(hit.st.ev))
-      + row('day', hit.d)
-      + stepRow
+      + row('hour', when)
       + row('best-track peak', peak)
-      + `<div class="t-note">Reanalysis at 0.25° under-reads cyclone peaks: the `
-      + `shading is the wind field, never the official category.</div>`;
+      + `<div class="t-note">Reanalysis at 0.25° under-reads cyclone peaks: the `+
+        `shading is where the wind blew — a guide, never the official category.</div>`;
     tip.classList.remove('hidden');
     if (window.moveTip) window.moveTip(tipEv);
     windTip = true;
@@ -894,9 +915,10 @@
 
      For a lane that has a wind field, the FIELD's classes are the scale (read
      from the asset, so swatches cannot disagree with the map), and the legend
-     says what the numbers are: sustained 10 m wind, daily maximum, reanalysis —
-     with the measured under-read in the group's own title. The best-track
-     colours stay where they belong: the dots on the line and the tooltip. */
+     says what the numbers are: sustained 10 m wind at the displayed hour,
+     reanalysis — with the measured under-read in the group's own title. The
+     best-track colours stay where they belong: the dots on the line and the
+     tooltip. */
   function legendHtml(payload) {
     const tab = payload.tab || 'all';
     const groups = [];
@@ -939,22 +961,23 @@
         + 'its wind field is gone."></i>'
         + '<span class="lg-t">dissipated</span></span>');
       const bias = isWind && WIND.data.bias && WIND.data.bias.ratio_median != null
-        ? ` It under-reads the peaks — the field's daily maximum is a median `
+        ? ` It under-reads the peaks — the field's strongest step reaches a median `
           + `${WIND.data.bias.ratio_median}× the best-track peak across the `
           + `${WIND.data.bias.n} published storms — so the shading is always at `
           + `or below the official category, which is the dot colour.` : '';
       const tip = isWind
         ? `Shaded cells are where ${WIND.data.source} reached that Saffir–Simpson `
-          + `class, drawn on a ${WIND.data.step_deg}° grid (a cell is the maximum of `
-          + `the ${WIND.data.read_deg}° readings inside it), and only for the `
-          + `${WIND.data.cadence_h}-hourly steps while the storm was alive: the field `
+          + `class, drawn on a ${WIND.data.step_deg}° grid at the synoptic hour the `
+          + `map is showing — the frame's field is that step's wind, not a maximum `
+          + `over the day (a cell is the maximum of the ${WIND.data.read_deg}° `
+          + `readings inside it) — and only while the storm was alive: the field `
           + `stops at the last tropical-storm-force fix, so nothing lingers after a `
           + `storm dissipates, and a post-tropical remnant is not shaded in its name.`
           + bias + ` Dots are best-track fixes (${n} published), the ring is the `
           + `storm's position at the selected step, hollow once it has dissipated.`
         : lane.tip;
       const unit = isWind
-        ? 'ERA5 10 m wind · daily max · under-reads peaks'
+        ? 'ERA5 10 m wind · displayed hour · under-reads peaks'
         : `${lane.unit} · ${n} published`;
       groups.push(`<span class="lg-group${seen === 0 ? ' none' : ''}" data-track="${type}" `
         + `title="${esc(tip)}">`
@@ -992,7 +1015,8 @@
       for (const f of st.shown) if (f.bin >= 0) c[f.bin] = 1;
     }
     windSeen = WIND.data ? new Uint8Array(WIND.data.classes.length + 1) : null;
-    last = { storms, date: frameDateOf(payload.ts), frameMs: toMs(payload.ts) };
+    last = { storms, date: frameDateOf(payload.ts), hour: frameHourOf(payload.ts),
+      frameMs: toMs(payload.ts) };
     drawCanvas(payload, storms);
     drawMarks(payload, storms);
   }
@@ -1038,28 +1062,30 @@
       return { birth: L.birth, death: L.death, ongoing: L.ongoing, ts: S.ts,
         alive: aliveAt(ev, ms), dissipated: dissipatedAt(ev, ms),
         field: !!(WIND.data && aliveAt(ev, ms)
-          && fieldEntry(ev, frameDateOf(S.ts))) };
+          && pickGrid(fieldEntry(ev, frameDateOf(S.ts)), frameHourOf(S.ts))) };
     },
     _why: (x, y) => ({
-      have: !!WIND.data, drawn: !!last, date: last && last.date,
+      have: !!WIND.data, drawn: !!last, date: last && last.date, hour: last && last.hour,
       storms: last ? last.storms.map((s) => s.ev.id) : [],
-      fields: last ? last.storms.filter((s) => fieldEntry(s.ev, last.date)).length : 0,
+      fields: last ? last.storms.filter((s) => pickGrid(fieldEntry(s.ev, last.date),
+        last.hour)).length : 0,
       ll: S && S.proj.invert
         ? S.proj.invert([(x - cv.getBoundingClientRect().left) * (S.fit.W / cv.getBoundingClientRect().width),
           (y - cv.getBoundingClientRect().top) * (S.fit.H / cv.getBoundingClientRect().height)])
         : 'no invert',
       hit: windAt({ clientX: x, clientY: y }) ? true : false,
       cells: (last && S && S.proj.invert) ? last.storms.map((st) => {
-        const e = fieldEntry(st.ev, last.date); if (!e) return null;
+        const e = fieldEntry(st.ev, last.date); const grid = pickGrid(e, last.hour);
+        if (!grid) return null;
         const r = cv.getBoundingClientRect();
         const ll = S.proj.invert([(x - r.left) * (S.fit.W / r.width), (y - r.top) * (S.fit.H / r.height)]);
         const step = WIND.data.step_deg;
         const i = Math.round((ll[1] - e.lat0) / step);
         const j = Math.round((((ll[0] - e.lon0 + 540) % 360) - 180) / step);
         return { id: st.ev.id, lat0: e.lat0, lon0: e.lon0, ny: e.ny, nx: e.nx,
-                 max: Math.max.apply(null, Array.from(gridOf(e))), i, j,
+                 max: Math.max.apply(null, Array.from(gridOf(e, grid))), i, j,
                  inb: i >= 0 && j >= 0 && i < e.ny && j < e.nx,
-                 kt: (i >= 0 && j >= 0 && i < e.ny && j < e.nx) ? gridOf(e)[i * e.nx + j] : null };
+                 kt: (i >= 0 && j >= 0 && i < e.ny && j < e.nx) ? gridOf(e, grid)[i * e.nx + j] : null };
       }).filter(Boolean) : [],
     }),
   };
