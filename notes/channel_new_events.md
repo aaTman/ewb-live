@@ -2915,3 +2915,50 @@ Per-lane "data through" label: NOT added (owner did not ask).
   only collapses to a day max when writing, so this is: store one grid **per step**
   (schema 3), have the frontend pick the frame's own step, drop every "daily max" phrase
   in the tooltip/legend/About/docs. No new cache: the same 4 steps/day, streamed as today.
+
+## [ne-fixes2] 2026-11-19 05:05 UTC — items 1–4 code-complete on the branch; deploying the schema-3 rebuild to :8051
+
+Successor agent on the same worktree (T3 side). Since the 03:25 entry, all four
+owner items are code-complete and unit/e2e-green locally; deploying now.
+
+* **2 (instantaneous wind, the big one)** — `tc_wind.py` writes **schema 3**: one
+  grid per live 6-hourly step (`days[].grids[] = {h,label,max_kt,rle}`, geometry
+  shared per day); no all-zero day entries any more (a day with no live step is
+  simply absent). `tracklayer.js` picks the **frame's own step** (the map's frames
+  are exactly `YYYYMMDDHH` at 00/06/12/18Z) and draws/hit-tests ONLY that grid —
+  a step the storm did not live through paints nothing. Tooltip: "wind,
+  instantaneous" + an "hour" row naming the frame's step; legend unit "ERA5 10 m
+  wind · displayed hour", group title says "not a maximum over the day"; the
+  guide-not-estimate note kept. A **schema-2 asset stays readable** (its single
+  grid draws at every step) so the code sync cannot blank the site before the
+  asset rebuild finishes. e2e fixture migrated to schema 3 + new test
+  `test_a_frame_paints_only_its_own_step_grid` (Fieldwide's 4 Jan carries only a
+  12Z grid: the alive 00Z frame draws and answers nothing; 12Z draws and answers).
+  ERA5 low bias: untouched, no correction, per owner.
+* **4 (dateline)** — the producer ships the far side as RAW columns past +180
+  (contract unchanged, now pinned by `test_a_synthetic_crossing_...`: wrapped
+  position lands on the blob, window stays capped, a centre >CORE_DEG away
+  carries no grid). Browser: new `test_a_crossing_field_paints_both_sides_of_the_seam`
+  (synthetic Seamcrosser: A/B on the same frame proves the field paints BOTH
+  sheet edges and the empty middle stays pixel-identical; wrapped cells hit-test).
+  The merged-map dateline suite is **lane-aware**: box contract on the wrapped AR
+  `4fabad88a37b`, MARK contract on the wrapped TC — the 3 dev failures
+  (`renders_sanely`, `full_band` ×2) pass again on :8051 against real data.
+  NB the "no full-band degrade" probe must measure per SUBPATH: a correct
+  wrapped box is one path with two runs at opposite edges (whole-path max-min ≈
+  canvas width by design) — the first version of my probe flagged the legit AR.
+* **1 (MLC = red)** — verified nothing to change, plus `tests/test_mlc_hue.py`:
+  one `--series-mlc` per theme block (`#a0312d`/`#cf4a55`), the retired amber
+  banned from shipped source (the styles.css history comment reworded so the hex
+  is no longer a string), surfaces must read the token, and the seven-lane
+  dataviz gate must stay green (node-gated). 4/4 pass; validator exits 0.
+* Tests: `tests/test_tc_wind.py` 49 passed (schema-3 test story finished: zero-grid
+  days absent, census counts STEP grids — the blob is CORE-seeded at 00Z/06Z only,
+  census 2, not the guessed 4). Full unit suite green (the two
+  `test_events_unit` failures here were a missing `third_party/` in this worktree —
+  linked locally, not committed). trackwind e2e 8/8.
+
+**Deploying now:** `dev_site.sh sync` (code) → detached `tc_wind` rebuild
+(schema 3, ~9 min/88 days, 60-min cap). Will verify :8051 in Chromium at
+1440/390 light+dark + console, then run the full e2e vs the 41F/122P baseline
+by name. No push, no promotion.
