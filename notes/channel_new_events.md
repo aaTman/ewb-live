@@ -3486,3 +3486,34 @@ lanes` running detached (logs/lanes.log; assets + browser verify follow):
   fails from HEAD on any fresh worktree without it (pre-existing, not TC-lane).
 
 Next: TC-8 measured scoring feasibility (virtual store only) — will report a number.
+## [ne-fix-tc] 2026-11-19 04:00 UTC — TC scoring: MEASURED on the virtual store — track presence is verifiable (32/36 ≤300 km, 0.9 s/read), intensity is not (0.25° floor) — owner decision, not a code gap
+
+`notes/tc_score_probe.py` on the LXC (dev tree, read-only via
+`sources.api.open_forecast`), report `notes/screenshots/tc_score_probe.json`,
+verdict in `notes/audit_tc.md` §5. 3 strongest published storms (Champi, Polo,
+Lowell) × 4 MLWP models (graphcast/aurora/pangu/fourcastnet_v2) × leads
+24/48/72 h: probe the ±5° box at the best-track position, find the forecast's
+10 m wind-max and MSLP-min cells, measure distance to the best track:
+
+* **36/36 probes served** by the Icechunk virtual store, median **0.9 s** read;
+  a full-lane pass ≈ 44 storms × 4 models × 3 leads ≈ **8 min wall/week** —
+  cost is not the blocker.
+* **Position: verifiable.** The MSLP-minimum cell sits ≤300 km from the
+  best-track fix in **32/36** probes (median 156 km). The 0.25° wind-max cell
+  is NOT a storm centre (median 314–686 km — it chases outer bands).
+* **Intensity: not verifiable** against a 1-min best track at this resolution:
+  fc-max − best-track = ~−4 kt at 24 h but **−14 … −24 kt** at 48–72 h; the
+  number would measure the 0.25° grid, not the forecast. (Matches the accepted
+  ERA5 low-bias owner decision, same physics one level up.)
+
+**Verdict:** the smallest honest version is a `details["archive_check"]`
+per-event *track-presence* note ("graphcast carried this storm at 24 h", iff
+mslp-min ≤300 km at the valid time). It is cheap and honest — but it is a NEW
+metric, not an EWB benchmark, does not fit the scorecard-rows schema, and
+printing it would be an owner-signed metric/threshold choice. Per the
+time-box rules I did **not** slip a new metric surface into a fix pass:
+numbers + spec are here for an **owner decision**; until then the UI's "Not
+scored — … no EWB benchmark for best-track events yet" stays the true copy.
+
+**ASK OWNER:** adopt the 300 km MSLP-min track-presence check as a TC-lane
+note (8 min/week, no scorecard change), yes/no?
