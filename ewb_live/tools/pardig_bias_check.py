@@ -36,15 +36,16 @@ def _day_pair(day: dt.date, root) -> tuple[np.ndarray, np.ndarray] | None:
         return None
     import xarray as xr
     with xr.open_dataset(ip) as ds:
-        values = np.where(ds.precipitation_cnt.to_numpy(np.uint8) >= imerg.STEPS_PER_DAY,
-                          ds.precipitation.to_numpy("float32"), np.nan)
+        cnt = ds.precipitation_cnt.to_numpy()
+        values = np.where(cnt >= imerg.STEPS_PER_DAY,
+                          ds.precipitation.to_numpy().astype("float32"), np.nan)
         lats = ds.lat.to_numpy("float64")
         lons = ds.lon.to_numpy("float64")
     da = xr.DataArray(values[None], dims=("time", "lat", "lon"),
                       coords={"time": [np.datetime64(day)], "lat": lats, "lon": lons})
     i025 = flood.aggregate_to_era5_grid(da).values[0]
     try:
-        p025 = xr.open_dataset(pardig.daily_path(day))["precip"].to_numpy("float32")
+        p025 = xr.open_dataset(pardig.daily_path(day))["precip"].to_numpy().astype("float32")
     except FileNotFoundError:
         return None
     return i025, p025
