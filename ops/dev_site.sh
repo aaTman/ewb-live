@@ -127,7 +127,7 @@ nohup sh -c '
   set -x
   . .venv/bin/activate
   export EWB_DATA_PREP_DIR="$DEV/third_party/ExtremeWeatherBench/data_prep"
-  echo "=== $(date -u +%FT%TZ) pardig rain cache (flood lane's rain source)"
+  echo "=== $(date -u +%FT%TZ) pardig rain cache (the flood lane rain source)"
   python -m ewb_live.sources.pardig --days 96 --workers 16 || echo "pardig build failed (flood lane falls back to cached days only)"
   echo "=== $(date -u +%FT%TZ) detect"
   python -m ewb_live.pipeline --events-only --days 90 --top-n 15
