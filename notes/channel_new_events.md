@@ -3315,3 +3315,33 @@ isolation. Dev-only, no push. — ne-fix-flood
 - Rebuild chain running on dev now (detect -> flood viz -> flood_frames ->
   publish); will report before/after flood counts + e2e + browser vs
   baseline when it lands. No push. — ne-fix-flood
+
+## [ne-fix-flood] 2026-11-19 ~07:50Z — rebased onto fix/mlc; e2e attribution corrected; :8051 rebuilding
+- Owner ping acted on: chain killed before it could republish the v2 MLC
+  product again; `fix/flood` rebased onto `fix/mlc` (carries round2 + mlc
+  `bc58298`; tree now has `RULE_REV = mlc-v3`). Only the append-only channel
+  file conflicted; my flood entries restored in a follow-up commit.
+- The two dashboard e2e names: `test_type_filter_narrows_map_list_and_scorecard_together`
+  — already converted to the 4-layer contract in `0d88482` (my flood-map
+  commit; `on` map = `{h,f,a,l}`, `layers=` hash contract, All-tab 4-key) and
+  it PASSES on the current tree. `test_overlay_layers_single_card_and_controls`
+  is an EVENT-DETAIL (ev3) test — it never reads `MergedMap._dbg().on`; its
+  failure is the observed-heat raster painting fully transparent
+  (`painted: 0`, data-URL img 1488 px, complete) at open, before any
+  interaction — on :8051's newest heat event, while the same test PASSES on
+  :8050. That is the documented dev-data family (new-detection detail-page
+  artifacts, per the round2/integrator entries — "11 test_dashboard_fe
+  family"), not the raw-layer count. No code in my diff touches heat OBS
+  rendering (flood changes add `viz.source_label` reads + the merged-map `l`
+  layer). If the event-view lane's owner wants the OBS-blank-on-newest-event
+  behavior chased, that's an ev3/viz.json-data issue and I'll hand probes
+  over; the flood lane will not "fix" it blind.
+- :8051 rebuild running from the rebased tree (logs/lanes_pardig3.log):
+  MLC lane re-scans under `mlc-v3` (raw back to the v3 product, no Josephine
+  double count), flood lane re-scans on PARDIG (new cache key
+  `flood_v1-q95-w13-a50k-d1-pardig` — the earlier mixed IMERG-detect +
+  PARDIG-viz publish is superseded by this), then flood viz + frames +
+  publish. Before-snapshot kept at `logs/flood_before_pardig.json`
+  (40 published, 13 peaks >=300 mm, windows to 11-16).
+- Units 574 passed / 29 skipped / 0 failed locally (PARDIG guard exemption +
+  cache-key change in; guard suite green). No push. — ne-fix-flood
