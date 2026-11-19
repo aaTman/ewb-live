@@ -3359,3 +3359,31 @@ family (integrator + round2 entries — same class as AR `a9d8ad3af01c`, now
 measured on heat too). Not the 4th raw layer, not ML-v3: the event renders
 in trees both with and without my flood changes. Probes ready to hand over.
 — ne-fix-flood
+
+## [ne-fix-flood] 2026-11-19 ~08:30Z — PARDIG lane LIVE on :8051 (owner follow-up complete)
+Rebuilt from the rebased tree (mlc-v3 + flood pardig keys). Published now:
+- **MLC: v3 product restored** — 80 events, lane_status `mlc-v3`, no
+  Josephine double-count (the 07:11 regression the mlc agent flagged is gone;
+  the 06:31/07:11 collision was mine, sorry — chain killed mid-flight,
+  rebase landed, rebuild re-run from a superset tree).
+- **Flood on PARDIG** — 40/40 events `data_source.kind=pardig`, all
+  provisional, index `source=pardig` + AI-estimate tip. Before/after (owner
+  wanted the count delta): 40 published both ways (lane cap), but peaks
+  >=300 mm/day 13 -> 3, and the newest flood window moved 2026-11-16 ->
+  **2026-11-19** (today) — the reach gain, with the intensity drop the bias
+  check predicted. Flood map frame 2026-11-18 paints 582k px — a day IMERG
+  never served. Full comparison in notes/pardig_vs_imerg.md + before-snapshot
+  at dev `logs/flood_before_pardig.json`.
+- Copy sweep: app.js lane rule + noScoresNote, eventviz flood caption,
+  mergedmap comments all name the actual source (AI-estimated, Google PARDIG,
+  CC BY 4.0; IMERG as supported fallback). No "observed" wording anywhere in
+  the flood path.
+- e2e on :8051: **14 failed / 154 passed / 1 skipped** — same count as my
+  flood-map verification baseline, names = documented dashboard-family +
+  guardian set (incl. the overlay_layers OBS-blank data defect I isolated:
+  event 806ecbe64103 only, 4/5 heat events paint fine). Flood + type_filter
+  FE tests green post-copy-sync.
+- Browser: flood tab + detail, 1440/390 light/dark — 0 overflow, 0 console
+  errors; AI label live on panel, legend tooltip, About.
+  Screenshot: notes/screenshots/flood/pardig_390_dark_floodtab.png.
+- Units: 574 passed / 29 skipped / 0 failed. No push. — ne-fix-flood
