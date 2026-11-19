@@ -3044,3 +3044,46 @@ event — predates track lanes; (c) flood agent: rebase onto this branch (or
 cherry-pick `61bbd68` + `518ad32`) before the next shared sync.
 
 No push, no PR, no promotion — live :8050 untouched throughout.
+3048
+## [ne-fix-mlc] 2026-11-19 03:50 UTC — MLC audit written; F1 (TC double-count) + F2 (quota ranking) fixed, dev rebuild running
+
+Successor session to the interrupted fix/mlc audit run. Audit is in
+`notes/audit_mlc.md` (commit 5e529cd), measured on the dev build against
+IBTrACS + ARCO, not the lane's own tests.
+
+* **F1 HIGH — one system, two events**: raw MLC `a1872482f814`
+  (2026-10-21..24, 983 hPa) is the **post-tropical continuation of Hurricane
+  Josephine** — 21 of its 28 fixes sit within 500 km/±12 h of Josephine's
+  IBTrACS ET/SS track. The genesis screen misses it structurally (nearby
+  fixes are ET/SS-nature, discarded; tropical phase outside the 7-d
+  lookback). Systematic fix = screen 6 (`mlc.tc_overlap_checker`): reject a
+  track with ≥2 any-nature IBTrACS coincidences; whole-track, not genesis.
+  Sweep: this was the ONLY double-count among all 143 raw MLCs. `RULE_REV`
+  → `mlc-v3`.
+* **F2 — quota dropped the monsters**: severity was `depth × days × bomb`,
+  so 8 lows deeper than **961 hPa** (down to 954.3) were quota-dropped while
+  985–989 hPa/10-day wanderers stayed. Now `depth² × min(days,7) × bomb`.
+  Cap stays 80 (`EWB_LIVE_TOP_N_MLC`).
+* **F3 — data stops 2026-11-13 = source reach, not a bug**: probed ARCO
+  `mean_sea_level_pressure` on the LXC — last real frame **2026-11-12T18Z**,
+  everything from 11-13T00Z is all-NaN (lag 6.2 d). TC/flood run later
+  because IBTrACS (2 d) and IMERG are faster sources.
+* **F4 — fragmentation**: 2 of 143 near-twin genesis pairs (380/398 km,
+  ≤24 h); recorded, not fixed (stitching-risk > artefact).
+* **F5 — scoring**: honest "Not scored" stays — no upstream MLC metric set
+  exists, and the MLWP-subsets path is DEV-ONLY by owner decision; exact
+  reasoning in the audit. Revisit only on an owner metric request.
+
+Code+tests in 89cccb5 (9 new unit tests, `tests/test_mlc_tc_overlap.py`;
+touches ONLY `ewb_live/events/mlc.py` — no viz/tc_wind/dateline files, those
+stay with fix/round2-legend-tc-wind; no IBTrACS ingest, that stays with
+fix/tc).
+
+**Heads-up for everyone sharing /opt/ewb-live-dev**: I synced branch
+`fix/mlc` code (audit + two fixes, nothing else changed vs
+aaTman/ne-integration) and started `dev_site.sh lanes` at 03:46 UTC — the
+site now runs MY branch tip; whoever syncs next reverts my dev data build
+state as usual. Detection is re-scanning MLC under rule v3 (others cache-hit).
+
+Next: verify on :8051 (1440+390, light+dark, console), unit suite, lane e2e
+vs the 41F/122P dev baseline by name, then the DONE entry.
