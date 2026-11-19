@@ -62,7 +62,7 @@
      15.4 from the TC violet, 3.26:1 on paper. */
   --series-flood:         #0f9ea4;  --series-flood-soft:    #d3f4f6;  /* teal / blue-green (owner: was magenta, which read as TC-adjacent): ΔE 18.0 from the AR green beside it, 3.26:1 on paper */
   /* Mid-latitude low (mlc lane 2026-11-17; hue changed 2026-11-18, owner): RED.
-     Amber #7d5200 was another warm mark next to heat's warm mark and read as
+     The earlier amber re-hue was another warm mark next to heat's warm mark and read as
      "warning" everywhere else on this site; a mid-latitude cyclone is a named
      windstorm, so it owns the storm colour. Red is the skill's reserved
      critical-status hue, which is legal here because identity is never colour

@@ -473,6 +473,44 @@ def test_build_places_the_wind_field_where_the_map_will_paint_it(tmp_path):
     assert doc["days_no_data"] == []
 
 
+def test_a_synthetic_crossing_ships_raw_columns_past_180_that_the_client_wraps(tmp_path):
+    """A storm walks 178 E → 178 W across the antimeridian inside one UTC day.
+    The asset's contract says the grid never crosses ±180 IN COORDINATES: lon0
+    stays in the repo frame and the far-side columns are shipped RAW past +180
+    for the client to wrap cell by cell. This pins that the crossing survives
+    the round trip — the cell comes back at the contract position whose WRAPPED
+    longitude is the blob's, on a raw column > 180, in a window that stayed a
+    window (never a global band) — and that a step whose centre was still 2.8°
+    away keeps no core, so it has no grid at all."""
+    day = dt.date(2026, 8, 19)
+    blob = (day, 20.25, -179.25, 36.0)             # 180.75 E: across the line
+    store = FakeStore([day], [blob])
+    write_events(tmp_path, [ev([fix("2026081900", 20.0, 178.0, 60.0, 985.0),
+                                fix("2026081912", 20.5, -179.0, 65.0, 980.0),
+                                fix("2026081918", 20.75, -178.0, 60.0, 985.0)],
+                               "2026-08-19", "2026-08-20")])
+    doc = json.loads(W.build(tmp_path, store=store).read_text())
+    (storm,) = doc["storms"]
+    (e,) = storm["days"]
+    assert -180.0 <= e["lon0"] < 180.0             # lon0 lives in the repo frame
+    raw_cols = [e["lon0"] + j * OUT for j in range(e["nx"])]
+    assert max(raw_cols) - min(raw_cols) <= 2 * W.MAX_HALF_DEG + OUT  # window, not band
+    g = grid_of(e)
+    ii, jj = np.nonzero(g)
+    assert len(ii) == 1 and int(g[ii, jj][0]) == 70
+    j = int(jj[0])
+    raw = e["lon0"] + j * OUT
+    assert raw > 180.0, "the far-side column must ship RAW past +180, not pre-wrapped"
+    assert abs(wrap_lon(raw) - (-179.25)) <= 0.55, \
+        "the wrapped column must land where the map will paint it"
+    assert abs((e["lat0"] + int(ii[0]) * OUT) - 20.25) <= 0.55
+    # the 00Z centre sat 2.8° away — no core, no grid for that hour; the hours
+    # whose interpolated centre reached the blob each carry their own copy
+    assert step_labels(e) == ["06Z", "12Z", "18Z"]
+    assert storm["era_peak_kt"] == 70
+    assert W.print_audit(W.audit(tmp_path))
+
+
 def test_step_fields_split_the_day_and_floor_the_rest():
     """Below 34 kt a cell is 0 (the floor is the layer's own threshold) and each
     step comes back on its own — the per-step split is what lets a field end when
