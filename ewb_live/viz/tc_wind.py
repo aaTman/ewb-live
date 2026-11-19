@@ -20,13 +20,16 @@ Source — measured, not assumed (full numbers in ``notes/tc_map.md``)
   ``10m_wind_gust_since_previous_post_processing``): a gust is ~1.4× a sustained
   wind, so shading by them would overstate every category on a scale defined by
   sustained wind. They are the right source for a *gust* layer, not this one.
-* Cadence: the **four 6-hourly synoptic steps** of a UTC day, read per step and
-  maxed per cell over the steps the storm was alive (the layer's time axis is
-  6-hourly, and a per-day maximum alone could not know that a storm died at
-  06Z). Measured on 8 published storms: reading all 24 hourly steps instead
-  raises the daily maximum from 0.69 to 0.72 of the best-track peak (+1–3 kt)
-  for 6× the reads — not worth it, and hourly would still be interpolated to
-  this cadence by the map.
+* Cadence: the **four 6-hourly synoptic steps** of a UTC day (00/06/12/18Z), read
+  per step and **stored per step** — the field the map paints at 06Z is the wind
+  that blew at 06Z (owner direction 2026-11-19: "instantaneous 10 m wind at the
+  displayed hour, not the daily max"). The merged map's own frames ARE those four
+  hours (``raw_exceedance/index.json`` → 336 frames at 00/06/12/18Z), so a frame
+  matches a step one-for-one: nothing is interpolated, held over from the previous
+  step, or maxed over the day. Hourly ERA5 was measured and rejected: reading all
+  24 hourly steps raises the peak from 0.69 to 0.72 of the best-track peak (+1–3
+  kt) for 6× the reads, and the map's time axis is 6-hourly anyway, so hourly
+  steps would only be re-interpolated to this cadence.
 * "Windowed, not global" — measured the other way: the ARCO wind chunks are
   ``(1, 721, 1440)``, i.e. one whole global field per time step, so a
   13°×13° window read costs *more* than the global one (measured on the ewb LXC:
@@ -62,10 +65,12 @@ The rule this build implements, in the producer so no client can get it wrong:
   no fade, a hard stop — an invented 6-12 h fade would be shading for a storm
   that the best track says is no longer a tropical cyclone, and the layer has
   to be able to say "gone".)
-* **Per 6-hourly step, not per day.** Only the four synoptic steps inside the
-  window contribute. A step before the first qualifying fix or at/after the
-  window's end contributes NOTHING, so the end day carries only the hours the
-  storm was alive, and the day after its last fix carries nothing at all.
+* **Per 6-hourly step, stored per step.** Only the four synoptic steps inside the
+  window contribute, and each keeps its OWN grid, so a frame at 06Z shows the 06Z
+  field and a frame at or after the window's end shows nothing at all. A step
+  before the first qualifying fix or at/after the window's end contributes NOTHING,
+  so the end day carries only the hours the storm was alive, and the day after its
+  last fix carries nothing at all.
 * **Around THAT step's position**, interpolated between the storm's live fixes
   (never a stale last position), and only in the **storm's own envelope**: a
   cell is kept when it is within ``KEEP_DEG`` of that step's centre, it is the
@@ -75,10 +80,10 @@ The rule this build implements, in the producer so no client can get it wrong:
   (``CORE_DEG`` seed) — the cheap, physical way to drop a detached monsoon blob
   3° away that happens to be blowing 40 kt. Within ONE step a cell has exactly
   one owner (strictly nearer, so the frontier between two storms is claimed by
-  neither); across a day's steps a frontier cell can be nearer one storm at 00Z
-  and the other at 18Z, so the day's union can hold it in both names — one patch
-  on the map (every cell of a class is filled in one path), and each storm's own
-  field still ends on its own date.
+  neither); at a frame only that step's grid is drawn, so a cell belongs to at
+  most one storm on screen at any hour, and each storm's own field still ends on
+  its own date. (The AUDIT still looks at days, so it unions a day's steps — see
+  ``day_union``.)
 * **Ongoing storms** are the ones still open when the *data* runs out: the lane's
   ``details.ongoing`` only says the best track ends while the system was still
   tropical — which is also true of a storm that dissipated six weeks before the
@@ -108,9 +113,9 @@ Output (one small asset next to the other map assets)
 -----------------------------------------------------
 ``data/results/tc_wind.json``::
 
-    {"schema": 2, "lane": "tropical_cyclone",
+    {"schema": 3, "lane": "tropical_cyclone",
      "source": "ERA5 10 m wind (10m_u/v_component_of_wind), ERA5 ARCO 0.25°, "
-               "00/06/12/18Z, max over the steps a storm was alive",
+               "00/06/12/18Z), the one 6-hourly step the map is showing",
      "cadence_h": 6, "step_deg": 1.0, "read_deg": 0.25, "half_deg": 5.0, "floor_kt": 34,
      "units": "kt",
      "dissipation": {"window": "the lane's event window: first to last qualifying
@@ -122,23 +127,29 @@ Output (one small asset next to the other map assets)
               "note": "ERA5 10 m wind at 0.25° under-reads tropical-cyclone peak
                        winds; class shading from it is lower than the best-track
                        category, which the map shows separately."},
-     "census": {"1": 12345, …},                  # cells per class, whole asset
+     "census": {"1": 12345, …},                  # cells per class, summed over the
+                                                  # asset's STEP grids
      "storms": [{"id": …, "best_peak_kt": 115, "best_category": "CAT 4",
                  "era_peak_kt": 46, "ratio": 0.4,
                  "life": {"birth": "2026-08-19T00:00:00Z", "death": "...",
                           "first_fix": "...", "last_fix": "...",
                           "ongoing": false, "track_open": true,
                           "alive_steps": 21},
-                 "days": [{"d": "2026-08-19", "max_kt": 46, "steps": ["06Z", "12Z"],
-                           "lat0": 15.5,
-                           "lon0": -173.5, "ny": 41, "nx": 41,
-                           "rle": [kt, run, kt, run, …]}]}     # run-length u8
+                 "days": [{"d": "2026-08-19", "max_kt": 46,     # peak over its steps
+                           "lat0": 15.5, "lon0": -173.5, "ny": 11, "nx": 11,
+                           "grids": [{"h": 6, "label": "06Z", "max_kt": 44,
+                                      "rle": [kt, run, kt, run, …]},
+                                     {"h": 12, "label": "12Z", "max_kt": 46,
+                                      "rle": […]}]}]}   # run-length u8; ONE grid per
+                                                          # live 6-hourly step
 
 Grid geometry (THE PLACEMENT CONTRACT, pinned by tests/test_tc_wind.py): cell
 ``(i, j)`` is centred at ``lat0 + i*step_deg`` (row 0 is the southern centre)
 and ``((lon0 + j*step_deg + 180) % 360) - 180`` (the repo wrap convention — the
 grid itself never crosses the dateline in coordinates, the client wraps per
-cell, so an antimeridian-crossing storm needs no special case).
+cell, so an antimeridian-crossing storm needs no special case). The geometry is
+shared by every step of one day (the window is the day's), so ``grids`` are
+interchangeable at the same ``lat0/lon0/ny/nx``.
 
 Runs on the ewb LXC (network + CPU): ``ops/remote.sh run python -m
 ewb_live.viz.tc_wind --days 90``. Pure geometry/classification is offline and
@@ -164,8 +175,11 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-SCHEMA = 2                        # 2: the dissipation contract (life window,
-                                  # per-step masking, per-storm "life")
+SCHEMA = 3                        # 2: the dissipation contract (life window,
+                                  #    per-step masking, per-storm "life")
+                                  # 3: ONE GRID PER 6-HOURLY STEP — the field the
+                                  #    map paints is the 10 m wind of the displayed
+                                  #    hour, not the day's maximum (owner 2026-11-19)
 OUT_NAME = "tc_wind.json"
 SIZE_LIMIT = 8_000_000          # bytes; 44 storms ≈ 0.2 MB (measured)
 MS_TO_KT = 1.0 / 0.514444       # m/s -> kt
@@ -204,7 +218,7 @@ CLASSES = [
 EDGES_KT = np.array([0, 34, 64, 83, 96, 113, 137], dtype=np.uint8)
 
 SOURCE = ("ERA5 10 m wind (10m_u/v_component_of_wind, ERA5 ARCO 0.25°), "
-          "00/06/12/18Z, max over the steps a storm was alive")
+          "00/06/12/18Z, the one 6-hourly step the map is showing")
 BIAS_NOTE = ("ERA5 10 m wind at 0.25° resolves no eyewall and is a 10-minute "
              "mean, so it under-reads tropical-cyclone peak winds: across the "
              "published storms the field's maximum inside the storm's own envelope "
@@ -706,7 +720,7 @@ def build(results_dir: Path, *, days: int | None = None, half_deg: float = HALF_
         wins = step_windows(centres, half_deg)
         plans.append({"ev": ev, "life": life, "centres": centres, "wins": wins,
                       "geo": {d: grid_geometry(*w, STEP_DEG) for d, w in wins.items()},
-                      "grid": {}, "steps": {}, "measured": set()})
+                      "grid": {}, "measured": set()})
 
     need = sorted({d for p in plans for d in p["wins"]})
     nodata: list[str] = []
@@ -743,11 +757,13 @@ def build(results_dir: Path, *, days: int | None = None, half_deg: float = HALF_
                                   [o for q, o in alive if q is not p])
                     if not m.any():
                         continue
-                    acc = p["grid"].get(day)
-                    if acc is None:
-                        acc = p["grid"][day] = np.zeros((ny, nx), np.uint8)
-                    np.maximum(acc, np.where(m, sub, 0), out=acc)
-                    p["steps"].setdefault(day, []).append(f"{T.hour:02d}Z")
+                    acc = np.where(m, sub, 0)
+                    # ONE grid per (day, step): the map's frames are exactly these
+                    # four hours, so the field it paints at 06Z is the wind that
+                    # blew at 06Z. A cell has exactly one owner inside one step
+                    # (nearest live centre), so nothing is accumulated across
+                    # storms here and no day-level maximum is written any more.
+                    p["grid"][(day, T)] = acc
             if (i + 1) % 10 == 0:
                 logger.info("tc_wind: %d/%d days read", i + 1, len(need))
 
@@ -759,18 +775,26 @@ def build(results_dir: Path, *, days: int | None = None, half_deg: float = HALF_
             if day not in p["wins"]:                # no alive step this day
                 continue
             lat0, lon0, ny, nx = p["geo"][day]
-            fine = p["grid"].get(day)
-            sub = rebin_max(np.zeros((ny, nx), np.uint8) if fine is None else fine,
-                            FACTOR)
-            entries.append({"d": day.isoformat(), "max_kt": int(sub.max()),
-                            "steps": p["steps"].get(day, []),
-                            "lat0": lat0, "lon0": lon0, "ny": sub.shape[0],
-                            "nx": sub.shape[1], "rle": rle_grid(sub)})
-            cls = class_of(sub)
-            for cid in census:
-                census[cid] += int((cls == int(cid)).sum())
-            if int(sub.max()) >= era_peak:
-                era_peak, peak_day = int(sub.max()), day
+            # the day's steps, ascending; each keeps its own grid
+            its = sorted(T for (d, T) in p["grid"] if d == day)
+            steps_out, day_max, shape = [], 0, (ny // FACTOR + 1, nx // FACTOR + 1)
+            for T in its:
+                sub = rebin_max(p["grid"][(day, T)], FACTOR)
+                shape = sub.shape
+                cls = class_of(sub)
+                for cid in census:
+                    census[cid] += int((cls == int(cid)).sum())
+                mx = int(sub.max())
+                steps_out.append({"h": T.hour, "label": f"{T.hour:02d}Z",
+                                  "max_kt": mx, "rle": rle_grid(sub)})
+                day_max = max(day_max, mx)
+                if mx >= era_peak:
+                    era_peak, peak_day = mx, day
+            if not steps_out:
+                continue
+            entries.append({"d": day.isoformat(), "max_kt": day_max,
+                            "grids": steps_out,
+                            "lat0": lat0, "lon0": lon0, "ny": shape[0], "nx": shape[1]})
         best = _num(det.get("peak_wind_kt"), _num(ev.get("peak_value")))
         # ratio None when nothing was measured (no field at all) — a 0.00x would
         # say "the field read zero", which is a measurement, not an absence
@@ -838,6 +862,19 @@ def build(results_dir: Path, *, days: int | None = None, half_deg: float = HALF_
     return out
 
 
+def day_union(e: dict) -> np.ndarray:
+    """One day entry -> the union (max) of its step grids: where the storm had
+    storm-force wind at ANY of its live steps that day. The audit asks about
+    DAYS (does any cell exist once the storm is over?), the asset stores STEPS.
+    """
+    n = int(e["ny"]) * int(e["nx"])
+    u = None
+    for gr in e.get("grids") or []:
+        g = unpack_rle(gr["rle"], n).reshape(int(e["ny"]), int(e["nx"]))
+        u = g if u is None else np.maximum(u, g)
+    return u if u is not None else np.zeros((int(e["ny"]), int(e["nx"])), np.uint8)
+
+
 def audit(results_dir: Path, out_name: str = OUT_NAME) -> list[dict]:
     """Per-storm dissipation audit of a built asset (local, no network).
 
@@ -862,8 +899,7 @@ def audit(results_dir: Path, out_name: str = OUT_NAME) -> list[dict]:
         birth, death = to_ms(life.get("birth")), to_ms(life.get("death"))
         day_cells: dict[str, int] = {}
         for e in s["days"]:
-            g = unpack_rle(e["rle"], e["ny"] * e["nx"])
-            day_cells[e["d"]] = day_cells.get(e["d"], 0) + int(np.count_nonzero(g))
+            day_cells[e["d"]] = int(np.count_nonzero(day_union(e)))
         first_day = last_day = None
         if birth is not None and death is not None:
             first_day = (epoch + dt.timedelta(milliseconds=birth)).date().isoformat()
@@ -876,7 +912,7 @@ def audit(results_dir: Path, out_name: str = OUT_NAME) -> list[dict]:
             fl = [(f[1], f[2]) for f in fixes]
             for e in s["days"]:
                 lats, lons = cell_axes(e["lat0"], e["lon0"], e["ny"], e["nx"], step)
-                g = unpack_rle(e["rle"], e["ny"] * e["nx"]).reshape(e["ny"], e["nx"])
+                g = day_union(e)
                 ii, jj = np.nonzero(g)
                 if not len(ii):
                     continue

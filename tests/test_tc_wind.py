@@ -379,9 +379,27 @@ def day_entry(storm, day):
     return next(d for d in storm["days"] if d["d"] == day)
 
 
+def grids_of(entry):
+    """One day entry -> {step label: 2-D u8 kt grid}. Schema 3 stores ONE grid per
+    live 6-hourly step, which is the whole point: the map paints the frame's OWN
+    step, so a test that asks "what does 12Z look like" must read the 12Z grid.
+    """
+    n = entry["ny"] * entry["nx"]
+    return {g["label"]: unpack_rle(g["rle"], n).reshape(entry["ny"], entry["nx"])
+            for g in entry["grids"]}
+
+
 def grid_of(entry):
-    return unpack_rle(entry["rle"], entry["ny"] * entry["nx"]).reshape(entry["ny"],
-                                                                       entry["nx"])
+    """The day's UNION over its live steps: where the storm had storm-force wind
+    at any hour of that day (what the audit asks; the map never paints this)."""
+    out = None
+    for g in grids_of(entry).values():
+        out = g if out is None else np.maximum(out, g)
+    return out if out is not None else np.zeros((entry["ny"], entry["nx"]), np.uint8)
+
+
+def step_labels(entry):
+    return [g["label"] for g in entry["grids"]]
 
 
 def entry_cells(entry):
@@ -407,7 +425,7 @@ def test_build_places_the_wind_field_where_the_map_will_paint_it(tmp_path):
                                "2026-08-19", "2026-08-21")])
 
     doc = json.loads(W.build(tmp_path, store=store).read_text())
-    assert doc["schema"] == 2 and doc["units"] == "kt"
+    assert doc["schema"] == 3 and doc["units"] == "kt"
     assert doc["lane"] == "tropical_cyclone"      # which lane this field explains
     assert doc["cadence_h"] == 6 and doc["step_deg"] == 1.0 and doc["read_deg"] == 0.25
     assert doc["floor_kt"] == 34.0 and doc["half_deg"] == W.HALF_DEG
@@ -439,12 +457,13 @@ def test_build_places_the_wind_field_where_the_map_will_paint_it(tmp_path):
     assert g[ci, cj] == 70, "the blob must land exactly where the map will draw it"
     assert int(class_of(g)[ci, cj]) == 2                    # CAT 1
     assert g.max() == 70 and int((g > 0).sum()) == 1 and d["max_kt"] == 70
-    # the next day has no blob: an honest all-zero field, drawn as nothing
-    d2 = day_entry(storm, "2026-08-20")
-    assert d2["rle"] == [0, d2["ny"] * d2["nx"]] and d2["max_kt"] == 0
-    assert d2["steps"] == []
-    # census counts DRAWN cells at the source, per class; bias is the storm ratio
-    assert doc["census"]["2"] == 1 and doc["census"]["1"] == 0
+    # the next day has no blob: no grid at all, so the map draws nothing (an
+    # all-zero grid and "nothing to draw" must not both exist)
+    assert "2026-08-20" not in {d["d"] for d in storm["days"]}
+    # census counts DRAWN cells at the source, per class, summed over the asset's
+    # STEP grids: this blob is a whole-day blob, so it is drawn at each of the
+    # four live steps of the 19th (the map shows one of them per frame)
+    assert doc["census"]["2"] == 4 and doc["census"]["1"] == 0
     assert doc["bias"] == {**doc["bias"], "ratio_median": 0.61, "n": 1,
                            "ratio_min": 0.61, "ratio_max": 0.61}
     assert doc["days_no_data"] == []
@@ -494,8 +513,8 @@ def test_a_storm_dies_midday_and_nothing_is_shaded_after_it(tmp_path):
     assert storm["life"]["alive_steps"] == 4
     assert [d["d"] for d in storm["days"]] == ["2026-08-19", "2026-08-20"]
     # the end day carries ONLY the steps while the storm was alive
-    assert day_entry(storm, "2026-08-19")["steps"] == ["06Z", "12Z", "18Z"]
-    assert day_entry(storm, "2026-08-20")["steps"] == ["00Z"]
+    assert step_labels(day_entry(storm, "2026-08-19")) == ["06Z", "12Z", "18Z"]
+    assert step_labels(day_entry(storm, "2026-08-20")) == ["00Z"]
     # nothing from the 12Z/18Z wind (183°/187° E) nor the 21st's (189° E): every
     # drawn cell sits within an envelope of the live positions (179–181° E, and
     # the rendered cell is 1° wide, so 182° is the first cell that would be news)
@@ -522,7 +541,7 @@ def test_a_storm_that_ends_at_00z_leaves_its_final_day_untouched(tmp_path):
     doc = json.loads(W.build(tmp_path, store=store).read_text())
     (storm,) = doc["storms"]
     assert [d["d"] for d in storm["days"]] == ["2026-08-19"]
-    assert day_entry(storm, "2026-08-19")["steps"] == ["00Z", "06Z", "12Z", "18Z"]
+    assert step_labels(day_entry(storm, "2026-08-19")) == ["00Z", "06Z", "12Z", "18Z"]
     assert all(abs(lo - 179.0) < 1.5 for _, lo in centres_of(day_entry(storm,
                                                                        "2026-08-19")))
     assert W.print_audit(W.audit(tmp_path))
@@ -613,7 +632,7 @@ def test_an_ongoing_storm_is_marked_and_shaded_to_its_last_step(tmp_path):
     (storm,) = doc["storms"]
     assert storm["life"]["ongoing"] is True
     assert [d["d"] for d in storm["days"]] == ["2026-08-20"]
-    assert day_entry(storm, "2026-08-20")["steps"] == ["00Z", "06Z", "12Z"]
+    assert step_labels(day_entry(storm, "2026-08-20")) == ["00Z", "06Z", "12Z"]
     assert storm["era_peak_kt"] == 58           # 30 m/s at the only live position
     assert storm["life"]["ongoing"] is True      # its death IS the last step there
     assert storm["life"]["track_open"] is True
