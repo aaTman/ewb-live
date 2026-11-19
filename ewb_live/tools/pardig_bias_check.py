@@ -39,8 +39,8 @@ def _day_pair(day: dt.date, root) -> tuple[np.ndarray, np.ndarray] | None:
         cnt = ds.precipitation_cnt.to_numpy()
         values = np.where(cnt >= imerg.STEPS_PER_DAY,
                           ds.precipitation.to_numpy().astype("float32"), np.nan)
-        lats = ds.lat.to_numpy("float64")
-        lons = ds.lon.to_numpy("float64")
+        lats = ds.lat.to_numpy()
+        lons = ds.lon.to_numpy()
     da = xr.DataArray(values[None], dims=("time", "lat", "lon"),
                       coords={"time": [np.datetime64(day)], "lat": lats, "lon": lons})
     i025 = flood.aggregate_to_era5_grid(da).values[0]
