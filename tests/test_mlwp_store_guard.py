@@ -54,9 +54,13 @@ FORBIDDEN_IN_SOURCES = [
 # Exempt writers: the guard is about the MLWP *forecast archive*. `imerg.py`
 # (flood lane, 2026-11-17) writes its OWN observation store — packed uint16
 # daily NetCDF derived from GPM IMERG granules, which are the source data of
-# that lane, not archive bytes re-downloaded to dodge the virtual store. Keep
-# this set free of anything that reads s3://noaa-oar-mlwp-data.
-MATERIALISE_EXEMPT = {SOURCES / "imerg.py"}
+# that lane, not archive bytes re-downloaded to dodge the virtual store.
+# `pardig.py` (flood lane, 2026-11-19) is the same case one product over: it
+# writes the lane's daily 0.25 deg totals cache built from the public
+# gs://pardig_1 AI-precipitation stream — no MLWP bucket bytes anywhere near
+# it (the bucket scan still applies to the whole package). Keep this set free
+# of anything that reads s3://noaa-oar-mlwp-data.
+MATERIALISE_EXEMPT = {SOURCES / "imerg.py", SOURCES / "pardig.py"}
 
 CHOKE_POINT = SOURCES / "aiwp.py"
 # store *data* sessions may be opened by the choke point and the builders only
