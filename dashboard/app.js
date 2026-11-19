@@ -162,7 +162,7 @@ function tcNotScoredNote(n) {
   const ib = (state.meta || {}).ibtracs;
   const here = `${n} tropical cyclone${n === 1 ? '' : 's'} here`;
   if (!ib || !Number.isFinite(ib.storms_in_window)) {
-    return `Not scored — ${here}; no EWB benchmark for this lane yet.`;
+    return `Not scored — ${here}; no EWB benchmark for IBTrACS best-track events yet.`;
   }
   const d = String(ib.latest_fix || '').slice(0, 10);
   let s = `Not scored — ${here}; the IBTrACS archive holds ${ib.storms_in_window} storm`
