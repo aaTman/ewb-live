@@ -1,46 +1,46 @@
 {
  "report": {
   "desktop/all": {
-   "rows": 123,
+   "rows": 202,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [
-    "Not scored in this data release \u2014 6 published events; no score rows for this lane yet.",
+    "Not scored in this data release \u2014 7 published events; no score rows for this lane yet.",
+    "Not scored \u2014 40 floods tracked from IMERG rain accumulations; no EWB benchmark for this lane yet.",
     "Not scored \u2014 44 storms tracked from IBTrACS best tracks; no EWB benchmark for this lane yet.",
-    "No midlatitude cyclones met the criteria this window",
-    "Not scored \u2014 40 floods tracked from IMERG rain accumulations; no EWB benchmark for this lane yet."
+    "Not scored \u2014 80 events; no EWB benchmark for this lane yet."
    ],
-   "count": "123 events"
+   "count": "202 events"
   },
   "desktop/all/event": {
    "open": true,
    "title": "Heat wave \u00b7 United States of America",
-   "chips": "",
+   "chips": "Heat wave",
    "tvTrack": false,
    "plotly": false,
    "vizChildren": 1,
    "vizTags": "div.ev3-root",
-   "story": "Heat wave \u00b7 United States of America, North America \u00b7 Aug 19 \u2013 Aug 25 \u00b7 peak daily-mean 40.8 \u00b0C \u00b7 7d max run"
+   "story": "Heat wave \u00b7 United States of America, North America \u00b7 Aug 20 \u2013 Aug 25 \u00b7 peak daily-mean 40.8 \u00b0C \u00b7 6d max run"
   },
   "desktop/heat_wave": {
    "rows": 15,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [],
    "count": "15 events"
@@ -48,24 +48,24 @@
   "desktop/heat_wave/event": {
    "open": true,
    "title": "Heat wave \u00b7 United States of America",
-   "chips": "",
+   "chips": "Heat wave",
    "tvTrack": false,
    "plotly": false,
    "vizChildren": 1,
    "vizTags": "div.ev3-root",
-   "story": "Heat wave \u00b7 United States of America, North America \u00b7 Aug 19 \u2013 Aug 25 \u00b7 peak daily-mean 40.8 \u00b0C \u00b7 7d max run"
+   "story": "Heat wave \u00b7 United States of America, North America \u00b7 Aug 20 \u2013 Aug 25 \u00b7 peak daily-mean 40.8 \u00b0C \u00b7 6d max run"
   },
   "desktop/freeze": {
    "rows": 5,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [],
    "count": "5 events"
@@ -73,7 +73,7 @@
   "desktop/freeze/event": {
    "open": true,
    "title": "Freeze \u00b7 Greenland",
-   "chips": "",
+   "chips": "Freeze",
    "tvTrack": false,
    "plotly": false,
    "vizChildren": 1,
@@ -81,68 +81,68 @@
    "story": "Freeze \u00b7 Greenland, North America \u00b7 Sep 10 \u2013 Sep 12 \u00b7 peak daily-mean -34.0 \u00b0C \u00b7 3d max run"
   },
   "desktop/cold_snap": {
-   "rows": 6,
+   "rows": 7,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [
-    "Not scored in this data release \u2014 6 published events; no score rows for this lane yet."
+    "Not scored in this data release \u2014 7 published events; no score rows for this lane yet."
    ],
-   "count": "6 events"
+   "count": "7 events"
   },
   "desktop/cold_snap/event": {
    "open": true,
    "title": "Cold snap \u00b7 China",
-   "chips": "",
+   "chips": "Cold snap",
    "tvTrack": false,
    "plotly": false,
    "vizChildren": 1,
-   "vizTags": "div.lane-empty",
+   "vizTags": "div.ev3-root",
    "story": "Cold snap \u00b7 China, Asia \u00b7 Oct 3 \u2013 Oct 6 \u00b7 peak daily-mean -16.8 \u00b0C \u00b7 4d max run"
   },
   "desktop/atmospheric_river": {
-   "rows": 13,
+   "rows": 11,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [],
-   "count": "13 events"
+   "count": "11 events"
   },
   "desktop/atmospheric_river/event": {
    "open": true,
-   "title": "Atmospheric river \u00b7 Russia",
-   "chips": "",
+   "title": "Atmospheric river \u00b7 Germany",
+   "chips": "Atmospheric river",
    "tvTrack": false,
    "plotly": false,
    "vizChildren": 1,
-   "vizTags": "div.lane-empty",
-   "story": "Atmospheric river \u00b7 Russia, Europe \u00b7 Aug 26 \u2013 Aug 30 \u00b7 peak IVT 900 kg m\u207b\u00b9 s\u207b\u00b9 \u00b7 landfall Aug 26"
+   "vizTags": "div.ev3-root",
+   "story": "Atmospheric river \u00b7 Germany, Europe \u00b7 Aug 26 \u2013 Aug 30 \u00b7 peak IVT 900 kg m\u207b\u00b9 s\u207b\u00b9 \u00b7 landfall Aug 26"
   },
   "desktop/tropical_cyclone": {
    "rows": 44,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [
     "Not scored \u2014 44 storms tracked from IBTrACS best tracks; no EWB benchmark for this lane yet."
@@ -151,53 +151,52 @@
   },
   "desktop/tropical_cyclone/event": {
    "open": true,
-   "title": "Tropical cyclone Lala \u00b7 the tropical Pacific",
-   "chips": "",
+   "title": "Tropical cyclone Saudel \u00b7 China",
+   "chips": "Tropical cyclone",
    "tvTrack": true,
    "plotly": false,
    "vizChildren": 4,
    "vizTags": "div.tv-head,div.tv-map-wrap,div.tv-legend,p.tv-note",
-   "story": "Tropical cyclone \u00b7 the tropical Pacific \u00b7 Aug 19 \u2013 Aug 28 \u00b7 Lala \u00b7 115 kt CAT 4 \u00b7 947 hPa \u00b7 Northeast Pacific"
+   "story": "Tropical cyclone \u00b7 China, Asia \u00b7 Aug 20 \u2013 Aug 28 \u00b7 Saudel \u00b7 115 kt CAT 4 \u00b7 944 hPa \u00b7 Northwest Pacific"
   },
   "desktop/midlat_cyclone": {
-   "rows": 1,
+   "rows": 80,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [
-    "No midlatitude cyclones met the criteria this window \u24d8",
-    "No midlatitude cyclones met the criteria this window"
+    "Not scored \u2014 80 events; no EWB benchmark for this lane yet."
    ],
-   "count": "0 events"
+   "count": "80 events"
   },
   "desktop/midlat_cyclone/event": {
-   "open": false,
-   "title": "Event",
-   "chips": "",
-   "tvTrack": false,
+   "open": true,
+   "title": "Midlatitude cyclone \u00b7 the Australian sector of the Southern Ocean",
+   "chips": "Midlatitude cyclone",
+   "tvTrack": true,
    "plotly": false,
-   "vizChildren": 0,
-   "vizTags": "",
-   "story": ""
+   "vizChildren": 4,
+   "vizTags": "div.tv-head,div.tv-map-wrap,div.tv-legend,p.tv-note",
+   "story": "Midlatitude cyclone \u00b7 the Australian sector of the Southern Ocean \u00b7 Aug 21 \u2013 Aug 25 \u00b7 965 hPa centre \u00b7 39\u00b0 travelled"
   },
   "desktop/flood": {
    "rows": 40,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [
     "Not scored \u2014 40 floods tracked from IMERG rain accumulations; no EWB benchmark for this lane yet."
@@ -207,7 +206,7 @@
   "desktop/flood/event": {
    "open": true,
    "title": "Flood \u00b7 China",
-   "chips": "",
+   "chips": "Flood",
    "tvTrack": false,
    "plotly": false,
    "vizChildren": 1,
@@ -249,46 +248,46 @@
    "Early signal"
   ],
   "phone/all": {
-   "rows": 123,
+   "rows": 202,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [
-    "Not scored in this data release \u2014 6 published events; no score rows for this lane yet.",
+    "Not scored in this data release \u2014 7 published events; no score rows for this lane yet.",
+    "Not scored \u2014 40 floods tracked from IMERG rain accumulations; no EWB benchmark for this lane yet.",
     "Not scored \u2014 44 storms tracked from IBTrACS best tracks; no EWB benchmark for this lane yet.",
-    "No midlatitude cyclones met the criteria this window",
-    "Not scored \u2014 40 floods tracked from IMERG rain accumulations; no EWB benchmark for this lane yet."
+    "Not scored \u2014 80 events; no EWB benchmark for this lane yet."
    ],
-   "count": "123 events"
+   "count": "202 events"
   },
   "phone/all/event": {
    "open": true,
    "title": "Heat wave \u00b7 United States of America",
-   "chips": "",
+   "chips": "Heat wave",
    "tvTrack": false,
    "plotly": false,
    "vizChildren": 1,
    "vizTags": "div.ev3-root",
-   "story": "Heat wave \u00b7 United States of America, North America \u00b7 Aug 19 \u2013 Aug 25 \u00b7 peak daily-mean 40.8 \u00b0C \u00b7 7d max run"
+   "story": "Heat wave \u00b7 United States of America, North America \u00b7 Aug 20 \u2013 Aug 25 \u00b7 peak daily-mean 40.8 \u00b0C \u00b7 6d max run"
   },
   "phone/heat_wave": {
    "rows": 15,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [],
    "count": "15 events"
@@ -296,24 +295,24 @@
   "phone/heat_wave/event": {
    "open": true,
    "title": "Heat wave \u00b7 United States of America",
-   "chips": "",
+   "chips": "Heat wave",
    "tvTrack": false,
    "plotly": false,
    "vizChildren": 1,
    "vizTags": "div.ev3-root",
-   "story": "Heat wave \u00b7 United States of America, North America \u00b7 Aug 19 \u2013 Aug 25 \u00b7 peak daily-mean 40.8 \u00b0C \u00b7 7d max run"
+   "story": "Heat wave \u00b7 United States of America, North America \u00b7 Aug 20 \u2013 Aug 25 \u00b7 peak daily-mean 40.8 \u00b0C \u00b7 6d max run"
   },
   "phone/freeze": {
    "rows": 5,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [],
    "count": "5 events"
@@ -321,7 +320,7 @@
   "phone/freeze/event": {
    "open": true,
    "title": "Freeze \u00b7 Greenland",
-   "chips": "",
+   "chips": "Freeze",
    "tvTrack": false,
    "plotly": false,
    "vizChildren": 1,
@@ -329,68 +328,68 @@
    "story": "Freeze \u00b7 Greenland, North America \u00b7 Sep 10 \u2013 Sep 12 \u00b7 peak daily-mean -34.0 \u00b0C \u00b7 3d max run"
   },
   "phone/cold_snap": {
-   "rows": 6,
+   "rows": 7,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [
-    "Not scored in this data release \u2014 6 published events; no score rows for this lane yet."
+    "Not scored in this data release \u2014 7 published events; no score rows for this lane yet."
    ],
-   "count": "6 events"
+   "count": "7 events"
   },
   "phone/cold_snap/event": {
    "open": true,
    "title": "Cold snap \u00b7 China",
-   "chips": "",
+   "chips": "Cold snap",
    "tvTrack": false,
    "plotly": false,
    "vizChildren": 1,
-   "vizTags": "div.lane-empty",
+   "vizTags": "div.ev3-root",
    "story": "Cold snap \u00b7 China, Asia \u00b7 Oct 3 \u2013 Oct 6 \u00b7 peak daily-mean -16.8 \u00b0C \u00b7 4d max run"
   },
   "phone/atmospheric_river": {
-   "rows": 13,
+   "rows": 11,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [],
-   "count": "13 events"
+   "count": "11 events"
   },
   "phone/atmospheric_river/event": {
    "open": true,
-   "title": "Atmospheric river \u00b7 Russia",
-   "chips": "",
+   "title": "Atmospheric river \u00b7 Germany",
+   "chips": "Atmospheric river",
    "tvTrack": false,
    "plotly": false,
    "vizChildren": 1,
-   "vizTags": "div.lane-empty",
-   "story": "Atmospheric river \u00b7 Russia, Europe \u00b7 Aug 26 \u2013 Aug 30 \u00b7 peak IVT 900 kg m\u207b\u00b9 s\u207b\u00b9 \u00b7 landfall Aug 26"
+   "vizTags": "div.ev3-root",
+   "story": "Atmospheric river \u00b7 Germany, Europe \u00b7 Aug 26 \u2013 Aug 30 \u00b7 peak IVT 900 kg m\u207b\u00b9 s\u207b\u00b9 \u00b7 landfall Aug 26"
   },
   "phone/tropical_cyclone": {
    "rows": 44,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [
     "Not scored \u2014 44 storms tracked from IBTrACS best tracks; no EWB benchmark for this lane yet."
@@ -399,53 +398,52 @@
   },
   "phone/tropical_cyclone/event": {
    "open": true,
-   "title": "Tropical cyclone Lala \u00b7 the tropical Pacific",
-   "chips": "",
+   "title": "Tropical cyclone Saudel \u00b7 China",
+   "chips": "Tropical cyclone",
    "tvTrack": true,
    "plotly": false,
    "vizChildren": 4,
    "vizTags": "div.tv-head,div.tv-map-wrap,div.tv-legend,p.tv-note",
-   "story": "Tropical cyclone \u00b7 the tropical Pacific \u00b7 Aug 19 \u2013 Aug 28 \u00b7 Lala \u00b7 115 kt CAT 4 \u00b7 947 hPa \u00b7 Northeast Pacific"
+   "story": "Tropical cyclone \u00b7 China, Asia \u00b7 Aug 20 \u2013 Aug 28 \u00b7 Saudel \u00b7 115 kt CAT 4 \u00b7 944 hPa \u00b7 Northwest Pacific"
   },
   "phone/midlat_cyclone": {
-   "rows": 1,
+   "rows": 80,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [
-    "No midlatitude cyclones met the criteria this window \u24d8",
-    "No midlatitude cyclones met the criteria this window"
+    "Not scored \u2014 80 events; no EWB benchmark for this lane yet."
    ],
-   "count": "0 events"
+   "count": "80 events"
   },
   "phone/midlat_cyclone/event": {
-   "open": false,
-   "title": "Event",
-   "chips": "",
-   "tvTrack": false,
+   "open": true,
+   "title": "Midlatitude cyclone \u00b7 the Australian sector of the Southern Ocean",
+   "chips": "Midlatitude cyclone",
+   "tvTrack": true,
    "plotly": false,
-   "vizChildren": 0,
-   "vizTags": "",
-   "story": ""
+   "vizChildren": 4,
+   "vizTags": "div.tv-head,div.tv-map-wrap,div.tv-legend,p.tv-note",
+   "story": "Midlatitude cyclone \u00b7 the Australian sector of the Southern Ocean \u00b7 Aug 21 \u2013 Aug 25 \u00b7 965 hPa centre \u00b7 39\u00b0 travelled"
   },
   "phone/flood": {
    "rows": 40,
    "tabs": [
-    "All 123",
-    "Heat waves 15",
-    "Freezes 5",
-    "Cold snaps 6",
-    "Atmospheric rivers 13",
-    "Tropical cyclones 44",
-    "Midlatitude cyclones 0",
-    "Floods 40"
+    "All202",
+    "Heat wave15",
+    "Cold snap7",
+    "Freeze5",
+    "Atm. river11",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
    ],
    "empty": [
     "Not scored \u2014 40 floods tracked from IMERG rain accumulations; no EWB benchmark for this lane yet."
@@ -455,7 +453,7 @@
   "phone/flood/event": {
    "open": true,
    "title": "Flood \u00b7 China",
-   "chips": "",
+   "chips": "Flood",
    "tvTrack": false,
    "plotly": false,
    "vizChildren": 1,

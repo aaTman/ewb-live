@@ -1053,7 +1053,14 @@ nav.controls .dd .dd-body {
 .gm-legend .swatch { width: 20px; height: 10px; border: 1px solid var(--border-strong);
   border-radius: 2px; display: block; }
 /* one group per lane: stacked name+unit, then the ramp of stops to its right */
-.lg-group { display: flex; align-items: center; gap: 8px; flex: none; position: relative; }
+.lg-group { display: flex; align-items: center; gap: 8px; flex: none; position: relative;
+  /* the storm ramps are long (T DT SC1 C2–3 C4–5 track dissipated = 7 keys) and
+     one group is wider than a 320–430 px column, which pushed the whole page
+     73 px sideways at 390 (measured 2026-11-18, once TC/MLC had published
+     events). Wrap INSIDE the group: the contract is that from 320 up the strip
+     never scrolls and every ON lane is fully inside it
+     (tests/e2e/test_dashboard_fe.py::test_legend_never_hides_a_lane_behind_a_scroll). */
+  flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .lg-head { display: grid; gap: 1px; }
 .lg-name { font-size: var(--text-2xs); font-weight: 500; letter-spacing: .08em;
   text-transform: uppercase; color: var(--text-dim); white-space: nowrap; }
@@ -1066,7 +1073,7 @@ nav.controls .dd .dd-body {
   font-size: var(--text-2xs); color: var(--warn-ink);
   background: var(--bg-panel); border: 1px solid var(--border);
   border-radius: 999px; padding: 0 5px; line-height: 1.4; white-space: nowrap; }
-.lg-stops { display: flex; align-items: flex-start; gap: 3px; }
+.lg-stops { display: flex; align-items: flex-start; gap: 3px; flex-wrap: wrap; }
 /* equal-width columns per ramp (widest label of that lane), label centred */
 .lg-bin { display: grid; justify-items: center; gap: 2px; width: 22px; }
 .lg-group[data-layer="a"] .lg-bin { width: 34px; }   /* '1250+' sets the IVT column */
