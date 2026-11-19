@@ -125,3 +125,21 @@ lane its own daily exceedance raster (union rule, shaded by accumulation,
 lanes-only shading when one chip is selected), a legend entry with the mm ramp
 (AA light+dark), honest provisional/reach treatment, keep the event boxes,
 and e2e coverage that the flood tab paints non-empty marks + legend.
+
+**Status: fixed on this branch (2026-11-19).** New `ewb_live/viz/flood_frames.py`
+publishes one class grid per day (`raw_exceedance/flood_YYYYMMDD.cls`, zlib u8,
+display orientation) coding `max(daily_mm, accum_72h/3)` into 5 classes at
+20/50/100/200/350 mm/day-equiv — the same exceedance rule the detector uses,
+via its own `build_scan`, so the map and the event evidence cannot disagree.
+Frames are served past the ERA5 score cutoff (observation truth, not model
+availability); days the IMERG store cannot supply (Late-Run lag tail) are
+recorded `absent` and draw nothing. `mergedmap.js` paints it as the flood
+raster (key `l`), the legend shows the mm ramp under a `mm/day-equiv` unit
+line, and `layersForTab()` now isolates a single selected chip — flood chip
+selected ⇒ only the flood layer, no heat/AR bleed. Event boxes are kept.
+`serve.py` allowlists `flood_\d{8}\.cls`; `weekly.py` step 6b2 and
+`dev_site.sh lanes` build the frames with the raw layers. Verified in browser
+on :8051 (1440+390, light+dark): ~11k painted flood px on 2026-10-24, legend
+stops render, `on` state = flood-only with the chip selected; e2e coverage in
+`tests/e2e/test_dashboard_fe.py` (`test_flood_layer_paints_marks_and_legend`,
+`test_flood_chip_isolates_raw_layers`) on a pinned synthetic frame.
