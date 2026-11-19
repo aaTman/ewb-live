@@ -47,6 +47,13 @@ in the tropics, conservative outside the radar-training domain).
 
 ## Event boxes (volume ratio PARDIG/IMERG, land & IMERG-finite cells)
 
+Units: the sums are the total depth summed over the box's land cells at
+0.25 deg (mm x cells), so ~6.25e4 m3 per unit at the equator — i.e. "billion
+m3" at the 1e9 scale, not millimetres. Only the RATIO is the measurement;
+the depth a single cell saw is the per-cell daily total, not this sum.
+(Flagged in review, 2026-11-19: read as mm the numbers were off by four
+orders of magnitude.)
+
 | event | lat | days | ratio |
 | --- | --- | --- | --- |
 | Cuba 11-12..15 | 21 | 4 | **0.26** |
