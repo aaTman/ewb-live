@@ -202,7 +202,7 @@ def test_open_back_forward(live_url, page_ctx):
         return best; }""")
     assert vis >= 0, "no event row fully visible"
     page.locator("#event-table tbody tr").nth(vis).click()
-    page.wait_for_selector("#detail-viz .ev3-panel", timeout=25000)
+    page.wait_for_selector("#detail-viz .ev3-panel, #detail-viz .tv-map-wrap", timeout=25000)   # track lanes (TC/MLC) render TrackViz, not an ev3 panel
     # the app records the click-time scroll in its own return-state — that is
     # the exact position back must restore (win0 measured earlier can differ by
     # however far Playwright re-centers the viewport for the click)
@@ -614,10 +614,24 @@ def test_list_row_previews_event_on_map_and_box_marks_its_row(live_url, page_ctx
     ids = page.evaluate("""() => { const act = new Set([...document.querySelectorAll('#gm-boxes .gm-ev')]
             .map((n) => n.dataset.id));
         const rows = [...document.querySelectorAll('#event-table tbody tr[data-id]')].map((r) => r.dataset.id);
-        return { off: rows.find((i) => !act.has(i)), on: rows.find((i) => act.has(i)),
+        // track lanes (TC / MLC) paint MARKS on #gm-track-marks, not boxes: a live row
+        // is "on the map" when it has either
+        const marks = new Set([...document.querySelectorAll('#gm-track-marks .gm-mark:not(.gone)')]
+            .map((n) => n.dataset.id));
+        const shown = new Set([...act, ...marks]);
+        return { off: rows.find((i) => !shown.has(i)), on: rows.find((i) => act.has(i)),
+                 boxes: [...act],
                  live: [...document.querySelectorAll('#event-table tr.live')].map((r) => r.dataset.id).sort(),
-                 act: [...act].sort() }; }""")
-    assert ids["act"] and ids["live"] == ids["act"], ids       # rows mirror what the map shows now
+                 // the list pages its rows: compare what is on the map AND in the list
+                 act: [...shown].filter((i) => rows.includes(i)).sort() }; }""")
+    # rows mirror what the map shows now: every live row is on the map (box or track
+    # mark) and every box is a live row. The track layer marks a system "live" for
+    # its whole day-span while the step-exact list also needs the 6-hourly frame to
+    # sit inside [qualified, end), so marks may out-number live track rows by a
+    # system or two at a lane edge — one-directional check for marks.
+    boxes = set(ids["boxes"])
+    assert ids["act"] and set(ids["live"]) <= set(ids["act"]), ids
+    assert boxes <= set(ids["live"]), ids
     if ids["off"]:
         page.hover(f'#event-table tr[data-id="{ids["off"]}"]')
         page.wait_for_timeout(250)

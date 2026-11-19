@@ -874,7 +874,19 @@ def test_global_map_opens_on_the_busiest_day(pg, base):
         if n > best_n:
             best, best_n = f, n
     assert pg.evaluate("MergedMap._dbg().idx") == frames.index(best), (best, best_n)
-    assert pg.locator("#gm-boxes .gm-ev").count() == best_n, best_n
+    # lane-aware (the suite predates the storm and flood lanes): footprint lanes
+    # draw a BOX on #gm-boxes; track lanes (TC/MLC) a MARK on #gm-track-marks and
+    # flood paints its own raster layer, so neither of those is a box. Boxes must
+    # equal the active footprint-lane events; every active track event must carry
+    # a (not dissipated) mark.
+    types = {e["id"]: e.get("type") for e in tl["events"]}
+    active = [e for e in tl["events"] if qual[e["id"]] <= best < end[e["id"]]]
+    n_box = sum(1 for e in active if e.get("type") not in TRACK_LANES + ("flood",))
+    assert pg.locator("#gm-boxes .gm-ev").count() == n_box, (n_box, best_n, len(types))
+    marks = set(pg.evaluate("""() => [...document.querySelectorAll(
+        '#gm-track-marks .gm-mark:not(.gone)')].map((n) => n.dataset.id)"""))
+    need = {e["id"] for e in active if e.get("type") in TRACK_LANES}
+    assert need <= marks, sorted(need - marks)
 
 
 def test_detail_heading_is_type_and_region(pg, base):
