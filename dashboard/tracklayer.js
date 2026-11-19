@@ -15,7 +15,7 @@
    2. the TRACK, for orientation: a thin polyline (solid inside the event window,
       dashed for the rest of the system's life), one dot per best-track fix in
       the lane's own intensity ramp, and a ring at the storm's position at the
-      selected step — hollow and dashed once the storm has dissipated — which is
+      selected step, which is
       also the interactive object (hover/tap tooltip, click selects, Enter then
       opens the event page).
 
@@ -41,8 +41,9 @@
    the wind painted at 06Z is the wind that blew at 06Z — nothing is maxed over
    the day or held across hours (owner direction 2026-11-19). A frame at or
    after the death step has no field for that storm, no cell lingers on the day
-   after it ends, and the marker goes hollow — but its track stays, because
-   where a storm has been is history, not a claim that it still is.
+   after it ends, and its marks (ring, line, dots) leave the map too — a frame
+   past the storm's last fix draws nothing for it (owner 2026-11-19;
+   an earlier revision kept the track as "history", which read as a live storm).
    Nothing is held between frames: every payload repaints the canvas from the
    asset, so a slider jump, play/animate and a jump back all read the same way.
 
@@ -226,6 +227,18 @@
   const dissipatedAt = (ev, ms) => {
     const { death, ongoing } = lifeOf(ev);
     return !ongoing && ms != null && death != null && ms >= death;
+  };
+  /* A system leaves the map after its LAST FIX: no ring, line or node once the
+     frame is past the track's final fix (owner, 2026-11-19 — the wind field
+     already dissipated at the storm's death, but the marks used to linger as
+     "history" for the rest of the window). The track runs through the
+     post-tropical tail, so a frame between death and the last fix still shows the
+     tail's ring (without a field). A still-open system (life.ongoing) stays, and
+     before its first fix there is nothing to reveal (layoutStorm returns null),
+     so a system's marks exist exactly over [first fix, last fix]. */
+  const expiredAt = (ev, fixes, ms) => {
+    if (ms == null || !fixes.length || lifeOf(ev).ongoing) return false;
+    return ms > fixes[fixes.length - 1].ms;
   };
 
   /* ---------------- small helpers ---------------- */
@@ -574,6 +587,7 @@
     drawField(payload, storms);                  // field first: tracks sit on top
     const anySel = payload.sel.length > 0;
     for (const st of storms) {
+      if (st.expired) continue;                   // past its last fix: no track
       const col = colors()[st.ev.type];
       const base = (st.ghost ? 0.5 : 1)
         * (anySel && !payload.sel.includes(st.ev.id) ? 0.25 : 1);
@@ -640,7 +654,7 @@
     const rank = (st) => (st.peak && Number.isFinite(st.peak.v)
       ? LANES[st.ev.type].strength(st.peak.v) : -1);
     dotPts = [];
-    const live = storms.filter((st) => st.last && !st.ghost)
+    const live = storms.filter((st) => st.last && !st.ghost && !st.expired)
       .sort((a, b) => rank(b) - rank(a));
     for (const st of live) {
       const p = st.spot[st.last.i];
@@ -671,15 +685,14 @@
   function markOne(payload, st, p, placed, anySel) {
     const ev = st.ev, lane = LANES[ev.type], m = st.last;
     const on = payload.sel.includes(ev.id);
-    const gone = dissipatedAt(ev, toMs(payload.ts));       // field over, line kept
     const g = document.createElementNS(NS, 'g');
     g.setAttribute('class', 'gm-mark' + (on ? ' sel' : '')
       + (anySel && !on ? ' dim' : '') + (payload.previewId === ev.id ? ' hov' : '')
-      + (gone ? ' gone' : ''));
+      );
     g.setAttribute('data-id', ev.id);
     g.setAttribute('data-type', ev.type);
     g.setAttribute('data-name', `${stormName(ev)} (${lane.name.toLowerCase()})`);
-    g.setAttribute('data-state', gone ? 'dissipated' : (lifeOf(ev).ongoing ? 'ongoing' : 'live'));
+    g.setAttribute('data-state', lifeOf(ev).ongoing ? 'ongoing' : 'live');
     g.setAttribute('role', 'button');
     g.setAttribute('tabindex', '0');
     g.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -690,7 +703,7 @@
     hit.setAttribute('r', HIT_R);
     g.appendChild(hit);
     const ring = document.createElementNS(NS, 'circle');
-    ring.setAttribute('class', 'gm-mark-ring' + (gone ? ' is-gone' : ''));
+    ring.setAttribute('class', 'gm-mark-ring');
     ring.setAttribute('cx', p[0].toFixed(1)); ring.setAttribute('cy', p[1].toFixed(1));
     ring.setAttribute('r', on ? 7.5 : 6);
     ring.setAttribute('style', `stroke: var(--series-${lane.css})`);
@@ -699,7 +712,7 @@
     dot.setAttribute('class', 'gm-mark-dot');
     dot.setAttribute('cx', p[0].toFixed(1)); dot.setAttribute('cy', p[1].toFixed(1));
     dot.setAttribute('r', 3);
-    dot.setAttribute('fill', gone ? 'none' : binColor(ev.type, m.bin));
+    dot.setAttribute('fill', binColor(ev.type, m.bin));
     g.appendChild(dot);
     const lab = labelBox(st, p, payload.fit, placed, on || payload.previewId === ev.id);
     if (lab) {
@@ -767,10 +780,7 @@
     bits.push(`at the selected step ${Number.isFinite(m.v) ? round1(m.v) + ' ' + lane.unit : 'no value'}`);
     // the dissipation is part of the storm's identity, not a rendering detail
     const L = lifeOf(ev);
-    if (dissipatedAt(ev, S && S.ts ? toMs(S.ts) : null)) {
-      bits.push(`dissipated ${fmtDay(L.death)} ${fmtHour(L.death)}`);
-      bits.push('no wind field at the selected step');
-    } else if (L.ongoing) {
+    if (L.ongoing) {
       bits.push('still open at the end of the data');
     }
     bits.push('Select this storm');
@@ -824,10 +834,7 @@
       ? `${round1(m.v)} ${lane.unit}${lane.bins[m.bin] ? ' · ' + lane.bins[m.bin].cat : ''}`
       : 'no value'));
     const L = lifeOf(ev);
-    if (dissipatedAt(ev, S && S.ts ? toMs(S.ts) : null)) {
-      rows.push(row('status', `dissipated ${fmtDay(L.death)} ${fmtHour(L.death)}`
-        + ' · no wind field now'));
-    } else if (L.ongoing) {
+    if (L.ongoing) {
       rows.push(row('status', 'still open at the end of the data'));
     }
     rows.push(row('fixes', `${st.fixes.length} · ${lane.unit}`));
@@ -952,14 +959,8 @@
       stops.push(`<span class="lg-bin wide"><i class="swatch lg-line" `
         + `style="background:var(--series-${lane.css})" title="The line is the best `
         + `track; solid inside the event window, dashed for the rest of the system's `
-        + `life. The ring is the storm's position at the selected step, hollow once `
-        + `it has dissipated."></i>`
+        + `life. The ring is the storm's position at the selected step."></i>`
         + `<span class="lg-t">track</span></span>`);
-      stops.push('<span class="lg-bin xwide"><i class="swatch lg-gone" '
-        + 'style="border-color:var(--series-' + lane.css + ')" title="A hollow marker: '
-        + 'this storm had dissipated by the selected step. Its track stays as history; '
-        + 'its wind field is gone."></i>'
-        + '<span class="lg-t">dissipated</span></span>');
       const bias = isWind && WIND.data.bias && WIND.data.bias.ratio_median != null
         ? ` It under-reads the peaks — the field's strongest step reaches a median `
           + `${WIND.data.bias.ratio_median}× the best-track peak across the `
@@ -974,7 +975,7 @@
           + `stops at the last tropical-storm-force fix, so nothing lingers after a `
           + `storm dissipates, and a post-tropical remnant is not shaded in its name.`
           + bias + ` Dots are best-track fixes (${n} published), the ring is the `
-          + `storm's position at the selected step, hollow once it has dissipated.`
+          + `storm's position at the selected step.`
         : lane.tip;
       const unit = isWind
         ? 'ERA5 10 m wind · displayed hour · under-reads peaks'
@@ -998,11 +999,13 @@
     const storms = [];
     for (const ev of evs) {
       const st = layoutStorm(ev, payload.proj, frameMs, false);
-      if (st) storms.push(st);
+      // an expired storm stays in the list only for its wind field (the field
+      // has its own life window); nothing of the TRACK is drawn for it
+      if (st) { st.expired = expiredAt(ev, st.fixes, frameMs); storms.push(st); }
     }
     // list-hover preview of a storm that is not on the map at this step: outline
     // its whole life, exactly the ghost an event box draws
-    if (payload.previewId && !storms.some((s) => s.ev.id === payload.previewId)) {
+    if (payload.previewId && !storms.some((s) => s.ev.id === payload.previewId && !s.expired)) {
       const ev = evs.find((e) => e.id === payload.previewId);
       if (ev) {
         const g = layoutStorm(ev, payload.proj, frameMs, true);
@@ -1010,7 +1013,7 @@
       }
     }
     for (const st of storms) {
-      if (st.ghost) continue;
+      if (st.ghost || st.expired) continue;
       const c = census[st.ev.type] || (census[st.ev.type] = new Uint8Array(LANES[st.ev.type].bins.length));
       for (const f of st.shown) if (f.bin >= 0) c[f.bin] = 1;
     }

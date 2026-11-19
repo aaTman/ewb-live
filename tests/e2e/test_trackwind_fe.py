@@ -18,8 +18,8 @@ It also covers the DISSIPATION contract (owner, 2026-11-18: "make sure the TCs
 dissipate after the storm ends"): a second storm whose life ends at 06Z on 3 Jan
 is shaded at the 00Z step, gone at 06Z — field, cell tooltip and hit test alike —
 and back when the slider is pulled back, while a still-living storm next door
-keeps its field throughout. The marker goes hollow, not absent: the track is
-history.
+keeps its field throughout. Its marks (ring, line, dots) stay until the storm's LAST FIX and then leave
+the map (owner, 2026-11-19; see test_track_marks_leave_the_map_after_the_last_fix).
 
 Placement itself (which cell lands where) is pinned against a fake ARCO store in
 tests/test_tc_wind.py. Here the field is measured A/B: the same page with and
@@ -116,6 +116,17 @@ SEAM = {"id": "tww3", "event_type": "tropical_cyclone", "title": "TC Seamcrosser
                     "min_pressure_hpa": 980.0,
                     "ongoing": False, "track_crosses_antimeridian": True}}
 SLAT0, SLON0, SNY, SNX = 14.0, 172.0, 13, 25          # columns 172…196 (raw)
+
+# a MIDLATITUDE cyclone (no wind asset entry: the field is a TC thing): it
+# exists 2 Jan 06Z .. 3 Jan 06Z and its marks must leave the map after the last fix
+MLC = {"id": "mlc1", "event_type": "midlat_cyclone", "title": "Midlatitude Cyclone (e2e)",
+       "start": "2026-01-02T06:00:00", "end": "2026-01-03T12:00:00",
+       "peak_value": 968.0, "bbox": [40.0, 50.0, -40.0, -20.0],
+       "details": {"track": [["2026-01-02T06:00:00Z", 42.0, -38.0, 985.0, 985.0],
+                             ["2026-01-02T18:00:00Z", 45.0, -30.0, 972.0, 972.0],
+                             ["2026-01-03T06:00:00Z", 48.0, -22.0, 968.0, 968.0]],
+                   "intensity_units": "hPa", "fix_step_h": 6, "name": "", "basin_name": "",
+                   "ongoing": False, "track_crosses_antimeridian": False}}
 
 
 def _field():
@@ -223,14 +234,14 @@ def _fixture(tmpdir, with_wind=True):
     root = _build_gd_fixture(str(tmpdir), raw_frames=FRAMES, raw_cutoff=FRAMES[-1])
     out = os.path.join(root, "data", "results")
     tl = json.load(open(os.path.join(out, "global_timeline.json")))
-    for spec in (TC, FADE, SEAM):
+    for spec in (TC, FADE, SEAM, MLC):
         entry = TL._track_entry(spec)
-        assert entry and entry["track"]["fixes"][0][0] == "2026010200"
+        assert entry and entry["track"]["fixes"][0][0] in ("2026010200", "2026010206")
         tl["events"].append(entry)
     json.dump(tl, open(os.path.join(out, "global_timeline.json"), "w"))
     sel = os.path.join(out, "events_selected.json")
     evs = json.load(open(sel)) if os.path.exists(sel) else []
-    evs += [dict(TC), dict(FADE), dict(SEAM)]
+    evs += [dict(TC), dict(FADE), dict(SEAM), dict(MLC)]
     json.dump(evs, open(sel, "w"))
     if with_wind:
         json.dump(_wind_doc(), open(os.path.join(out, "tc_wind.json"), "w"))
@@ -295,6 +306,13 @@ COUNT_JS = """() => {
 }"""
 
 
+# non-transparent pixels on the track canvas (field + line + dots), a proxy for
+# "something of the storm is drawn"
+CANVAS_PX = """() => { const cv = document.querySelector('#gm-tracks');
+  const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+  let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++; return n; }"""
+
+
 def _open(browser, url, block_asset=False):
     pg = browser.new_page(viewport={"width": 1400, "height": 1000})
     pg.errors = []                                            # type: ignore[attr-defined]
@@ -348,9 +366,7 @@ def test_legend_names_the_field_and_says_it_under_reads(pw, wind_server):
     labs = pg.eval_on_selector_all(
         '#gm-legend .lg-group[data-track="tropical_cyclone"] .lg-bin',
         "els => els.map(e => e.querySelector('.lg-t').textContent)")
-    assert labs == ["TS", "C1", "C2", "C3", "C4", "C5", "track", "dissipated"]
-    assert pg.locator('#gm-legend .lg-group[data-track="tropical_cyclone"] '
-                     + '.lg-bin .swatch.lg-gone').count() == 1
+    assert labs == ["TS", "C1", "C2", "C3", "C4", "C5", "track"]
     titles = pg.eval_on_selector_all(
         '#gm-legend .lg-group[data-track="tropical_cyclone"] .swatch',
         "els => els.map(e => e.title)")
@@ -486,13 +502,10 @@ def test_the_wind_field_dissipates_when_the_storm_ends(pw, wind_server):
     assert "ERA5 10 m wind" not in _tip(pg), "a dead storm's cell still answers"
     assert pg.evaluate("(i) => window.EwbTracks._life(i)", TC["id"])["field"] is True
     assert (_probe(pg, FIX_LAT + 1, FIX_LON + 1)["hit"] or {}).get("id") == TC["id"]
-    # the marker stays (where the storm has been is history) but says it is gone
-    state = pg.evaluate("""(id) => { const m = document.querySelector(
-          `#gm-track-marks [data-id="${id}"]`);
-        return m && {state: m.dataset.state, aria: m.getAttribute('aria-label')}; }""",
-        FADE["id"])
-    assert state and state["state"] == "dissipated", state
-    assert "dissipated" in state["aria"], state
+    # the field is over but the TRACK is not (the post-tropical tail runs to
+    # 3 Jan 18Z): the ring stays at the tail fix until the last fix, and leaves
+    # the map right after it (owner 2026-11-19)
+    assert _mark_state(pg, FADE["id"]) is not None
     pg.screenshot(path=os.path.join(SHOTS, "tc_dissipate_after.png"),
                   clip={**pg.locator("#raw-map-wrap").bounding_box(), "height": 520})
 
@@ -503,6 +516,94 @@ def test_the_wind_field_dissipates_when_the_storm_ends(pw, wind_server):
     assert abs(_violet(pg)["n"] - n_alive) <= 3
     assert not pg.errors, pg.errors
     pg.close(); b.close()
+
+
+def _mark_state(pg, ev_id):
+    return pg.evaluate("""(id) => { const m = document.querySelector(
+          `#gm-track-marks [data-id="${id}"]`);
+        return m && {state: m.dataset.state, aria: m.getAttribute('aria-label')}; }""",
+                       ev_id)
+
+
+def _marks(pg):
+    return set(pg.evaluate("""() => [...document.querySelectorAll(
+        '#gm-track-marks [data-id]')].map((n) => n.dataset.id)"""))
+
+
+def test_track_marks_leave_the_map_after_the_last_fix(pw, wind_server):
+    """Owner, 2026-11-19: a TC's / MLC's track marks must not outlive the system.
+    Marks exist exactly over [first fix, last fix]: absent before genesis, drawn
+    mid-track, gone one step after the last fix — the canvas line/dots too — and
+    back when the slider is pulled back."""
+    b = pw.chromium.launch()
+    pg = _open(b, wind_server)
+    # Fadeaway: first fix 2 Jan 00Z, last fix (ET tail) 3 Jan 18Z
+    _goto(pg, "2026010218")                                   # mid-track
+    assert FADE["id"] in _marks(pg)
+    assert _mark_state(pg, FADE["id"])["state"] == "live"
+    _goto(pg, "2026010318")                                   # AT the last fix
+    assert FADE["id"] in _marks(pg)
+    _goto(pg, "2026010400")                                   # one step after
+    assert FADE["id"] not in _marks(pg), "a finished storm still has its ring"
+    assert _mark_state(pg, FADE["id"]) is None
+    # Fieldwide's last fix is 3 Jan 00Z -> its marks are gone at 06Z while the
+    # tracked asset (wind field, life window to 5 Jan) is untouched by this rule
+    _goto(pg, "2026010300")
+    assert TC["id"] in _marks(pg)
+    _goto(pg, "2026010306")
+    assert TC["id"] not in _marks(pg)
+    # SEAM (a different lane geometry): last fix 2 Jan 18Z
+    _goto(pg, "2026010218"); assert SEAM["id"] in _marks(pg)
+    _goto(pg, "2026010300"); assert SEAM["id"] not in _marks(pg)
+    # the MLC lane, same rule: first fix 2 Jan 06Z, last fix 3 Jan 06Z
+    _goto(pg, "2026010300"); assert MLC["id"] in _marks(pg)
+    assert _mark_state(pg, MLC["id"])["state"] == "live"
+    _goto(pg, "2026010306"); assert MLC["id"] in _marks(pg)
+    _goto(pg, "2026010312"); assert MLC["id"] not in _marks(pg), "a finished MLC keeps its ring"
+    _goto(pg, "2026010218"); assert MLC["id"] in _marks(pg)   # scrub back: it returns
+    _goto(pg, "2026010200"); assert MLC["id"] not in _marks(pg)   # before genesis: absent
+    # before genesis: nothing (frame before the first fix)
+    _goto(pg, FRAMES[0])
+    assert FADE["id"] in _marks(pg)                           # first fix == first frame
+    # scrub back: it all comes back
+    _goto(pg, "2026010318")
+    assert FADE["id"] in _marks(pg)
+    assert not pg.errors, pg.errors
+    pg.close(); b.close()
+
+
+def test_no_line_or_dot_is_painted_after_every_storm_ended(pw, nowind_server):
+    """Without the wind asset the canvas holds ONLY lines and dots, so a frame
+    after the last storm's last fix must leave it empty (the ring is on the SVG
+    layer, covered above); at the last fix it is not."""
+    b = pw.chromium.launch()
+    pg = _open(b, nowind_server)
+    _goto(pg, "2026010318")                                   # Fadeaway's last fix
+    assert pg.evaluate(CANVAS_PX) > 0
+    _goto(pg, "2026010400")                                   # every storm is over
+    assert pg.evaluate(CANVAS_PX) == 0, "a dead storm's line/dots still paint"
+    assert _marks(pg) == set()
+    assert not pg.errors, pg.errors
+    pg.close(); b.close()
+
+
+def test_an_ongoing_storm_keeps_its_marks_past_the_last_fix(pw, tmp_path_factory):
+    """life.ongoing (the live tail) is the one exception: its track is open, so
+    frames after the last fix still draw it."""
+    root = _fixture(tmp_path_factory.mktemp("twon"))
+    p = os.path.join(root, "data", "results", "tc_wind.json")
+    doc = json.load(open(p))
+    for st in doc["storms"]:
+        if st["id"] == FADE["id"]:
+            st["life"]["ongoing"] = True
+    json.dump(doc, open(p, "w"))
+    srv, url = _serve(root)
+    b = pw.chromium.launch()
+    pg = _open(b, url)
+    _goto(pg, "2026010412")                                   # 18 h past the last fix
+    assert FADE["id"] in _marks(pg)
+    assert _mark_state(pg, FADE["id"])["state"] == "ongoing"
+    pg.close(); b.close(); srv.shutdown()
 
 
 def test_a_frame_paints_only_its_own_step_grid(pw, wind_server):
