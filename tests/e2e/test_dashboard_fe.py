@@ -305,8 +305,15 @@ def test_heat_detail_reference_component(live_url, heat_event, page_ctx):
         const b = m.getBounds();
         return { zoom: m.getZoom(), latSpan: b.getNorth() - b.getSouth(),
                  lonSpan: b.getEast() - b.getWest() }; }""")
-    assert fit["zoom"] >= 4, f"map still zoomed out: {fit}"
-    assert fit["latSpan"] < 45 and fit["lonSpan"] < 90, f"fit too wide: {fit}"
+    # sized to the EVENT, not a fixed degree budget: the panel is a wide, short
+    # letterbox, so a large footprint (the newest heat row is 38 deg tall x 46
+    # wide) is height-limited and shows ~180 deg of longitude at zoom 3. The
+    # contract is "tight in at least one axis, not a hemisphere".
+    bb = page.evaluate("(id) => state.events.find((e) => e.id === id).bbox", heat_event[0])
+    lat_sp, lon_sp = bb[1] - bb[0], (bb[3] - bb[2]) % 360
+    assert fit["zoom"] >= 3, f"map still zoomed out: {fit}"
+    assert (fit["latSpan"] < 2 * lat_sp + 10 or fit["lonSpan"] < 2 * lon_sp + 10) and fit["latSpan"] < 90, \
+        f"fit too wide: {fit} for bbox {bb}"
     # time slider: play/step/range chrome + readout (contract §4)
     assert page.locator(".ev3-slider").count() == 1
     read0 = page.locator(".ev3-readout").inner_text()
