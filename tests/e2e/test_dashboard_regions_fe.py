@@ -337,7 +337,7 @@ def test_region_deep_link_waits_for_lazy_file(page_ctx, base):
     page.goto(base + "/#region=north_america", wait_until="domcontentloaded")
     # first paint (Global rows) lands before the lazy region file resolves; the
     # region view must apply once it does — no manual reload.
-    page.wait_for_function("() => window.__debug.state.region === 'north_america'", timeout=8000)
+    page.wait_for_function("() => window.__debug && window.__debug.state.region === 'north_america'", timeout=8000)
     assert "No freezes in North America" in page.content()
     assert "region=north_america" in page.evaluate("() => location.hash")
     assert errs == []
