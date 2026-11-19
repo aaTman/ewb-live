@@ -142,8 +142,12 @@ def test_fetch_without_cache_reports_unavailable(tmp_path, monkeypatch):
 
 def test_fetch_writes_parquet_and_loads_window(tmp_path, monkeypatch):
     monkeypatch.setenv("EWB_LIVE_IBTRACS_CACHE", str(tmp_path))
+    # pin the product: the window-aware choice (uri_for) would otherwise
+    # switch to the rolling file and fetch it for real
+    monkeypatch.setenv("EWB_LIVE_IBTRACS_URI", ibtracs.DEFAULT_URI)
     raw = csv_bytes([row(i=0), row(i=1),
-                     row(i=2, ISO_TIME="2025-01-01 00:00:00", SEASON="2025")])
+                     row(sid="2025001N00001", i=2, SEASON="2025",
+                         ISO_TIME="2025-01-01 00:00:00")])
 
     class Resp(io.BytesIO):
         def read(self_):
@@ -153,12 +157,83 @@ def test_fetch_writes_parquet_and_loads_window(tmp_path, monkeypatch):
                         lambda *a, **k: Resp(raw))
     assert ibtracs.fetch(force=True) is not None
     df = ibtracs.load_tracks(dt.date(2026, 9, 20), dt.date(2026, 9, 30))
-    assert len(df) == 2                    # the 2025 fix is outside the window
+    assert len(df) == 2                    # the 2025 storm is outside the window
     assert list(df.columns) == ibtracs.COLUMNS
+
+
+# ------------------------------------------------- window-aware source (TC-1) --
+def test_uri_for_prefers_the_small_rolling_product_for_recent_windows(
+        tmp_path, monkeypatch):
+    """Audit TC-1 (2026-11-19): a 90-day window must not pull the 333 MB ALL
+    file when the 11.9 MB last3years product (same publication stamp) covers
+    it; older windows still get the full history."""
+    monkeypatch.delenv("EWB_LIVE_IBTRACS_URI", raising=False)
+    assert ibtracs.uri_for(dt.date.today() - dt.timedelta(days=90)) \
+        == ibtracs.LAST3_URI
+    assert ibtracs.uri_for(dt.date.today() - dt.timedelta(days=1200)) \
+        == ibtracs.uri()
+    assert ibtracs.uri_for(None) == ibtracs.uri()   # unknown window: ALL
+    monkeypatch.setenv("EWB_LIVE_IBTRACS_URI", "https://x/pinned.csv")
+    assert ibtracs.uri_for(dt.date.today()) == "https://x/pinned.csv"
+
+
+def test_fetch_pulls_the_window_product_not_the_all_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("EWB_LIVE_IBTRACS_CACHE", str(tmp_path))
+    monkeypatch.delenv("EWB_LIVE_IBTRACS_URI", raising=False)
+    raw = csv_bytes([row(i=0)])
+    requested = []
+
+    class Resp(io.BytesIO):
+        def read(self_):
+            return raw
+
+    def fake(u, *a, **k):
+        requested.append(str(u))
+        return Resp(raw)
+
+    monkeypatch.setattr(ibtracs.urllib.request, "urlopen", fake)
+    p = ibtracs.fetch(start=dt.date.today() - dt.timedelta(days=90))
+    assert requested == [ibtracs.LAST3_URI]
+    assert p.name == "fixes_ibtracs.last3years.list.v04r01.parquet"
+
+
+def test_fetch_falls_back_to_the_other_products_cache(tmp_path, monkeypatch):
+    """A box holding only the ALL cache keeps working when the window-aware
+    choice switches products and the new download fails."""
+    monkeypatch.setenv("EWB_LIVE_IBTRACS_CACHE", str(tmp_path))
+    monkeypatch.delenv("EWB_LIVE_IBTRACS_URI", raising=False)
+    df = ibtracs.parse_csv(csv_bytes([row(i=0)]))
+    allp = ibtracs.cache_path()
+    allp.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(allp, index=False)
+
+    def boom(*a, **k):
+        raise OSError("NCEI down")
+
+    monkeypatch.setattr(ibtracs.urllib.request, "urlopen", boom)
+    assert ibtracs.fetch(force=True,
+                          start=dt.date.today() - dt.timedelta(days=90)) == allp
+
+
+def test_load_tracks_returns_straddling_storms_whole(tmp_path, monkeypatch):
+    """Audit TC-6 support: load_tracks keeps the FULL life of every storm with
+    a fix in the window (so the clip is visible to the event builder) but
+    never carries a storm whose whole life is outside it."""
+    monkeypatch.setenv("EWB_LIVE_IBTRACS_URI", ibtracs.DEFAULT_URI)
+    _cache_with(tmp_path, monkeypatch, ibtracs.parse_csv(csv_bytes([
+        row(ISO_TIME="2026-09-19 12:00:00"),          # straddler, before window
+        row(i=1, ISO_TIME="2026-09-21 00:00:00"),     # straddler, in window
+        row(sid="2026230N99999",                      # whole life outside
+            ISO_TIME="2026-08-01 00:00:00"),
+    ])))
+    out = ibtracs.load_tracks(dt.date(2026, 9, 20), dt.date(2026, 9, 30))
+    assert len(out) == 2
+    assert set(out["sid"]) == {"2026270N28302"}
 
 
 def test_load_tracks_covers_southern_hemisphere_season_edges(tmp_path, monkeypatch):
     """SEASON 2027 spans Nov 2026 - May 2027: a Nov-2026 window must see it."""
+    monkeypatch.setenv("EWB_LIVE_IBTRACS_URI", ibtracs.DEFAULT_URI)
     monkeypatch.setenv("EWB_LIVE_IBTRACS_CACHE", str(tmp_path))
     df = ibtracs.parse_csv(csv_bytes([
         row(i=0, SEASON="2027", ISO_TIME="2026-11-16 00:00:00")]))
@@ -244,10 +319,11 @@ def test_source_status_reports_the_storm_universe_and_pending_systems(tmp_path,
     assert st["storms_in_window"] == 2          # the universe the lane saw
     assert st["published"] == 1                 # what became an event
     assert st["pending"] == 1 and st["pending_names"] == ["Akvan"]
-    # no window asked = the pre-2026-11-19 payload, unchanged keys only
+    # no window asked = the reach payload + which product served it (TC-1)
     plain = ibtracs.source_status(as_of=dt.datetime(2026, 11, 19,
                                                     tzinfo=dt.timezone.utc))
-    assert set(plain) == {"latest_fix", "lag_days", "cache_age_h", "note"}
+    assert set(plain) == {"latest_fix", "lag_days", "cache_age_h", "note",
+                          "source"}
 
 
 def test_atlantic_basin_is_derived_from_the_genesis_fix():

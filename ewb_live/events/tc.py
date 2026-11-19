@@ -9,13 +9,20 @@ a ``tropical_cyclone`` event when its fixes contain at least
 ``MIN_TS_WIND_KT`` (34 kt — tropical-storm force, ~17.2 m/s) that span at
 least ``MIN_TS_HOURS`` (12 h). Wind is the chosen-agency value from
 ``ewb_live/sources/ibtracs.py`` (USA_ first, then WMO_, then the regional RSMC
-— documented there); fixes whose WMO ``NATURE`` is ``ET`` (extratropical) or
-``MX`` (mixed open/closed low) do **not** count towards qualification, so a
-remnant that re-deepens after transition is not re-counted as a tropical
-cyclone. ``NATURE`` never *grants* qualification: v04r01 leaves it ``NR`` on
-whole basins, so the 34 kt wind threshold carries the rule and NATURE only
-excludes transitioned fixes. A tropical depression that never reaches 34 kt is
-not an event.
+— documented there), **on one averaging basis per storm** (audit TC-2,
+2026-11-19): agency winds mix 1-minute (USA/JTWC), IMD 3-minute (NEWDELHI)
+and 10-minute (all other RSMCs), and the Saffir-Simpson bands are a 1-minute
+scale, so a storm is judged and peaked only on its MAJORITY wind basis and
+every event publishes ``details["wind_basis"]`` (plus ``off_basis_fixes``, the
+fixes excluded from the judgement); a storm only an RSMC reports is published
+on that agency's basis and says so — values are never silently unit-converted
+(an observation is what the agency reported). Fixes whose WMO ``NATURE`` is
+``ET`` (extratropical) or ``MX`` (mixed open/closed low) do **not** count
+towards qualification, so a remnant that re-deepens after transition is not
+re-counted as a tropical cyclone. ``NATURE`` never *grants* qualification:
+v04r01 leaves it ``NR`` on whole basins, so the 34 kt wind threshold carries
+the rule and NATURE only excludes transitioned fixes. A tropical depression
+that never reaches 34 kt is not an event.
 
 **Window.** ``start`` = first qualifying fix, ``end`` = last qualifying fix +
 one fix step (the storm's own median fix interval, clamped to 3-6 h — IBTrACS
@@ -34,8 +41,9 @@ comes out with ``lon_min > lon_max`` (SPEC "Antimeridian bbox convention") and
 ``details["antimeridian_wrap"]`` is set, exactly like ``temperature.py``.
 
 **Values.** ``peak_value`` = max sustained wind (kt) inside the event window
-(the headline intensity, so the dashboard's Peak column reads like the paper's
-TC figures); ``details["min_pressure_hpa"]`` = lowest pressure in the window.
+on the storm's own wind basis (the headline intensity, so the dashboard's Peak
+column reads like the paper's TC figures);
+``details["min_pressure_hpa"]`` = lowest pressure in the window.
 ``details["track"]`` is the **full** storm life in the shared 5-slot row
 schema (see notes/channel_new_events.md) so the dashboard can draw the track
 and ``midlat_cyclone`` can reuse one renderer.
@@ -140,15 +148,41 @@ def storm_to_event(sid: str, f: pd.DataFrame,
     the part we can see.
     """
     f = f.sort_values("time")
+    trunc_before = trunc_after = 0
     if window is not None:
         t0, t1 = pd.Timestamp(window[0]), pd.Timestamp(window[1])
+        # audit TC-6 (2026-11-19): the clip itself stays (fixes outside the
+        # scan window are not drawn), but it must never be SILENT — a storm
+        # that straddles the window edge had its life cut, and the event says
+        # so (details.window_truncated)
+        trunc_before = int((f["time"] < t0).sum())
+        trunc_after = int((f["time"] > t1).sum())
         f = f[(f["time"] >= t0) & (f["time"] <= t1)]
     if len(f) < MIN_TS_FIXES:
         return None
 
     wind = f["wind_kt"].astype(float)
     trop = ~f["nature"].astype(str).isin(NON_TROPICAL_NATURE)
-    qual = (wind >= MIN_TS_WIND_KT) & trop & f["lat"].notna() & f["lon"].notna()
+
+    # one wind-averaging basis per storm (audit TC-2): the basis carrying the
+    # most wind fixes, ties resolved toward more tropical-storm-force fixes
+    # and then toward 1-minute (the basis the Saffir-Simpson bands are true
+    # on). Off-basis fixes never qualify and never set the peak.
+    from ..sources.ibtracs import wind_basis_of
+
+    src = f["wind_source"].astype(str)
+    has_wind = f["wind_kt"].notna() & src.ne("")
+    basis_of_fix = src.map(wind_basis_of)
+    force = (wind >= MIN_TS_WIND_KT) & trop
+    _ORDER = ("1-min", "3-min", "10-min")
+    storm_basis = max(_ORDER, key=lambda b: (
+        int((has_wind & basis_of_fix.eq(b)).sum()),
+        int((force & has_wind & basis_of_fix.eq(b)).sum()),
+        -_ORDER.index(b)))
+    on_basis = basis_of_fix.eq(storm_basis)
+
+    qual = (wind >= MIN_TS_WIND_KT) & trop & on_basis \
+        & f["lat"].notna() & f["lon"].notna()
     if int(qual.sum()) < MIN_TS_FIXES:
         return None
     qf = f[qual]
@@ -187,7 +221,7 @@ def storm_to_event(sid: str, f: pd.DataFrame,
             round(lon_min, 4), round(lon_max, 4))
 
     in_win = (f["time"] >= start) & (f["time"] < end)
-    wv = wind[in_win]
+    wv = wind[in_win & on_basis]
     wv = wv[wv.notna()]
     peak_kt = float(wv.max()) if len(wv) else float("nan")
     pv = f.loc[in_win, "pressure_hpa"].astype(float)
@@ -209,6 +243,7 @@ def storm_to_event(sid: str, f: pd.DataFrame,
     track = _track_rows(f)
     wsrc = f["wind_source"].astype(str)
     psrc = f["pressure_source"].astype(str)
+    off_basis = int((has_wind & ~on_basis).sum())
     det: dict[str, Any] = {
         "sid": sid,
         "name": name,
@@ -228,13 +263,28 @@ def storm_to_event(sid: str, f: pd.DataFrame,
         "track_crosses_antimeridian": _crosses_antimeridian(f["lon"].to_numpy(float)),
         "antimeridian_wrap": bbox[2] > bbox[3],
         "wind_source": wsrc.mode().iat[0] if len(wsrc.mode()) else "",
+        "wind_basis": storm_basis,
+        "off_basis_fixes": off_basis,
         "pressure_source": psrc.mode().iat[0] if len(psrc.mode()) else "",
         "ongoing": bool(qf["time"].max() >= f["time"].max()),
+        "window_truncated": bool(trunc_before or trunc_after),
         "source": SOURCE_NAME,
-        "detection": (f"IBTrACS best track with >= {MIN_TS_FIXES} fixes at "
-                      f">= {MIN_TS_WIND_KT:.0f} kt spanning >= "
-                      f"{MIN_TS_HOURS:.0f} h (extratropical/mixed fixes excluded)"),
+        "detection": (f"IBTrACS best track on the {storm_basis} wind basis: "
+                      f">= {MIN_TS_FIXES} fixes at >= {MIN_TS_WIND_KT:.0f} kt "
+                      f"spanning >= {MIN_TS_HOURS:.0f} h "
+                      f"(extratropical/mixed and off-basis fixes excluded)"),
     }
+    if storm_basis != "1-min":
+        # S-S bands are 1-minute sustained; a longer-basis wind of the same
+        # nominal strength sits LOWER on the scale, so the band is a floor —
+        # publish that reading, do not convert the observation.
+        det["wind_basis_note"] = (
+            f"peak wind is {storm_basis} sustained ({det['wind_source'] or 'RSMC'} "
+            "agency); Saffir-Simpson bands are defined on 1-minute wind, so "
+            "this category is a lower bound")
+    if det["window_truncated"]:
+        det["window_truncated_fixes"] = {"before_window": trunc_before,
+                                         "after_window": trunc_after}
     start_dt = start.to_pydatetime()
     end_dt = end.to_pydatetime()
     # last ACTIVE day (end is exclusive; sub-daily for a track event)

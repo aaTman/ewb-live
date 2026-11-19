@@ -313,7 +313,8 @@
       ev.details.source || 'IBTrACS',
       `${fixes.length} fixes`,
       ev.details.fix_step_h ? `${ev.details.fix_step_h}-hourly` : 'irregular cadence',
-      ev.details.wind_source ? `wind: ${ev.details.wind_source} agency` : '',
+      ev.details.wind_source ? `wind: ${ev.details.wind_source} agency`
+        + (ev.details.wind_basis ? ` (${ev.details.wind_basis})` : '') : '',
       ev.details.basin_name || '',
     ].filter(Boolean).join(' · ')));
     panel.appendChild(head);
@@ -326,7 +327,24 @@
     note.textContent = 'Solid line and full points: the event window. Dashed and faded: the rest of '
       + 'the system’s life — before it reached storm force and after it left. Point colour is '
       + `${units}; the label marks the peak.`
-      + (ev.details.track_crosses_antimeridian ? ' This track crosses the 180° meridian.' : '');
+      + (ev.details.track_crosses_antimeridian ? ' This track crosses the 180° meridian.' : '')
+      /* ne-fix-tc 2026-11-19 (audit TC-6): a storm clipped by the scan window
+         must say so — the track drawn is not its whole life. */
+      + (ev.details.window_truncated
+        ? ` This storm’s life extends past the displayed data window`
+          + (ev.details.window_truncated_fixes
+            ? ` (${ev.details.window_truncated_fixes.before_window || 0} fix`
+              + `${ev.details.window_truncated_fixes.before_window === 1 ? '' : 'es'} before it`
+              + (ev.details.window_truncated_fixes.after_window
+                ? `, ${ev.details.window_truncated_fixes.after_window} after`
+                : '') + ')' : '')
+          + '; only the part inside the window is shown.'
+        : '')
+      + (ev.details.wind_basis && ev.details.wind_basis !== '1-min'
+        ? ' Winds here are ' + ev.details.wind_basis + ' sustained ('
+          + (ev.details.wind_source || 'RSMC') + ' agency); the Saffir-Simpson '
+          + 'bands are a 1-minute scale, so the category shown is a lower bound.'
+        : '');
     panel.appendChild(note);
 
     draw();

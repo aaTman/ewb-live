@@ -1,12 +1,17 @@
 """IBTrACS best-track source: download, cache, parse (tc lane, 2026-11-16).
 
 Data source (owner brief): NOAA NCEI *International Best Track Archive for
-Climate Stewardship*, v04r01 — the "ALL" list CSV, the same file EWB points at
-(``extremeweatherbench.inputs.IBTRACS_URI``), so the AR lane's TC screen
-(``ewb_live/events/tc_screen.py``) and this lane read one source. Override with
-``EWB_LIVE_IBTRACS_URI`` (e.g. the smaller ``ibtracs.last3years.list.v04r01.csv``
-while developing); the default covers every season, so the scoring period is
-always inside the cache.
+Climate Stewardship*, v04r01. Two products are read, chosen by the window
+(audit TC-1, 2026-11-19): ``ibtracs.last3years.list.v04r01.csv`` (11.9 MB,
+rolling last 3 years) whenever the window starts inside its reach, else the
+full ``ibtracs.ALL.list.v04r01.csv`` (333 MB, every season — EWB's own
+``extremeweatherbench.inputs.IBTRACS_URI``). The two carry the same
+``Last-Modified`` publication stamp and are byte-for-byte equivalent for any
+window the rolling product covers (measured on the live files: identical
+fix/storm sets for the 90-day dev window), so the small file is strictly
+preferred and the 333 MB pull only happens for genuinely old windows.
+Override with ``EWB_LIVE_IBTRACS_URI`` to pin one product regardless of
+window.
 
 The full CSV is ~200 MB / 1.7 M rows / 174 columns. We keep only the columns
 this lane needs and cache them as parquet under ``data/cache/ibtracs/`` (the
@@ -55,13 +60,33 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_URI = ("https://www.ncei.noaa.gov/data/international-best-track-archive"
-               "-for-climate-stewardship-ibtracs/v04r01/access/csv/"
-               "ibtracs.ALL.list.v04r01.csv")
+NCEI_BASE = ("https://www.ncei.noaa.gov/data/international-best-track-archive"
+             "-for-climate-stewardship-ibtracs/v04r01/access/csv")
+DEFAULT_URI = f"{NCEI_BASE}/ibtracs.ALL.list.v04r01.csv"
+# rolling last-3-years product: same publication cadence and content for any
+# window it covers, 28x smaller (audit TC-1). Chosen automatically by uri_for().
+LAST3_URI = f"{NCEI_BASE}/ibtracs.last3years.list.v04r01.csv"
+# the rolling product's own reach, with a ~60-day safety margin against the
+# publisher's window bookkeeping: a window starting older than this must use
+# the ALL file or fixes would silently be missing from the cache.
+LAST3_REACH = dt.timedelta(days=1095 + 60)
 # per-fix wind/pressure agency priority (see module docstring)
 WIND_AGENCIES = ("USA", "WMO", "TOKYO", "CMA", "KMA", "HKO", "NEWDELHI",
                  "REUNION", "BOM", "NADI", "WELLINGTON", "DS824", "MLC",
                  "NEUMANN")
+# Averaging period of each agency's wind (IBTrACS v04r01 documentation): USA
+# (and JTWC-informed) values are 1-MINUTE sustained, NEWDELHI is IMD 3-minute,
+# every other listed agency (WMO/TOKYO/CMA/KMA/HKO/REUNION/BOM/NADI/
+# WELLINGTON/DS824/MLC/NEUMANN) is 10-minute. The Saffir-Simpson bands are a
+# 1-minute scale, so ewb_live/events/tc.py enforces ONE basis per storm with
+# this map instead of applying the bands to a per-fix mishmash (audit TC-2).
+WIND_BASIS = {"USA": "1-min", "JTWC": "1-min", "NEWDELHI": "3-min"}
+BASIS_DEFAULT = "10-min"
+
+
+def wind_basis_of(source: str) -> str:
+    """Averaging period of a wind value carried by the named agency."""
+    return WIND_BASIS.get((source or "").strip().upper(), BASIS_DEFAULT)
 BASIN_NAMES = {
     "NA": "North Atlantic", "SA": "South Atlantic", "EP": "Northeast Pacific",
     "CP": "North Central Pacific", "WP": "Northwest Pacific",
@@ -79,7 +104,11 @@ _TIMEOUT_S = float(os.environ.get("EWB_LIVE_IBTRACS_TIMEOUT_S", "900"))
 
 
 def uri() -> str:
-    """CSV to read: env override, else EWB's own IBTRACS_URI, else NCEI v04r01."""
+    """Window-agnostic CSV: env override, else EWB's own IBTRACS_URI, else ALL.
+
+    For a download use :func:`uri_for` with the window start; this stays the
+    identity of the *default* product (cache tag, fallbacks).
+    """
     over = os.environ.get("EWB_LIVE_IBTRACS_URI")
     if over:
         return over
@@ -92,15 +121,52 @@ def uri() -> str:
         return DEFAULT_URI
 
 
+def uri_for(start: dt.date | dt.datetime | None = None) -> str:
+    """Window-aware CSV choice (audit TC-1, 2026-11-19).
+
+    The rolling ``last3years`` product is published on the same stamp as ALL
+    and covers every window this lane scans (90-day rolling), at 11.9 MB vs
+    333 MB — so pick it whenever ``start`` is inside its reach, and fall back
+    to the full-history file only for older windows. An explicit
+    ``EWB_LIVE_IBTRACS_URI`` pins one product and wins over the choice.
+    """
+    over = os.environ.get("EWB_LIVE_IBTRACS_URI")
+    if over:
+        return over
+    if start is not None:
+        s = dt.datetime.combine(start, dt.time()) if isinstance(start, dt.date) \
+            and not isinstance(start, dt.datetime) else dt.datetime.fromisoformat(str(start))
+        now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+        if now - s <= LAST3_REACH:
+            return LAST3_URI
+    return uri()
+
+
 def cache_dir() -> Path:
     return Path(os.environ.get("EWB_LIVE_IBTRACS_CACHE") or "data/cache/ibtracs")
 
 
 def cache_path() -> Path:
+    """Parquet cache path for the default (ALL) product."""
+    return cache_path_for(uri())
+
+
+def cache_path_for(u: str) -> Path:
     """Parquet cache path, tagged with the source file name so an URI switch
     (e.g. ALL -> last3years) cannot serve the wrong window."""
-    tag = url_name(uri()).removesuffix(".csv") or "ibtracs"
+    tag = url_name(u).removesuffix(".csv") or "ibtracs"
     return cache_dir() / f"fixes_{tag}.parquet"
+
+
+def cache_candidates(start: dt.date | dt.datetime | None = None) -> list[Path]:
+    """Caches this lane may legitimately serve a read from, in preference
+    order: the window-aware product first, then the default product (whose
+    cache may be the only one on a box that has never fetched the small one)."""
+    out = [cache_path_for(uri_for(start))]
+    dflt = cache_path()
+    if dflt not in out:
+        out.append(dflt)
+    return out
 
 
 def url_name(u: str) -> str:
@@ -200,20 +266,26 @@ def normalize_lon(lon):
     return (lon + 180.0) % 360.0 - 180.0
 
 
-def fetch(force: bool = False) -> Path | None:
-    """Ensure a fresh parquet cache; return its path, or None when unavailable.
+def fetch(force: bool = False,
+          start: dt.date | dt.datetime | None = None) -> Path | None:
+    """Ensure a fresh parquet cache for the window starting at ``start``
+    (:func:`uri_for` picks the product); return its path, or None when
+    unavailable.
 
     Fail-soft by design (same policy as ``events/tc_screen.py``): a NOAA outage
     or a torn download falls back to the stale cache instead of failing the
-    detection run.
+    detection run — first the same product's stale cache, then the other
+    product's cache (a box that only ever fetched ALL keeps working when the
+    window-aware choice switches to last3years).
     """
-    p = cache_path()
+    cands = cache_candidates(start)
+    p = cands[0]
     if p.exists() and not force:
         age_h = (dt.datetime.now()
                  - dt.datetime.fromtimestamp(p.stat().st_mtime)).total_seconds() / 3600.0
         if age_h < _MAX_AGE_H:
             return p
-    u = uri()
+    u = uri_for(start)
     tmp = p.parent / (p.name + ".tmp")
     try:
         logger.info("ibtracs: downloading %s", u)
@@ -235,9 +307,11 @@ def fetch(force: bool = False) -> Path | None:
             tmp.unlink(missing_ok=True)
         except OSError:
             pass
-        if p.exists():
-            logger.warning("ibtracs: refresh failed (%s); using stale cache", exc)
-            return p
+        for c in cands:
+            if c.exists():
+                logger.warning("ibtracs: refresh failed (%s); using stale cache %s",
+                               exc, c.name)
+                return c
         logger.warning("ibtracs: no cache and download failed (%s); "
                        "tropical-cyclone detection will be empty this run", exc)
         return None
@@ -250,10 +324,13 @@ def load_tracks(start: dt.date | dt.datetime, end: dt.date | dt.datetime,
 
     Seasons are loaded as {start.year-1 … end.year+1} so southern-hemisphere
     seasons that straddle the new year (SEASON 2027 covers Nov 2026 – May 2027)
-    are never clipped; the time filter is exact. Returns None when the source
-    is unreachable and no cache exists.
+    are never clipped. The fix set is *all fixes of every storm with at least
+    one fix in [start, end]*, not just the in-window fixes: a storm that
+    straddles the window edge must be reported with its truncated side visible
+    (audit TC-6), and the consumer clips the event with ``window=``. Returns
+    None when the source is unreachable and no cache exists.
     """
-    p = fetch(force=force)
+    p = fetch(force=force, start=start)
     if p is None:
         return None
     try:
@@ -266,7 +343,8 @@ def load_tracks(start: dt.date | dt.datetime, end: dt.date | dt.datetime,
     if "season" in df.columns:
         df = df[df["season"].astype("Float64").isin([float(s) for s in seasons])]
     t0, t1 = pd.Timestamp(start), pd.Timestamp(end)
-    df = df[(df["time"] >= t0) & (df["time"] <= t1)]
+    in_win = (df["time"] >= t0) & (df["time"] <= t1)
+    df = df[df["sid"].isin(df.loc[in_win, "sid"].unique())]
     return fill_basin(df).sort_values(["sid", "time"]).reset_index(drop=True)
 
 
@@ -295,9 +373,15 @@ def source_status(as_of: dt.datetime | None = None,
     when no readable cache exists (the publish records the null explicitly,
     so "lane ran but archive unreachable" stays visible to the UI).
     """
-    p = cache_path()
-    if not p.exists():
+    p = None
+    cands = [c for c in cache_candidates(window[0] if window else None)
+             if c.exists()]
+    if not cands:
         return None
+    # newest readable cache wins: after the TC-1 source switch a box may hold
+    # both products, and "the archive's reach" must describe what the lane
+    # actually read most recently, not a stale remnant of the other one
+    p = max(cands, key=lambda c: c.stat().st_mtime)
     try:
         import pyarrow.parquet as pq
 
@@ -324,6 +408,7 @@ def source_status(as_of: dt.datetime | None = None,
         now = now.replace(tzinfo=dt.timezone.utc)
     latest = latest.to_pydatetime()
     out = {
+        "source": p.name.removeprefix("fixes_").replace(".parquet", ".csv"),
         "latest_fix": latest.astimezone(dt.timezone.utc).isoformat(),
         "lag_days": round(max(0.0, (now - latest).total_seconds() / 86400.0), 1),
         "cache_age_h": round((now - mtime).total_seconds() / 3600.0, 1),
@@ -415,12 +500,15 @@ def main(argv=None) -> int:  # pragma: no cover - CLI on the ewb LXC only
     if df is None:
         print("IBTrACS unavailable (no cache, download failed)")
         return 1
-    print(f"cache: {cache_path()}")
+    print(f"source: {uri_for(start)}")
+    in_win = (df["time"] >= pd.Timestamp(start)) & (df["time"] <= pd.Timestamp(end))
     print(f"window {start:%Y-%m-%d} .. {end:%Y-%m-%d}: "
-          f"{len(df)} fixes / {df['sid'].nunique()} storms")
-    print(f"full cache: {pd.read_parquet(cache_path())['sid'].nunique()} storms "
-          f"({pd.read_parquet(cache_path())['season'].min()}.."
-          f"{pd.read_parquet(cache_path())['season'].max()})")
+          f"{int(in_win.sum())} fixes in window / {df['sid'].nunique()} storms "
+          f"({len(df)} fixes incl. storm lives outside the window)")
+    full_path = next((c for c in cache_candidates(start) if c.exists()), None)
+    full = pd.read_parquet(full_path) if full_path else df
+    print(f"full cache: {full['sid'].nunique()} storms "
+          f"({full['season'].min()}..{full['season'].max()})")
     if args.basins:
         g = (df.assign(basin=df["basin"].replace({"": "?"}))
              .sort_values(["sid", "time"]).groupby("basin")["sid"].nunique()

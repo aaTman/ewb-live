@@ -187,6 +187,14 @@ def test_scan_skips_storms_outside_the_window_and_keeps_straddlers():
                                             dt.datetime(2026, 9, 20, 6, 0)]
     # the straddler is clipped at the window edge, not cut short before it
     assert min(e.start for e in out) >= dt.datetime(2026, 9, 20)
+    # …and the clip is SAID (audit TC-6): the straddler's event carries the
+    # truncation flag with the clipped-fix count, the clean storm does not
+    straddle = next(e for e in out if e.details["sid"].endswith("33333"))
+    clean = next(e for e in out if e.details["sid"].endswith("11111"))
+    assert straddle.details["window_truncated"] is True
+    assert straddle.details["window_truncated_fixes"]["before_window"] == 6
+    assert clean.details["window_truncated"] is False
+    assert "window_truncated_fixes" not in clean.details
 
 
 def test_scan_is_empty_when_the_source_is_unavailable(monkeypatch):
@@ -294,6 +302,43 @@ def test_recurling_storm_keeps_its_modal_basin():
     ev = storm_to_event(SID, f)
     assert ev.details["basin"] == "NA"
     assert ev.details["basin_name"] == "North Atlantic"
+
+
+# ------------------------------------------------------- wind basis (TC-2) --
+# (Audit 2026-11-19: agency winds mix 1-min/3-min/10-min averaging, and the
+# Saffir-Simpson bands are a 1-minute scale — a storm is judged and peaked on
+# its MAJORITY basis only, and the event says its basis.)
+def test_off_basis_fill_never_qualifies_or_peaks():
+    f = fixes()
+    f.loc[f.index[-3:], "wind_source"] = "WMO"                  # null-fill, 10-min
+    f.loc[f.index[-3:], "wind_kt"] = [130.0, 140.0, 135.0]      # above every USA value
+    ev = storm_to_event(SID, f)
+    assert ev.details["wind_basis"] == "1-min"                  # 9/12 fixes are 1-min
+    assert ev.details["off_basis_fixes"] == 3
+    assert ev.peak_value == 95.0            # the 140 kt 10-min value cannot peak it
+    assert ev.details["peak_category"] == "CAT 2"
+    assert ev.details["ts_fixes"] == 7      # the 3 off-basis fixes cannot qualify
+    assert "wind_basis_note" not in ev.details   # bands are true on 1-min
+
+
+def test_ten_minute_only_storm_publishes_its_own_basis():
+    """A storm only an RSMC reported is published on that agency's basis and
+    says so — the value is never silently converted; the S-S band becomes an
+    explicit lower bound."""
+    ev = storm_to_event(SID, fixes(wind_source="WMO"))
+    assert ev.details["wind_basis"] == "10-min"
+    assert ev.details["off_basis_fixes"] == 0
+    assert "lower bound" in ev.details["wind_basis_note"]
+    assert "10-min" in ev.details["detection"]
+    assert ev.peak_value == 95.0                       # the reported value stands
+
+
+def test_basis_is_judged_by_majority_of_wind_fixes():
+    f = fixes(wind_source="WMO")
+    f.loc[f.index[:3], "wind_source"] = "USA"          # 3 of 12 are 1-minute
+    ev = storm_to_event(SID, f)
+    assert ev.details["wind_basis"] == "10-min"        # 9 fixes carry the storm
+    assert ev.details["off_basis_fixes"] == 3
 
 
 # ------------------------------------------------------- window clamping --
