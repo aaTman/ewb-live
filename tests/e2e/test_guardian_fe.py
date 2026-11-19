@@ -701,11 +701,22 @@ def _dateline_page(engine, base, ev, patch=None, strip_footprint=False):
 
 
 def _detail_width(page, base, ev_id):
+    """(east-west, north-south) degrees the detail map shows."""
     page.goto(base + f"/#event={ev_id}&lead=24h")
     page.wait_for_selector("#detail-viz .ev3-panel", timeout=25000)
     page.wait_for_timeout(1200)
     return page.evaluate("""() => { const m = window.__ev3.maps[0], b = m.getBounds();
-        return b.getEast() - b.getWest(); }""")
+        return [b.getEast() - b.getWest(), b.getNorth() - b.getSouth()]; }""")
+
+
+def _framed(wh, bbox):
+    """The detail map frames the FIELD, not the world. The panel is a wide, short
+    letterbox, so a tall event (an AR 44 deg tall x 51 deg wide) is limited by
+    the panel HEIGHT and the visible longitude span is ~4x the event width
+    (a9d8ad3af01c: 187-212 deg wide, 55 deg tall) — fine. Tight in at least one
+    axis is the real contract; a world-scale fit is loose in both."""
+    w, h = wh
+    return w < 2 * _span(bbox) + 10 or h < 2 * (bbox[1] - bbox[0]) + 10
 
 
 # what a crossing storm must do on the merged map: paint its MARK, own no box
@@ -746,8 +757,8 @@ def test_dateline_event_renders_sanely_on_every_surface(engine, base):
         for poly in r["bboxD"].split("Z")[:-1]:
             px = [float(x) for x in re.findall(r"[ML](-?\d+\.?\d*) ", poly)]
             assert max(px) - min(px) < 0.4 * r["W"], poly[:120]    # an unsplit run spanned ~80 %
-        w = _detail_width(page, base, ev["id"])
-        assert w < 2 * true_w + 10, (w, true_w)
+        wh = _detail_width(page, base, ev["id"])
+        assert _framed(wh, ev["bbox"]), (wh, true_w)
         ctx.close()
     if track:    # the mark contract: a track lane paints a mark, never a box
         ctx, page = _dateline_page(engine, base, track)
@@ -796,8 +807,8 @@ def test_unrecoverable_full_band_bbox_draws_no_band(engine, base):
         r = page.evaluate(DATELINE_PROBE, ev["id"])
         assert not r["node"] and not r["bboxD"], r                 # none on the merged map either
         if ev["event_type"] != "flood":      # flood has no detail viz by design
-            w = _detail_width(page, base, ev["id"])
-            assert w < 2 * _span(ev["bbox"]) + 10, w               # detail still frames the field, not the world
+            wh = _detail_width(page, base, ev["id"])
+            assert _framed(wh, ev["bbox"]), wh                     # detail still frames the field, not the world
         ctx.close()
     if track:
         ctx, page = _dateline_page(engine, base, track,
