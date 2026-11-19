@@ -111,3 +111,17 @@ true — the pipeline ships an `unsupported` pair status.)
 - **Dateline**: tracker/Event bbox use the repo's `lon_min > lon_max`
   eastward-arc convention correctly; map rendering of wrapped boxes is the
   ne-fixes2 lane (not touched here per brief).
+
+## F0 — floods are invisible on the merged map (OWNER 2026-11-19, above all of the above)
+Verified by the owner on :8051 (flood tab, map=2026102418): the only flood
+marks are the 2 events whose interval covers that day (dashed boxes, ~20 px);
+the other 38 flood events live on other days, the raw-shading layer that makes
+heat/AR visible per day has no flood counterpart (`mergedmap.js` LAYERS says
+"no raw exceedance layer exists for the flood lane"), there is no flood legend
+entry, and selecting the flood chip leaves the heat/AR raw layers painted —
+`layersForTab()` deliberately no-ops for lanes without a raw layer, so red
+Africa and green AR bands read as flood evidence. Defect 0 = give the flood
+lane its own daily exceedance raster (union rule, shaded by accumulation,
+lanes-only shading when one chip is selected), a legend entry with the mm ramp
+(AA light+dark), honest provisional/reach treatment, keep the event boxes,
+and e2e coverage that the flood tab paints non-empty marks + legend.
