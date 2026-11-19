@@ -794,6 +794,27 @@ def events_from_scan(scan: FloodScan, *, params: Params | None = None,
     return out
 
 
+#: Outcome of the last :func:`scan_flood_events` (same shape as the mlc lane's,
+#: published as ``meta.lane_status.flood``): ``ok`` | ``no-data`` | ``failed``.
+LANE_STATUS: dict[str, Any] = {}
+
+
+def lane_status() -> dict:
+    return dict(LANE_STATUS)
+
+
+def _set_lane_status(status: str, *, reason: str | None = None,
+                     window: tuple | None = None, source: str | None = None,
+                     **counts) -> None:
+    LANE_STATUS.clear()
+    LANE_STATUS.update({
+        "lane": "flood", "status": status, "reason": reason,
+        "source": resolve_source(source),
+        "window": [window[0].isoformat(), window[1].isoformat()] if window else None,
+        **counts,
+    })
+
+
 def scan_flood_events(start: dt.date, end: dt.date, *,
                       quantile: float = DEFAULT_QUANTILE,
                       windows: Sequence[int] = WINDOWS,
@@ -811,9 +832,23 @@ def scan_flood_events(start: dt.date, end: dt.date, *,
     ERA5 truth cutoff: the observations here are near-real-time (PARDIG ~2-8 h,
     IMERG Late ~2.5 h-months), and the newest days are where a flood lives.
     """
-    obs = load_observations(start - dt.timedelta(days=TRACKED_LOOKBACK_DAYS), end,
-                            root=root, chunk_days=chunk_days,
-                            src_deg=src_deg, dst_deg=dst_deg, source=source)
+    try:
+        obs = load_observations(start - dt.timedelta(days=TRACKED_LOOKBACK_DAYS), end,
+                                root=root, chunk_days=chunk_days,
+                                src_deg=src_deg, dst_deg=dst_deg, source=source)
+    except pardig.PardigError as exc:
+        # a fresh tree has no cached rain days: degrade to an honest lane
+        # status instead of aborting the whole detect (it took TC/MLC down)
+        logger.warning("flood: no rain data (%s) — lane reports no-data", exc)
+        _set_lane_status("no-data", window=(start, end), source=source,
+                         reason=f"the rain store has no data for "
+                                f"{start:%Y-%m-%d}..{end:%Y-%m-%d} ({exc})")
+        return []
+    except Exception as exc:  # noqa: BLE001 - fail soft, like the mlc lane
+        logger.warning("flood: rain read failed (%s) — no events", exc)
+        _set_lane_status("failed", window=(start, end), source=source,
+                         reason=f"rain read failed: {exc}")
+        return []
     scan = build_scan(obs, quantile=quantile, windows=windows, land=land,
                       store=store)
     events = events_from_scan(scan, params=params)
@@ -821,6 +856,7 @@ def scan_flood_events(start: dt.date, end: dt.date, *,
             if e.start.date() <= end and (e.end - dt.timedelta(days=1)).date() >= start]
     logger.info("flood %s..%s: %d events (%d before the requested window)",
                 start, end, len(kept), len(events) - len(kept))
+    _set_lane_status("ok", window=(start, end), source=source, n_events=len(kept))
     return kept
 
 

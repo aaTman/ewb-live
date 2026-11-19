@@ -104,7 +104,7 @@ def _detect(tmp_path, monkeypatch):
 
 def test_detect_events_records_and_persists_the_status(tmp_path, monkeypatch):
     assert _detect(tmp_path, monkeypatch) == []
-    side = tmp_path / "lane_status_midlat_cyclone.json"
+    side = tmp_path / f"lane_status_midlat_cyclone_{M.RULE_REV}.json"
     assert side.exists(), "the scan outcome must survive the run that made it"
     assert json.loads(side.read_text())["status"] == "failed"
     assert ev_pkg.LANE_STATUS["midlat_cyclone"]["status"] == "failed"

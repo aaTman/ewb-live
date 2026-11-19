@@ -24,6 +24,14 @@
 #   ops/dev_site.sh stop     stop the dev server (leaves the tree in place)
 #   ops/dev_site.sh url      the URL the owner opens
 #
+# LOCKING: sync / init / lanes / assets all take ONE exclusive flock on the box
+# ($DEV/logs/.dev_site.lock) and WAIT for it (EWB_DEV_LOCK_WAIT seconds, default
+# 1800; exit 75 on timeout), so two agents' syncs/builds serialize instead of
+# clobbering the shared tree (2026-11-19: three clobber races). `lanes` and
+# `assets` background their long work INSIDE the lock (the child inherits the
+# lock fd), so a sync cannot replace code under a running detect/viz/tc_wind;
+# the lock frees when the background chain ends. status/watch/url never lock.
+#
 # Env: EWB_DEV_BOX (default root@192.168.0.121), EWB_DEV_DIR (default
 # /opt/ewb-live-dev), EWB_DEV_PORT (default 8051), EWB_DEV_HOST (default the
 # box's LAN address — the Cloudflare tunnel on this box has no credentials, so
@@ -41,23 +49,36 @@ PORT="${EWB_DEV_PORT:-8051}"
 HOST="${EWB_DEV_HOST:-192.168.0.121}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UNIT=ewb-live-dev-web
+LOCK_WAIT="${EWB_DEV_LOCK_WAIT:-1800}"
+LOCK="$DEV/logs/.dev_site.lock"
 # remote scripts come in on stdin with these bound, so no quoting traps
 r() { ssh -o ConnectTimeout=10 "$BOX" "DEV='$DEV' LIVE='$LIVE' PORT='$PORT' UNIT='$UNIT' bash -s"; }
+# same, but inside the exclusive dev-tree lock (waits LOCK_WAIT s, then exit 75)
+rl() {
+  ssh -o ConnectTimeout=10 "$BOX" "mkdir -p '$DEV/logs' && DEV='$DEV' LIVE='$LIVE' PORT='$PORT' UNIT='$UNIT' flock -w '$LOCK_WAIT' -E 75 '$LOCK' bash -s"
+  local rc=$?
+  [ $rc -eq 75 ] && echo "dev_site: another sync/build held $LOCK for ${LOCK_WAIT}s -- not run (see: ops/dev_site.sh status)" >&2
+  return $rc
+}
 
 case "${1:-}" in
   sync)
-    ssh "$BOX" "mkdir -p '$DEV'"
+    ssh "$BOX" "mkdir -p '$DEV/logs'"
     # NO --delete-excluded. That flag deletes destination-side files that match
     # an --exclude, and every excluded name here is a thing ONLY the dev tree
     # has: data/ (the built results -- 107 MB of lane output, per-event viz and
     # the live-seeded scorecard), .venv, third_party, logs. It wiped the whole
     # dev data tree on 2026-11-18 21:55 (live was untouched; the tree was
     # re-seeded and the lanes re-run). With --exclude alone, --delete skips them.
+    # the remote rsync process runs UNDER the lock (--rsync-path), so a sync waits
+    # for any running lanes/assets chain and blocks others for its own duration
     rsync -az --delete \
+      --rsync-path="flock -w $LOCK_WAIT -E 75 '$LOCK' rsync" \
       --exclude .git --exclude .venv --exclude data --exclude logs \
       --exclude third_party --exclude __pycache__ --exclude .pytest_cache \
       --exclude '*.pyc' \
-      "$REPO/" "$BOX:$DEV/" && echo "synced code -> $DEV"
+      "$REPO/" "$BOX:$DEV/" && echo "synced code -> $DEV" \
+      || { echo "dev_site: sync failed (rc=$?; a lock wait timeout shows as rsync error 12/75)" >&2; exit 1; }
     # guard: a code sync must never leave the tree without its data/venv links
     # (heredoc terminators must sit at column 0 -- an indented REMOTE silently
     # swallows the next case arm, which is how `init` disappeared once)
@@ -70,7 +91,7 @@ done
 REMOTE
     ;;
   init)
-    r <<'REMOTE'
+    rl <<'REMOTE'
 set -e
 mkdir -p "$DEV/data/cache" "$DEV/logs"
 [ -e "$DEV/.venv" ]       || ln -s "$LIVE/.venv" "$DEV/.venv"
@@ -100,7 +121,7 @@ du -sh "$DEV/data/results"
 REMOTE
     ;;
   lanes)
-    r <<'REMOTE'
+    rl <<'REMOTE'
 cd "$DEV" || exit 1
 nohup sh -c '
   set -x
@@ -125,7 +146,7 @@ REMOTE
     # derived assets the dashboard probes for, in the order that lets each one
     # see the previous: meta.json for all lanes -> Gantt timeline -> TC wind field
     # (the wind field needs the PUBLISHED storm list, so it comes after publish)
-    r <<'REMOTE'
+    rl <<'REMOTE'
 cd "$DEV" || exit 1
 . .venv/bin/activate
 export EWB_DATA_PREP_DIR="$DEV/third_party/ExtremeWeatherBench/data_prep"

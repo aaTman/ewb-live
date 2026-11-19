@@ -38,13 +38,23 @@ LANE_STATUS: dict[str, dict] = {}
 
 
 def _status_path(cache_dir: Path, event_type: str) -> Path:
-    return cache_dir / f"lane_status_{event_type}.json"
+    tag = ""
+    if event_type == "midlat_cyclone":
+        # rule-tagged like the scan cache, so an old-code build's status can't
+        # overwrite a newer rule's (notes/audit_mlc.md F6)
+        from .mlc import RULE_REV
+
+        tag = f"_{RULE_REV}"
+    return cache_dir / f"lane_status_{event_type}{tag}.json"
 
 
 def _lane_scan_status(event_type: str) -> dict:
     """What the scan that just ran says about itself ({} = it reports nothing)."""
-    if event_type == "midlat_cyclone":
-        from .mlc import lane_status
+    if event_type in ("midlat_cyclone", "flood"):
+        if event_type == "flood":
+            from .flood import lane_status
+        else:
+            from .mlc import lane_status
 
         try:
             return lane_status()
@@ -222,9 +232,12 @@ def detect_events(
                 from .ar import scan_ar_events
 
                 events = scan_ar_events(start, lane_end, **scan_kwargs)
-            tmp = path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps([e.to_dict() for e in events], indent=1))
-            tmp.replace(path)
+            degraded = (et == "flood"
+                        and _lane_scan_status(et).get("status") in ("no-data", "failed"))
+            if not degraded:     # an empty scan of a missing store must not be cached
+                tmp = path.with_suffix(".json.tmp")
+                tmp.write_text(json.dumps([e.to_dict() for e in events], indent=1))
+                tmp.replace(path)
             logger.info("detect_events %s: scanned %d events", et, len(events))
             _remember_lane_status(cache_dir, et)
         for e in events:
