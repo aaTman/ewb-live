@@ -163,11 +163,30 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
     start = max(w_start, w_end - dt.timedelta(days=days - 1)) if days else w_start
 
     from ..events import flood   # lazy: pulls the climatology modules
+    from ..sources import imerg
 
     # the store root is the IMERG CACHE dir (daily/ + status.json live in it),
-    # not the repo root — imerg._root() takes it verbatim
-    obs = flood.load_observations(start - dt.timedelta(days=LANE3_LOOKBACK), w_end,
-                                  root=root / "data" / "imerg")
+    # not the repo root — imerg._root() takes it verbatim. The load END is
+    # clamped to the last day the store actually serves: the meta window
+    # rolls forward daily while IMERG Late lags ~2.5 h–4 months, and a
+    # beyond-reach tail chunk (zero fields) would abort the whole build
+    # (imerg._load_fields raises on an empty chunk). Beyond-reach days join
+    # `absent` — no marks on the map for them, which is the honest truth.
+    store = root / "data" / "imerg"
+    end_eff = w_end
+    try:
+        st = imerg.load_imerg_status(start, w_end, root=store)
+        if len(st):
+            last = max(dt.date.fromisoformat(str(d)[:10]) for d in st.index)
+            end_eff = min(w_end, last)
+    except (FileNotFoundError, ValueError):
+        pass                      # no status.json: load_observations reports
+    if end_eff < start:
+        logger.warning("flood_frames: IMERG store serves no day of %s..%s — "
+                       "nothing to build", start, w_end)
+        return out
+    obs = flood.load_observations(start - dt.timedelta(days=LANE3_LOOKBACK),
+                                  end_eff, root=store)
     land = flood.land_mask(*obs.grid)
     scan = flood.build_scan(obs, land=land)
 
@@ -198,6 +217,8 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
         written += 1
     absent = [x for x in scan.source.get("missing_days", [])
               if f"{start:%Y-%m-%d}" <= x <= f"{w_end:%Y-%m-%d}"]
+    absent += [f"{d:%Y-%m-%d}" for d in
+               (end_eff + dt.timedelta(days=i) for i in range(1, (w_end - end_eff).days + 1))]
     prune_frames(out, f"{w_start:%Y%m%d}")
     merge_index(out, flood_index_block(day_tags, absent, runs))
     logger.info("flood_frames: %d days written, %d published, %d absent "
