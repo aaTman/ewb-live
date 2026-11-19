@@ -585,7 +585,8 @@ def test_type_filter_narrows_map_list_and_scorecard_together(live_url, page_ctx)
         blocks: document.querySelectorAll('#scorecard-tables .sc-block').length,
         scope: document.querySelector('#sc-scope').textContent,
         types: state.events.reduce((m, e) => (m[e.id] = e.event_type, m), {}) })""")
-    assert st["on"] == {"h": False, "f": False, "a": True} and "layers=a" in st["hash"], st
+    assert st["on"] == {"h": False, "f": False, "a": True, "l": False} \
+        and "layers=a" in st["hash"], st
     assert st["rows"] and all(st["types"][i] == "atmospheric_river" for i in st["rows"]), st["rows"]
     assert st["blocks"] == 1 and "Atmospheric rivers only" in st["scope"], st
     page.click("#sc-scope button")                           # the scorecard's own way back
@@ -784,7 +785,7 @@ GD_RAW_TS = [d.strftime("%Y%m%d%H") for d in
 
 
 def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=None, raw_run=False, raw_ivt=False,
-                      raw_run_v2=False):
+                      raw_run_v2=False, raw_flood_day=None):
     src = os.path.join(ROOT, "data", "results")
     root = os.path.join(tmpdir, "webroot")
     os.makedirs(root)
@@ -810,7 +811,8 @@ def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=No
     if raw_frames is not None:
         _build_raw_fixture(data_dir, frames=raw_frames,
                            cutoff=raw_cutoff if raw_cutoff is not None else raw_frames[-1],
-                           run=raw_run, ivt=raw_ivt, run_v2=raw_run_v2)
+                           run=raw_run, ivt=raw_ivt, run_v2=raw_run_v2,
+                           flood_day=raw_flood_day)
     else:
         _build_raw_fixture(data_dir, run=raw_run, ivt=raw_ivt, run_v2=raw_run_v2)
     if with_timeline:
@@ -870,7 +872,7 @@ RAW_TS = ["2025110600", "2025110606", "2025110612"]  # 6-hourly, ts2 is past cut
 
 
 def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=False, ivt=False,
-                       run_v2=False):
+                       run_v2=False, flood_day=None):
     """raw_exceedance asset per the contract in channel_design_frontend.md:
     zlib'd layer-major bitpacked rows (heat,freeze,ar; ny x ceil(nx/8),
     row 0 = lat0 lowest, MSB-first). 5-deg grid; heat blob mid-pacifica,
@@ -900,6 +902,15 @@ def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=Fal
     if ivt:
         idx["ivt"] = {"schema": 1, "bins": [250, 500, 750, 1000, 1250]}
         idx["schema"] = 3  # v3 with IVT class planes
+    if flood_day:
+        # flood_frames contract (defect F0): daily u8 class grid, DISPLAY
+        # orientation (row 0 = south). Cells chosen clear of the heat/freeze/AR
+        # blobs so a painted-pixel check can only be the flood layer:
+        # (10,50) class 2, (22,20) class 4, (33,60) class 1
+        idx["flood"] = {"rev": "v1", "units": "mm/day-equiv",
+                        "bins_mm": [20, 50, 100, 200, 350],
+                        "days": [flood_day], "absent": [],
+                        "runs": {flood_day: "late"}}
     json.dump(idx, open(os.path.join(rd, "index.json"), "w"))
     for k, ts in enumerate(frames):
         layers = [bytearray(ny * stride) for _ in range(3)]
@@ -968,6 +979,13 @@ def _build_raw_fixture(data_dir, drop_ts=None, frames=None, cutoff=None, run=Fal
             # Also update the .bin file with the new AR layer
             with open(os.path.join(rd, ts + ".bin"), "wb") as f:
                 f.write(zlib.compress(b"".join(bytes(x) for x in layers)))
+    if flood_day:
+        plane = bytearray(ny * nx)
+        plane[10 * nx + 50] = 2
+        plane[22 * nx + 20] = 4
+        plane[33 * nx + 60] = 1
+        with open(os.path.join(rd, f"flood_{flood_day}.cls"), "wb") as f:
+            f.write(zlib.compress(bytes(plane)))
 
 
 @pytest.fixture(scope="module")
@@ -1009,6 +1027,21 @@ def dur2_server(tmp_path_factory):
     legend must show a 'today' stop for heat and none for freeze."""
     root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-dur2")),
                              with_timeline=False, raw_run=True, raw_run_v2=True)
+    srv, url = _gd_server(root)
+    yield url
+    srv.shutdown()
+
+
+@pytest.fixture(scope="module")
+def flood_server(tmp_path_factory):
+    """Flood raw-layer lane (defect F0, ne-fix-flood): the index advertises
+    the additive `flood` key and ONE daily class frame (flood_<day>.cls, cells
+    of classes 1/2/4 clear of the other lanes' blobs): the tab must paint
+    flood-coloured marks, the legend must carry the mm ramp, and the flood
+    chip must isolate the raster to the flood lane."""
+    root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-flood")),
+                             raw_frames=GD_RAW_TS, raw_cutoff=GD_RAW_TS[-1],
+                             raw_flood_day="20260106")
     srv, url = _gd_server(root)
     yield url
     srv.shutdown()
@@ -1334,16 +1367,16 @@ def test_raw_layer_toggles_and_url(raw_server, page_ctx):
     _wait_js(page,
         "document.querySelector('#raw-readout').textContent.includes('06:00 UTC')",
         timeout=20000)
-    assert page.evaluate("MergedMap._dbg().on") == {"h": True, "f": False, "a": False}
+    assert page.evaluate("MergedMap._dbg().on") == {"h": True, "f": False, "a": False, "l": False}
     # the freeze tab narrows to freeze only and records layers=f
     tabs.filter(has_text="Freeze").click()
     page.wait_for_timeout(400)
-    assert page.evaluate("MergedMap._dbg().on") == {"h": False, "f": True, "a": False}
+    assert page.evaluate("MergedMap._dbg().on") == {"h": False, "f": True, "a": False, "l": False}
     assert "layers=f" in page.evaluate("decodeURIComponent(location.hash)")
     # All restores every layer and drops the param again
     tabs.filter(has_text="All").click()
     page.wait_for_timeout(400)
-    assert page.evaluate("MergedMap._dbg().on") == {"h": True, "f": True, "a": True}
+    assert page.evaluate("MergedMap._dbg().on") == {"h": True, "f": True, "a": True, "l": True}
     assert "layers" not in page.evaluate("location.hash")
     errs = [e for e in page.errors if "Failed to load resource" not in e]
     assert errs == [], errs   # the frame-0 prefetch 404 is the fixture's doing
@@ -1685,6 +1718,88 @@ def test_show_tabs_are_the_only_layer_toggle(dur_server, page_ctx):
         "() => document.querySelectorAll('#gm-legend .lg-group').length === 3")
     errs = [e for e in page.errors if "Failed to load resource" not in e]
     assert errs == [], f"unexpected page errors: {errs}"   # 404 = the fixture's absent timeline
+
+
+# flood pixel probe: the painted colour of --dur-flood-<cls> is the token
+# blended over the map ground at the layer's RUN_ALPHA (200/255) — match the
+# blend over BOTH grounds (land --paper #ffffff, ocean --map-ocean #eef4f8).
+_FLOOD_PIXEL_FN = """((cls) => {
+        const cv = document.querySelector('#raw-canvas');
+        const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        const p = document.createElement('span');
+        p.style.color = getComputedStyle(document.documentElement)
+            .getPropertyValue('--dur-flood-' + cls).trim();
+        document.body.appendChild(p);
+        const m = getComputedStyle(p).color.match(/\\d+/g);
+        p.remove();
+        const tok = m.slice(0, 3).map(Number);
+        const a = 200 / 255;
+        for (const bg of [[255, 255, 255], [238, 244, 248]])
+            for (let i = 0; i < d.length; i += 4) {
+                let ok = true;
+                for (let k = 0; k < 3; k++) {
+                    if (Math.abs(d[i + k] - (a * tok[k] + (1 - a) * bg[k])) > 5) { ok = false; break; }
+                }
+                if (ok) return true;
+            }
+        return false; })"""
+
+
+def test_flood_layer_paints_marks_and_legend(flood_server, page_ctx):
+    """Defect F0 acceptance (owner 2026-11-19): the flood lane owns a real map
+    layer — the daily class frame decodes cell-true, non-empty marks of its
+    ramp colours ride the canvas, and the legend carries the mm ramp."""
+    page = page_ctx
+    _mm_goto(page, flood_server)
+    _mm_frame(page, "2026010606")
+    page.wait_for_selector("#gm-legend .lg-group[data-layer=l]", timeout=20000)
+    fl = page.evaluate("() => [MergedMap._dbg().flAt(10, 50), MergedMap._dbg().flAt(22, 20),"
+                       " MergedMap._dbg().flAt(33, 60), MergedMap._dbg().flAt(0, 0)]")
+    assert fl == [2, 4, 1, 0], fl
+    page.wait_for_function(_FLOOD_PIXEL_FN + "(2)", timeout=10000)
+    page.wait_for_function(_FLOOD_PIXEL_FN + "(4)", timeout=10000)
+    stops = page.eval_on_selector_all("#gm-legend .lg-group[data-layer=l] .lg-t",
+                                      "e => e.map(x => x.textContent)")
+    assert stops == ["20\u201350", "50\u2013100", "100\u2013200", "200\u2013350", "350+"], stops
+    groups = page.eval_on_selector_all("#gm-legend .lg-group",
+                                       "els => els.map(e => e.dataset.layer)")
+    assert groups == ["h", "f", "a", "l"], groups
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], errs
+
+
+def test_flood_chip_isolates_raw_layers(flood_server, page_ctx):
+    """Owner F0, second half of the complaint: a single chip must show ONLY
+    its lane's raster — the flood chip turns heat/AR shading off (they read
+    as flood evidence otherwise), keeps the flood frame, and a chip whose
+    lane has no raster (the TC tracks) turns every raster off."""
+    page = page_ctx
+    _mm_goto(page, flood_server)
+    page.locator("#type-tabs [data-tab=flood]").click()
+    page.wait_for_timeout(400)
+    assert page.evaluate("MergedMap._dbg().on") \
+        == {"h": False, "f": False, "a": False, "l": True}
+    assert "layers=l" in page.evaluate("decodeURIComponent(location.hash)")
+    groups = page.eval_on_selector_all("#gm-legend .lg-group",
+                                       "els => els.map(e => e.dataset.layer)")
+    assert groups == ["l"], groups
+    _mm_frame(page, "2026010606")
+    page.wait_for_function(_FLOOD_PIXEL_FN + "(4)", timeout=10000)
+    # a day of the window with no class frame: nothing of the ramp paints
+    _mm_frame(page, "2026010306")
+    page.wait_for_timeout(400)
+    assert not page.evaluate(_FLOOD_PIXEL_FN + "(4)")
+    # the TC chip: no raster lane at all — every raster goes off
+    page.locator("#type-tabs [data-tab=tropical_cyclone]").click()
+    page.wait_for_timeout(400)
+    assert page.evaluate("Object.values(MergedMap._dbg().on).every(v => v === false)")
+    page.locator("#type-tabs button", has_text="All").click()
+    page.wait_for_timeout(400)
+    assert page.evaluate("MergedMap._dbg().on") \
+        == {"h": True, "f": True, "a": True, "l": True}
+    assert "layers" not in page.evaluate("location.hash")
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], errs
 
 
 def test_legend_sits_below_the_map_and_never_moves_the_page(dur_server, page_ctx):

@@ -164,8 +164,10 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
 
     from ..events import flood   # lazy: pulls the climatology modules
 
+    # the store root is the IMERG CACHE dir (daily/ + status.json live in it),
+    # not the repo root — imerg._root() takes it verbatim
     obs = flood.load_observations(start - dt.timedelta(days=LANE3_LOOKBACK), w_end,
-                                  root=root)
+                                  root=root / "data" / "imerg")
     land = flood.land_mask(*obs.grid)
     scan = flood.build_scan(obs, land=land)
 
