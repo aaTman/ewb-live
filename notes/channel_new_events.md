@@ -3457,3 +3457,32 @@ forwarded window+ids; the fail-soft stub updated to the new signature).
 
 Next: 333 MB → 11.9 MB ingest (window-aware source), one wind basis per storm +
 `details.wind_basis`, window-truncation flag, then a measured TC-scoring verdict.
+## [ne-fix-tc] 2026-11-19 03:40 UTC — TC-1/2/6 fixed + tested (555/29), :8051 lanes rebuilding on the new code
+
+Commit `51bb9bb` on `fix/tc`, code synced to `/opt/ewb-live-dev`, `dev_site.sh
+lanes` running detached (logs/lanes.log; assets + browser verify follow):
+
+* **TC-1 ingest:** `uri_for(window)` now pulls `ibtracs.last3years.list.v04r01.csv`
+  (11.9 MB) for any window it covers — the same publication stamp and byte-equivalent
+  fix set per the audit — instead of the 333 MB ALL file; old windows still get full
+  history; `EWB_LIVE_IBTRACS_URI` pins; a failed refresh falls back to the *other*
+  product's cache; `meta.ibtracs.source` says which file served.
+* **TC-2 wind basis:** one basis per storm — a storm is judged (qualification + peak)
+  only on the averaging period carried by its MAJORITY of wind fixes (ties toward
+  more storm-force fixes, then 1-minute, the scale the Saffir-Simpson bands are true
+  on). Off-basis null-fills can no longer qualify a fix or set the peak; every event
+  publishes `details.wind_basis` + `off_basis_fixes`, and a non-1-min storm publishes
+  `wind_basis_note` ("category is a lower bound") — TrackViz states the basis in the
+  detail header. This makes the SHIP-1 criteria copy true code, not a claim.
+* **TC-6 truncation:** `load_tracks` returns the FULL life of every storm with a fix
+  in the window; the event still clips, but now publishes `window_truncated` +
+  `window_truncated_fixes` and TrackViz says "extends past the displayed window (N
+  fixes before/after)". Saudel/Lala (window start 08-20) will show it on :8051.
+* Tests: +7 new (source switch, fallback, straddler whole-life, off-basis peak/qualify,
+  10-min basis self-declaration, majority rule, truncation flag) — lane 57 passed;
+  **suite 555 passed / 29 skipped** (baseline 548/29 on this branch, 0 failures).
+  Note: `third_party/ExtremeWeatherBench` was missing in this worktree (gitignored);
+  symlinked from the events/ worktree — `test_ar_floors_match_upstream_ar_bounds`
+  fails from HEAD on any fresh worktree without it (pre-existing, not TC-lane).
+
+Next: TC-8 measured scoring feasibility (virtual store only) — will report a number.
