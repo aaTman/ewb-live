@@ -426,6 +426,7 @@ def load_observations(start: dt.date, end: dt.date, *, root: Any = None,
 
     status = imerg.load_imerg_status(start, end, root=root)
     want = {f"{d:%Y-%m-%d}" for d in dates}
+    served = {f"{d:%Y-%m-%d}": ok for d, ok in zip(dates, present, strict=True)}
     runs: dict[str, str] = {}
     mix: dict[str, int] = {}
     for day, row in status.iterrows():
@@ -434,7 +435,11 @@ def load_observations(start: dt.date, end: dt.date, *, root: Any = None,
             continue
         prod = _run_of(str(row.get("product") or "unknown"), str(row.get("granule") or ""))
         runs[key] = prod
-        mix[prod] = mix.get(prod, 0) + 1
+        # the run mix counts only days that ACTUALLY served data — status.json
+        # lists not-yet-arrived days too, and a resolved label for an absent
+        # day must not masquerade as provenance of observations.
+        if served.get(key):
+            mix[prod] = mix.get(prod, 0) + 1
     present_arr = np.array(present, bool)
     missing = [f"{d:%Y-%m-%d}" for d, ok in zip(dates, present_arr, strict=True)
                if not ok]
