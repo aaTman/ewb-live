@@ -109,7 +109,7 @@ def main() -> int:
                     row = dict(storm=d["name"], model=m, init=str(use_init),
                                lead_h=L, best_kt=near[3],
                                fc_wind_max_kt=round(float(np.nanmax(wsp)), 1),
-                               fc_mslp_min_hpa=round(float(np.nanmin(mslp)), 1),
+                               fc_mslp_min_hpa=round(float(np.nanmin(mslp)) / 100.0, 1),
                                windmax_to_besttrack_km=round(
                                    hav_km((lats[iy], lons[ix]), (near[1], near[2])), 1),
                                mslpmin_to_besttrack_km=round(

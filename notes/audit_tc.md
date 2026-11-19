@@ -120,15 +120,44 @@ unwrapping is `ne-fixes2`'s per the brief). Reported in the channel; I did not
 touch it. Nothing here is a TC-lane defect: TC wrapped bboxes are correct per
 SPEC and TrackViz unwraps them (its own antimeridian test passes).
 
-## 5. Scoring — what is honest without an EWB benchmark (TC-8)
+## 5. Scoring — measured feasibility, not opinion (TC-8)
 
 Today `pipeline.py` marks every TC pair `unsupported` ("no EWB benchmark for
 best-track events") and the tab prints "Not scored — …". That is accurate as the
-code stands, but "no benchmark" ≠ "no verifiable claim": the lane publishes peak
-wind, minimum pressure and a full track, so it can be checked against the
-reanalysis/MLWP fields it is *not* derived from. See the channel entry
-"TC scoring: measured feasibility" for what the virtual store can and cannot
-answer inside the 10-minute command budget, and what I shipped.
+code stands, but "no benchmark" ≠ "no verifiable claim", so the question was
+MEASURED, virtual store only (`notes/tc_score_probe.py`, run on the LXC in the
+dev tree, read-only; report committed at
+`notes/screenshots/tc_score_probe.json`, 2026-11-19):
+
+* **What was probed:** the 3 strongest published storms (Champi, Polo, Lowell),
+  4 archive models (graphcast, aurora, pangu_weather, fourcastnet_v2 — the
+  Icechunk-virtualised CIRA MLWP models; ECMWF-direct models are NOT the
+  virtual store and were excluded per the brief), leads 24/48/72 h, ±5° box on
+  the best-track fix at the valid time: 36 probes, 36 served, no missing inits.
+* **Cost:** median **0.81 s** per read → a full-lane pass is ~44 storms × 4
+  models × 3 leads ≈ 530 reads ≈ **8 min wall** on the box. Cost is not the
+  blocker.
+* **Position is verifiable:** the forecast MSLP-minimum cell sits within 300 km
+  of the best-track position in **32/36** probes (median 156 km; per-model
+  24–72 h table in the JSON). The 10 m wind-maximum cell is NOT a reliable
+  storm centre at 0.25° (median 314–686 km — it chases outer bands); MSLP is
+  the honest position statistic.
+* **Intensity is not verifiable against a 1-min best track at this
+  resolution:** forecast-max wind minus best-track wind is ~−4 kt at 24 h but
+  **−14 … −24 kt** at 48–72 h — the models' 0.25° floors dominate, so any
+  wind-error number would measure the resolution, not the forecast.
+
+**Verdict (documented, per the brief's "…or document why not"):** the smallest
+honest version is a **track-presence check** — per published storm and model:
+"carried this storm at lead L" iff the forecast MSLP-min sits within 300 km of
+a best-track fix at the valid time, published per event as
+`details["archive_check"]`. It is cheap (8 min/week) and honest, but it is a
+**new metric surface**: it is not an EWB benchmark, does not fit the scorecard
+rows schema (owned by the EWB lane), and printing it on the TC tab would imply
+owner sign-off of the metric and its threshold. It was therefore NOT slipped
+into this fix pass; the numbers above are the go/no-go evidence for an owner
+decision. Until that decision, "Not scored — … No EWB benchmark for best-track
+events yet" remains the true statement the UI prints.
 
 ## Fixed in this pass (see DONE entry in `notes/channel_new_events.md`)
 
