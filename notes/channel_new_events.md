@@ -3641,3 +3641,68 @@ owner-gated (no push/PR per brief).
 URL http://192.168.0.121:8051/ (dev tree /opt/ewb-live-dev, service restarted 14:22). Sequence: sync → lanes (pardig cache → detect → 81 viz → flood frames → publish) → assets (publish → timeline → tc_wind). Detect alone took 36 min (full 90-day ERA5 rescans: window rolled to 2026-08-21..2026-11-19, so nothing cache-hit except TC).
 Checked in `meta.json`: `event_counts` heat 15 / freeze 5 / cold_snap 8 / AR 13 / TC 44 / MLC 80 / flood 40; `lane_status.midlat_cyclone` = ok, **rule_rev mlc-v3**, 145 raw tracks→events (window to 2026-11-13, newest end 11-14); `tc_wind.json` **schema 3**, 44 storms; flood 40/40 `data_source.kind=pardig`, newest end **2026-11-19**; `meta.ibtracs.source` = `ibtracs.last3years.list.v04r01.csv`, latest fix 11-17, 49 storms in window / 44 published / 2 live tail / 1 pending (Akvan). `events.json` raw total 1205.
 One non-fatal build error: viz for cold_snap `070121bb3e09` failed (`open_truth_window`: `KeyError time` — event runs to 11-13 but the truth mirror ends 11-10T18 and the HRES-analysis fallback has no such steps); the event is published without a detail viz. Investigating in the e2e/QA pass.
+
+## [integrator2] 2026-11-19 15:50 UTC — DONE (round 2): :8051 republished from `chore/integrate-lane-fixes`; e2e 1F/166P (was 14F/154P); lane fixes F6 + flood fail-soft + dev_site flock + 2 real UI/viz fixes; promotion plan (NOT executed)
+
+**URL http://192.168.0.121:8051/** — tree `/opt/ewb-live-dev`, service restarted, live :8050 never touched. No push, no PR, no promotion. Branch `chore/integrate-lane-fixes` (from `fix/tc` 83593b0).
+
+### Branch proof
+`git merge-base --is-ancestor <tip> HEAD` is true for `aaTman/ne-integration`, `fix/round2-legend-tc-wind`, `fix/mlc`, `fix/flood`, `fix/tc`. No commit unreachable. (There is no local branch named `ne-integration`; it is `aaTman/ne-integration`.)
+
+### Per-lane result on :8051 (window 2026-08-21..2026-11-19, truth cutoff 2026-11-13T23Z)
+| lane | raw | published (tab badge) | newest end | source / rule |
+| --- | --- | --- | --- | --- |
+| heat_wave | 151 | 15 | 2026-11-14 | ERA5 ARCO, footprint/core tracker |
+| freeze | 11 | 5 | 2026-11-08 | ERA5 ARCO (the ≤0 °C-at-all-4-steps patch is NOT in this branch) |
+| cold_snap | 24 | 8 | 2026-11-13 | ERA5 ARCO |
+| atmospheric_river | 92 | 13 (curated 15; the publish gate rejects 2 with peak_land_pixels 453 / 326 < 500) | 2026-11-14 | ERA5 IVT, AR rev v7 |
+| tropical_cyclone | 44 | 44 | 2026-11-17 | IBTrACS `ibtracs.last3years.list.v04r01.csv` (latest fix 11-17, 2.6 d lag; 49 storms / 44 published / 2 live tail / 1 pending Akvan) |
+| midlat_cyclone | 145 | 80 | 2026-11-14 | ERA5 MSLP, **RULE_REV mlc-v3** (`meta.lane_status.midlat_cyclone` ok) |
+| flood | 738 | 40 | **2026-11-19** | **PARDIG**, 40/40 `data_source.kind=pardig`, provisional |
+Total 1 205 raw in `events.json`, 205 published. `tc_wind.json` **schema 3**, 44 storms. Build time: detect 36 min, 81 viz 52 min (the window rolled, so every ERA5 lane re-scanned).
+
+### Fixes (all on the branch, each with a test where testable)
+1. **mlc F6**: lane-status file is rule-tagged (`lane_status_midlat_cyclone_<RULE_REV>.json`). 
+2. **flood fails soft**: a fresh tree without `data/pardig/daily` raised `PardigError` and killed the whole detect. Now `scan_flood_events` catches it → `lane_status.flood = no-data` (or `failed` on any other read error) with a reason, the degraded empty scan is not cached, TC/MLC still run. `tests/test_flood_failsoft.py` (4).
+3. **`ops/dev_site.sh` flock** on the box (`$DEV/logs/.dev_site.lock`): sync (remote rsync runs under it), init, lanes and assets serialise; lanes/assets background chains inherit the lock so a sync cannot swap code under a running build. Verified a second sync/assets while `lanes` ran waited and then reported who held it. Also fixed a quoting bug in the `lanes` heredoc (an apostrophe in `sh -c '...'`) that made `lanes` unusable.
+4. **viz: cold_snap `070121bb3e09`** failed to build (`KeyError time`): `open_truth_window` used the truth mirror because the window ended before the ARCO cutoff, but the mirror ends 11-10T18. Now falls back to the HRES analysis when the window runs past the mirror's last step (`tests/test_truth_window_mirror_gap.py`). Rebuilt that viz + timeline on :8051.
+5. **eventviz: heat 806ecbe64103 observation raster was fully transparent** (task 5, below) — fixed in `dashboard/eventviz.js` (default day), verified on :8051: 60 096 painted px, readout "Valid time 23 Aug".
+
+### Task 5 — the two inconsistencies, root-caused
+* **AR `a9d8ad3af01c` "footprint ~187° vs 51° bbox" is not a data inconsistency.** The viz grid is lon 173..225.5 (52.5°) and the mask fits it; the detail map is a wide, short letterbox (1014×400 px), so a tall event (44° lat) is height-limited and shows 187–212° of longitude at zoom 2.75 with the correct centre. The test assumed width-limited framing. `test_dateline_event_renders_sanely…` and `test_unrecoverable_full_band…` now assert "tight in at least one axis" (`_framed`), not a width budget; both pass.
+* **Heat `806ecbe64103` transparent raster**: the OBS layer paints the trailing-run raster for the "anchor" day = the day with the largest footprint (2026-08-22 = window day 1). Heat paints nothing under a 3-day run, and runs truncate at the window start (this event starts at the window start, `window_start_truncated`), so on day 1 every run is ≤ 2 → nothing paints, though viz.json is dense. Fix: if the anchor day paints no cell, open on the day with the most painted cells. 4 siblings were fine because their largest day was ≥ day 3.
+
+### e2e on :8051 by name (full `tests/e2e`, 449 s): **1 failed / 166 passed / 2 skipped** (round2: 14F/152P; flood: 14F/154P; dev baseline 41F/122P)
+First run gave 41F — 28 of those were my local checkout lacking `data/results/*.json`, which the fixture-server tests copy (environment; the files are untracked); with them copied the real count was 13. Every remaining name, with cause:
+| test | cause | class | action |
+| --- | --- | --- | --- |
+| test_ar_type_color_token_both_themes | pinned pre-chips light `#2e7d32` / interim dark `#76a729`; shipped palette is `#1e7729` / `#75a322` | stale test | pins updated |
+| test_merged_renders_layers…, _box_appears…, _prime_meridian…, _event_tooltip… (4) | fixture server answered 404 for the optional `tc_wind.json` (prod serve.py answers 204) → console error | stale test harness | fixture handler returns 204 |
+| test_open_back_forward | clicks list row 7 = a TC → TrackViz, not an ev3 panel | stale premise (track lanes) | waits for `.ev3-panel` or `.tv-map-wrap` |
+| test_list_row_previews… | asserted live rows == boxes; TC/MLC draw marks | stale premise | boxes ∪ marks, one-directional for marks (below) |
+| test_global_map_opens_on_the_busiest_day | one box per event; 12 of 17 are track lanes, flood has no box | stale premise | counts boxes for footprint lanes, marks for track lanes |
+| test_dateline_event… / test_unrecoverable… | width budget vs letterbox (above) | stale test | `_framed` |
+| test_heat_detail_reference_component | fixed 45°/90° span budget for a 38°×46° event; plus the transparent raster above | ours (viz) + stale test | JS fix + size-relative assertion |
+| test_overlay_layers_single_card_and_controls | the transparent raster above | ours | JS fix |
+| **test_controls_live_in_the_section_they_change** (STILL FAILS) | "map and list share the first screen at 1440×900": events-sec bottom 1052 > 900. Chips grid is 2 rows (108 px vs 29) and the 7-lane legend is 154 px (vs 48) → +185 px vs live | **ours — a design consequence, not a bug**; not weakened | owner decision: accept and raise the test viewport/limit, or compress chips/legend |
+Residual non-test finding: the track layer marks a TC/MLC "live" for its whole day span while the list/active set is 6-hour-step exact, so 2 marks (TC 5e5ce42a239e, MLC 1f492d08bdce) read live on the busiest frame while their rows do not (events start/end inside that day). Cosmetic; the list-row test is one-directional for marks because of it.
+
+### Browser QA (`scripts/integration2_qa.py`, report `notes/screenshots/integration2/qa_report.json`, 60+ shots)
+7 tabs + All × {1440, 390} × {light, dark}: counts All 205 / heat 15 / cold 8 / freeze 5 / AR 13 / flood 40 / TC 44 / MLC 80, **chips 2 rows at 1440, 5 at 390, overflow 0 in all 4 combos, console errors 0 in all 4**; detail for each lane renders (ev3 panel for heat/cold/freeze/AR/flood, TrackViz for TC/MLC). Layers (`layers-*.png`): flood layer on with legend "FLOOD mm/day-equiv 20–50…350+" (`on.l = true`); TC wind field instantaneous (three consecutive 6-h frames paint 7114 / 7123 / 7170 px with different content, readout "Valid time …"); MLC series `#a0312d` (red; 47 marks); dateline AR a9d8ad3af01c draws as 2 split paths (M=2).
+
+### Units: **599 passed / 28 skipped / 0 failed** locally (592 + my 7). `test_ar_floors_match_upstream_ar_bounds` + `test_upstream_consecutive_filter_and_blobs` need `EWB_DATA_PREP_DIR` (no `third_party` in fresh worktrees).
+
+### Open owner decisions
+1. **TC-8**: add the verifiable "track presence" (32/36 within 300 km) archive check as a per-event note — yes/no. Intensity is not verifiable at 0.25° (−14…−24 kt floor).
+2. **Scoring**: TC/MLC/flood stay "Not scored" (TC-8 above; MLC metric definition in audit_mlc F5; flood no benchmark).
+3. **`test_controls_live…` first-screen contract** vs the 2-row chips + 7-lane legend (above).
+4. **AR publish gate** rejects 2 curated ARs (peak_land_pixels < 500): detection/curation should apply the same floor so the tab does not say 15 then show 13.
+5. **freeze ≤0 °C at all four 6-hourly steps** (owner patch) is still only uncommitted in `aaTman/events`; it is NOT in this branch. **`ne-subsets` (e4fd539) stays dev-only** — do not merge it into the promotion line.
+6. **flood ok-status**: `meta.lane_status.flood` appears only after a flood scan (cache-hit builds carry none); harmless (UI reads failed/no-data only).
+
+### Promotion plan (NOT executed)
+1. Merge `chore/integrate-lane-fixes` → `develop` by PR (base `develop`, owner approval first), leaving out `e4fd539`/`ne-subsets`; decide on the `freeze_le0c` patch separately.
+2. On live: `ops/dev_site.sh`-style flocked deploy to `/opt/ewb-live` code only, then the **full `python -m ewb_live.weekly --days 90`** (hours; scores heat/freeze/AR, publishes TC/MLC/flood unscored). A code sync alone shows empty/unscored lanes.
+3. Expect on live: the TC and MLC lanes start drawing marks, the PARDIG flood lane + its cache (`data/pardig`, ~96 days built by `python -m ewb_live.sources.pardig --days 96`), tc_wind schema 3 asset, the 2-row chips; the stale `lane_status_midlat_cyclone.json` is superseded by the rule-tagged name.
+4. Run the e2e against live afterwards; the only expected red is item 3 above.
+— integrator2
