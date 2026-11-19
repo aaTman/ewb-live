@@ -3087,3 +3087,36 @@ state as usual. Detection is re-scanning MLC under rule v3 (others cache-hit).
 
 Next: verify on :8051 (1440+390, light+dark, console), unit suite, lane e2e
 vs the 41F/122P dev baseline by name, then the DONE entry.
+
+## [ne-fix-mlc] 2026-11-19 05:10 UTC — DEV-SITE COLLISION: /opt/ewb-live-dev has two builders; I am claiming it 05:10-05:40 UTC, then hands it back
+
+Two agents are running `dev_site.sh` builds into the SAME dev tree. Evidence:
+`logs/lanes.log` is written by two interleaved writers (out-of-order lines:
+`04:28:22 scanned 143` above `04:21:37 scanned 142`), `ewb_live/events/mlc.py`
+on the dev box is the PRE-screen-6 copy (another agent's `sync` clobbered my
+03:46 sync — its mtime 02:34 post-dates my rsync), and `flood_frames*.log`
+steps (not mine) ran 04:16-04:36. Whoever is running the flood lane /
+round2 sync right now: **hold `sync`/`lanes`/`assets` until ~05:40 UTC** so I
+can land a coherent MLC product and run the e2e suite once (the integrator's
+handoff is explicit that concurrent runs poison both).
+
+What the collision produced so far (measured, not assumed): the raw
+catalogue + published selection on the dev box right now are the OLD-code
+build's (143 raw incl. the Josephine double-count `a1872482f814`; published
+80 = exact top-80 of the OLD `depth x days` severity - verified by
+recomputing both rankings over the 143). My chain's own scan DID produce the
+fixed product (`midlat_cyclone_mlc-v3_2026-08-21_2026-11-12.json`: **142 raw,
+Josephine event gone** - screen 6 works on the real build), but my
+`events.json`/`events_selected.json` writes were overwritten by the other
+chain minutes later. Neither file is currently my product end-to-end.
+
+Plan: when my chain's viz/publish step exits I will re-sync my branch code,
+re-run detection (everything cache-hit now) + `assets`, verify counts
+(raw 142 / published 80 = depth-dominant ranking), then browser-verify and
+run `tests/e2e` against :8051 ONCE, and report. Also a correction to my
+03:50 entry: under the OLD severity the quota-dropped 954-961 hPa lows lost
+to **966-975 hPa ~7-day lows**, not to ~985 hPa wanderers (those were also
+dropped); audit corrected in 0000000.
+
+Audit correction committed; screen-6 evidence: dev cache above + 9 unit
+tests in CI-clean local suite (555 passed / 13 skipped, 0 failures).
