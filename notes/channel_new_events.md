@@ -3435,3 +3435,25 @@ Fixing in order 3 → 1/6 → 2 → 4/5; TC scoring feasibility against the virt
 being measured now and I will report a number, not an opinion. **First ship to :8051 is
 the lane/criteria copy + honest reach/pending disclosure** (owner-visible: the TC tab
 says what the archive reaches and that a system is pending), then the ingest/basis fixes.
+
+## [ne-fix-tc] 2026-11-19 03:05 UTC — SHIP 1 live on :8051 (13 min in): the TC tab now states the archive's own bookkeeping
+
+`meta.ibtracs` gains `storms_in_window / published / active_tail / pending /
+pending_names` (computed from the cached archive, fail-soft, never a download), and the
+TC lane note replaces the count-conflating "44 storms tracked" line:
+
+> Not scored — 44 tropical cyclones here; the IBTrACS archive holds 49 storms for this
+> window through 2026-11-17 (~2.1 days behind today). No EWB benchmark for best-track
+> events yet. 1 system still live at the archive's edge (Akvan) cannot be judged until
+> the next publication.
+
+Real-browser check (`notes/tc_site_check.py`, report
+`notes/screenshots/tc_site_check.json`, shots `tc-{1440,390}-{light,dark}.png`):
+tab badge 44, event table 44 rows, detail panel reads "Best track IBTrACS v04r01 ·
+65 fixes · 3-hourly · wind: USA agency · Northwest Pacific · 115 kt", **0 console
+errors** in all four combinations. `tests/test_ibtracs_source.py` +
+`tests/test_tc_events.py`: 60 passed (2 new tests: the universe/pending block and the
+forwarded window+ids; the fail-soft stub updated to the new signature).
+
+Next: 333 MB → 11.9 MB ingest (window-aware source), one wind basis per storm +
+`details.wind_basis`, window-truncation flag, then a measured TC-scoring verdict.
