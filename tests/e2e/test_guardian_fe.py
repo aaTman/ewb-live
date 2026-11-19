@@ -629,12 +629,27 @@ def _json_get(base, name):
         base + "/data/results/" + name, headers={"User-Agent": "Mozilla/5.0 (e2e)"})))
 
 
-def _wrapped_event(base):
+TRACK_LANES = ("tropical_cyclone", "midlat_cyclone")
+
+
+def _wrapped_events(base):
+    """(box-lane, track-lane) dateline-crossing events, either may be None.
+
+    The suite was written when every wrapped event was a footprint box; since
+    the storm lanes published, the first wrapped event in the set is a TC —
+    and a track lane DELIBERATELY draws no rectangle ("a box around a 3,000 km
+    track is not information"): it paints a mark and a split polyline. Lane-
+    aware means: assert the BOX contract on a box-lane crosser (prefer AR, the
+    one with a detail viz), and the MARK contract plus the no-full-band-degrade
+    rule on a track-lane crosser."""
     sel = _json_get(base, "events_selected.json")
-    for e in (sel["events"] if isinstance(sel, dict) else sel):
-        if e["bbox"][2] > e["bbox"][3]:
-            return e
-    return None
+    evs = sel["events"] if isinstance(sel, dict) else sel
+    wrapped = [e for e in evs if e["bbox"][2] > e["bbox"][3]]
+    box = next((e for e in wrapped if e["event_type"] not in TRACK_LANES
+                and e["event_type"] != "flood"),
+               next((e for e in wrapped if e["event_type"] not in TRACK_LANES), None))
+    track = next((e for e in wrapped if e["event_type"] in TRACK_LANES), None)
+    return box, track
 
 
 def _span(b):
@@ -693,48 +708,104 @@ def _detail_width(page, base, ev_id):
         return b.getEast() - b.getWest(); }""")
 
 
+# what a crossing storm must do on the merged map: paint its MARK, own no box
+# node, and leave the sheet free of any world-wide (>=90 % of the canvas) box
+# path — the no-full-band-degrade rule, asserted for every event, not just its
+# own. (The wind field's own seam behaviour is pinned with synthetic data in
+# tests/e2e/test_trackwind_fe.py; the track unwrap on the detail page in
+# tests/e2e/test_trackviz_fe.py.)
+TRACK_PROBE = r"""(id) => {
+  const W = document.querySelector('#raw-canvas').getBoundingClientRect().width;
+  const band = [...document.querySelectorAll('#gm-boxes .gm-bbox')].filter((p) => {
+    // a legitimate wrapped box is ONE path with two subpaths at opposite map
+    // edges, so max-min across the whole d spans the sheet BY DESIGN; the
+    // degrade is a single subpath almost as wide as the world — check runs
+    const d = p.getAttribute('d') || '';
+    return d.split('Z').slice(0, -1).some((poly) => {
+      const xs = [...poly.matchAll(/[ML](-?\d+\.?\d*) /g)].map((m) => +m[1]);
+      return xs.length && Math.max(...xs) - Math.min(...xs) > 0.9 * W; });
+  }).length;
+  return { mark: !!document.querySelector('#gm-track-marks [data-id="' + id + '"]'),
+           boxes: document.querySelectorAll('#gm-boxes [data-id="' + id + '"] .gm-bbox').length,
+           band };
+}"""
+
+
 def test_dateline_event_renders_sanely_on_every_surface(engine, base):
-    ev = _wrapped_event(base)
-    if not ev:
+    box, track = _wrapped_events(base)
+    if not box and not track:
         pytest.skip("no dateline-crossing event in the current set")
-    true_w = _span(ev["bbox"])
-    ctx, page = _dateline_page(engine, base, ev)
-    r = page.evaluate(DATELINE_PROBE, ev["id"])
-    assert r["node"] and r["bboxD"], r                             # box drawn at the qualification step
-    assert r["bboxD"].count("M") == 2, r                           # wrapped bbox -> split at the seam, not a full-band bar
-    # the two halves sit at opposite map edges, so the group bbox is wide: check the path itself
-    for poly in r["bboxD"].split("Z")[:-1]:
-        px = [float(x) for x in re.findall(r"[ML](-?\d+\.?\d*) ", poly)]
-        assert max(px) - min(px) < 0.4 * r["W"], poly[:120]        # an unsplit run spanned ~80 %
-    w = _detail_width(page, base, ev["id"])
-    assert w < 2 * true_w + 10, (w, true_w)
-    ctx.close()
+    if box:      # the box contract: split at the seam, framed detail page
+        ev = box
+        true_w = _span(ev["bbox"])
+        ctx, page = _dateline_page(engine, base, ev)
+        r = page.evaluate(DATELINE_PROBE, ev["id"])
+        assert r["node"] and r["bboxD"], r                         # box drawn at the qualification step
+        assert r["bboxD"].count("M") == 2, r                       # wrapped bbox -> split, not a full-band bar
+        # the two halves sit at opposite map edges, so the group bbox is wide: check the path itself
+        for poly in r["bboxD"].split("Z")[:-1]:
+            px = [float(x) for x in re.findall(r"[ML](-?\d+\.?\d*) ", poly)]
+            assert max(px) - min(px) < 0.4 * r["W"], poly[:120]    # an unsplit run spanned ~80 %
+        w = _detail_width(page, base, ev["id"])
+        assert w < 2 * true_w + 10, (w, true_w)
+        ctx.close()
+    if track:    # the mark contract: a track lane paints a mark, never a box
+        ctx, page = _dateline_page(engine, base, track)
+        r = page.evaluate(TRACK_PROBE, track["id"])
+        assert r["mark"], f"the crossing storm paints no mark on the merged map: {r}"
+        assert not r["boxes"], "a track lane drew a rectangle — boxes are for footprint lanes"
+        assert not r["band"], "a wrapped bbox degraded into a world-wide band"
+        ctx.close()
 
 
 def test_degenerate_full_band_bbox_is_recovered_from_footprint(engine, base):
     """A producer that records min/max of raw longitudes gives [-180,180]: the world-wide band.
-    The footprint masks in the timeline let the dashboard recover the wrapped box."""
-    ev = _wrapped_event(base)
-    if not ev:
+    The footprint masks in the timeline let the dashboard recover the wrapped box.
+    Track lanes have no footprint to recover from and draw no box either way —
+    for them the same patch must change nothing: mark stays, band stays absent."""
+    box, track = _wrapped_events(base)
+    if not box and not track:
         pytest.skip("no dateline-crossing event in the current set")
-    ctx, page = _dateline_page(engine, base, ev, patch=lambda b: [b[0], b[1], -180.0, 180.0])
-    r = page.evaluate(DATELINE_PROBE, ev["id"])
-    assert r["bbox"][2] > r["bbox"][3], r                           # wrapped again (lon_min > lon_max)
-    assert _span(r["bbox"]) < 2 * _span(ev["bbox"]), r
-    assert r["node"] and r["bboxD"].count("M") == 2, r              # recovered box renders, split at the seam
-    ctx.close()
+    if box:
+        ev = box
+        ctx, page = _dateline_page(engine, base, ev, patch=lambda b: [b[0], b[1], -180.0, 180.0])
+        r = page.evaluate(DATELINE_PROBE, ev["id"])
+        assert r["bbox"][2] > r["bbox"][3], r                      # wrapped again (lon_min > lon_max)
+        assert _span(r["bbox"]) < 2 * _span(ev["bbox"]), r
+        assert r["node"] and r["bboxD"].count("M") == 2, r         # recovered box renders, split at the seam
+        ctx.close()
+    if track:
+        ctx, page = _dateline_page(engine, base, track, patch=lambda b: [b[0], b[1], -180.0, 180.0])
+        r = page.evaluate(TRACK_PROBE, track["id"])
+        assert r["mark"], f"a degraded bbox deleted the storm's mark: {r}"
+        assert not r["boxes"] and not r["band"], r
+        ctx.close()
 
 
 def test_unrecoverable_full_band_bbox_draws_no_band(engine, base):
-    ev = _wrapped_event(base)
-    if not ev:
+    """No footprint to recover from and a world-wide bbox: the map must draw
+    NOTHING for that event — and for a crossing storm, the mark (which comes
+    from the track, not the box) is exactly what must still be there."""
+    box, track = _wrapped_events(base)
+    if not box and not track:
         pytest.skip("no dateline-crossing event in the current set")
-    ctx, page = _dateline_page(engine, base, ev, patch=lambda b: [b[0], b[1], -180.0, 180.0], strip_footprint=True)
-    r = page.evaluate(DATELINE_PROBE, ev["id"])
-    assert not r["node"] and not r["bboxD"], r                       # none on the merged map either
-    w = _detail_width(page, base, ev["id"])
-    assert w < 2 * _span(ev["bbox"]) + 10, w                         # detail still frames the field, not the world
-    ctx.close()
+    if box:
+        ev = box
+        ctx, page = _dateline_page(engine, base, ev,
+                                   patch=lambda b: [b[0], b[1], -180.0, 180.0], strip_footprint=True)
+        r = page.evaluate(DATELINE_PROBE, ev["id"])
+        assert not r["node"] and not r["bboxD"], r                 # none on the merged map either
+        if ev["event_type"] != "flood":      # flood has no detail viz by design
+            w = _detail_width(page, base, ev["id"])
+            assert w < 2 * _span(ev["bbox"]) + 10, w               # detail still frames the field, not the world
+        ctx.close()
+    if track:
+        ctx, page = _dateline_page(engine, base, track,
+                                   patch=lambda b: [b[0], b[1], -180.0, 180.0], strip_footprint=True)
+        r = page.evaluate(TRACK_PROBE, track["id"])
+        assert r["mark"], f"a degraded, unrecoverable bbox deleted the storm's mark: {r}"
+        assert not r["boxes"] and not r["band"], r
+        ctx.close()
 
 
 # --------------------------------------------------------------------------
