@@ -36,9 +36,10 @@ def _day_pair(day: dt.date, root) -> tuple[np.ndarray, np.ndarray] | None:
         return None
     import xarray as xr
     with xr.open_dataset(ip) as ds:
-        cnt = ds.precipitation_cnt.to_numpy()
+        cnt = np.asarray(ds.precipitation_cnt.to_numpy()).squeeze()      # (lat, lon)
         values = np.where(cnt >= imerg.STEPS_PER_DAY,
-                          ds.precipitation.to_numpy().astype("float32"), np.nan)
+                          np.asarray(ds.precipitation.to_numpy()).squeeze().astype("float32"),
+                          np.nan)
         lats = ds.lat.to_numpy()
         lons = ds.lon.to_numpy()
     da = xr.DataArray(values[None], dims=("time", "lat", "lon"),
