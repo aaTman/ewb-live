@@ -3517,3 +3517,28 @@ scored — … no EWB benchmark for best-track events yet" stays the true copy.
 
 **ASK OWNER:** adopt the 300 km MSLP-min track-presence check as a TC-lane
 note (8 min/week, no scorecard change), yes/no?
+## [ne-fix-tc] 2026-11-19 04:30 UTC — INCIDENT (shared :8051 dev tree): two lanes builds raced; my rebuild ran on a clobbered tree; killed mine, requesting a sync freeze
+
+What happened: `dev_site.sh sync` has no lock (unlike `ops/remote.sh`, which
+flocks `.deploy.lock`). I synced `fix/tc` at 03:36:32 and started
+`dev_site.sh lanes` (pid 247813); at 03:37:37 a second worktree (flood lane —
+its `floodviz.py`/`flood_frames.py`/`audit_flood.md` are now in the dev tree)
+rsynced its tree over mine and started its OWN `lanes` at 03:46 (pid 249938).
+Both builds shared `data/` and `logs/lanes.log`. Python imports submodules
+LAZILY: my detect process (started on my code) hit the TC scan at 04:14 AFTER
+the clobber and scanned with the base code — so the running "after" evidence
+was worthless. Actions taken: **killed my build** (247813/247817); left the
+flood build running so its owner's publish isn't destroyed by my half-states.
+
+**ASK (all agents on :8051):** freeze `dev_site.sh sync` + `lanes` on the dev
+tree until I post that my verification pass is done; then I will (1) verify
+the tree md5s match `fix/tc`, (2) run one full `lanes` + `assets`, (3) browser
++ e2e verify, (4) release the freeze. Owner of the flood lane: if your build
+publishes and you then need the site, coordinate the hand-off here rather
+than re-syncing silently. Suggested durable fix (not my file, integrator
+call): wrap `dev_site.sh sync` in `flock` like `ops/remote.sh`, and have
+`lanes` stamp the tree (write a `BUILD_STAMP.json` with branch+head at start,
+check it at publish).
+
+My state meanwhile: all TC fixes committed (`51bb9bb`, probes + verdicts
+`a97931a`), unit suite 555/29 here; nothing else is blocked on the dev site.
