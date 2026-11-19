@@ -170,17 +170,19 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
     # clamped to the last day the store actually serves: the meta window
     # rolls forward daily while IMERG Late lags ~2.5 h–4 months, and a
     # beyond-reach tail chunk (zero fields) would abort the whole build
-    # (imerg._load_fields raises on an empty chunk). Beyond-reach days join
-    # `absent` — no marks on the map for them, which is the honest truth.
+    # (imerg._load_fields raises on an empty chunk). status.json can list
+    # not-yet-arrived days, so the ground truth is the daily/ file inventory.
+    # Beyond-reach days join `absent` — no marks on the map for them, which
+    # is the honest truth.
     store = root / "data" / "imerg"
     end_eff = w_end
-    try:
-        st = imerg.load_imerg_status(start, w_end, root=store)
-        if len(st):
-            last = max(dt.date.fromisoformat(str(d)[:10]) for d in st.index)
-            end_eff = min(w_end, last)
-    except (FileNotFoundError, ValueError):
-        pass                      # no status.json: load_observations reports
+    daily = imerg.daily_dir(store)
+    have = {dt.date.fromisoformat(f[6:10] + "-" + f[10:12] + "-" + f[12:14])
+            for f in (p.name for p in daily.glob("imerg_*.nc"))
+            if len(f) >= 14 and f[6:14].isdigit()}
+    if have:
+        ok = [d for d in have if d <= w_end]
+        end_eff = min(w_end, max(ok)) if ok else start - dt.timedelta(days=1)
     if end_eff < start:
         logger.warning("flood_frames: IMERG store serves no day of %s..%s — "
                        "nothing to build", start, w_end)
