@@ -57,12 +57,16 @@ quota (63 quota-drops, all ids from `curation.json`):
 | sev 3–88 | sev 89–682 |
 | **min MSLP down to 954.3 hPa** | |
 
-The eight deepest quota-drops: 954.3 (48 h), 954.6 (60 h), 955.3 (60 h),
-955.6 (54 h), 959.9 (54 h), 960.1 (54 h), 960.7 (48 h, bomb), 960.7 (66 h) —
-i.e. hurricane-strength extratropical lows dropped while ~985 hPa wanderers
-with ≥9-day lifetimes stay published. A 954 hPa September low is the event
+The eight deepest quota-drops: 954.3 (48 h), 955.6 (54 h), 959.9 (54 h),
+960.1 (54 h), 960.7 (48 h, bomb), 960.7 (66 h), 954.6 (60 h), 955.3 (60 h) —
+hurricane-strength extratropical lows dropped while 966–975 hPa lows with
+longer lifetimes stay (every kept event scored ≥ 89 on the product; the
+deepest drops score 71–84 because 48–60 h lifetimes are only 2–2.5 days).
+A 954 hPa September low is the event
 people remember; the ranking is "arbitrary" in exactly the way the owner
-suspected.
+suspected. (First draft of this line claimed ~985 hPa/10-day wanderers were
+kept — wrong: under the old product they were also dropped, the real
+outvoters are 7-day-class 966–975 hPa lows.)
 
 **Fix:** make depth dominant — `depth² × min(days, 7) × bomb-nudge` — so
 intensity cannot be out-voted by lifetime, and 954 hPa/48 h always outranks

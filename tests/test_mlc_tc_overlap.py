@@ -145,10 +145,11 @@ def _ev(min_mslp, lifetime_h, bomb=False):
 
 def test_depth_beats_lifetime_in_the_quota_ranking():
     monster_2d = _ev(954.3, 48.0)          # the deepest dev quota-drop (F2)
-    wanderer_10d = _ev(980.0, 240.0)
+    wanderer_10d = _ev(980.0, 240.0)       # shallow/long-lived (also dropped
+    # by the old product — the point is depth must never lose to lifetime)
     assert M.severity(monster_2d) > M.severity(wanderer_10d)
-    # ...and every dropped >=961 hPa low outranks the weakest kept profile
-    weakest_kept = _ev(989.0, 240.0)       # sev ~49 under the old formula
+    # ...and every dropped >=961 hPa low outranks a shallow long-lived profile
+    weakest_kept = _ev(989.0, 240.0)
     for deep in (954.3, 959.9, 960.7, 965.0, 970.0, 975.0):
         assert M.severity(_ev(deep, 48.0)) > M.severity(weakest_kept)
 
