@@ -3724,3 +3724,15 @@ Branch `feat/round3-compress-tracks-freeze` (from `chore/integrate-lane-fixes`).
 **D — verification:** full e2e on :8051 (chromium, by name): first run 3F/168P (all fixed: busiest-day + list-row = track rule now also respects the published end; legend height = one-lane strip), final **1F/170P/2S** vs the integrator's 1F/166P: the one failure is `test_region_deep_link_waits_for_lazy_file` (startup race, `window.__debug` undefined at the first poll — passes 3/3 alone and the file 9/9; guarded with `window.__debug &&` in the test); the integrator's open failure (first-screen) is now green. Units 599 P / 28 S / 0 F (EWB_DATA_PREP_DIR set). Browser QA `scripts/integration2_qa.py` -> `notes/screenshots/round3/qa/`: 7 tabs + All x 1440/390 x light/dark, **console errors 0, overflow 0**, detail renders for all lanes; before/after in `before-*`/`after-*-{1440x900,390x844,320x640}-{light,dark}.png` + `before_measure.json`/`after_measure.json`; expanded legend `legend_expanded_1440.png`. 320 px: no horizontal scroll (chips 5 rows, legend 181 px).
 **E — PR-ready:** vs `main` 215 commits / 317 files (53 in code dirs). **There is NO `develop` branch** (local or origin: main, reconcile-live, ci/self-hosted-runner) -> per the PR rule I stopped: owner must say which base. **`ne-subsets` e4fd539 IS reachable** (via ne-coldsnap merge 1816b34) — history not rewritten; `git revert -m 1 e4fd539` tested in a scratch worktree: code reverts cleanly, only notes + `test_mlwp_store_guard.py` conflict (resolution in the plan). Plan: `notes/promotion_plan.md` (contents, live steps incl. full `weekly --days 90`, rollback, risks).
 **Needs the owner:** (1) PR base (no `develop`); (2) subsets handling (revert-on-branch recommended); (3) the older items: TC-8 track-presence check, AR gate 15 vs 13, scoring of TC/MLC/flood; (4) FYI `ewb-live-precipclim.service` is in failed state on the box (the store itself exists).
+
+## [visual-gantt] 2026-11-19 22:58 UTC — started: rebased onto origin/develop, local preview on :8061
+
+Branch `fix/ui-gantt-strip` created from `origin/develop` (b652904). Scope: the Gantt
+time strip under the map (`dashboard/mergedmap.js` `renderGantt()` + `dashboard/styles.css`
+`.timeline` / `#gm-gantt`). Frontend only; no ewb_live/, no ops/, nothing on the box.
+Real results copied READ-ONLY from the box into `data/results/` (gitignored) for the
+local preview; `.venv` synced. Measured the overlap problem on the live snapshot: the
+strip draws all events of a lane on ONE 12 px row, so heat_wave has 7 overlapping pairs
+and atmospheric_river 4 out of 15/12 events — the later bar simply covers the earlier one.
+Next: greedy sub-row packing (cap 3), content-driven SVG height (drop the fixed 62 px),
+measured lane-label column so `Midlat. cyclone`-length labels never clip.
