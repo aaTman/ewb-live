@@ -439,7 +439,9 @@ def test_build_places_the_wind_field_where_the_map_will_paint_it(tmp_path):
     assert storm["best_peak_kt"] == 115.0 and storm["best_category"] == "4"
     assert storm["era_peak_kt"] == 70 and storm["ratio"] == pytest.approx(0.61)
     assert storm["peak_day"] == "2026-08-19"
-    assert {d["d"] for d in storm["days"]} == {"2026-08-19", "2026-08-20"}
+    # schema 3 writes NO entry for a day with no live step grid — the all-zero
+    # day of schema 2 ("a field that draws nothing") is simply absent now
+    assert {d["d"] for d in storm["days"]} == {"2026-08-19"}
 
     d = day_entry(storm, "2026-08-19")
     # rendered at the map's 1° step (step_deg), read at 0.25° (read_deg); the box
@@ -461,9 +463,11 @@ def test_build_places_the_wind_field_where_the_map_will_paint_it(tmp_path):
     # all-zero grid and "nothing to draw" must not both exist)
     assert "2026-08-20" not in {d["d"] for d in storm["days"]}
     # census counts DRAWN cells at the source, per class, summed over the asset's
-    # STEP grids: this blob is a whole-day blob, so it is drawn at each of the
-    # four live steps of the 19th (the map shows one of them per frame)
-    assert doc["census"]["2"] == 4 and doc["census"]["1"] == 0
+    # STEP grids. The blob sits within CORE_DEG of the interpolated centre at 00Z
+    # and 06Z but the centre has moved >2° away by 12Z/18Z and the lone blob is
+    # not seeded — the envelope rule drops it there, so it is drawn in 2 grids.
+    assert step_labels(day_entry(storm, "2026-08-19")) == ["00Z", "06Z"]
+    assert doc["census"]["2"] == 2 and doc["census"]["1"] == 0
     assert doc["bias"] == {**doc["bias"], "ratio_median": 0.61, "n": 1,
                            "ratio_min": 0.61, "ratio_max": 0.61}
     assert doc["days_no_data"] == []
