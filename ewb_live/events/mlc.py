@@ -31,6 +31,13 @@ all gates are on the track, all explainable in the About dialog):
    +/-24 h of a tropical IBTrACS fix, looked back 7 days from genesis. One
    system, one event: when this fires, the ``tc`` lane owns the system, which
    is exactly the post-tropical Philippe -> Ciaran case.
+6. **no tracked-TC overlap** (audit F1, 2026-11-19): reject a track with
+   >= 2 fixes within 500 km and +/-12 h of an IBTrACS fix of *any* nature.
+   Screen 5 is blind to a **post-tropical continuation** — its nearby fixes
+   are ET/SS-nature (discarded there) and its tropical phase can sit outside
+   the lookback; that is how Josephine 2026-10 was published as a separate
+   mid-latitude low (``notes/audit_mlc.md`` F1). The TC track *is* the
+   same-system proof, so the test runs on the whole track, not the genesis.
 
 **Tags, never gates** (``select.py`` ranks with them, the detector does not
 hide events with them): ``bomb`` = the max over any 24 h of dMSL is at most
@@ -82,10 +89,13 @@ from .types import Event, make_event_id, normalize_lon_180
 
 logger = logging.getLogger(__name__)
 
-RULE_REV = "mlc-v2"          # bump when a screen or the mapping changes (cache key)
+RULE_REV = "mlc-v3"          # bump when a screen or the mapping changes (cache key)
 # v1 -> v2 (mlc-fix 2026-11-18): the ARCO reader handed the tracker a rotated
 # longitude axis, so every window scanned 0 events; the tag is bumped so a
 # cached empty scan cannot resurrect under the fix (notes/mlc_fix.md).
+# v2 -> v3 (ne-fix-mlc 2026-11-19): screen 6 (tracked-TC overlap) added and
+# the quota severity re-ranked (audit F1/F2); cached v2 scans must not keep
+# the Josephine double-count or the old pick alive.
 TITLE_LABEL = "Midlatitude Cyclone"
 SOURCE_NAME = "ERA5 MSLP (ARCO), closed-low tracker"
 BBOX_PAD_DEG = 5.0           # same margin as Event.padded / the tc lane
@@ -107,10 +117,15 @@ class QualifyParams:
     tropical_radius_km: float = 500.0
     tropical_window_h: float = 24.0
     tropical_lookback_d: float = 7.0
+    # screen 6 (audit F1): whole-track overlap with an IBTrACS track, any nature
+    overlap_radius_km: float = 500.0
+    overlap_window_h: float = 12.0
+    overlap_min_fixes: int = 2
 
 
 def reject_reason(track: Track, elev_m: float, tropical: bool,
-                  q: QualifyParams = QualifyParams()) -> str | None:
+                  q: QualifyParams = QualifyParams(),
+                  tc_overlap: str | None = None) -> str | None:
     """Why this track is not an event, or None when it qualifies."""
     g_time, g_lat, g_lon, _g_msl = track.genesis
     if not (q.genesis_lat_min <= abs(g_lat) <= q.genesis_lat_max):
@@ -126,6 +141,9 @@ def reject_reason(track: Track, elev_m: float, tropical: bool,
         return f"min MSLP {track.min_mslp:.1f} hPa > {q.max_min_mslp_hPa:.0f} hPa"
     if tropical:
         return f"tropical origin within {q.tropical_radius_km:.0f} km of genesis"
+    if tc_overlap:
+        return (f"same system as tracked TC ({tc_overlap}): >="
+                f"{q.overlap_min_fixes} fixes on its IBTrACS track")
     return None
 
 
@@ -198,9 +216,10 @@ def track_rows(track: Track) -> list[list]:
 
 def track_to_event(track: Track, *, elev_m: float = 0.0, tropical: bool = False,
                    q: QualifyParams = QualifyParams(),
+                   tc_overlap: str | None = None,
                    ) -> tuple[Event | None, str | None]:
     """One stitched track -> (Event, None) or (None, rejection reason)."""
-    reason = reject_reason(track, elev_m, tropical, q)
+    reason = reject_reason(track, elev_m, tropical, q, tc_overlap)
     if reason is not None:
         return None, reason
     lo, hi = core_window(track)
@@ -415,6 +434,68 @@ def tropical_origin_checker(q: QualifyParams = QualifyParams(), *, loader=None):
     return check
 
 
+def tc_overlap_checker(q: QualifyParams = QualifyParams(),
+                       window: tuple | None = None, *, loader=None):
+    """A ``Track -> is-it-the-already-tracked-TC`` test from the tc lane's IBTrACS.
+
+    Screen 6 (audit F1): ``track_to_event(..., tc_overlap=<storm>)`` when at
+    least ``q.overlap_min_fixes`` of the track's fixes lie within
+    ``q.overlap_radius_km`` and +/-``q.overlap_window_h`` of an IBTrACS fix of
+    **any** nature. Unlike the genesis screen this sees ET/SS (post-tropical)
+    fixes and the whole life, not just the first fix — the two blind spots
+    that let Josephine's extratropical continuation publish as its own MLC.
+    ``window`` (datetime pair) is the scan window the fix table is read for;
+    same lazy, fail-soft contract as the genesis screen (no source -> screen
+    off once, with a log line), ``loader`` overrides the source in tests.
+    """
+    if loader is None:
+        try:
+            from ..sources.ibtracs import load_tracks as loader  # noqa: F811
+        except Exception as exc:  # noqa: BLE001 - tc lane absent is not an error
+            logger.info("mlc: no IBTrACS source (%s); TC-overlap screen off", exc)
+            return lambda track: None
+    w0, w1 = window if window else (dt.datetime.now(dt.UTC) - dt.timedelta(days=120),
+                                    dt.datetime.now(dt.UTC))
+    pad = dt.timedelta(hours=q.overlap_window_h + 24)
+
+    state: dict[str, object] = {"loaded": False, "fixes": None}
+
+    def check(track) -> str | None:
+        if not state["loaded"]:
+            state["loaded"] = True
+            try:
+                state["fixes"] = loader(w0 - pad, w1 + pad)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("mlc: IBTrACS read failed (%s); overlap screen off",
+                               exc)
+                state["fixes"] = None
+        fx = state["fixes"]
+        if fx is None or not len(fx):
+            return None
+        t = np.array(track.times, dtype="datetime64[s]")
+        la, lo = np.asarray(track.lat, float), np.asarray(track.lon, float)
+        ft = fx["time"].to_numpy(dtype="datetime64[s]")
+        live = fx["lat"].notna() & fx["lon"].notna() \
+            & (ft >= t.min() - np.timedelta64(int(q.overlap_window_h), "s")) \
+            & (ft <= t.max() + np.timedelta64(int(q.overlap_window_h), "s"))
+        if not live.any():
+            return None
+        sel = fx[live]
+        st = ft[live]
+        d = haversine_km(la[:, None], lo[:, None],
+                         sel["lat"].to_numpy(float)[None, :],
+                         sel["lon"].to_numpy(float)[None, :])
+        dt_s = np.abs(t[:, None].astype("int64") - st[None, :].astype("int64"))
+        near = (d <= q.overlap_radius_km) & (dt_s <= q.overlap_window_h * 3600)
+        if int(near.any(axis=1).sum()) < q.overlap_min_fixes:
+            return None
+        names = {str(n) for n in sel["name"].to_numpy()[near.any(axis=0)]}
+        names.discard("")
+        return ", ".join(sorted(names)) or "unnamed"
+
+    return check
+
+
 # ------------------------------------------------------------------- scan
 def scan_mlc_events(
     start: dt.date, end: dt.date, *,
@@ -423,13 +504,17 @@ def scan_mlc_events(
     fields: tuple[Sequence[dt.datetime], np.ndarray, np.ndarray, np.ndarray] | None = None,
     orography: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
     tropical_check: Callable[[float, float, dt.datetime], bool] | None = None,
+    overlap_check: Callable[[Track], str | None] | None = None,
     lookback_days: float = LOOKBACK_DAYS,
 ) -> list[Event]:
     """``midlat_cyclone`` events with genesis in [start, end].
 
     ``fields`` (times, mslp, lats, lons) and ``orography`` override the ERA5
-    reads — the unit tests hand in a synthetic field; ``tropical_check``
-    overrides the IBTrACS screen the same way. Everything else is the real
+    reads — the unit tests hand in a synthetic field; ``tropical_check`` and
+    ``overlap_check`` override the IBTrACS screens the same way (a synthetic
+    scan leaves the overlap screen OFF unless it is passed explicitly — the
+    production path, ``fields=None``, always gets the real one). Everything
+    else is the real
     thing: ERA5 MSLP streamed from ARCO over ``[start - lookback_days, end]``
     (the look-back is stitching context so a low born the day before the window
     keeps its true genesis), detected, stitched, screened, mapped.
@@ -469,6 +554,12 @@ def scan_mlc_events(
     from ..sources.mlc_era5 import elevation_at
 
     check = tropical_check or tropical_origin_checker(q)
+    if overlap_check is not None:
+        overlap = overlap_check
+    elif fields is None:
+        overlap = tc_overlap_checker(q, window=(t0, t1))
+    else:
+        overlap = None      # synthetic scan without an explicit stub: screen off
     tracks, dupes = dedupe_tracks(res.tracks)
     events: list[Event] = []
     counts: dict[str, int] = {}
@@ -484,7 +575,15 @@ def scan_mlc_events(
         except Exception as exc:  # noqa: BLE001 - the screen must never kill the lane
             logger.warning("mlc: tropical screen failed at %s: %s", g_t, exc)
             trop = False
-        ev, reason = track_to_event(tr, elev_m=zm, tropical=trop, q=q)
+        dup_tc = None
+        if overlap is not None and not trop:    # already rejected; skip the cost
+            try:
+                dup_tc = overlap(tr)
+            except Exception as exc:  # noqa: BLE001 - screen must never kill the lane
+                logger.warning("mlc: TC-overlap screen failed at %s: %s", g_t, exc)
+                dup_tc = None
+        ev, reason = track_to_event(tr, elev_m=zm, tropical=trop, q=q,
+                                    tc_overlap=dup_tc)
         if ev is None:
             key = reason.split("(")[0].split("<")[0].split(">")[0].strip()[:48]
             counts[key] = counts.get(key, 0) + 1
@@ -511,17 +610,19 @@ TOP_N = 30           # a busy 90-day window holds ~20-40 qualifying lows
 
 
 def severity(e: Event) -> float:
-    """Impact-ish ranking for the quota: depth deficit x days alive x bomb.
+    """Impact-ish ranking for the quota: depth deficit squared x clamped days x bomb.
 
     Depth below the 990 hPa floor is the mid-latitude analogue of a hurricane's
-    wind surplus; a bomb gets a 1.5x nudge (it is the event people remember),
-    and nothing here can push a shallow long-lived low above a deep short one
-    by more than that factor.
+    wind surplus and it must DOMINATE (audit F2): the old plain product let a
+    shallow 10-day wanderer outrank a 954 hPa monster and quota-dropped eight
+    lows deeper than 961 hPa in one build. depth^2 x min(days, 7) keeps
+    lifetime as the tie-breaker between equals while intensity can never be
+    outvoted; a bomb keeps its 1.5x nudge (it is the event people remember).
     """
     det = e.details or {}
     depth = max(990.0 - float(det.get("min_mslp_hPa") or 990.0), 0.0)
-    days = max(float(det.get("lifetime_h") or 48.0), 24.0) / 24.0
-    return depth * days * (1.5 if det.get("bomb") else 1.0)
+    days = min(max(float(det.get("lifetime_h") or 48.0), 24.0) / 24.0, 7.0)
+    return depth * depth * days * (1.5 if det.get("bomb") else 1.0)
 
 
 def passes_floor(e: Event, q: QualifyParams = QualifyParams()) -> bool:
