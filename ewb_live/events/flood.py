@@ -370,6 +370,26 @@ class Observations:
         return [d for d, ok in zip(self.dates, self.present, strict=True) if ok]
 
 
+def _run_of(prod: str, granule: str) -> str:
+    """Resolve the concrete IMERG run behind a status row.
+
+    ``status.json`` can carry the selector key ``auto`` instead of a run; the
+    granule name is the ground truth (``3B-DAY-E`` = Early, ``3B-DAY-L`` =
+    Late, plain ``3B-DAY.`` = Final), so the provenance string the UI shows
+    never says "auto" (audit F4).
+    """
+    g = str(granule or "")
+    if "3B-DAY-E" in g or "3B-HHR-E" in g:
+        return "early"
+    if "3B-DAY-L" in g or "3B-HHR-L" in g:
+        return "late"
+    if "3B-DAY." in g or "3B-HHR." in g:
+        return "final"
+    if prod == "auto":
+        return "late"          # auto prefers Late and no granule name to read
+    return prod or "unknown"
+
+
 def load_observations(start: dt.date, end: dt.date, *, root: Any = None,
                       screen: str = "cnt", min_cnt: int = imerg.STEPS_PER_DAY,
                       chunk_days: int = 10, require_all: bool = True,
@@ -412,7 +432,7 @@ def load_observations(start: dt.date, end: dt.date, *, root: Any = None,
         key = f"{dt.date.fromisoformat(str(day)[:10]):%Y-%m-%d}"
         if key not in want:
             continue
-        prod = str(row.get("product") or "unknown")
+        prod = _run_of(str(row.get("product") or "unknown"), str(row.get("granule") or ""))
         runs[key] = prod
         mix[prod] = mix.get(prod, 0) + 1
     present_arr = np.array(present, bool)

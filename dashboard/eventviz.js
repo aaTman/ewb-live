@@ -117,6 +117,10 @@
     // ramp whose black low end read as an opaque slab). Design token: Blues
     // #dbe9f6 → #08306b, domain 250–1000 kg m⁻¹ s⁻¹, alpha 0 below 250.
     ivt: stops(['#dbe9f6', '#c6dbef', '#9ecae1', '#6baed6', '#4292c6', '#2171b5', '#08519c', '#08306b']),
+    /* flood (ne-fix-flood 2026-11-19): Blues ramp, dark = deeper exceedance
+       duration / higher accumulation. The lane's identity colour is
+       --series-flood; this is the field ramp, not the chip colour. */
+    flood: stops(['#f7fbff', '#c6dbef', '#6baed6', '#2171b5', '#08306b']),
   };
   /* cold_snap (owner 2026-11-16) is the freeze rule without the 0 °C cap: the
      same p15 field, so it renders with the freeze ramp/colour until the design
@@ -530,7 +534,8 @@
        blue. The asset drives it: viz.quantile picks the tier and the ramp. */
     const tierQ = !isAR && Number.isFinite(viz.quantile)
       ? Math.round(viz.quantile * 100) : (isFreezeLike(viz.event_type) ? 15 : 85);
-    const tierCSS = isAR ? '' : css(isFreezeLike(viz.event_type) ? '--tier-freeze' : '--tier-heat',
+    const tierCSS = isAR ? '' : css(isFreezeLike(viz.event_type) || viz.event_type === 'flood'
+      ? '--tier-freeze' : '--tier-heat',
       isFreezeLike(viz.event_type) ? '#2171b5' : '#d9663c');
     const tierLabel = 'P' + tierQ;
     const tierLegend = isAR ? null : {
@@ -659,7 +664,8 @@
       if (!ev || !ev.id || !viz.grid) return null;
       const name = viz.event_type === 'heat_wave' ? 'Heatwave'
         : viz.event_type === 'freeze' ? 'Freeze'
-        : viz.event_type === 'cold_snap' ? 'Cold snap' : 'Atmospheric river';
+        : viz.event_type === 'cold_snap' ? 'Cold snap'
+        : viz.event_type === 'flood' ? 'Flood' : 'Atmospheric river';
       let lat = 0, lon = 0, k = 0, anchor = null;
       try {
         let rows = isAR
@@ -1054,8 +1060,18 @@
       const legend = { color: layers.obs ? layers.obs.color : tierLegend.color,
                        label: tierLegend.label, tip: tierLegend.tip };
       const heat = viz.event_type === 'heat_wave';
-      const kindLab = heat ? 'Heat' : isFreezeLike(viz.event_type)
+      const fl = viz.event_type === 'flood';
+      const kindLab = heat ? 'Heat' : fl ? 'Flood' : isFreezeLike(viz.event_type)
         ? (viz.event_type === 'cold_snap' ? 'Cold snap' : 'Freeze') : 'Freeze';
+      if (fl) {
+        const p = viz.obs && viz.obs.series ? viz.obs.series[viz.obs.series.length - 1] : null;
+        obsPanel.setBar('Flood \u2014 days over the P' + tierQ + ' wet-day threshold', legend,
+          'Cells where IMERG rain reaches the ERA5 ' + tierQ + 'th-percentile wet-day threshold AND '
+          + 'the absolute floor (20 mm/day, 50 mm/72 h); darkest = 7+ days. '
+          + (viz.provisional ? viz.provisional_reason + ' ' : '')
+          + (p ? 'Last day: ' + (p.cells || 0) + ' cells, run ' + (p.run || '?') + '.' : ''));
+        return;
+      }
       obsPanel.setBar(kindLab + ' \u2014 days ' + (heat ? '> ' : '< ') + 'P' + tierQ, legend,
         'Consecutive UTC days the cell has exceeded the P' + tierQ + ' climatology at all four ' +
         '6-hourly steps; darkest = ' + (heat ? '14+ days (runs under 3 days are not painted)' : '7+ days') + '.');
@@ -1068,7 +1084,9 @@
     /* duration-vs-observed bars (kept per contract §6): the currently VISIBLE
        model set — same roster the layer list shows as checked */
     function drawDur() {
-      let html = '<div class="ev-dur-title">duration vs observed \u00b7 lead ' + ui.lead + 'h</div>';
+      let html = '<div class="ev-dur-title">' + (leads.length
+        ? 'duration vs observed \u00b7 lead ' + ui.lead + 'h'
+        : 'longest spell inside the event (days)') + '</div>';
       const obsN = viz.obs.max_consec;
       const vals = [{ label: 'observed', n: obsN, c: css('--text-dim', '#5b6478') }];
       Object.keys(layers).forEach(function (k) {
@@ -1138,7 +1156,7 @@
       let timer = null;
       function readout() {
         ro.textContent = 'Valid time ' + fmtDay(viz.window.days[ui.day]) +
-          ' \u00b7 models T+' + (+ui.lead) + ' h';
+          (leads.length ? ' \u00b7 models T+' + (+ui.lead) + ' h' : '');
       }
       function stopPlay() {
         if (!timer) return;
@@ -1176,7 +1194,9 @@
     }
 
     /* ---- build ---- */
-    obsPanel = makePanel({ obs: true, title: 'Observed + model overlays',
+    obsPanel = makePanel({ obs: true,
+      title: viz.obs && viz.obs.series ? 'Observed · GPM IMERG — exceedance days'
+        : 'Observed + model overlays',
       chip: chip ? chip.label : null, chipAt: chip ? chip.at : null });
     rebuildLayers();
     paintAll();

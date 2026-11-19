@@ -657,6 +657,10 @@ def _ar_model_panel(model, anchor, lead, bbox, lats, lons, thr_val):
 def build_event(ev: dict, cutoff: dt.datetime, heat_leads, ar_leads) -> dict:
     if ev["event_type"] in ("heat_wave", "freeze", "cold_snap"):
         return build_heat_freeze(ev, cutoff, heat_leads)
+    if ev["event_type"] == "flood":          # flood lane (ne-fix-flood 2026-11-19)
+        from .floodviz import build_flood
+
+        return build_flood(ev)
     return build_ar(ev, cutoff, ar_leads)
 
 

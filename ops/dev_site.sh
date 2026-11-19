@@ -109,7 +109,7 @@ nohup sh -c '
   echo "=== $(date -u +%FT%TZ) detect"
   python -m ewb_live.pipeline --events-only --days 90 --top-n 15
   echo "=== $(date -u +%FT%TZ) viz"
-  python -m ewb_live.viz --all --force --types heat_wave,freeze,cold_snap,atmospheric_river
+  python -m ewb_live.viz --all --force --types heat_wave,freeze,cold_snap,atmospheric_river,flood
   echo "=== $(date -u +%FT%TZ) publish"
   python -m ewb_live.pipeline --publish-only --days 90
   echo "=== $(date -u +%FT%TZ) done"

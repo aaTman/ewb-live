@@ -42,7 +42,7 @@ def main(argv=None) -> int:
     ap.add_argument("--leads", type=str, default=",".join(str(x) for x in build.HEAT_LEADS_DEFAULT))
     ap.add_argument("--ar-leads", type=str, default=",".join(str(x) for x in build.AR_LEADS_DEFAULT))
     ap.add_argument("--types", type=str,
-                    default="heat_wave,freeze,cold_snap,atmospheric_river")
+                    default="heat_wave,freeze,cold_snap,atmospheric_river,flood")
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
