@@ -7,6 +7,13 @@ storm, the day and the best-track peak in separate rows, and a build that has no
 produced the asset yet must lose the field and keep the tracks — with no JS error
 and no invented shading.
 
+It also covers the STEP contract (owner, 2026-11-19: the field is the INSTANT
+wind of the displayed hour): schema 3 stores one grid per live 6-hourly step and
+a frame paints ONLY its own step's grid — a day whose 00Z step the storm did not
+live through paints nothing at 00Z even when 12Z has a field. And the DATELINE
+contract: a storm whose field straddles ±180 must paint on both edges of the
+sheet, with the hit test answering for the wrapped cells.
+
 It also covers the DISSIPATION contract (owner, 2026-11-18: "make sure the TCs
 dissipate after the storm ends"): a second storm whose life ends at 06Z on 3 Jan
 is shaded at the 00Z step, gone at 06Z — field, cell tooltip and hit test alike —
@@ -64,6 +71,7 @@ BLAT0, BLON0, BNY, BNX = -2.0, -132.0, 25, 25
 BFIX_LAT, BFIX_LON = 10.0, -120.0
 ALIVE_FRAME, DEAD_FRAME = "2026010300", "2026010306"
 ALL_STEPS = ["00Z", "06Z", "12Z", "18Z"]
+ALL_H = [0, 6, 12, 18]
 
 TC = {"id": "tww1", "event_type": "tropical_cyclone", "title": "TC Fieldwide (e2e)",
       "start": "2026-01-02T00:00:00", "end": "2026-01-05T00:00:00",
@@ -90,6 +98,25 @@ FADE = {"id": "tww2", "event_type": "tropical_cyclone", "title": "TC Fadeaway (e
                     "min_pressure_hpa": 988.0,
                     "ongoing": False, "track_crosses_antimeridian": False}}
 
+# SEAM crosses the antimeridian on 2 Jan (fixes 175 E → 177 W), so its window's
+# columns run RAW PAST +180: lon0 = 172, 25 columns reach 196, and every column
+# past 180 belongs on the LEFT edge of the sheet. The grid is a plain 45 kt
+# rectangle (the producer would mask it; here the mask is the producer's own
+# unit-test problem) whose only job is to put field cells on both sides of the
+# seam at once — the client must split them, not skip them, not smear a band.
+SEAM = {"id": "tww3", "event_type": "tropical_cyclone", "title": "TC Seamcrosser (e2e)",
+        "start": "2026-01-02T00:00:00", "end": "2026-01-03T00:00:00",
+        "peak_value": 65.0, "bbox": [19.0, 21.0, 175.0, -177.0],
+        "details": {"track": [["2026-01-02T00:00:00Z", 20.0, 175.0, 60.0, 985.0],
+                              ["2026-01-02T06:00:00Z", 20.0, 177.0, 65.0, 980.0],
+                              ["2026-01-02T12:00:00Z", 20.0, -179.0, 62.0, 983.0],
+                              ["2026-01-02T18:00:00Z", 20.0, -177.0, 55.0, 990.0]],
+                    "intensity_units": "kt", "fix_step_h": 6, "name": "Seamcrosser",
+                    "basin_name": "WP", "peak_wind_kt": 65.0, "peak_category": "1",
+                    "min_pressure_hpa": 980.0,
+                    "ongoing": False, "track_crosses_antimeridian": True}}
+SLAT0, SLON0, SNY, SNX = 14.0, 172.0, 13, 25          # columns 172…196 (raw)
+
 
 def _field():
     """Storm force inside R34 (a large cyclone) with a CAT 1 core at the centre,
@@ -105,21 +132,32 @@ def _field():
     return g
 
 
+def _grids(g, hours, ny, nx):
+    """One day entry's step grids, exactly as the producer writes them: the SAME
+    rle at every requested hour, geometry shared by the whole day."""
+    r = TW.rle_grid(g)
+    return [{"h": h, "label": f"{h:02d}Z", "max_kt": int(g.max()), "rle": r}
+            for h in hours]
+
+
 def _wind_doc():
-    """The asset exactly as tc_wind.py writes it (schema 2): the class scale, the
+    """The asset exactly as tc_wind.py writes it (schema 3): the class scale, the
     measured bias, the dissipation rule as data, and per storm a `life` window
-    plus one grid per UTC day carrying the `steps` that made it."""
-    fa, fb = _field(), _field_fade()
-    census = {"1": int((fa == 45).sum() + int((fb == 45).sum())),
-              "2": int((fa == 70).sum()), "3": 0, "4": 0, "5": 0, "6": 0}
+    plus ONE GRID PER LIVE 6-HOURLY STEP grouped by UTC day."""
+    fa, fb, fs = _field(), _field_fade(), _field_seam()
+    # cells per class summed over the STEP grids each storm actually carries:
+    # TC 9 grids (4+4+1), FADE 5 (4+1), SEAM 4 — the producer's census, honestly
+    census = {"1": int((fa == 45).sum()) * 9 + int((fb == 45).sum()) * 5
+                  + int((fs == 45).sum()) * 4,
+              "2": int((fa == 70).sum()) * 9, "3": 0, "4": 0, "5": 0, "6": 0}
     life = lambda ev: {                                  # noqa: E731
         "birth": ev["start"] + "Z", "death": ev["end"] + "Z",
         "last_fix": ev["details"]["track"][-2][0],       # the ET tail is not life
         "first_fix": ev["details"]["track"][0][0],
         "ongoing": ev["details"]["ongoing"], "alive_steps": 0}
-    return {"schema": 2, "lane": "tropical_cyclone",
+    return {"schema": 3, "lane": "tropical_cyclone",
             "source": "ERA5 10 m wind (10m_u/v_component_of_wind), ERA5 ARCO 0.25°, "
-                      "00/06/12/18Z, max over the steps a storm was alive",
+                      "00/06/12/18Z), the one 6-hourly step the map is showing",
             "cadence_h": 6, "step_deg": 1.0, "read_deg": 0.25, "half_deg": 5.0,
             "floor_kt": 34.0, "units": "kt", "classes": TW.CLASSES,
             "dissipation": {"window": "the lane's event window: first to last "
@@ -135,22 +173,33 @@ def _wind_doc():
                 {"id": TC["id"], "title": TC["title"], "name": "Fieldwide",
                  "best_peak_kt": 70.0, "best_category": "1", "era_peak_kt": 70,
                  "ratio": 1.0, "life": life(TC),
-                 # one grid per UTC day of the storm's life, as the producer writes
-                 # it, so whichever frame the map opens on, that day exists
-                 "days": [{"d": d, "max_kt": 70, "steps": ALL_STEPS,
+                 # one entry per UTC day of the storm's life; 2/3 Jan hold all
+                 # four step grids, 4 Jan holds ONLY the 12Z one — the frame↔step
+                 # contract test paints it at 12Z and nothing at 00Z/06Z
+                 "days": [{"d": d, "max_kt": 70,
                            "lat0": LAT0, "lon0": LON0, "ny": NY, "nx": NX,
-                           "rle": TW.rle_grid(fa)} for d in DAYS]},
+                           "grids": _grids(fa, ALL_H if d != "2026-01-04" else [12],
+                                           NY, NX)} for d in DAYS]},
                 {"id": FADE["id"], "title": FADE["title"], "name": "Fadeaway",
                  "best_peak_kt": 60.0, "best_category": "TS", "era_peak_kt": 45,
                  "ratio": 0.75, "life": life(FADE),
-                 # 3 Jan holds ONE step (00Z): the storm's life ends at 06Z, so the
-                 # day is only half its own — the map must not shade it after that
-                 "days": [{"d": "2026-01-02", "max_kt": 45, "steps": ALL_STEPS,
+                 # 3 Jan holds ONE grid (00Z): the storm's life ends at 06Z, so
+                 # the day carries only the hour it lived — no 06Z grid exists to
+                 # linger at the dead frame
+                 "days": [{"d": "2026-01-02", "max_kt": 45,
                            "lat0": BLAT0, "lon0": BLON0, "ny": BNY, "nx": BNX,
-                           "rle": TW.rle_grid(fb)},
-                          {"d": "2026-01-03", "max_kt": 45, "steps": ["00Z"],
+                           "grids": _grids(fb, ALL_H, BNY, BNX)},
+                          {"d": "2026-01-03", "max_kt": 45,
                            "lat0": BLAT0, "lon0": BLON0, "ny": BNY, "nx": BNX,
-                           "rle": TW.rle_grid(fb)}]}]}
+                           "grids": _grids(fb, [0], BNY, BNX)}]},
+                {"id": SEAM["id"], "title": SEAM["title"], "name": "Seamcrosser",
+                 "best_peak_kt": 65.0, "best_category": "1", "era_peak_kt": 45,
+                 "ratio": 0.7, "life": life(SEAM),
+                 # the window crosses +180 as RAW columns (lon0=172, 25 columns):
+                 # the client wraps every past-180 column to the opposite edge
+                 "days": [{"d": "2026-01-02", "max_kt": 45,
+                           "lat0": SLAT0, "lon0": SLON0, "ny": SNY, "nx": SNX,
+                           "grids": _grids(fs, ALL_H, SNY, SNX)}]}]}
 
 
 def _field_fade():
@@ -160,6 +209,13 @@ def _field_fade():
     return np.full((BNY, BNX), 45, np.uint8)
 
 
+def _field_seam():
+    """Seamcrosser's whole window at tropical-storm force: columns 172…196 raw,
+    so the last 17 columns wrap to the far edge and a painted seam is plain to
+    see (and hit-test) at both ends of the sheet."""
+    return np.full((SNY, SNX), 45, np.uint8)
+
+
 def _fixture(tmpdir, with_wind=True):
     """The global-design fixture (raw_exceedance + timeline, so the merged map
     mounts), plus the two cyclone TRACK entries on the timeline and — unless asked
@@ -167,14 +223,14 @@ def _fixture(tmpdir, with_wind=True):
     root = _build_gd_fixture(str(tmpdir), raw_frames=FRAMES, raw_cutoff=FRAMES[-1])
     out = os.path.join(root, "data", "results")
     tl = json.load(open(os.path.join(out, "global_timeline.json")))
-    for spec in (TC, FADE):
+    for spec in (TC, FADE, SEAM):
         entry = TL._track_entry(spec)
         assert entry and entry["track"]["fixes"][0][0] == "2026010200"
         tl["events"].append(entry)
     json.dump(tl, open(os.path.join(out, "global_timeline.json"), "w"))
     sel = os.path.join(out, "events_selected.json")
     evs = json.load(open(sel)) if os.path.exists(sel) else []
-    evs += [dict(TC), dict(FADE)]
+    evs += [dict(TC), dict(FADE), dict(SEAM)]
     json.dump(evs, open(sel, "w"))
     if with_wind:
         json.dump(_wind_doc(), open(os.path.join(out, "tc_wind.json"), "w"))
@@ -285,8 +341,10 @@ def test_legend_names_the_field_and_says_it_under_reads(pw, wind_server):
     g = pg.locator('#gm-legend .lg-group[data-track="tropical_cyclone"]')
     assert g.count() == 1
     assert "ERA5 10 m wind" in g.locator(".lg-unit").inner_text()
+    assert "displayed hour" in g.locator(".lg-unit").inner_text()
     assert "under-reads" in g.locator(".lg-unit").inner_text()
     assert "under-reads" in g.get_attribute("title")
+    assert "not a maximum" in g.get_attribute("title")   # instantaneous, in words
     labs = pg.eval_on_selector_all(
         '#gm-legend .lg-group[data-track="tropical_cyclone"] .lg-bin',
         "els => els.map(e => e.querySelector('.lg-t').textContent)")
@@ -324,6 +382,11 @@ def test_hover_answers_with_the_field_and_the_best_track(pw, wind_server):
     assert "best-track peak" in tip, tip          # the two numbers stay separate
     assert "Fieldwide" in tip, tip
     assert "never the official category" in tip, tip
+    assert "instantaneous" in tip, tip            # the row the owner asked for
+    # the hour row names the frame's OWN step (date + step label of this frame)
+    why = pg.evaluate("() => window.EwbTracks._why(10, 10)")
+    assert why["date"] in tip, (tip, why)
+    assert f"{why['hour']:02d}Z" in tip, (tip, why)
     pg.mouse.move(5, 5)                            # and gives the tooltip back
     pg.wait_for_timeout(250)
     assert pg.evaluate("() => document.querySelector('#tooltip').classList.contains('hidden')")
@@ -438,6 +501,71 @@ def test_the_wind_field_dissipates_when_the_storm_ends(pw, wind_server):
     _goto(pg, ALIVE_FRAME)
     assert _probe(pg, *corner)["hit"]["id"] == FADE["id"]
     assert abs(_violet(pg)["n"] - n_alive) <= 3
+    assert not pg.errors, pg.errors
+    pg.close(); b.close()
+
+
+def test_a_frame_paints_only_its_own_step_grid(pw, wind_server):
+    """Schema 3 (owner, 2026-11-19: "instantaneous 10 m wind at the displayed
+    hour, NOT the daily max"): Fieldwide's 4 Jan carries ONLY a 12Z grid. The
+    00Z frame — with the storm very much alive — must draw and answer nothing;
+    the 12Z frame draws and answers everything. A day entry existing is no
+    longer the same thing as a frame having a field."""
+    b = pw.chromium.launch()
+    pg = _open(b, wind_server)
+    corner = (FIX_LAT + 3, FIX_LON + 4)           # a cell of Fieldwide's field
+    _goto(pg, "2026010400")
+    life = pg.evaluate("(i) => window.EwbTracks._life(i)", TC["id"])
+    assert life["alive"] is True and life["field"] is False, life
+    assert _probe(pg, *corner)["hit"] is None
+    n_empty = _violet(pg)["n"]
+
+    _goto(pg, "2026010412")
+    life = pg.evaluate("(i) => window.EwbTracks._life(i)", TC["id"])
+    assert life["alive"] is True and life["field"] is True, life
+    hit = _probe(pg, *corner)["hit"]
+    assert hit and hit["id"] == TC["id"] and hit["kt"] >= 34, hit
+    assert _violet(pg)["n"] > n_empty + 30, "the 12Z step painted no more than the empty 00Z"
+    why = pg.evaluate("(p) => window.EwbTracks._why(p[0], p[1])", [10, 10])
+    assert why["date"] == "2026-01-04" and why["hour"] == 12 and why["fields"] >= 1, why
+    assert not pg.errors, pg.errors
+    pg.close(); b.close()
+
+
+def test_a_crossing_field_paints_both_sides_of_the_seam(pw, wind_server):
+    """The dateline contract on the wind field: Seamcrosser's window columns run
+    RAW past +180, so the wrapped columns must paint at the LEFT edge (the only
+    place lon 180…196 can live), the raw ones at the right edge, and the hit
+    test must answer for the wrapped cells — nothing skipped, no full-band
+    smear across the middle of the sheet."""
+    b = pw.chromium.launch()
+    pg = _open(b, wind_server)
+    _goto(pg, "2026010212")                       # alive all of 2 Jan
+    witha = _violet(pg)
+    assert witha["dbg"]["wind"] is True
+    blocked_pg = _open(b, wind_server, block_asset=True)
+    _goto(blocked_pg, "2026010212")               # SAME frame: the diff is the field
+    blocked = _violet(blocked_pg)
+    blocked_pg.close()
+    canvas_w = witha["rect"][2]
+    edge = 0.10 * canvas_w
+    extra = set(witha["pts"]) - set(blocked["pts"])
+    left = sum(1 for p in extra if int(p.split(",")[0]) < edge)
+    right = sum(1 for p in extra if int(p.split(",")[0]) > canvas_w - edge)
+    assert left > 50, f"wrapped columns painted {left} px at the left edge"
+    assert right > 50, f"raw columns painted {right} px at the right edge"
+    # the middle of the sheet (lon ≈ -54…+54) holds NO test field: a full-band
+    # degrade (or a smear) would light it up — it must stay pixel-identical
+    mid = sum(1 for p in extra
+              if 0.35 * canvas_w < int(p.split(",")[0]) < 0.65 * canvas_w)
+    assert mid == 0, f"{mid} extra px in the empty middle — the band did not split"
+    # the wrapped cells hit-test on the left: lon -172 (= raw 188, column 16)
+    hit = _probe(pg, 20.0, -172.0)
+    assert hit["hit"] and hit["hit"]["id"] == SEAM["id"], hit
+    assert hit["hit"]["kt"] >= 34
+    # and the raw ones on the right: lon 174 (column 2)
+    hit2 = _probe(pg, 20.0, 174.0)
+    assert hit2["hit"] and hit2["hit"]["id"] == SEAM["id"], hit2
     assert not pg.errors, pg.errors
     pg.close(); b.close()
 
