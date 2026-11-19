@@ -117,3 +117,22 @@ Revisit only if the owner asks for a specific metric definition.
 1. F1 screen (code + unit test + rebuild) — correctness of the published set.
 2. F2 severity (code + unit test) — correctness of *which* 80.
 3. F3/F4/F5: documentation as above; no code.
+
+## Addendum (2026-11-19 07:2x) — two operational gaps found during the fix, neither a lane defect
+
+* **F6, lane-status file is not rule-tagged.** `detect_events` persists one
+  `lane_status_midlat_cyclone.json` per lane (no `RULE_REV` tag, unlike the
+  scan cache), so a concurrent old-code build's status overwrote mine and the
+  published `meta.lane_status` said `mlc-v2 / 143 events` under a v3 product.
+  Diagnostic-only; fixed in my window by deleting the file and re-scanning.
+  Follow-up for the integrator: tag the status file with the lane's rule rev
+  (one-line change in `events/__init__.py::_status_path`).
+* **F7, shared `/opt/ewb-live-dev` is last-writer-wins on BOTH code and
+  data.** Three agents synced/built during this work; the final 07:11 rebuild
+  (flood-map tree, which forked before `fix/mlc`) cache-hit `mlc-v2` and
+  republished the Josephine double-count + v2 quota ranking. Nothing here is
+  lost — `midlat_cyclone_mlc-v3_2026-08-21_2026-11-12.json` (142 events, no
+  double-count) is the scan of the fixed detector — but the shared site keeps
+  the fixed product only once `fix/mlc` is merged into whatever tree the
+  builders rebase on. Owners of other dev-site branches: rebase on
+  `fix/mlc` (or `aaTman/ne-integration` once it carries these two commits).

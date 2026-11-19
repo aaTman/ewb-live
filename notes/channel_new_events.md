@@ -3120,3 +3120,68 @@ dropped); audit corrected in 0000000.
 
 Audit correction committed; screen-6 evidence: dev cache above + 9 unit
 tests in CI-clean local suite (555 passed / 13 skipped, 0 failures).
+
+## [ne-fix-mlc] 2026-11-19 07:30 UTC — DONE: MLC lane fixed (TC double-count + quota ranking), source reach confirmed; verified on :8051 before the shared tree was re-clobbered
+
+**What changed** (branch `fix/mlc`, rebased onto `fix/round2-legend-tc-wind`
+per orchestrator 06:0x — carries 61bbd68 + 518ad32; NO push, NO PR):
+- `22c0aba` + `658ec57` `notes/audit_mlc.md` — the lane audit (F1..F7),
+  independent-reference evidence throughout.
+- `bc58298` `ewb_live/events/mlc.py` (+ `tests/test_mlc_tc_overlap.py`, 9
+  tests): **screen 6** `tc_overlap_checker` — reject an MLC track with >=2
+  fixes within 500 km / +/-12 h of ANY-nature IBTrACS fix (whole track, not
+  genesis; the old genesis screen was structurally blind to post-tropical
+  continuations). `RULE_REV` -> `mlc-v3`. **Quota severity** ->
+  `depth^2 x min(days,7) x bomb`: depth can no longer be outvoted by
+  lifetime. Touches ONLY `ewb_live/events/mlc.py`; dateline / viz / tc_wind /
+  colours untouched (round2 branch owns those and my branch now sits on it).
+
+**Before/after on real 90-day data** (dev box, window 2026-08-21..11-12):
+- raw catalogue **143 -> 142**: `a1872482f814` (2026-10-21..24, 983 hPa,
+  21/28 fixes on Hurricane Josephine's ET/SS IBTrACS track) is now rejected
+  by the detector itself, not just accidentally by the quota. Whole-window
+  sweep: it was the ONLY TC double-count among the 143 (audit F1).
+- published 80 = exactly the new top-80 (verified `set == v3-top80`):
+  shallow/long-lived lows at the old bottom of the list give way to the deep
+  half of the catalogue; e.g. 954.6/60 h, 955.3/60 h, 955.6/54 h and the
+  960.7/48 h bomb — all quota-victims under the old ranking (audit F2, with
+  one correction to my 03:50 entry) — publish now. Deepest published 912.2.
+- data-stop 2026-11-13 **confirmed source reach**: ARCO MSLP last real frame
+  2026-11-12T18Z (all-NaN tail probed frame-by-frame, audit F3). Scoring:
+  honest "Not scored" stays, reasons documented in audit F5 (owner metric
+  definition would be needed to do otherwise).
+- fragmentation 2/143 near-twin pairs: recorded, deliberately not fixed (F4).
+
+**Verification** (my window on :8051, ~05:40-06:30 UTC, tree = rebased
+fix/mlc + data = my v3 build): tab badge Midlat. cyclone **80**, 202 total;
+`meta.lane_status.midlat_cyclone = mlc-v3 / 142 / ok`; MLC event detail
+renders TrackViz; 430 px light+dark horizontal overflow **0** (round2 wrap
+fix intact); `scripts/dev_review_shots.py` full pass — **"no console
+errors"** across all tabs x desktop/phone x light/dark (report committed).
+Units: **560 passed / 13 skipped / 0 failed** locally (546 -> 560 = my 9 new
+tests + round2's 5). E2e full suite vs the 41F/122P dev baseline **by name**:
+**40 failed / 125 passed / 2 skipped**; 38 of the 40 names are baseline
+members; `test_axe_zero_violations` + `test_degenerate_full_band_bbox…` are
+GONE (round2's fixes, now in my tree). The 2 extra names
+(`test_overlay_layers_single_card_and_controls`,
+`test_type_filter_narrows_map_list_and_scorecard_together`) are NOT mine:
+the flood-map agent's 4th raw layer (`9c0c266`, LAYERS key `l`) arrived on
+the shared site mid-window and those two dashboard tests still hard-code the
+3-layer state (`{'h','f','a'}` exact-match) — I measured the 4-key `on` map
+from `MergedMap._dbg()` directly. They need the flood-map agent's test sync
+(their commit does not touch `tests/e2e`).
+
+**The shared dev tree is now on the OTHER builder's code again** (06:31 sync
++ 07:11 rebuild, from a tree forked before `fix/mlc`: raw back to 143,
+ranking back to v2-top80 — measured). This is the third time today; audit
+F6/F7 spell out the two gaps (lane-status not rule-tagged;
+last-writer-wins shared tree). My scan cache `midlat_cyclone_mlc-v3_…json`
+(142, no double-count) survives on the box and re-publishes automatically
+for any tree that carries `RULE_REV = mlc-v3`. **Every dev-site builder:
+rebase your branch onto `fix/mlc` (or wait for the integrator merge), and
+please don't run `--events-only` on a pre-v3 `mlc.py` against the shared
+tree — it republishes the Josephine double-count.**
+
+Needs owner/integrator: merge `fix/mlc` into the integration line; F6
+one-line status-tag fix; the two stale dashboard e2e tests (flood-map
+layer); the two owner decisions in audit F5 (MLC scoring) if they want it.
