@@ -173,7 +173,8 @@ def land() -> np.ndarray:
 
 def scan(store, clim, land, *, start=DAYS[0], end=DAYS[-1], **kw) -> F.FloodScan:
     obs = F.load_observations(start - dt.timedelta(days=F.TRACKED_LOOKBACK_DAYS),
-                              end, root=store, src_deg=SRC_DEG, dst_deg=DST_DEG)
+                              end, root=store, src_deg=SRC_DEG, dst_deg=DST_DEG,
+                              source="imerg")
     return F.build_scan(obs, store=clim, land=land, **kw)
 
 
@@ -392,7 +393,8 @@ def test_missing_day_is_dropped_and_never_read_as_dry(tmp_path, clim, land):
             continue                                   # no granule at all
         write_daily(root, d, field(value=2.0, blob=BLOB if i in RAIN_DAYS else None))
     obs = F.load_observations(DAYS[0] - dt.timedelta(days=F.TRACKED_LOOKBACK_DAYS),
-                              DAYS[-1], root=root, src_deg=SRC_DEG, dst_deg=DST_DEG)
+                              DAYS[-1], root=root, src_deg=SRC_DEG, dst_deg=DST_DEG,
+                              source="imerg")
     s = F.build_scan(obs, store=clim, land=land)
     assert DAYS[2] in s.dates                          # the calendar is complete...
     assert DAYS[2] not in s.observed_dates             # ...the data is not
@@ -526,10 +528,11 @@ def test_flood_params_are_a_documented_shrink_from_the_temperature_lane():
 
 def test_scan_window_does_not_publish_events_outside_it(store, clim, land):
     events = F.scan_flood_events(DAYS[3], DAYS[-1], root=store, store=clim,
-                                 land=land, src_deg=SRC_DEG, dst_deg=DST_DEG)
+                                 land=land, src_deg=SRC_DEG, dst_deg=DST_DEG,
+                                 source="imerg")
     assert events and all(e.end.date() > DAYS[3] for e in events)
     dry = F.scan_flood_events(DAYS[7], DAYS[8], root=store, store=clim, land=land,
-                              src_deg=SRC_DEG, dst_deg=DST_DEG)
+                              src_deg=SRC_DEG, dst_deg=DST_DEG, source="imerg")
     assert dry == []
 
 
@@ -560,7 +563,7 @@ def test_detect_events_routes_flood_and_does_not_clamp_it(monkeypatch, tmp_path)
 
 def test_daily_summary_reports_areas_and_runs(store, clim, land):
     obs = F.load_observations(DAYS[0], DAYS[-1], root=store, src_deg=SRC_DEG,
-                              dst_deg=DST_DEG)
+                              dst_deg=DST_DEG, source="imerg")
     s = F.build_scan(obs, store=clim, land=land)
     rows = F.daily_summary(obs, s)
     wet = [r for r in rows if r["cells"]]

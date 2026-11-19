@@ -55,7 +55,7 @@
     // accumulation. Not bit-packed .bin planes: IMERG is a DAILY product,
     // so the grid is constant across the four frames of its UTC day.
     { key: 'l', name: 'flood',  label: 'Flood — mm/day-equiv', ramp: true, bins: 5, min: 1,
-      tip: 'GPM IMERG rain over the detector rule: daily >= the ERA5 P95 wet-day threshold AND >= 20 mm, OR trailing 72 h >= P95 AND >= 50 mm (land only, fully observed cells only). Shaded by the mm/day-equivalent accumulation max(daily, 72 h total / 3): 20-50, 50-100, 100-200, 200-350, >=350. Cells that qualify only through the 72 h rule ride the lightest stop. One frame per UTC day (IMERG is daily); blank where a granule is missing, and Early/Late-run days are provisional until Final settles.' },
+      tip: 'Precipitation over the detector rule: daily >= the ERA5 P95 wet-day threshold AND >= 20 mm, OR trailing 72 h >= P95 AND >= 50 mm (land only, fully observed cells only). Shaded by the mm/day-equivalent accumulation max(daily, 72 h total / 3): 20-50, 50-100, 100-200, 200-350, >=350. Cells that qualify only through the 72 h rule ride the lightest stop. One frame per UTC day (the rain product is daily); blank where the source has no day. The index (raw.flood.tip) restates the actual build source — Google PARDIG AI estimate (CC BY 4.0) or GPM IMERG.' },
   ];
   // bin opacities: ONE constant alpha per lane (all lanes 200) — the ramps'
   // lightness carries the scale (light theme: even L* steps, darker = more
@@ -1121,8 +1121,9 @@
           stops.push(legStop(`var(--series-${L.name})`, M.flat, M.flatTip, !!n && live === 0));
         }
         const none = !!n && live === 0;
+        const tip = (L.key === 'l' && raw && raw.flood && raw.flood.tip) || L.tip || M.name;
         groups.push(`<span class="lg-group${none ? ' none' : ''}" data-layer="${L.key}"`
-          + ` title="${L.tip || M.name}">`
+          + ` title="${tip}">`
           + `<span class="lg-head"><span class="lg-name">${M.name}</span>`
           + `<span class="lg-unit">${M.unit}</span>`
           + (none ? '<span class="lg-none">none in view</span>' : '') + '</span>'

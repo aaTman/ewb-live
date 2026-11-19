@@ -196,7 +196,7 @@
     </div>
     <div class="table-wrap tall">
       <table id="event-table">
-        <thead><tr><th><span class="sr-only">Type</span></th><th>Event</th><th class="num" title="Heat/freeze/cold snap: ERA5 daily-mean 2 m temperature at the peak day. Atmospheric river: peak IVT. Tropical cyclone: peak sustained wind (kt). Flood: IMERG trailing 72 h accumulation (mm).">Peak</th></tr></thead>
+        <thead><tr><th><span class="sr-only">Type</span></th><th>Event</th><th class="num" title="Heat/freeze/cold snap: ERA5 daily-mean 2 m temperature at the peak day. Atmospheric river: peak IVT. Tropical cyclone: peak sustained wind (kt). Flood: trailing 72 h precipitation accumulation (mm) from the lane's rain source (AI-estimated Google PARDIG, or GPM IMERG on fallback builds).">Peak</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -315,17 +315,21 @@
       tropical cyclone. Peak value is the lowest central pressure; a <b>bomb</b> tag marks
       a fall of ≥24&nbsp;hPa in 24&nbsp;h at 60° latitude. Tracked from ERA5, so this lane
       has no model scorecard yet — it is drawn as a track, like a tropical cyclone.</li>
-      <li><b>Flood</b> — an <em>observation</em> lane, not an ERA5 lane: GPM IMERG rain
-      summed to a daily total and averaged <b>up</b> onto the ERA5 0.25&deg; land lattice.
-      A cell exceeds when its daily total <em>or</em> its trailing 72&nbsp;h accumulation
-      reaches the 95th percentile of that calendar day in the ERA5 1990&ndash;2019 wet-day
-      climatology <em>and</em> at least 20&nbsp;mm/day (50&nbsp;mm per 72&nbsp;h). The absolute
-      floor is not decoration: IMERG and ERA5 are different instruments, so an exceedance
-      means &ldquo;IMERG measured more rain than ERA5&rsquo;s p95 for this cell and day of
-      year&rdquo;. Cells whose ERA5 percentile is undefined (hyper-arid) can never exceed, the
-      ocean is excluded, and a day with incomplete sampling is dropped rather than read as dry.
-      EWB has no flood benchmark, so floods are published and mapped but <b>no model is scored
-      on them</b>.</li>
+      <li><b>Flood</b> — an <em>observation-lane</em> product, not an ERA5 lane: rain is
+      <b>AI-estimated precipitation (Google PARDIG, CC BY 4.0)</b> — 15-minute instantaneous
+      rates summed to a daily total — averaged <b>up</b> onto the ERA5 0.25&deg; land lattice;
+      PARDIG is an experimental model estimate, not an official observation, and is credited
+      to Google. Builds may fall back to GPM IMERG (which the code still supports); each
+      event&rsquo;s own detail panel names the source it was detected on. The ERA5 climatology
+      is the same in both modes. A cell exceeds when its daily total <em>or</em> its trailing
+      72&nbsp;h accumulation reaches the 95th percentile of that calendar day in the ERA5
+      1990&ndash;2019 wet-day climatology <em>and</em> at least 20&nbsp;mm/day (50&nbsp;mm per
+      72&nbsp;h). The absolute floor is not decoration: the rain source and ERA5 are different
+      products, so an exceedance means &ldquo;this source measured more rain than ERA5&rsquo;s
+      p95 for this cell and day of year&rdquo;. Cells whose ERA5 percentile is undefined
+      (hyper-arid) can never exceed, the ocean is excluded, and a day with incomplete sampling
+      is dropped rather than read as dry. EWB has no flood benchmark, so floods are published
+      and mapped but <b>no model is scored on them</b>.</li>
       <li>The raw detector map shades each cell by its consecutive <b>completed</b> UTC days
       meeting the daily rule. Heat shades only cells reaching the detector’s 3-day minimum
       (heat ramp 3–7+) — below that a cell can never become a heat wave, so it stays blank —

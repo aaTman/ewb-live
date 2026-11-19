@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import os
 from typing import Any
 
 import numpy as np
@@ -67,7 +68,12 @@ def build_flood(ev: dict[str, Any]) -> dict[str, Any]:
     q = float((ev.get("details") or {}).get("quantile") or flood.DEFAULT_QUANTILE)
 
     load0 = start - dt.timedelta(days=LANE3_LOOKBACK)
-    obs = flood.load_observations(load0, end - dt.timedelta(days=1))
+    det = ev.get("details") or {}
+    # rebuild on the SOURCE THE EVENT WAS DETECTED WITH (mixed stores are
+    # possible while IMERG remains the selectable fallback)
+    src_kind = ((det.get("data_source") or {}).get("kind")
+                or os.environ.get("EWB_FLOOD_SOURCE") or "pardig")
+    obs = flood.load_observations(load0, end - dt.timedelta(days=1), source=src_kind)
     lats, lons = obs.grid
     land = flood.land_mask(lats, lons)
     scan = flood.build_scan(obs, quantile=q, land=land)
@@ -79,7 +85,7 @@ def build_flood(ev: dict[str, Any]) -> dict[str, Any]:
     didx = [di.get(d) for d in days]
     if any(k is None for k in didx):
         bad = [str(d) for d, k in zip(days, didx) if k is None]
-        raise ValueError(f"event days outside the loaded IMERG window: {bad}")
+        raise ValueError(f"event days outside the loaded observation window: {bad}")
 
     from ..events.temperature import _cell_area_km2
 
@@ -126,15 +132,21 @@ def build_flood(ev: dict[str, Any]) -> dict[str, Any]:
     lonc = lons[cols].astype("float64")
     if bbox[2] > bbox[3]:                      # wrapped: one continuous eastward run
         lonc = np.where(lonc < 0, lonc + 360.0, lonc)
-    det = ev.get("details") or {}
+    pardig = src_kind == "pardig"
     doc = {
         "schema": build.SCHEMA, "kind": "flood_accum", "event_type": "flood",
-        "truth_source": "gpm_imerg_v07",
+        "truth_source": "google_pardig_nrt" if pardig else "gpm_imerg_v07",
+        "source_label": ("AI-estimated precipitation (Google PARDIG, CC BY 4.0)"
+                         if pardig else "GPM IMERG V07"),
         "quantile": q,
         "floor_mm": flood.FLOOR_MM,
-        "threshold_note": ("IMERG rain vs ERA5 1990-2019 pooled wet-day p95 "
-                           "(0.25 deg lattice); no bias correction applied — "
-                           "see notes/audit_flood.md F1"),
+        "threshold_note": (("PARDIG-NRT AI-estimated rain (Google, CC BY 4.0) vs ERA5 "
+                            "1990-2019 pooled wet-day p95 (0.25 deg lattice); no bias "
+                            "correction applied — see notes/pardig_vs_imerg.md"
+                            if pardig else
+                            "IMERG rain vs ERA5 1990-2019 pooled wet-day p95 "
+                            "(0.25 deg lattice); no bias correction applied — "
+                            "see notes/audit_flood.md F1")),
         "grid": {"lat": lats[rows].tolist(), "lon": lonc.tolist(),
                  "cell_deg": CELL_DEG},
         "window": {"start": f"{start:%Y-%m-%d}", "end": f"{end - dt.timedelta(days=1):%Y-%m-%d}",

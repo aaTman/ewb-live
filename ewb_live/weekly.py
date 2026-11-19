@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import shutil
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -173,6 +174,22 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
         # 1. forecast source update (skips cleanly when mlwp_icechunk absent)
         update_mlwp_icechunk()
 
+        # 1b. PARDIG-NRT daily flood cache (owner 2026-11-19: the flood lane's
+        # rain source, EWB_FLOOD_SOURCE=pardig default). Streaming anonymous
+        # fetch, incremental (only days not already cached); non-fatal: the
+        # flood lane treats uncached days as absent, and IMERG remains the
+        # selectable fallback (EWB_FLOOD_SOURCE=imerg).
+        if importlib.util.find_spec("ewb_live.sources.pardig") is None:
+            logger.info("ewb_live.sources.pardig not present; skipping PARDIG build step")
+        else:
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "-m", "ewb_live.sources.pardig", "--days", "96"],
+                    check=False, timeout=2 * 3600)
+                logger.info("ewb_live.sources.pardig exited %d", proc.returncode)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                logger.warning("PARDIG build step failed (non-fatal): %s", exc)
+
         # 2-4. detect + incremental eval + atomic results write
         from ewb_live import pipeline
 
@@ -210,7 +227,6 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
         # raw_exceedance_map.md): per-6h heat/freeze/AR bitmasks under
         # data/results/raw_exceedance/, incremental (only new frames).
         # Non-fatal like viz; skipped until design lands the builder.
-        import importlib.util
         if importlib.util.find_spec("ewb_live.viz.exceedance") is None:
             logger.info("ewb_live.viz.exceedance not present; skipping raw-exceedance step")
         else:

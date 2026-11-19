@@ -522,6 +522,9 @@
   function renderMaps(host, viz, ev, opts) {
     injectStyles();
     const isAR = viz.kind === 'ar_ivt';
+    // flood detail may be AI-estimated (Google PARDIG) — the source labels
+    // itself (floodviz.source_label); every other lane keeps "Observed".
+    const obsLabel = viz.source_label || 'Observed';
     const ramp = isAR ? RAMPS.ivt : (viz.event_type === 'heat_wave' ? RAMPS.heat : RAMPS.freeze);
     /* A3 + owner 2026-11-08: IVT display floor — cells below 250 kg m⁻¹ s⁻¹
        are fully transparent (basemap shows through); scale domain 250–1000
@@ -905,7 +908,7 @@
       obsPanel.map.createPane(pane);
       obsPanel.map.getPane(pane).style.zIndex = k === 'obs' ? '410' : '420';
       return { key: k, pane: pane,
-        label: k === 'obs' ? (isAR ? 'Observed IVT' : 'Observed') : k,
+        label: k === 'obs' ? (isAR ? 'Observed IVT' : obsLabel) : k,
         color: s.color || defColor(k),
         on: s.on !== undefined ? s.on : (k === 'obs' ? true : initialSel.indexOf(k) >= 0),
         op: s.op !== undefined ? s.op : (k === 'obs' ? 85 : 50),
@@ -957,7 +960,7 @@
       hostEl.innerHTML = '';
       ['obs'].concat(allModels).forEach(function (k) {
         const L = layers[k];   // absent when the model has no data at this lead
-        const name = L ? L.label : (k === 'obs' ? (isAR ? 'Observed IVT' : 'Observed') : k);
+        const name = L ? L.label : (k === 'obs' ? (isAR ? 'Observed IVT' : obsLabel) : k);
         const row = document.createElement('div');
         row.className = 'ev3-layer' + (L && L.on ? '' : ' off') + (L ? '' : ' dis');
         const lbl = document.createElement('label');
@@ -1196,7 +1199,8 @@
 
     /* ---- build ---- */
     obsPanel = makePanel({ obs: true,
-      title: viz.obs && viz.obs.series ? 'Observed · GPM IMERG — exceedance days'
+      title: viz.obs && viz.obs.series
+        ? ((viz.source_label ? viz.source_label : 'Observed · GPM IMERG') + ' — exceedance days')
         : 'Observed + model overlays',
       chip: chip ? chip.label : null, chipAt: chip ? chip.at : null });
     rebuildLayers();

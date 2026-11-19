@@ -93,7 +93,7 @@ import numpy as np
 import xarray as xr
 
 from ..climatology import precip_clim
-from ..sources import imerg
+from ..sources import imerg, pardig
 from .event_tracker import Box, Params, track_events
 from .types import Event, make_event_id, normalize_lon_180
 
@@ -394,71 +394,110 @@ def load_observations(start: dt.date, end: dt.date, *, root: Any = None,
                       screen: str = "cnt", min_cnt: int = imerg.STEPS_PER_DAY,
                       chunk_days: int = 10, require_all: bool = True,
                       src_deg: float = float(imerg.IMERG_GRID_DEG),
-                      dst_deg: float = ERA5_DEG) -> Observations:
-    """Daily IMERG mm on the ERA5 lattice for [start, end] + completeness.
+                      dst_deg: float = ERA5_DEG,
+                      source: str | None = None) -> Observations:
+    """Daily precipitation mm on the ERA5 lattice for [start, end] + completeness.
+
+    ``source``: ``"pardig"`` (default, owner 2026-11-19 — Google PARDIG-NRT
+    AI-estimated 15-min rates summed to daily totals, ~2-8 h latency, CC BY
+    4.0; cache root = ``data/pardig`` / ``EWB_LIVE_PARDIG_DIR``) or
+    ``"imerg"`` (NASA GPM IMERG V07 daily, cache root = ``data/imerg`` — kept
+    as the fallback until the owner approves removal). The env
+    ``EWB_FLOOD_SOURCE`` overrides the default; every produced event carries
+    the resolved provenance in ``details.data_source`` (incl. ``kind``), so a
+    mixed store is always attributable per event. The climatology/thresholds
+    are ERA5 in BOTH modes (owner decision — the accepted ERA5-vs-satellite
+    bias lives in climatology_note).
 
     Reads the store in ``chunk_days`` slices so peak memory stays a few hundred
     MB on a live box (the full 90-day 0.1 deg stack is 2.4 GB). ``src_deg`` /
     ``dst_deg`` default to the production pair (0.1 -> 0.25); they are
     parameters because the join is pure lattice arithmetic and the unit tests
-    run it on a coarse global pair.
+    run it on a coarse global pair. (PARDIG's cached totals are already on
+    the ``dst_deg`` lattice; the join happened at cache build.)
     """
+    source = (source or os.environ.get("EWB_FLOOD_SOURCE") or "pardig").strip().lower()
+    if source not in ("pardig", "imerg"):
+        raise ValueError(f"flood source {source!r}; use 'pardig' or 'imerg'")
     dates = [start + dt.timedelta(days=i) for i in range((end - start).days + 1)]
     frames: list[np.ndarray] = []
     present: list[bool] = []
     lats = lons = None
     for i in range(0, len(dates), chunk_days):
         part = dates[i:i + chunk_days]
-        da = imerg.load_imerg_daily(part[0], part[-1], root=root, product="auto",
-                                    screen=screen, min_cnt=min_cnt)
-        agg = aggregate_to_era5_grid(da, src_deg=src_deg, dst_deg=dst_deg,
-                                    require_all=require_all)
+        if source == "imerg":
+            da = imerg.load_imerg_daily(part[0], part[-1], root=root, product="auto",
+                                        screen=screen, min_cnt=min_cnt)
+            agg = aggregate_to_era5_grid(da, src_deg=src_deg, dst_deg=dst_deg,
+                                         require_all=require_all)
+            del da
+        else:
+            agg = pardig.load_pardig_daily(part[0], part[-1], root=root)
         if lats is None:
             lats = np.asarray(agg.latitude.values, "float64")
             lons = np.asarray(agg.longitude.values, "float64")
         frames.append(np.asarray(agg.values, "float32"))
         frac = np.isfinite(agg.values).mean(axis=(-2, -1))
         present += [bool(k) for k in frac >= PRESENT_FRACTION_MIN]
-        del da, agg
+        del agg
     daily = (np.concatenate(frames, axis=0) if frames
              else np.zeros((0, 0, 0), "float32"))
     del frames
 
-    status = imerg.load_imerg_status(start, end, root=root)
-    want = {f"{d:%Y-%m-%d}" for d in dates}
-    served = {f"{d:%Y-%m-%d}": ok for d, ok in zip(dates, present, strict=True)}
-    runs: dict[str, str] = {}
-    mix: dict[str, int] = {}
-    for day, row in status.iterrows():
-        key = f"{dt.date.fromisoformat(str(day)[:10]):%Y-%m-%d}"
-        if key not in want:
-            continue
-        prod = _run_of(str(row.get("product") or "unknown"), str(row.get("granule") or ""))
-        runs[key] = prod
-        # the run mix counts only days that ACTUALLY served data — status.json
-        # lists not-yet-arrived days too, and a resolved label for an absent
-        # day must not masquerade as provenance of observations.
-        if served.get(key):
-            mix[prod] = mix.get(prod, 0) + 1
     present_arr = np.array(present, bool)
     missing = [f"{d:%Y-%m-%d}" for d, ok in zip(dates, present_arr, strict=True)
                if not ok]
-    source = {
-        "product": "auto (Late Run preferred, Early Run for the head)",
-        "collection": "GPM_3IMERGDE / GPM_3IMERGDL V07 daily, 0.1 deg",
-        "store": imerg._root(root).name,
-        "screen": screen, "min_cnt": int(min_cnt),
-        "days_total": len(dates), "days_present": int(present_arr.sum()),
-        "missing_days": missing, "runs": mix,
-        "grid_deg": dst_deg, "src_grid_deg": float(src_deg),
-        "units": imerg.UNITS,
-    }
-    logger.info("IMERG %s..%s: %d/%d days observed, runs %s", start, end,
-                source["days_present"], len(dates), mix)
+    if source == "imerg":
+        status = imerg.load_imerg_status(start, end, root=root)
+        want = {f"{d:%Y-%m-%d}" for d in dates}
+        served = {f"{d:%Y-%m-%d}": ok for d, ok in zip(dates, present, strict=True)}
+        runs: dict[str, str] = {}
+        mix: dict[str, int] = {}
+        for day, row in status.iterrows():
+            key = f"{dt.date.fromisoformat(str(day)[:10]):%Y-%m-%d}"
+            if key not in want:
+                continue
+            prod = _run_of(str(row.get("product") or "unknown"), str(row.get("granule") or ""))
+            runs[key] = prod
+            # the run mix counts only days that ACTUALLY served data — status.json
+            # lists not-yet-arrived days too, and a resolved label for an absent
+            # day must not masquerade as provenance of observations.
+            if served.get(key):
+                mix[prod] = mix.get(prod, 0) + 1
+        source_dict = {
+            "kind": "imerg",
+            "product": "auto (Late Run preferred, Early Run for the head)",
+            "collection": "GPM_3IMERGDE / GPM_3IMERGDL V07 daily, 0.1 deg",
+            "store": imerg._root(root).name,
+            "screen": screen, "min_cnt": int(min_cnt),
+            "days_total": len(dates), "days_present": int(present_arr.sum()),
+            "missing_days": missing, "runs": mix,
+            "grid_deg": dst_deg, "src_grid_deg": float(src_deg),
+            "units": imerg.UNITS,
+        }
+    else:
+        runs = {f"{d:%Y-%m-%d}": "nrt" for d, ok in zip(dates, present, strict=True) if ok}
+        mix = {"nrt": int(present_arr.sum())}
+        source_dict = {
+            "kind": "pardig",
+            "product": "PARDIG-NRT (AI-estimated precipitation, Google DeepMind/Research)",
+            "collection": "gs://pardig_1 NRT: 0.1 deg 15-min instantaneous rates summed "
+                          "to UTC-day totals, 0.25 deg ERA5-lattice cache",
+            "license": "CC BY 4.0",
+            "display": "AI-estimated precipitation (Google PARDIG, CC BY 4.0) — not an "
+                       "official observation",
+            "store": pardig.pardig_root(root).name,
+            "days_total": len(dates), "days_present": int(present_arr.sum()),
+            "missing_days": missing, "runs": mix,
+            "grid_deg": dst_deg, "src_grid_deg": float(pardig.GRID_DEG),
+            "units": pardig.UNITS,
+        }
+    logger.info("flood source %s %s..%s: %d/%d days served, runs %s", source,
+                start, end, source_dict["days_present"], len(dates), mix)
     return Observations(dates=dates, daily=daily, present=present_arr, runs=runs,
                         grid=(lats if lats is not None else np.array([]),
                               lons if lons is not None else np.array([])),
-                        source=source)
+                        source=source_dict)
 
 
 def land_mask(lats: np.ndarray, lons: np.ndarray) -> np.ndarray:
@@ -663,6 +702,7 @@ def events_from_scan(scan: FloodScan, *, params: Params | None = None,
             lanes["daily" if w == 1 else "accum_3d"] = int(sub.sum())
         day_runs = {scan.runs.get(f"{d:%Y-%m-%d}", "unknown") for d in dates[days]}
         unsettled = sorted(day_runs - {SETTLED_RUN})
+        src_kind = (scan.source or {}).get("kind", "imerg")
         # calendar days inside the event window that IMERG did not observe. The
         # tracker ends an event on an unobserved day, so this is a TRIPWIRE: a
         # non-empty list would mean an interval is claiming a day it has no
@@ -710,18 +750,25 @@ def events_from_scan(scan: FloodScan, *, params: Params | None = None,
                              "estimator", "recommended_floor_mm")},
             "climatology_note": (
                 "thresholds are ERA5 percentiles on the ERA5 0.25 deg grid; "
-                "IMERG is averaged UP to that grid (never the reverse) and no "
-                "ERA5<->IMERG bias correction is applied, so an exceedance "
-                "means 'IMERG measured more rain than ERA5's p95 for this cell "
-                "and date of year' — which is why the absolute floor is "
-                "mandatory (precip_clim.FLOOR_MM)."),
+                + ("PARDIG" if src_kind == "pardig" else "IMERG")
+                + " is averaged UP to that grid (never the reverse) and no "
+                  "ERA5<->satellite bias correction is applied, so an exceedance "
+                  "means '"
+                + ("PARDIG" if src_kind == "pardig" else "IMERG")
+                + " measured more rain than ERA5's p95 for this cell "
+                  "and date of year' — which is why the absolute floor is "
+                  "mandatory (precip_clim.FLOOR_MM)."),
             "land_mask": "natural_earth_110 (ewb_live/viz/build.land_mask)",
             "data_source": scan.source,
             "provisional": bool(unsettled),
             "provisional_reason": (
-                None if not unsettled else
-                "built on the IMERG " + "/".join(unsettled) + " run; the Final "
-                "(science-grade) run is not published for these days yet"),
+                None if not unsettled else (
+                    "AI-estimated precipitation (Google PARDIG-NRT, CC BY 4.0) — an "
+                    "experimental model product, not a science-grade observation; "
+                    "frames are not retroactively settled"
+                    if src_kind == "pardig" else
+                    "built on the IMERG " + "/".join(unsettled) + " run; the Final "
+                    "(science-grade) run is not published for these days yet")),
         }
         if dates[days][0] == dates[0]:
             details["window_start_truncated"] = True
@@ -748,17 +795,18 @@ def scan_flood_events(start: dt.date, end: dt.date, *,
                       land: np.ndarray | None = None,
                       chunk_days: int = 10,
                       src_deg: float = float(imerg.IMERG_GRID_DEG),
-                      dst_deg: float = ERA5_DEG) -> list[Event]:
+                      dst_deg: float = ERA5_DEG,
+                      source: str | None = None) -> list[Event]:
     """Detect floods overlapping [start, end] (inclusive UTC days).
 
-    The window is the IMERG store (~90 days). Unlike the ERA5 lanes this scan
-    is NOT clamped to the ERA5 truth cutoff: the observations here are IMERG,
-    about a day from real time, and the newest days are exactly where a flood
-    lives.
+    The window is the rain store (~90 days; PARDIG by default, IMERG via
+    ``source="imerg"``). Unlike the ERA5 lanes this scan is NOT clamped to the
+    ERA5 truth cutoff: the observations here are near-real-time (PARDIG ~2-8 h,
+    IMERG Late ~2.5 h-months), and the newest days are where a flood lives.
     """
     obs = load_observations(start - dt.timedelta(days=TRACKED_LOOKBACK_DAYS), end,
                             root=root, chunk_days=chunk_days,
-                            src_deg=src_deg, dst_deg=dst_deg)
+                            src_deg=src_deg, dst_deg=dst_deg, source=source)
     scan = build_scan(obs, quantile=quantile, windows=windows, land=land,
                       store=store)
     events = events_from_scan(scan, params=params)

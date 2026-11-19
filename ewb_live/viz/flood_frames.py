@@ -98,11 +98,24 @@ def cls_from_bytes(raw: bytes, shape: tuple[int, int]) -> np.ndarray:
 
 
 def flood_index_block(days: list[str], absent: list[str],
-                      runs: dict[str, str]) -> dict:
+                      runs: dict[str, str], source: str = "imerg") -> dict:
     """The additive index.json 'flood' key (frontend contract, module
-    docstring). ``days``/``runs`` keys use compact YYYYMMDD."""
+    docstring). ``days``/``runs`` keys use compact YYYYMMDD; ``source`` says
+    which rain product the frames were built from (the frontend tip follows
+    it — PARDIG is an AI estimate and must not be labelled "observed")."""
+    pardig = source == "pardig"
+    src_label = ("AI-estimated precipitation (Google PARDIG, CC BY 4.0)"
+                 if pardig else "GPM IMERG V07 (observation)")
     return {"rev": REV,
-            "rule": ("union of daily IMERG >= ERA5 pooled wet-day P95 AND "
+            "source": source,
+            "source_label": src_label,
+            "tip": (src_label + " over the detector rule: daily >= the ERA5 P95 "
+                    "wet-day threshold AND >= 20 mm/day, OR trailing 72 h >= P95 "
+                    "AND >= 50 mm (land only). Shaded by the mm/day-equivalent "
+                    "accumulation max(daily, 72 h total / 3): 20-50, 50-100, "
+                    "100-200, 200-350, >=350. Blank days carry no evidence."),
+            "rule": (f"union of daily rain from {'PARDIG-NRT (AI-estimated)' if pardig else 'IMERG'} "
+                     ">= ERA5 pooled wet-day P95 AND "
                      ">= 20 mm/day, OR trailing 72 h >= P95 AND >= 50 mm; "
                      "land only, fully observed cells only — the detector's "
                      "own mask (events/flood.py)"),
@@ -163,32 +176,36 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
     start = max(w_start, w_end - dt.timedelta(days=days - 1)) if days else w_start
 
     from ..events import flood   # lazy: pulls the climatology modules
-    from ..sources import imerg
 
-    # the store root is the IMERG CACHE dir (daily/ + status.json live in it),
-    # not the repo root — imerg._root() takes it verbatim. The load END is
-    # clamped to the last day the store actually serves: the meta window
-    # rolls forward daily while IMERG Late lags ~2.5 h–4 months, and a
-    # beyond-reach tail chunk (zero fields) would abort the whole build
-    # (imerg._load_fields raises on an empty chunk). status.json can list
-    # not-yet-arrived days, so the ground truth is the daily/ file inventory.
+    # the load END is clamped to the last day the STORE serves: the meta
+    # window rolls forward daily while the rain source lags (IMERG Late:
+    # months; PARDIG-NRT: ~2-8 h), and a beyond-reach tail chunk (zero
+    # fields) would abort the whole build. Ground truth is the store's own
+    # file inventory — status/index files can list not-yet-arrived days.
     # Beyond-reach days join `absent` — no marks on the map for them, which
     # is the honest truth.
-    store = root / "data" / "imerg"
+    source = (os.environ.get("EWB_FLOOD_SOURCE") or "pardig").strip().lower()
+    if source == "imerg":
+        from ..sources import imerg
+        store = root / "data" / "imerg"
+        daily = imerg.daily_dir(store)
+        have = {dt.date.fromisoformat(f[6:10] + "-" + f[10:12] + "-" + f[12:14])
+                for f in (p.name for p in daily.glob("imerg_*.nc"))
+                if len(f) >= 14 and f[6:14].isdigit()}
+    else:
+        from ..sources import pardig
+        store = root / "data" / "pardig"
+        have = pardig.served_days(store)
     end_eff = w_end
-    daily = imerg.daily_dir(store)
-    have = {dt.date.fromisoformat(f[6:10] + "-" + f[10:12] + "-" + f[12:14])
-            for f in (p.name for p in daily.glob("imerg_*.nc"))
-            if len(f) >= 14 and f[6:14].isdigit()}
     if have:
         ok = [d for d in have if d <= w_end]
         end_eff = min(w_end, max(ok)) if ok else start - dt.timedelta(days=1)
     if end_eff < start:
-        logger.warning("flood_frames: IMERG store serves no day of %s..%s — "
-                       "nothing to build", start, w_end)
+        logger.warning("flood_frames: %s store serves no day of %s..%s — "
+                       "nothing to build", source, start, w_end)
         return out
     obs = flood.load_observations(start - dt.timedelta(days=LANE3_LOOKBACK),
-                                  end_eff, root=store)
+                                  end_eff, root=store, source=source)
     land = flood.land_mask(*obs.grid)
     scan = flood.build_scan(obs, land=land)
 
@@ -222,7 +239,7 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
     absent += [f"{d:%Y-%m-%d}" for d in
                (end_eff + dt.timedelta(days=i) for i in range(1, (w_end - end_eff).days + 1))]
     prune_frames(out, f"{w_start:%Y%m%d}")
-    merge_index(out, flood_index_block(day_tags, absent, runs))
+    merge_index(out, flood_index_block(day_tags, absent, runs, source))
     logger.info("flood_frames: %d days written, %d published, %d absent "
                 "(window %s..%s)", written, len(day_tags), len(absent),
                 f"{start:%Y-%m-%d}", f"{w_end:%Y-%m-%d}")

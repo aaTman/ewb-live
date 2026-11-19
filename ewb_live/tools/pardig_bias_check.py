@@ -78,9 +78,13 @@ def main(argv=None) -> int:
         days.update(d0 + dt.timedelta(days=k) for k in range(n))
     imerg_have = set()
     import glob as g
+    from pathlib import Path as _P
     for p in g.glob(f"{args.imerg_root}/daily/imerg_*.nc"):
-        s = p[-16:-3]
-        imerg_have.add(dt.date(int(s[:4]), int(s[4:6]), int(s[6:8])))
+        s = _P(p).stem[-8:]
+        try:
+            imerg_have.add(dt.date(int(s[:4]), int(s[4:6]), int(s[6:8])))
+        except ValueError:
+            continue
     sample = sorted(imerg_have)[-args.sample_days:]
     days.update(sample)
     logger.info("building PARDIG for %d days (events %d + samples)", len(days), len(picks))

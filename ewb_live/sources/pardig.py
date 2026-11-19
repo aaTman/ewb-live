@@ -299,12 +299,13 @@ def build_daily(day: dt.date, root: str | os.PathLike | None = None, *,
 
 def load_pardig_daily(start: dt.date, end: dt.date, *,
                       root: str | os.PathLike | None = None,
-                      require_all: bool = True) -> xr.DataArray:
+                      require_all: bool = False) -> xr.DataArray:
     """Cached PARDIG daily totals (time, latitude, longitude) mm/day on the
     ERA5 0.25 deg lattice — the same shape/units as
     ``imerg.load_imerg_daily`` post-join. Absent days are NaN planes (never
-    zeros); with ``require_all`` and NOTHING served, raise (mirrors the IMERG
-    loader's empty-chunk behaviour so callers treat a bad window loudly)."""
+    zeros); with ``require_all`` and an incomplete window, raise (mirrors the
+    IMERG loader's empty-chunk behaviour so callers treat a bad window
+    loudly)."""
     days = [start + dt.timedelta(days=i) for i in range((end - start).days + 1)]
     frames, present, lats, lons = [], [], None, None
     shape = None
@@ -325,9 +326,10 @@ def load_pardig_daily(start: dt.date, end: dt.date, *,
         raise PardigError(f"no PARDIG daily fields in {start}..{end} under "
                           f"{daily_dir(root)}")
     assert lats is not None and lons is not None and shape is not None
-    if len(present) < len(days) and not require_all:
-        raise PardigError(f"PARDIG window {start}..{end}: {len(days) - len(present)} "
-                          f"of {len(days)} days are not cached")
+    if len(present) < len(days):
+        if require_all:
+            raise PardigError(f"PARDIG window {start}..{end}: {len(days) - len(present)} "
+                              f"of {len(days)} days are not cached")
     # absent days become all-NaN planes: never zero (an absent day is not a
     # dry day — the same contract the IMERG loader keeps)
     nan = np.full(shape, np.nan, "float32")
@@ -371,9 +373,9 @@ def served_days(root: str | os.PathLike | None = None) -> set[dt.date]:
     (status.json may record holes; the file is the truth, as with IMERG)."""
     out = set()
     for p in sorted(daily_dir(root).glob("pardig_025_*.nc")):
+        t = p.stem[-8:]
         try:
-            out.add(dt.date.fromisoformat(p.stem[-8:][:4] + "-" + p.stem[-6:-4] + "-"
-                                          + p.stem[-4:]))
+            out.add(dt.date(int(t[:4]), int(t[4:6]), int(t[6:8])))
         except ValueError:
             continue
     return out
