@@ -71,7 +71,15 @@ def probe(pg, w, h, theme):
                 const h=document.querySelector('#detail-viz .tv-head, #detail-viz, .detail-head');
                 return h ? h.textContent.replace(/\\s+/g,' ').trim().slice(0,300) : null; }""")
             report["views"][tag]["detail_head"] = head
+            # ne-fix-tc 2026-11-19: the basis + truncation copy (TC-2/TC-6) —
+            # the first row is the window-START event, so it must say
+            # "(1-min)" and, for Saudel/Lala, the past-the-window note
+            tv = pg.evaluate("""() => {
+                const n=document.querySelector('#detail-viz .tv-note');
+                return n ? n.textContent.replace(/\\s+/g,' ').trim() : null; }""")
+            report["views"][tag]["tv_note"] = tv
             print("   detail:", (head or "")[:180])
+            print("   note:", (tv or "")[:200])
             shot(pg, f"{tag}-detail.png")
 
 
