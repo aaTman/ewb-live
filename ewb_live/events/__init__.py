@@ -114,13 +114,16 @@ def _cache_path(cache_dir: Path, event_type: str, start: dt.date, end: dt.date) 
         tag = f"_v1-{int(MIN_TS_WIND_KT)}kt-{MIN_TS_FIXES}fix-{int(MIN_TS_HOURS)}h"
     if event_type == "flood":
         # bump when the flood rule changes (quantile / accumulation lanes /
-        # tracker floors) so an old scan can't resurrect under new code
+        # tracker floors) so an old scan can't resurrect under new code; the
+        # RAIN SOURCE is part of the key too (2026-11-19 PARDIG switch) — a
+        # scan made on one store must never serve the other lane config
         from .flood import DEFAULT_QUANTILE, FLOOD_PARAMS, WINDOWS
+        from .flood import resolve_source as _flood_source
 
         tag = (f"_v1-q{int(round(DEFAULT_QUANTILE * 100))}-w"
                f"{''.join(str(w) for w in WINDOWS)}"
                f"-a{int(FLOOD_PARAMS.qualify_area_km2 // 1000)}k"
-               f"-d{FLOOD_PARAMS.min_days}")
+               f"-d{FLOOD_PARAMS.min_days}-{_flood_source(None)}")
     if event_type == "midlat_cyclone":
         # bump when a mid-latitude screen or the track mapping changes, so an
         # old scan cannot resurrect under new rules (mlc lane, 2026-11-17)

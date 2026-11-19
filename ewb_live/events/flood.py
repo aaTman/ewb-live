@@ -370,6 +370,15 @@ class Observations:
         return [d for d, ok in zip(self.dates, self.present, strict=True) if ok]
 
 
+def resolve_source(source: str | None = None) -> str:
+    """'pardig' | 'imerg' — explicit arg wins, else EWB_FLOOD_SOURCE, else
+    PARDIG (owner follow-up 2026-11-19). Raises on anything else."""
+    s = (source or os.environ.get("EWB_FLOOD_SOURCE") or "pardig").strip().lower()
+    if s not in ("pardig", "imerg"):
+        raise ValueError(f"unknown flood rain source {s!r}; use 'pardig' or 'imerg'")
+    return s
+
+
 def _run_of(prod: str, granule: str) -> str:
     """Resolve the concrete IMERG run behind a status row.
 
@@ -416,9 +425,7 @@ def load_observations(start: dt.date, end: dt.date, *, root: Any = None,
     run it on a coarse global pair. (PARDIG's cached totals are already on
     the ``dst_deg`` lattice; the join happened at cache build.)
     """
-    source = (source or os.environ.get("EWB_FLOOD_SOURCE") or "pardig").strip().lower()
-    if source not in ("pardig", "imerg"):
-        raise ValueError(f"flood source {source!r}; use 'pardig' or 'imerg'")
+    source = resolve_source(source)
     dates = [start + dt.timedelta(days=i) for i in range((end - start).days + 1)]
     frames: list[np.ndarray] = []
     present: list[bool] = []
