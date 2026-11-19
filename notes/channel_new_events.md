@@ -2886,3 +2886,32 @@ synthetic crossing-track unit test. 3 — TC wind field → instantaneous 10 m w
 displayed hour (item 2, the big one: `ewb_live/viz/tc_wind.py` rebuild on the LXC, then
 frontend scrubbing/legend/dissipation + the docs/About text that says "daily max").
 Per-lane "data through" label: NOT added (owner did not ask).
+
+### [ne-fixes2] 03:25 UTC — status: item 1 verified, item 4 measured, item 2 in progress
+
+* **1 (MLC = RED):** nothing to change in the base tree — `--series-mlc` `#a0312d` light /
+  `#cf4a55` dark is already the ONLY definition (grep for the 7 series hexes in JS/Python
+  returns zero hits; chips row, legend, map, track view and CSS all go through the token),
+  and `scripts/chips_palette_check.sh` **exits 0**: light adjacent ΔE 17.4 (deutan) / 18.0
+  (normal), dark 12.6 / 15.1, all 7 inside the L band, chroma ≥ 0.1, ≥ 3:1 on both
+  surfaces. The remaining amber (`#7d5200`/`#d9a441`) is only in `notes/` history entries,
+  which are logs, not the design. Adding a regression test so the hue cannot fork again.
+* **4 (dateline) measured on :8051** for 3 storms, incl. TC `1a992ebc5446` (bbox
+  140.6 → −150.2, `track_crosses_antimeridian: true`): the merged map DOES draw its marker
+  and its polyline splits at the seam (`splitAtDateline` → 197+54 pts, and 10+15 for
+  `5e5ce42a239e`). What does NOT paint is the **wind field at the seam**: canvas columns
+  `x=1,5,690,694` of `#gm-tracks` are all empty on every frame tested — that is the real
+  FE gap, and I am reproducing it with a synthetic crossing track + a wind asset that
+  straddles ±180 (the 3 dateline e2e tests fail on dev: 3 failed / chromium, baseline
+  recorded before I touch anything). Also: those 3 tests assert a **bbox** for the wrapped
+  event, but `be0db546bb72` (TC Lala) is a TRACK lane, which by design never draws a
+  rectangle ("a rectangle around a 3,000 km track is not information") — the test premise
+  predates track lanes. I will make the dateline suite lane-aware, not re-add boxes.
+  NB Lala's bbox `175.9 → −165.4` is *correct*: track −179.1…−170.4 padded ±5° → −184.1
+  wraps to 175.9; only `antimeridian_wrap` is set, `track_crosses_antimeridian` is false.
+* **2 (instantaneous wind):** the map's frames are exactly `00/06/12/18Z` (336 frames in
+  `raw_exceedance/index.json`), so the displayed hour matches an ERA5 synoptic step
+  one-for-one — no interpolation needed. `tc_wind.py` already reads and masks per step and
+  only collapses to a day max when writing, so this is: store one grid **per step**
+  (schema 3), have the frontend pick the frame's own step, drop every "daily max" phrase
+  in the tooltip/legend/About/docs. No new cache: the same 4 steps/day, streamed as today.
