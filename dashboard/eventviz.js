@@ -1070,7 +1070,8 @@
       if (fl) {
         const p = viz.obs && viz.obs.series ? viz.obs.series[viz.obs.series.length - 1] : null;
         obsPanel.setBar('Flood \u2014 days over the P' + tierQ + ' wet-day threshold', legend,
-          'Cells where IMERG rain reaches the ERA5 ' + tierQ + 'th-percentile wet-day threshold AND '
+          'Cells where rain (' + (viz.source_label || 'AI-estimated, Google PARDIG CC BY 4.0')
+          + ') reaches the ERA5 ' + tierQ + 'th-percentile wet-day threshold AND '
           + 'the absolute floor (20 mm/day, 50 mm/72 h); darkest = 7+ days. '
           + (viz.provisional ? viz.provisional_reason + ' ' : '')
           + (p ? 'Last day: ' + (p.cells || 0) + ' cells, run ' + (p.run || '?') + '.' : ''));

@@ -429,7 +429,8 @@
     drawBase(ctx);
     curIvt = null;                                    // no frame → nothing for hover to read
     curPaint = null;
-    const fl = curFl;      // flood day frame paints even past the ERA5 cutoff (IMERG reaches later)
+    const fl = curFl;      // flood day frame paints even past the ERA5 cutoff (the rain source
+                                       // — PARDIG by default — reaches later than ERA5 truth)
     if (!raw || (!frame && !fl)) { dimOutside(ctx); return; }
     const u8 = frame ? frame.bin : null;              // binary exceedance bits (4 planes)
     const run = (frame && raw.dur && frame.run) ? frame.run : null;   // null → binary paint (fallback)
