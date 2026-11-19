@@ -1088,6 +1088,7 @@ nav.controls .dd .dd-body {
 /* equal-width columns per ramp (widest label of that lane), label centred */
 .lg-bin { display: grid; justify-items: center; gap: 2px; width: 22px; }
 .lg-group[data-layer="a"] .lg-bin { width: 34px; }   /* '1250+' sets the IVT column */
+.lg-group[data-layer="l"] .lg-bin { width: 50px; }   /* '200\u2013350' sets the flood mm column (F0) */
 .lg-bin.prov { width: 22px; margin-left: 8px; }   /* a texture, not the next step of the ramp */
 .lg-t { font-size: var(--text-2xs); color: var(--ink-muted); font-family: var(--font-mono);
   white-space: nowrap; }
