@@ -223,6 +223,22 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
             except Exception as exc:  # noqa: BLE001 — best-effort like viz
                 logger.warning("ewb_live.viz.exceedance step failed (non-fatal): %s", exc)
 
+        # 6b2. flood lane daily raw-map frames (defect F0, ne-fix-flood): the
+        # union-rule exceedance footprint per UTC day (flood_<YYYYMMDD>.cls)
+        # + the additive 'flood' key in the exceedance index — MUST follow
+        # step 6b (it merges into that index). Non-fatal like the steps above.
+        if importlib.util.find_spec("ewb_live.viz.flood_frames") is None:
+            logger.info("ewb_live.viz.flood_frames not present; skipping flood-frames step")
+        else:
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "-m", "ewb_live.viz.flood_frames"],
+                    timeout=3600,
+                )
+                logger.info("ewb_live.viz.flood_frames exited %d", proc.returncode)
+            except Exception as exc:  # noqa: BLE001 — best-effort like viz
+                logger.warning("ewb_live.viz.flood_frames step failed (non-fatal): %s", exc)
+
         # 6c. regional scorecard refresh (regions lane): pipeline.run wrote
         # scorecard_by_region.json BEFORE viz assets existed for newly detected
         # events, so those fell back to the bbox-centroid rule. Re-run the regen

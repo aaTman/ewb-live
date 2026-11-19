@@ -534,9 +534,10 @@
        blue. The asset drives it: viz.quantile picks the tier and the ramp. */
     const tierQ = !isAR && Number.isFinite(viz.quantile)
       ? Math.round(viz.quantile * 100) : (isFreezeLike(viz.event_type) ? 15 : 85);
-    const tierCSS = isAR ? '' : css(isFreezeLike(viz.event_type) || viz.event_type === 'flood'
-      ? '--tier-freeze' : '--tier-heat',
-      isFreezeLike(viz.event_type) ? '#2171b5' : '#d9663c');
+    const tierCSS = isAR ? '' : css(viz.event_type === 'flood' ? '--series-flood'
+      : isFreezeLike(viz.event_type) ? '--tier-freeze' : '--tier-heat',
+      viz.event_type === 'flood' ? '#0f9ea4'
+        : isFreezeLike(viz.event_type) ? '#2171b5' : '#d9663c');
     const tierLabel = 'P' + tierQ;
     const tierLegend = isAR ? null : {
       color: tierCSS, label: tierLabel,

@@ -90,6 +90,13 @@
      Greens sequential, equal L* steps; distinct hue family from heat (warm)
      and freeze (cool). */
   --dur-ar-1: #a9dca3;  --dur-ar-2: #73c476;  --dur-ar-3: #3ba458;  --dur-ar-4: #157f3b;  --dur-ar-5: #005321;
+  /* flood accumulation ramp (ne-fix-flood 2026-11-19, defect F0): teal =
+     the lane identity family (mm/day-equiv max(daily, 72h/3)), darker =
+     more rain. Every stop >= 3:1 (WCAG AA non-text) on BOTH map grounds
+     (#ffffff land, #eef4f8 ocean); L* steps 3.6-5.5 monotone. The low end
+     sits dark ON PURPOSE — a pale first stop cannot pass AA on a light
+     basemap (freeze/AR predate the requirement). */
+  --dur-flood-1: #0d9488;  --dur-flood-2: #0c7f76;  --dur-flood-3: #0d675f;  --dur-flood-4: #0b4f4a;  --dur-flood-5: #093836;
 
   /* Lightness ladder is fixed: AR 26.1 < freeze 34.0 < heat 48.4 (L*), never inverted. */
 
@@ -182,6 +189,10 @@ html[data-theme="dark"] {
   --dur-freeze-1: #083c7d;  --dur-freeze-2: #4191c6;  --dur-freeze-3: #b7d4ea;
   /* AR IVT ramp, dark */
   --dur-ar-1: #005321;  --dur-ar-2: #19833e;  --dur-ar-3: #45ad5f;  --dur-ar-4: #87cd86;  --dur-ar-5: #bee5b8;
+  /* flood ramp, dark: the same teal path REVERSED (brightest = most rain,
+     extremes never recede into the dark map); every stop >= 3:1 on the
+     dark grounds (#262626 land, #0e1620 ocean) */
+  --dur-flood-1: #0f8a80;  --dur-flood-2: #16a396;  --dur-flood-3: #35c8b3;  --dur-flood-4: #6fdfc9;  --dur-flood-5: #b2f2df;
 
   --bg: var(--canvas);
   --bg-panel: var(--paper);

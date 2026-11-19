@@ -95,6 +95,9 @@ def build_flood(ev: dict[str, Any]) -> dict[str, Any]:
     for k in range(sub.shape[0]):
         run_cur = ((run_cur + 1) * sub[k]).astype("uint8")
         np.maximum(dur, run_cur, out=dur)
+    #: panel contract: the anchor day is the event's busiest day (most
+    #: exceedant cells) — same rule as the heat/freeze build's anchor
+    anchor = int(np.argmax([int(s.sum()) for s in sub])) if sub.shape[0] else 0
 
     series: list[dict[str, Any]] = []
     runs = obs.runs
@@ -138,8 +141,14 @@ def build_flood(ev: dict[str, Any]) -> dict[str, Any]:
                    "days": [f"{d:%Y-%m-%d}" for d in days]},
         "obs": {
             "daily_bits": build.pack_bits(sub),
-            "dur": build.pack_u8(dur.astype("float64"), 0, max(sub.shape[0], 1)),
-            "max_dur": int(dur.max()),
+            # panel contract fields (eventviz unpacks daily_bits -> daily
+            # strings itself): consec/max_consec/anchor_day/footprint_cells
+            # are what the overlay layers, the duration bars and the chip
+            # read for the heat/freeze lanes — flood rides the SAME renderer
+            "consec": build.pack_u8(dur.astype("float64"), 0, max(sub.shape[0], 1)),
+            "max_consec": int(dur.max()),
+            "anchor_day": f"{days[anchor]:%Y-%m-%d}",
+            "footprint_cells": int(sub[anchor].sum()),
             "peak_daily_mm": round(peak1, 1),
             "peak_3day_mm": round(peak3, 1) if peak3 else None,
             "peak_cell_lat": det.get("peak_cell_lat"),
