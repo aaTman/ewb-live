@@ -16,7 +16,7 @@ const TYPE_META = {
   tropical_cyclone:   { label: 'Tropical cyclones',  short: 'Tropical cyclone',
                         rule: 'One IBTrACS storm: ≥3 fixes at tropical-storm force (≥34 kt) spanning ≥12 h. Published, not scored.',
                         noScores: true,      // observation lane: published, not benchmarked
-                        noScoresNote: (n) => `Not scored — ${n} storm${n === 1 ? '' : 's'} tracked from IBTrACS best tracks; no EWB benchmark for this lane yet.` },
+                        noScoresNote: (n) => tcNotScoredNote(n) },
   flood:              { label: 'Floods',             short: 'Flood',
                         rule: 'AI-estimated daily or 72 h rain (Google PARDIG, CC BY 4.0) past the ERA5 p95 wet-day climatology AND ≥20 mm/day. Published, not scored. (IMERG rain is the fallback source.)',
                         noScores: true,      // observation lane (PARDIG/IMERG): published, not benchmarked
@@ -99,9 +99,9 @@ const TYPE_CRITERIA = {
   freeze: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour) and at or below 0 °C, over land. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). On the map the freeze layer shades cells from their first consecutive COMPLETED day (cold runs are short, so 1–2-day cells stay visible for context; a freeze still needs 3+ days), dithered = today so far on a cell with at least one completed day.',
   cold_snap: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), over land — the freeze rule without its ≤0 °C requirement. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). Where a freeze covers the same window and box the freeze is published instead of the cold snap, so the two never double-count a spell. The cold-snap lane has no raw layer of its own — it reads the same P15 layer as freeze, shading cells from their first consecutive COMPLETED day (dithered = today so far on a cell with at least one completed day).',
   atmospheric_river: 'Integrated water-vapour transport peaking at ≥400 kg m⁻¹ s⁻¹ and reaching land.',
-  tropical_cyclone: 'One IBTrACS best-track storm = one event: at least 3 track fixes at tropical-storm force (≥34 kt sustained) spanning at least 12 hours, extratropical/mixed fixes excluded. Peak value is the strongest sustained wind in the tropical-storm window (kt); the detail view draws the full track, coloured by intensity. Best-track observations, so there is no model scorecard for this lane yet.',
   // observation lane (PARDIG rain by default — AI-estimated, not ERA5): published, never scored — EWB has no flood benchmark
   flood: 'Rain from Google PARDIG-NRT — an AI-estimated precipitation product (CC BY 4.0), 15-minute instantaneous rates summed to a daily total and averaged up onto the ERA5 0.25° land lattice; GPM IMERG remains a supported fallback source. A cell exceeds when its daily total or its trailing 72 h accumulation reaches the 95th percentile of that calendar day in the ERA5 1990–2019 wet-day climatology AND at least 20 mm/day (or 50 mm per 72 h) — the floor is mandatory because the rain product and ERA5 are different instruments. Cells with no ERA5 percentile (hyper-arid) can never exceed, ocean cells are excluded, and a day whose frames are incomplete is dropped rather than read as dry. A region ≥10,000 km² becomes an event once its footprint reaches 50,000 km² and ends under 10,000 km². There is no EWB benchmark for flood, so floods are published and mapped but no model is scored on them.',
+  tropical_cyclone: 'One IBTrACS best-track storm = one event: at least 3 track fixes at tropical-storm force (≥34 kt sustained) spanning at least 12 hours, extratropical/mixed fixes excluded. The wind is the archive’s 1-minute best estimate (USA/JTWC-informed) and one storm never mixes averaging periods — a storm only an RSMC reports is published on that agency’s basis and says so (details.wind_basis). Peak value is the strongest sustained wind in the tropical-storm window (kt); the detail view draws the full track, coloured by intensity. Best-track observations, so there is no model scorecard for this lane yet.',
   midlat_cyclone: 'A closed low in 6-hourly ERA5 mean sea level pressure: a centre that is the lowest pressure within 6° with a +3 hPa isobar closing around it inside 6°, tracked forward while it stays within 6° per step (gaps up to 12 h are bridged). It becomes an event when it lives ≥48 h, travels ≥1000 km, reaches ≤990 hPa, was born between 25–70° and under 500 m elevation, and did not start as a tropical cyclone. Peak value is the lowest central pressure (hPa); a bomb tag marks a fall of ≥24 hPa in 24 h at 60° latitude. Tracked from ERA5, so there is no model scorecard for this lane yet.',
 };
 /* ------------------------------------------------------------------ */
@@ -150,6 +150,30 @@ function tcEmptyNote() {
   }
   const d = String(ib.latest_fix || '').slice(0, 10);
   return `No qualifying storm in the IBTrACS archive through ${d} — best-track publication lags real time (the archive runs ~${ib.lag_days} days behind today).`;
+}
+
+/* TC lane, non-empty (ne-fix-tc 2026-11-19, audit TC-3/4). The old line printed
+   the published count and called it "storms tracked" — those are different
+   numbers: the archive's storm universe, the published events and the systems
+   still live at the archive's edge (too new for the ≥3-fix/≥12-h rule to be
+   judged) are three things, and meta.ibtracs now carries all three. `n` is the
+   published count IN THE CURRENT VIEW, so it is quoted as events here. */
+function tcNotScoredNote(n) {
+  const ib = (state.meta || {}).ibtracs;
+  const here = `${n} tropical cyclone${n === 1 ? '' : 's'} here`;
+  if (!ib || !Number.isFinite(ib.storms_in_window)) {
+    return `Not scored — ${here}; no EWB benchmark for this lane yet.`;
+  }
+  const d = String(ib.latest_fix || '').slice(0, 10);
+  let s = `Not scored — ${here}; the IBTrACS archive holds ${ib.storms_in_window} storm`
+    + `${ib.storms_in_window === 1 ? '' : 's'} for this window through ${d}`
+    + ` (~${ib.lag_days} days behind today). No EWB benchmark for best-track events yet.`;
+  if (Number.isFinite(ib.pending) && ib.pending > 0) {
+    const who = (ib.pending_names || []).filter(Boolean).join(', ');
+    s += ` ${ib.pending} system${ib.pending === 1 ? '' : 's'} still live at the archive's edge`
+      + `${who ? ` (${who})` : ''} cannot be judged until the next publication.`;
+  }
+  return s;
 }
 
 const MODEL_COLORS = {

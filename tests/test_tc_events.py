@@ -361,11 +361,33 @@ def test_meta_ibtracs_block_is_fail_soft(monkeypatch):
     from ewb_live import pipeline
 
     monkeypatch.setattr("ewb_live.sources.ibtracs.source_status",
-                        lambda: {"latest_fix": "2026-11-12T12:00:00+00:00",
-                                 "lag_days": 5.2})
+                        lambda **kw: {"latest_fix": "2026-11-12T12:00:00+00:00",
+                                      "lag_days": 5.2})
     assert pipeline._ibtracs_meta()["lag_days"] == 5.2
 
-    def boom():
+    def boom(**kw):
         raise RuntimeError("noaa down")
     monkeypatch.setattr("ewb_live.sources.ibtracs.source_status", boom)
     assert pipeline._ibtracs_meta() is None    # null, never a failed publish
+
+
+def test_meta_ibtracs_block_carries_the_storm_universe(monkeypatch):
+    """audit TC-4: the publish passes the window and the storm ids it published,
+    so meta.ibtracs can state the universe, not just the event count."""
+    from ewb_live import pipeline
+
+    seen = {}
+
+    def fake(window=None, published_sids=None):
+        seen["window"] = window
+        seen["sids"] = published_sids
+        return {"latest_fix": "2026-11-17T00:00:00+00:00", "lag_days": 2.0,
+                "storms_in_window": 49, "published": 44, "pending": 1,
+                "pending_names": ["Akvan"]}
+
+    monkeypatch.setattr("ewb_live.sources.ibtracs.source_status", fake)
+    m = pipeline._ibtracs_meta(window=(dt.date(2026, 8, 20), dt.date(2026, 11, 18)),
+                              published_sids=["2026270N28302"])
+    assert (m["storms_in_window"], m["published"], m["pending"]) == (49, 44, 1)
+    assert seen["sids"] == ["2026270N28302"]
+    assert seen["window"][1] == dt.date(2026, 11, 18)

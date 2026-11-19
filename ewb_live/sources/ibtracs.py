@@ -270,17 +270,28 @@ def load_tracks(start: dt.date | dt.datetime, end: dt.date | dt.datetime,
     return fill_basin(df).sort_values(["sid", "time"]).reset_index(drop=True)
 
 
-def source_status(as_of: dt.datetime | None = None) -> dict | None:
+def source_status(as_of: dt.datetime | None = None,
+                  window: tuple[dt.date, dt.date] | None = None,
+                  published_sids: list[str] | None = None) -> dict | None:
     """Coverage of the cached archive for the UI's honest zero (2026-11-17).
 
     IBTrACS publication lags real time by days-to-weeks, so an empty
     tropical-cyclone lane must be distinguishable from "no cyclones
     happened": the pipeline publishes this block into meta.json and the
     dashboard quotes the archive's reach (latest fix + lag) whenever the
-    lane prints zero. Reads ONLY the parquet time column (fail-soft) — this
-    must never trigger a download or fail a publish.
+    lane prints zero. Reads ONLY the parquet (fail-soft) — this must never
+    trigger a download or fail a publish.
 
-    Returns ``{"latest_fix", "lag_days", "cache_age_h", "note"}`` or None
+    ``window`` + ``published_sids`` (ne-fix-tc 2026-11-19, audit TC-3) add the
+    storm UNIVERSE, so a non-empty lane can also say what it did NOT publish:
+    ``storms_in_window`` (storms with a fix in the window), ``published``
+    (of those, how many became events) and ``pending``/``pending_names`` —
+    storms whose last fix is at the archive's own edge (still live when the
+    build ran, so the qualification rule cannot be evaluated yet). Without
+    those, "44 storms tracked" was the only number and it conflated published
+    events with storms seen (audit TC-4).
+
+    Returns ``{"latest_fix", "lag_days", "cache_age_h", "note", ...}`` or None
     when no readable cache exists (the publish records the null explicitly,
     so "lane ran but archive unreachable" stays visible to the UI).
     """
@@ -295,6 +306,16 @@ def source_status(as_of: dt.datetime | None = None) -> dict | None:
         if pd.isna(latest):
             return None
         mtime = dt.datetime.fromtimestamp(p.stat().st_mtime, dt.timezone.utc)
+        universe: pd.DataFrame | None = None
+        if window is not None:
+            need = [c for c in ("sid", "time", "name", "basin")
+                    if c in set(pq.ParquetFile(p).schema_arrow.names)]
+            universe = pq.read_table(p, columns=need).to_pandas()
+            universe["time"] = pd.to_datetime(universe["time"], errors="coerce")
+            t0 = pd.Timestamp(dt.datetime.combine(window[0], dt.time()))
+            t1 = pd.Timestamp(dt.datetime.combine(window[1], dt.time())) \
+                + pd.Timedelta(days=1)
+            universe = universe[(universe["time"] >= t0) & (universe["time"] <= t1)]
     except Exception as exc:  # noqa: BLE001 — honesty note, not a dependency
         logger.warning("ibtracs: source_status unreadable (%s)", exc)
         return None
@@ -302,12 +323,35 @@ def source_status(as_of: dt.datetime | None = None) -> dict | None:
     if now.tzinfo is None:
         now = now.replace(tzinfo=dt.timezone.utc)
     latest = latest.to_pydatetime()
-    return {
+    out = {
         "latest_fix": latest.astimezone(dt.timezone.utc).isoformat(),
         "lag_days": round(max(0.0, (now - latest).total_seconds() / 86400.0), 1),
         "cache_age_h": round((now - mtime).total_seconds() / 3600.0, 1),
         "note": "IBTrACS best-track publication lags real time by days to weeks",
     }
+    if universe is None:
+        return out
+    try:
+        pub = set(published_sids or [])
+        last = universe.groupby("sid")["time"].max()
+        # a storm whose LAST fix is the archive's last fix was still being
+        # tracked when the file was cut: qualification (>=3 fixes >=34 kt over
+        # >=12 h) cannot be judged until the next publication
+        edge = pd.Timestamp(latest)
+        if edge.tzinfo is not None:      # parquet times are naive UTC
+            edge = edge.tz_localize(None)
+        tail = last[last >= edge - pd.Timedelta(hours=12)]
+        names = universe.groupby("sid")["name"].last()
+        pend = [s for s in tail.index if s not in pub]
+        out["storms_in_window"] = int(universe["sid"].nunique())
+        out["published"] = len(pub)
+        out["active_tail"] = int(len(tail))
+        out["pending"] = len(pend)
+        out["pending_names"] = [str(names.get(s) or "Unnamed").strip().title()
+                                or "Unnamed" for s in pend[:4]]
+    except Exception as exc:  # noqa: BLE001 — reach above must survive
+        logger.warning("ibtracs: storm-universe note failed (%s)", exc)
+    return out
 
 
 def basin_name(code: str) -> str:

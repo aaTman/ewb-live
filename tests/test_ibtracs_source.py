@@ -222,6 +222,34 @@ def test_source_status_never_downloads(tmp_path, monkeypatch):
     assert ibtracs.source_status() is not None
 
 
+def test_source_status_reports_the_storm_universe_and_pending_systems(tmp_path,
+                                                                      monkeypatch):
+    """Audit TC-3/TC-4 (ne-fix-tc 2026-11-19): a NON-empty lane must be able to
+    say what it did not publish. A storm whose LAST fix is the archive's last
+    fix was still live when the file was cut, so the ≥3-fix/≥12-h rule cannot
+    be judged on it — it is 'pending', not 'rejected'."""
+    done, live = "2026270N28302", "2026321N11087"
+    rows = [row(sid=done, i=i) for i in range(8)]          # 21 h, ended early
+    rows += [row(sid=live, i=i, NAME="AKVAN",               # stops AT the edge
+                 ISO_TIME=(dt.datetime(2026, 11, 17, 0)
+                           + dt.timedelta(hours=3 * i)).strftime("%Y-%m-%d %H:%M:%S"))
+             for i in range(3)]
+    df = ibtracs.parse_csv(csv_bytes(rows))
+    _cache_with(tmp_path, monkeypatch, df)
+
+    st = ibtracs.source_status(
+        as_of=dt.datetime(2026, 11, 19, tzinfo=dt.timezone.utc),
+        window=(dt.date(2026, 8, 20), dt.date(2026, 11, 18)),
+        published_sids=[done])
+    assert st["storms_in_window"] == 2          # the universe the lane saw
+    assert st["published"] == 1                 # what became an event
+    assert st["pending"] == 1 and st["pending_names"] == ["Akvan"]
+    # no window asked = the pre-2026-11-19 payload, unchanged keys only
+    plain = ibtracs.source_status(as_of=dt.datetime(2026, 11, 19,
+                                                    tzinfo=dt.timezone.utc))
+    assert set(plain) == {"latest_fix", "lag_days", "cache_age_h", "note"}
+
+
 def test_atlantic_basin_is_derived_from_the_genesis_fix():
     """v04r01 ships BASIN EMPTY for the whole North Atlantic. Without a
     fallback a third of the season prints "unassigned basin" in the UI; the

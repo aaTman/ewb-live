@@ -39,16 +39,21 @@ RESULTS = Path("data/results")
 PUBLIC_META_DROP = ("perf", "host", "hostname")
 
 
-def _ibtracs_meta() -> "dict | None":
+def _ibtracs_meta(window: "tuple | None" = None,
+                  published_sids: "list | None" = None) -> "dict | None":
     """TC-lane source freshness for meta.json (see run(): meta.ibtracs).
 
     Fail-soft: a freshness note must never fail a publish; None is itself
     the honest "archive unreachable" marker.
+
+    ``window``/``published_sids`` (ne-fix-tc 2026-11-19) additionally report
+    the storm universe in the window and the systems still live at the
+    archive's edge, so the UI can say what it did not publish (audit TC-3/4).
     """
     try:
         from .sources.ibtracs import source_status
 
-        return source_status()
+        return source_status(window=window, published_sids=published_sids)
     except Exception as exc:  # noqa: BLE001
         logger.warning("ibtracs source_status failed (meta.ibtracs=null): %s", exc)
         return None
@@ -795,7 +800,15 @@ def run(
     # null = lane ran but the archive was unreachable; the KEY ABSENT means
     # the release was built by pre-lane code (the UI says so instead of
     # printing an unqualified 0).
-    ibtracs_meta = _ibtracs_meta()
+    # ne-fix-tc 2026-11-19 (audit TC-3/4): the same block now also carries the
+    # storm universe, so a NON-empty lane can say how many storms the archive
+    # held, how many became events, and which systems were still live at the
+    # archive's edge (not yet judgeable). Additive keys only.
+    ibtracs_meta = _ibtracs_meta(
+        window=(start, end),
+        published_sids=[e.details.get("sid") for e in events
+                        if e.event_type == "tropical_cyclone"
+                        and e.details.get("sid")])
     # Same rule, generalised (mlc-fix 2026-11-18): every lane that can fail
     # soft reports how it ended — {"midlat_cyclone": {"status": "ok"|"failed"
     # |"no-data", "reason": ...}}. Absent type = the lane reports nothing (or
