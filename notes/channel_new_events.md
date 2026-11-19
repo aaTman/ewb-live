@@ -3185,3 +3185,133 @@ tree — it republishes the Josephine double-count.**
 Needs owner/integrator: merge `fix/mlc` into the integration line; F6
 one-line status-tag fix; the two stale dashboard e2e tests (flood-map
 layer); the two owner decisions in audit F5 (MLC scoring) if they want it.
+
+## [ne-fix-flood] 2026-11-19 03:05 UTC — audit filed (notes/audit_flood.md); fixes starting, first deploy next
+Independent re-statistics of the flood stores (not the lane's own tests): the
+ERA5-p95 thresholds sit 1.6-2.6x *below* IMERG's own wet-day p95 (worst >60N),
+which inflates raw detections (~766) and seeds spurious high-lat hits; the
+event definition has no hysteresis and publishes nothing that a daily-lane
+blip creates (publish gate wants peak-72h >= 50 mm), so monsoon spells
+fragment. Also: no flood viz panel (the one dev-only e2e failure that opens a
+flood is exactly this), and 6 store days carry the unresolved run label
+`auto`. Fixes in priority order per the audit; bias rescale lands as a
+documented per-band quantile map (owner rule: ERA5 keeps supplying the
+climatology). First :8051 deploy = flood detail view + provenance fix;
+detector changes follow. No push/PR. — ne-fix-flood
+
+## [ne-fix-flood] 2026-11-19 03:40 UTC — owner F0 accepted: flood gets a real map layer
+Audit F0 written (notes/audit_flood.md). Plan: (1) daily flood class frames
+`raw_exceedance/flood_<YYYYMMDD>.cls` (union of >=20 mm/day OR >=50 mm/72 h,
+5 accumulation bins, land-only, IMERG reach) built by
+`python -m ewb_live.viz.flood_frames` (new module) from the same join the
+detector uses, registered as an additive `flood` key in raw `index.json`;
+(2) mergedmap: 4th raw layer (blue/green ramp tokens --dur-flood-1..5 light +
+dark), legend group with mm stops, single-chip selection now restricts the
+raw layers to that lane (flood chip => flood shading only, not heat/AR);
+(3) e2e: flood tab paints non-empty canvas marks + legend entry. Frames build
+runs on the LXC in background; dev-only, no push. Detail-view viz (flood_accum
+-> consecutive_days-style panel) continues after this ships to :8051.
+— ne-fix-flood
+
+## [ne-fix-flood] 2026-11-19 05:05 UTC — resumed on T3; F0 build starting (map layer)
+Re-tooked the 03:40 plan after the context migration; checkpoint 8b9a072
+reviewed (detail-view floodviz + run-provenance fix kept, its viz.json needs
+the consec/daily fields the panel reads — completing it with the layer work).
+Building now: (1) `ewb_live/viz/flood_frames` — daily union-rule class frames
+`raw_exceedance/flood_<YYYYMMDD>.cls` (zlib u8 on the raw grid, bins
+20/50/100/200/350 mm/day-equivalent) + additive `flood` key in the raw
+index.json; serve.py allowlist + weekly/dev_site steps; (2) mergedmap 4th raw
+layer (key l) + legend + single-chip isolation; (3) --dur-flood-1..5 tokens
+(AA-checked light+dark); (4) e2e: flood tab paints marks + legend, chip
+isolation. Dev-only, no push. — ne-fix-flood
+
+## 2026-11-19 ~05:20Z — ne-fix-flood: defect 0 fixed on dev, verified in browser
+- **Flood map layer live on :8051.** New `ewb_live.viz.flood_frames` publishes
+  a daily exceedance footprint (`raw_exceedance/flood_YYYYMMDD.cls`, 5-class
+  mm/day-equiv ramp over `max(daily, accum72/3)`, additive `flood` key in the
+  shared raw index; 88 frames built on dev, absent tail days honestly skipped
+  via the daily/ file inventory).
+- `mergedmap.js`: 4th raster layer (flood), mm legend ramp with mm/day-equiv
+  unit line, day-frames served past the ERA5 cutoff; flood chip now isolates
+  the lane (single chip => only that lane's raster; All => four groups).
+- Verified on dev in browser: 1440 light+dark, 390 (no h-overflow, legend
+  wraps, ~11k/2.3k flood px painted on 2026-10-24), legend stops 20-50…350+,
+  event boxes kept, flood detail viz shows fields + spell bar. Legend slots
+  widened to 50px for the flood ramp. serve.py allowlist extended
+  (`flood_\d{8}\.cls`) — dev web service restarted once.
+- Fixed two real bugs found while testing: run-mix counted absent days
+  (flood.py, unit-restored), and status.json lists beyond-reach dates —
+  flood_frames clamps to the store's actual daily files.
+- Lane run (other agent) still cycling on dev; full e2e-vs-baseline name diff
+  queued behind its publish. 555 unit pass + the one env-only EWB_DATA_PREP
+  failure documented above; flood.py suite 23/23.
+
+## [ne-fix-flood] 2026-11-19 ~06:40 UTC — DONE: rebased onto round2, defect 0 closed, suite-clean
+- **Rebased `fix/flood` onto `fix/round2-legend-tc-wind`** per the owner
+  order; the tree now carries `61bbd68` (lane-generic legend axe rule — it
+  covers the flood ramp's identical `.out .lg-t` case) and `518ad32`
+  (schema-3 wind reader). Re-synced :8051 with this superset tree and
+  re-verified the site end-to-end.
+- **Shared-:8051 incident, named**: my previous full e2e run (17F) hit a
+  mid-suite clobber — the round2 tree landed under the running suite, so the
+  flood fixtures copied a dashboard without the flood layer (`l` missing
+  from `on`). Not a code failure: the same suite on the consistent rebased
+  tree gives **14 failed / 154 passed / 1 skipped**, and the 14 names are
+  exactly round2's recorded set (3 guardian: `busiest_day` stale premise,
+  `renders_sanely`+`unrecoverable` on AR `a9d8ad3af01c` footprint⊐bbox; the
+  11 documented pre-redesign legend/raw-layer/AR-ramp/merged-box family,
+  common to dev+live). **No new failure names** vs either baseline; my two
+  flood tests pass in-suite. `test_raw_layer_toggles_and_url` passes again
+  (it failed only mid-clobber).
+- Browser on the rebased tree: flood/track/heat/TC/All tab cycle — **0
+  console/fetch errors**; flood tab at 1440 light+dark (screenshots in
+  `notes/screenshots/flood/`), flood px census ~11k on 2026-10-24,
+  `on`=flood-only with the chip, four groups with All; schema-3 wind draws
+  under the tracks (16.6k painted px, "displayed hour" legend).
+- Units local: **561 passed / 29 skipped** (`EWB_DATA_PREP_DIR` must point at
+  the ExtremeWeatherBench checkout — the one earlier "failure" was that env
+  var missing in this worktree, not code).
+- Flood detail viz: 40/40 published events carry `consec`-bearing viz on dev;
+  panel renders (field, day slider, spell bars, "Not scored" honesty) in
+  light+dark.
+- Ops notes for the integrator: `weekly.py` step 6b2 + `dev_site.sh lanes`
+  build `flood_frames` with the raw layers; `serve.py` allowlists
+  `flood_\d{8}\.cls` (the running dev web service needed one restart for
+  that). Detector change on this branch: run-mix now counts only days that
+  served data (flood.py; restores the unit that the checkpoint's `_run_of`
+  had inflated).
+- No push, no PR. Live :8050 untouched. — ne-fix-flood
+
+## [ne-fix-flood] 2026-11-19 ~07:20Z — PARDIG swap started (owner follow-up; flood map layer DONE above stays)
+- Anonymous GCS reads VERIFIED (bucket public; XML endpoint + Zarr, no
+  credentials) — no owner card needed, per the brief's order.
+- Bias check first (step 1): `notes/pardig_vs_imerg.md` + reproducible
+  `ewb_live.tools.pardig_bias_check` (full JSON on the box). Headline:
+  volume parity PARDIG/IMERG at 0-45 deg lat (1.03/1.00; +7% cells >=20 mm),
+  much drier beyond 45 (0.66) and 60-67 (0.43; only 4% of IMERG's >=20 mm
+  cells); event boxes 0.26-1.03x with matched day-by-day shapes. Reach:
+  2026-11-18 complete vs IMERG's 11-16; today's partial batch honestly
+  skipped (15/96 frames -> hole, no cache).
+- `ewb_live/sources/pardig.py`: 96x15-min instantaneous m/h -> UTC-day mm
+  (sum x0.25 h), node grid (-90..90 x 0..360) -> IMERG-style centres
+  (midpoint-of-neighbours, dateline seam splits correctly), the lane's own
+  0.1->0.25 join at cache-build, **only** a small daily 0.25 deg cache
+  (`data/pardig/daily/pardig_025_*.nc`) + status.json, prune, CLI
+  (`python -m ewb_live.sources.pardig --days 96`). 95 days built on the box.
+- flood.py: `source="pardig"|"imerg"` on `load_observations` /
+  `scan_flood_events`, default PARDIG (`EWB_FLOOD_SOURCE` env to switch);
+  provenance `data_source.kind/product/license/display` on every event;
+  provisional reason per source (PARDIG: "AI-estimated... not a science-grade
+  observation"); climatology_note names the actual source; IMERG code
+  untouched & tested. UI: eventviz panel title/overlay label
+  "AI-estimated precipitation (Google PARDIG, CC BY 4.0)", merged-map legend
+  tip follows `index.flood.tip`, About text rewritten (not "observed",
+  credits Google, notes IMERG fallback). weekly step 1b + lanes step build
+  the cache BEFORE detect.
+- Units: 13 new unit tests (conversion, accumulation, dateline/Greenwich
+  seams, cache/hole/absent-day semantics, source switch + provenance,
+  index block); flood suites 33 green (existing IMERG tests pinned to
+  source="imerg").
+- Rebuild chain running on dev now (detect -> flood viz -> flood_frames ->
+  publish); will report before/after flood counts + e2e + browser vs
+  baseline when it lands. No push. — ne-fix-flood
