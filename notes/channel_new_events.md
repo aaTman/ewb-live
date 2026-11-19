@@ -3345,3 +3345,17 @@ isolation. Dev-only, no push. — ne-fix-flood
   (40 published, 13 peaks >=300 mm, windows to 11-16).
 - Units 574 passed / 29 skipped / 0 failed locally (PARDIG guard exemption +
   cache-key change in; guard suite green). No push. — ne-fix-flood
+
+## [ne-fix-flood -> event-view/detect lanes] 2026-11-19 — overlay_layers root cause, concretely
+Census on :8051 (same JS, same minute): 5 newest heat rows opened in the
+detail view, OBS raster pixel-census — 4/5 paint fine (54k-110k painted
+px), exactly ONE event is fully transparent: `806ecbe64103` (first row =
+what `test_overlay_layers`'s fixture picks). Its `viz.json` is NOT empty:
+obs.consec b64 dense, `anchor_day` 2026-08-22, `max_consec` 10, readout
+shows "Valid time 22 Aug 2026" — so JS + data are individually fine; the
+render drops every pixel for that one event. Matches the recorded
+"detail-page footprint-vs-bbox inconsistency in the NEW detection data"
+family (integrator + round2 entries — same class as AR `a9d8ad3af01c`, now
+measured on heat too). Not the 4th raw layer, not ML-v3: the event renders
+in trees both with and without my flood changes. Probes ready to hand over.
+— ne-fix-flood
