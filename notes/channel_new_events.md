@@ -2962,3 +2962,85 @@ owner items are code-complete and unit/e2e-green locally; deploying now.
 (schema 3, ~9 min/88 days, 60-min cap). Will verify :8051 in Chromium at
 1440/390 light+dark + console, then run the full e2e vs the 41F/122P baseline
 by name. No push, no promotion.
+
+## [ne-fixes2] 2026-11-19 06:05 UTC — DONE (round 2, items 1–4): all four owner decisions shipped to :8051 and verified; shared-dev-site clobber needs an owner call
+
+### What changed (branch `fix/round2-legend-tc-wind`, never pushed)
+
+Commits since the 05:05 entry: `ee2a650` (schema-3 test story), `518ad32`
+(tracklayer step grids), `b2e76f7` (trackwind e2e schema 3 + step-scrub +
+crossing cases), `d8ce34c` (crossing unit guard + `tests/test_mlc_hue.py`),
+`d05e058` (lane-aware dateline suite), `862aaf6` (verification screenshots).
+
+1. **MLC = RED everywhere** — verified one source of truth (`--series-mlc`
+   `#a0312d`/`#cf4a55`), retired amber banned from shipped source by the new
+   `tests/test_mlc_hue.py` (4 tests incl. the node-gated seven-lane dataviz
+   gate, which exits 0).
+2. **TC wind = INSTANTANEOUS at the displayed hour** — `tc_wind.json` is
+   **schema 3** (one grid per live 6-hourly step; no all-zero day entries);
+   `tracklayer.js` draws/hit-tests ONLY the grid matching the frame's
+   `YYYYMMDDHH` hour; dissipation reads per step (real data: Nolo's 10-10 grid
+   exists at 00Z/06Z only — the 12Z frame draws nothing while the storm is
+   still `alive`, verified in-browser). Tooltip "wind, instantaneous" + hour
+   row; legend unit "ERA5 10 m wind · displayed hour"; group title says "not a
+   maximum over the day"; guide-not-estimate note kept. ERA5 under-read left
+   uncorrected per owner. A schema-2 asset remains readable, so a code sync
+   before an asset rebuild renders instead of blanking.
+3. **axe** — fixed at `61bbd68` (dim the paint, not the text); `test_axe_zero_
+   violations` ×2 green on :8051 and on my local instance.
+4. **Dateline** — merged map verified on REAL data (Nolo `1a992ebc5446`, day
+   2026-10-04, raw columns 176.75→189.8): the field paints 59 px at the left
+   edge + 67 px at the right on one frame, wrapped cells hit-test (47 kt at
+   24 N, −177.25), no band anywhere. Synthetic crossings pinned three ways:
+   producer unit test (`test_a_synthetic_crossing_…` — far side ships RAW past
+   +180, wrapped contract position lands on the blob, window stays capped, a
+   centre >CORE_DEG away carries no grid), e2e with a synthetic Seamcrosser
+   (`test_a_crossing_field_paints_both_sides_of_the_seam` — both-edge paint +
+   pixel-identical middle + wrapped hit test), and the lane-aware guardian
+   suite (box contract on the wrapped AR, MARK contract on the wrapped TC —
+   no track-lane rectangle by design; the no-band probe must measure per
+   SUBPATH or a correct wrapped box trips it).
+
+### Verification
+
+* Units: **552 passed / 28 skipped** (my adds: `test_tc_wind` 49, `test_mlc_hue` 4).
+* e2e full suite vs the 41F/122P baseline, by name — **14 failed / 152 passed /
+  1 skipped** (my tree + dev data served locally at :8054-equivalent; the
+  shared :8051 churns see below). No new failure NAMES. Fixed from baseline:
+  axe ×2, `test_degenerate_full_band_bbox_is_recovered_from_footprint`.
+  Remaining 14 all sit in the baseline's recorded set: 3 guardian (busiest_day
+  = its recorded stale premise — the map draws 8/8 box-lane events and the 10
+  track-lane events as MARKS; `renders_sanely`/`unrecoverable` now fail on the
+  **detail-page** assertion for wrapped AR `a9d8ad3af01c`: its observed
+  footprint fits ~187° wide while the published bbox spans 51.25° — a
+  footprint-vs-bbox inconsistency in the NEW detection data, not the merged
+  map; merged-map assertions both pass) + 11 `test_dashboard_fe` (the
+  documented pre-redesign legend/raw-layer/AR-ramp/merged-box family, common
+  to dev and live).
+* Real browser, :8051 + local: 1440 and 390, light and dark — **0 console
+  errors, 0 horizontal overflow**, per-tab TC/MLC shots in
+  `notes/screenshots/round2/`. Wind-field probes above.
+
+### Ops / coordination — needs the owner or orchestrator
+
+`:8051` is a last-writer-wins shared deploy and my tree was clobbered TWICE
+while verifying (04:38 by the flood lane's tree — pre-axe styles.css + its new
+flood legend produced 7 axe failures; ~05:3x by an even older tree whose
+schema-2 `tracklayer.js` CRASHES against the schema-3 `tc_wind.json` the site
+now serves — `gridOf` TypeError, wind field blank + console errors). I re-synced
+mine at 05:5x — site state at this entry: my tree, wind OK, 0 console errors.
+**Until the lanes merge, whoever syncs last silently breaks another lane.**
+Required for the other agents: anything synced to :8051 must carry
+`61bbd68` (legend axe rule — it is lane-generic and also fixes the flood
+ramp's identical failure) and the schema-3 `tracklayer.js` (a pre-`518ad32`
+reader against the schema-3 asset throws). My verification therefore ran
+against a locally served copy of MY tree + the dev data snapshot (deterministic);
+the :8051 numbers above were taken while my tree was live.
+
+Open, not mine, named for the owners: (a) AR `a9d8ad3af01c` footprint ⊐ bbox
+(whoever owns AR detection; it is what the last 2 dateline tests now trip on);
+(b) `test_global_map_opens_on_the_busiest_day` asserts one box per active
+event — predates track lanes; (c) flood agent: rebase onto this branch (or
+cherry-pick `61bbd68` + `518ad32`) before the next shared sync.
+
+No push, no PR, no promotion — live :8050 untouched throughout.
