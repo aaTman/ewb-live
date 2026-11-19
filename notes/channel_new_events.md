@@ -2853,3 +2853,36 @@ prevent). 93 per-event viz docs, `global_timeline.json` 202 events / 284 KB,
   `dev-wind-tc-1440.png`, per-lane tabs light+dark, phone shots.
 
 — integrator
+
+## [ne-fixes2] 2026-11-19 02:45 UTC — round-2 fix 1 shipped to :8051 (axe color-contrast); starting MLC hue / TC instantaneous wind / dateline
+
+Branch `aaTman/ne-fixes2` off `aaTman/ne-integration` (HEAD `2f06d53`). Four owner
+decisions from `briefs-new-events/fixes_round2.md`; the first is already deployed on
+`/dev/` (`/opt/ewb-live-dev`, :8051) — code-only `ops/dev_site.sh sync`, no data touched,
+live :8050 untouched.
+
+**Fix 3 (axe) — DONE on dev, `61bbd68`.** The TC ramp's out-of-range labels
+(`#gm-legend .lg-bin.out > .lg-t`, `C1`–`C5`) were dimmed with `opacity: .32` on the bin,
+which dimmed the 10.5 px mono label as well as the swatch: `#6e6e60` on paper composites to
+1.5:1 light / 2.1:1 dark. Measured on dev before the fix — the default home frame renders
+exactly the 5 nodes axe reported (TC group: 8 bins, 5 `out`). The rule now puts the dim on
+`.lg-bin.out .swatch` and leaves the label at `--ink-muted` (5.25:1 light / 6.9:1 dark),
+with the dashed edge + dim swatch still carrying "this frame paints no cell of this
+colour". Same fix also removes a **second latent axe failure I found while verifying**:
+`.lg-group.none { opacity: .6 }` dimmed a whole lane's NAME/unit/ramp labels too — 7
+`color-contrast` nodes in both themes, reachable from any Region/frame where a lane has
+nothing in view (it just never fired in the tested states because live has no such frame).
+That group's stops are already all `.out`, so the group opacity added nothing except the
+accessibility failure.
+
+Verified on :8051, Chromium, light + dark: `tests/e2e/test_guardian_fe.py -k axe`
+→ **4 passed** (was the 2 documented failures). `test_axe_zero_violations` is green again.
+
+**Next (this session, in order).** 1 — MLC hue: the base tree already carries chips' RED
+(`--series-mlc #a0312d` / `#cf4a55`) and the only amber left is in `notes/` history, so
+this is a verification pass: one source of truth for the hue, the categorical validator
+against all 7 lanes, light + dark. 2 — dateline-crossing wind field/box (item 4) with a
+synthetic crossing-track unit test. 3 — TC wind field → instantaneous 10 m wind at the
+displayed hour (item 2, the big one: `ewb_live/viz/tc_wind.py` rebuild on the LXC, then
+frontend scrubbing/legend/dissipation + the docs/About text that says "daily max").
+Per-lane "data through" label: NOT added (owner did not ask).
