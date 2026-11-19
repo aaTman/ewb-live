@@ -26,9 +26,7 @@ from fsspec.implementations.http import HTTPFileSystem
 ECMWF_BUCKET = "ecmwf-forecasts"
 ECMWF_CLOUDFRONT = "https://d2zvc0wgha4k2l.cloudfront.net"
 
-# NOTE: the CIRA MLWP archive bucket is deliberately NOT referenced here —
-# MLWP forecast data is reachable only through ewb_live.stores (the virtual
-# Icechunk store); tests/test_mlwp_store_guard.py enforces this repo-wide.
+AIWP_BUCKET = "noaa-oar-mlwp-data"
 AIGFS_BUCKET = "noaa-nws-graphcastgfs-pds"
 
 CACHE_ROOT = os.environ.get(

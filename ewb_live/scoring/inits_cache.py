@@ -1,9 +1,8 @@
 """Persistent cache for ``sources.available_inits`` (performance).
 
-``available_inits`` for AIWP-backed models reads the local Icechunk store
-and tail-lists the archive through the store builder's listing layer —
-~15-30 s per fresh call for GFS-based models. The bucket content for a
-*past* day is final (files are
+``available_inits`` for AIWP-backed models lists ``s3://noaa-oar-mlwp-data``
+day-by-day and unions in the local Icechunk store — ~15-30 s per call for
+GFS-based models. The bucket content for a *past* day is final (files are
 written within hours of the run), so per-model day coverage is cached in
 ``data/cache/aiwp_inits.json`` and only the last few days are re-listed
 each call. Repeated pipeline/weekly runs over overlapping event windows

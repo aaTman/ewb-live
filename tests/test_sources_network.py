@@ -25,19 +25,8 @@ def _recent_init(model: str) -> dt.datetime | None:
     return (daily00 or inits)[-1] if inits else None
 
 
-def _skip_without_store(model: str) -> None:
-    """MLWP reads are virtual-store-only (drop-subsets): skip if no repo here."""
-    if sources.model_info(model).backend != "aiwp":
-        return
-    from ewb_live.stores import mlwp_icechunk as mi
-
-    if not mi.repo_exists(mi.DEFAULT_REPO):
-        pytest.skip(f"Icechunk store absent at {mi.DEFAULT_REPO!r}")
-
-
 @pytest.mark.parametrize("model", sources.list_models())
 def test_open_recent_forecast(model):
-    _skip_without_store(model)
     init = _recent_init(model)
     if init is None:
         pytest.skip(f"no init for {model} in the last 4 days (store gap)")
@@ -72,7 +61,6 @@ def test_make_ewb_forecast(model):
     """The EWB-facing wrapper returns an inputs.Forecast with the right vars."""
     from extremeweatherbench import inputs as ewb_inputs
 
-    _skip_without_store(model)
     init = _recent_init(model)
     if init is None:
         pytest.skip(f"no init for {model} in the last 4 days")

@@ -18,8 +18,7 @@ from dataclasses import dataclass, field, replace
 
 # EWB-native variable name -> (per-model native name) tables ------------------
 
-# AIWP / CIRA MLWP archive (read via the Icechunk virtual store, see
-# ewb_live/stores/). Mirrors
+# AIWP / CIRA store (s3://noaa-oar-mlwp-data). Mirrors
 # extremeweatherbench.inputs.CIRA_metadata_variable_mapping (keys reversed).
 CIRA_NAME_TO_EWB = {
     "t2": "surface_air_temperature",

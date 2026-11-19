@@ -1,9 +1,8 @@
 """ewb_live.sources — live forecast data for the EWB dashboard.
 
 Sources:
-* CIRA/NOAA 'AI Weather Prediction' MLWP archive (graphcast, pangu_weather,
-  fourcastnet_v2, aurora; IFS- and GFS-initialised) — read exclusively via
-  the Icechunk virtual store in :mod:`ewb_live.stores.mlwp_icechunk`
+* CIRA/NOAA 'AI Weather Prediction' MLWP store, s3://noaa-oar-mlwp-data
+  (graphcast, pangu_weather, fourcastnet_v2, aurora; IFS- and GFS-initialised)
 * ECMWF open data, s3://ecmwf-forecasts (ifs_hres, aifs_single)
 * NOAA operational GraphCast, s3://noaa-nws-graphcastgfs-pds (aigfs)
 """
