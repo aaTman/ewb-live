@@ -3387,3 +3387,51 @@ Rebuilt from the rebased tree (mlc-v3 + flood pardig keys). Published now:
   errors; AI label live on panel, legend tooltip, About.
   Screenshot: notes/screenshots/flood/pardig_390_dark_floodtab.png.
 - Units: 574 passed / 29 skipped / 0 failed. No push. — ne-fix-flood
+## [ne-fix-tc] 2026-11-19 02:55 UTC — TC lane audited against the archive itself (not its tests): events are right, ingest/basis/honesty-copy are wrong — notes/audit_tc.md
+
+Independent re-derivation on the ewb LXC from `ibtracs.last3years.list.v04r01.csv`
+(own qualification code, `USA_WIND`) against `/opt/ewb-live-dev` (:8051, window
+2026-08-20…2026-11-18). Scripts committed: `notes/tc_audit.py`,
+`notes/tc_timeline_diff.py`, `notes/tc_day_published.py`.
+
+1. **Events: 44/49 storms qualify, 44 published, 0 missing, 0 extra, 0 peak/category
+   mismatch vs the raw 1-min wind.** The 5 drops: 4 never reached 34 kt (max 29/39/30/29
+   kt) = correct non-events; the 5th is **AKVAN `2026321N11087`** (NI, fixes 2026-11-17
+   00/03/06Z, 39 kt, span 6 h < 12 h) — correct rule, but it fails *only because the
+   archive stops at 11-17*: a live system the UI never mentions.
+2. **The 2.0 d IBTrACS lag is the true source reach.** ALL (333 MB), last3years (11.9 MB)
+   and ACTIVE (68 KB) all carry `Last-Modified: 2026-11-17 10:10 GMT` and latest fix
+   `2026-11-17T00Z`; the NRT mirror `ftp.atm.npu.edu/pub/data/IBTrACS_NRT/` does not
+   answer from this network (20 s timeout) and there is no `last300days` name in the
+   NCEI index. Our cache age was 1.4 h — refresh is not the limiter. So: honest lag,
+   but it must be *said* even when the lane is non-empty.
+3. **Ingest cost (P2):** we pull the 333 MB ALL file to serve a 90-day window; the
+   last3years file is 28× smaller, same publication stamp, and byte-for-byte equivalent
+   for this lane (2 895 fixes / 49 storms from both). Fixing with a window-aware source.
+4. **Wind basis (P1 latent):** agency priority mixes 1-min (USA/JTWC), IMD 3-min
+   (NEWDELHI) and 10-min (WMO/TOKYO/CMA/KMA/HKO/BOM/NADI/WELLINGTON/REUNION/DS824/MLC/
+   NEUMANN) per *fix*, and `category()` applies Saffir-Simpson (a 1-min scale) to
+   whatever won; `validate.py` claims "kt, 1-min sustained" and nothing enforces it.
+   Measured today: 5/2 895 fixes non-USA (all null-fill), 1 storm mixes sources, 0
+   published storms on a non-1-min basis → 0 wrong categories now, latent after. Fixing
+   by enforcing one basis per storm + publishing `details.wind_basis` (no silent
+   unit conversion of observations).
+5. **Busiest-day missing box is NOT the TC lane — @ne-fixes2:** own read of
+   `global_timeline.json` for 2026-10-26 = 15 events, 7 box-lane, and one of them is
+   wrapped: **`atmospheric_river 4fabad88a37b`, bbox `[-49.5,-22.0,144.75,-160.5]`**
+   (`lon_min > lon_max`, SPEC convention). The merged-map box path draws nothing for it,
+   which is the "10 boxes expected, 9 drawn" gap — same root cause as the two
+   `test_dateline_*` dev failures. 18 published events have wrapped bboxes (4 TC, 14 MLC,
+   + this AR), so it is systematic. I did not touch `mergedmap.js`/`tc_wind.py`/legend.
+   Also: the day-membership differs between `events_selected.json` (my naive compare
+   counted 16 active that day because events ending at `2026-10-26T00:00` match a string
+   compare) and the timeline (15) — worth 2 lines in the FE copy if the tabs ever count a day.
+6. **Copy (P2/P3):** `noScoresNote` prints "Not scored — 44 storms tracked from IBTrACS
+   best tracks" where 44 is the *published event count in the current view*, not storms
+   tracked (49 in the window); archive reach appears only in the empty-lane note; and
+   `TYPE_CRITERIA.tropical_cyclone` never says the wind is 1-minute/USA-basis.
+
+Fixing in order 3 → 1/6 → 2 → 4/5; TC scoring feasibility against the virtual store is
+being measured now and I will report a number, not an opinion. **First ship to :8051 is
+the lane/criteria copy + honest reach/pending disclosure** (owner-visible: the TC tab
+says what the archive reaches and that a system is pending), then the ingest/basis fixes.
