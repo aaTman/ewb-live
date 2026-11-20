@@ -1,10 +1,11 @@
 # Scoring design for the TC, MLC and flood lanes
 
-Status: **proposal only** (2026-11-20). No scoring code, no deploy, no merge. Everything
+Status: **design approved by the owner on 2026-11-20 (decisions D1-D10, section 7); implementation plan in
+section 8.** This document contains no scoring code and nothing here is deployed. Everything
 below is read from the repo at `origin/develop` (30faee0) and from read-only probes on the
 EWB LXC; measured numbers say so, estimates say so.
 
-Owner decision folded in (supersedes the "TC-8 metric options" part of the brief): the TC lane
+Owner decision folded in (decided before this note; supersedes the "TC-8 metric options" part of the brief): the TC lane
 is **not** track-presence-only. It gets ExtremeWeatherBench's own TC metrics **plus** two new
 metrics, along-track error and cross-track error (Leonardo & Colle 2017 convention).
 
@@ -18,12 +19,10 @@ metrics, along-track error and cross-track error (Leonardo & Colle 2017 conventi
 | **MLC** (80 lows) | Same shared track core; verify against the ERA5 MSLP track the event came from | `TrackPositionError`, `AlongTrackError`, `CrossTrackError`, `CentralPressureError`, `TrackMiss` | same | ~8-10 agent-h, <1 h wall |
 | **Flood** (40 events) | Daily exceedance contingency on the event's own threshold + areal accumulated-precip error. Only GraphCast carries precipitation in the store | `CriticalSuccessIndex`, `FalseAlarmRatio`/POD, `FractionsSkillScore`, `PrecipAreaBias` mm | `graphcast`, `graphcast_gfs` only (2 of 8) | ~8-10 agent-h, <1 h wall |
 
-Order: shared track core + TC track metrics first, MLC second, EWB landfall classes third, flood last (section 7).
+Order: pilot (WP0), shared track core + TC track metrics (WP1), MLC (WP2), EWB landfall classes (WP3), flood (WP4); section 8.
 
-**Owner decisions needed** (details in section 8): D1 TC tracker (hybrid vs pure EWB), D2 which inits
-count, D3 intensity (MSLP only, no wind), D4 baseline/model set (does ECMWF-direct `ifs_hres` count
-for TC/MLC), D5 row granularity, D6 flood scope (GraphCast-only + AI-estimated truth), D7 MLC truth and
-metric set, D8 leads shown, D9 compute window, D10 confirm the along/cross sign convention.
+**Decisions** (owner-approved 2026-11-20, all accepted as recommended): see section 7 (D1-D10). **Plan**:
+section 8 (work packages WP0-WP4, rule R1: no backfill overlaps the Monday 07:00 UTC weekly run).
 
 ---------------------------------------------------------------------------------------------
 
@@ -115,7 +114,7 @@ Must be added per lane (nothing here exists for TC/MLC/flood):
   2-D chunk). This agrees with the TC-8 probe (median 0.81 s per 3-variable read).
 * Memory: `data/perf.json` of the last weekly run records `peak_total_rss_gb = 183.8` for 4 concurrent
   EWB jobs (the brief says 127 GB; the box has 256 GB). The new lanes are bbox-sized numpy reads, not
-  EWB densified arrays; my estimate is <3 GB per worker, but the pilot in section 7 must measure it
+  EWB densified arrays; my estimate is <3 GB per worker, but the pilot (WP0, section 8.2) must measure it
   before the full run.
 * `events_selected.json` on the LXC: 80 MLC, 44 TC, 40 flood (matches the brief); `events.json` carries
   the unselected totals (738 flood, 145 MLC) and must not be used for sizing.
@@ -214,7 +213,7 @@ central-pressure error, a miss indicator, and (optionally) feed EWB's landfall c
   take our forecast track, shape it into EWB's track DataArray (`latitude`, `longitude`, `valid_time` over
   `(lead_time, valid_time)`), build the observed landfall target from our own best-track series, and call
   `LandfallMetric(metrics=[IntensityMAE, TimeME, Displacement], approach="next", ...)` through its
-  documented `forecast_landfall` / `target_landfall` kwargs path. This needs a one-day spike (section 7)
+  documented `forecast_landfall` / `target_landfall` kwargs path. This is checked in the WP0 pilot and built in WP3 (section 8)
   because the classes expect EWB's `init_time`-indexed forecast layout; if the spike fails we fall
   back to our own 30-line landfall detector on `calc.find_landfalls`.
 
@@ -268,7 +267,7 @@ valid time has a fix when the storm exists). Forecast position `p_f = (phi_f, la
    Checks: forecast displaced straight ahead gives `(+d, 0)`; displaced 90 degrees clockwise from the
    motion gives `(0, +d)`; `along^2 + cross^2 = d^2`. This matches the convention in the request (the
    cited Leonardo & Colle (2017, *Weather and Forecasting*) paper; I have not re-read it here and the
-   exact sign statement should be confirmed, D10).
+   exact sign statement is the owner-approved convention, D10).
 4. Central-pressure error: `CentralPressureError = mslp_fc_min - p_obs` in hPa, `p_obs` =
    IBTrACS USA/WMO pressure in the track row (slot 5), forecast value = MSLP at the tracked minimum.
    Positive = forecast too weak. Not emitted when the observed pressure is missing.
@@ -304,7 +303,7 @@ Aggregation.
 * Skill vs baseline: `build_scorecard` computes skill on the intersection of events both models
   scored, but it does **not** account for misses. A model that tracks only the easy storms would look
   good on position error; the cell must show `TrackMiss` beside it (the dashboard shows both columns
-  per lead), or the dashboard must grey a cell whose miss rate exceeds a threshold (D5 sub-point).
+  per lead), so a cell whose miss rate exceeds 50 % is greyed (D5).
 
 ### 3.6 Which forecast positions and intensities the store can actually supply (the TC-8 follow-up)
 
@@ -337,7 +336,7 @@ Measured by TC-8 (`notes/tc_score_probe.py`, 36 reads, graphcast/aurora/pangu_we
   subset) landfall place/time/pressure errors.
 * Does not tell: wind intensity or rapid intensification skill; genesis (pre-genesis inits excluded,
   D2); storm structure/size; skill for storms that are not in IBTrACS yet (the lane waits for the
-  archive, ~3-4 days lag: `meta.ibtracs`); anything about ECMWF-direct models unless D4 includes them.
+  archive, ~3-4 days lag: `meta.ibtracs`); anything about ECMWF-direct models other than the `ifs_hres` baseline (D4).
 
 ### 3.8 Cost, failure modes
 
@@ -458,8 +457,7 @@ outside the event days are counted. For each `(event, model, init-day-lead)`:
 
 One yes/no per `(event, model, lead)`: "did the forecast produce at least one cell-day over the
 threshold in the footprint during the event window". Cheapest, but with 40 events and 2 models the
-table is a handful of 0/1 cells; use it only as a fallback if the owner defers precipitation depth
-verification.
+table is a handful of 0/1 cells; not part of the plan; kept for reference only.
 
 ### 5.4 Cost and failure modes
 
@@ -509,50 +507,210 @@ init_time, fingerprint, truth_source`.
 
 ---------------------------------------------------------------------------------------------
 
-## 7. Effort, order, and the pilot
+## 7. Decisions (owner-approved 2026-11-20)
 
-Estimates (focused agent hours = coding + tests + one review cycle; compute = LXC wall clock). These
-are my estimates, not measurements, except where marked.
+The owner accepted D1-D10 exactly as recommended in the first revision of this note. These are now
+the specification; the sections above are written to match them.
 
-| Work item | Agent-h | Compute (wall) | Notes |
-|---|---|---|---|
-| **P0 pilot/spike**: our tracker on 3 storms x 4 models x all inits; measure miss rate, RSS, s/init; EWB landfall classes fed our tracks | 4-5 | ~10-15 min | decides D1 and the cost numbers; **do this first** |
-| Shared track core (`scoring/track_verif.py`: geometry, motion vector, along/cross, tracker, matching, miss accounting; pure numpy tests) | 4-5 | 0 | used by TC and MLC |
-| TC lane (IBTrACS adapter from `details.track`, store reader, rows, pipeline dispatch, pair statuses, dashboard copy, tests) | 8-10 | full backfill 2.5-3 h (8 models), weekly 20-40 min | |
-| TC landfall (EWB classes via kwargs, validate vs TC-B on 3 landfalling storms) | 4-6 | ~30 min | optional if the spike fails |
-| MLC lane | 4-5 | 20-40 min | reuses core; includes MLC-B peak metric (+1) |
-| Flood lane (registry `apcp` mapping, daily accumulation, thresholds, CSI/FSS/area bias, pair statuses, tests) | 8-10 | 20-30 min | most plumbing, least science risk |
-| Dashboard + About copy for all three | 3-4 | 0 | can ride each lane's PR |
-| **Total** | ~35-45 | ~5-6 h one-off, ~1 h/week after | |
-
-Recommended order:
-
-1. **P0 spike** (half a day). If the follow-tracker's miss rate on the three strong storms is acceptable
-   and cost matches, go; if not, take TC-B (pure EWB) for landfall only and decide D1 differently.
-2. **Shared core + TC track metrics** (owner's stated priority; the core is built under the lane that
-   stresses it hardest).
-3. **MLC** (second user of the core; resolution-matched truth, 80 events gives a real sample).
-4. **EWB landfall metrics** for TC (opt-in once track metrics are live).
-5. **Flood** (most plumbing, two models, provisional AI truth: lowest scientific return, so last).
-
-One PR per lane against `develop`, no deploy until the owner has seen the pilot numbers.
+| # | Decision | Accepted answer |
+|---|---|---|
+| D1 | TC forecast-track method | **Hybrid (TC-A).** Our own storm-following tracker on the store's MSLP gives forecast positions, along/cross-track, central pressure and misses; EWB's landfall classes are fed the same tracks. The pure EWB pipeline (TC-B) is kept only as a validation reference for the landfall numbers. |
+| D2 | Which inits are verified | Only inits at or after the storm's first IBTrACS (TC) or ERA5-tracker (MLC) fix, i.e. the storm exists at init. **Pre-genesis inits are excluded** (genesis forecasting is a separate future lane). |
+| D3 | TC intensity | **Central-pressure error (MSLP) only**, published as a signed bias with the 0.25 degree resolution warning. **No 10 m wind error is published.** |
+| D4 | Model set and baseline for TC/MLC | The 8 virtual-store models **plus `ifs_hres` read through the existing ECMWF-direct path as the baseline**, so skill colouring works. This is the one non-virtual read and is approved for TC and MLC. |
+| D5 | Row granularity and misses | **One row per `(event, model, init, lead)`** (same granularity as AR/heat); the miss rate is shown beside every error metric; a cell whose miss rate exceeds **50 %** is greyed. Misses are never imputed and never dropped silently. |
+| D6 | Flood scope | **GraphCast only** (`graphcast`, `graphcast_gfs`) from the store, plus **ECMWF-direct `tp` for `ifs_hres` as the baseline**. The six models without precipitation are documented `unsupported`. Copy says "vs AI-estimated precipitation (PARDIG)", never "observed rain". |
+| D7 | MLC metrics | **MLC-A** (track position, along/cross-track, central pressure, miss) with the published ERA5 (ARCO) track as truth, **plus MLC-B** (peak-depth error, deepening/bomb hit-miss) as a cheap add-on. |
+| D8 | Leads shown in tables | All 6-hourly leads are stored; the dashboard columns are 24/48/72/96/120 h for TC, 24/48/72/96 h for MLC, 24-120 h (daily) for flood. |
+| D9 | Compute window | A 2.5-3 h TC backfill on the LXC is approved, 12 workers, own pool, **<= 40 GB total RSS**, **never overlapping the weekly run** (section 8, rule R1), after the pilot's measured memory number. |
+| D10 | Sign convention and motion | **Along-track > 0 = forecast ahead of the observed storm; cross-track > 0 = right of the observed track** (Leonardo & Colle 2017), observed motion from the centered 6 h + 6 h difference of observed positions, one-sided at the first/last fix, 2 km/h stationary cutoff, exactly as section 3.4. |
 
 ---------------------------------------------------------------------------------------------
 
-## 8. Owner decisions needed
+## 8. Implementation plan
 
-| # | Decision | Options | Recommendation |
-|---|---|---|---|
-| D1 | TC forecast-track method | (A) own storm-following tracker + EWB landfall classes; (B) EWB pipeline only | A; B stays as validation reference |
-| D2 | Which inits are verified | storm must already exist in IBTrACS at init (**exclude pre-genesis**) vs also count pre-genesis inits as misses | exclude; genesis forecasting is a separate lane later |
-| D3 | TC intensity | MSLP bias only; or also 10 m wind | **MSLP only**, with the resolution warning; no wind number |
-| D4 | Model set and baseline for TC/MLC | 8 virtual-store models only (no `ifs_hres` skill colouring) vs also read `ifs_hres` (and `aifs_single`) via the existing ECMWF-direct path for the baseline | include `ifs_hres` as the baseline reference so skill colouring works; it is the only non-virtual read and TC-8 scoped the store only, so explicit approval needed |
-| D5 | Row granularity and miss handling | per-init rows (long-lived storms weigh more) vs per-(event, lead) means; grey cells above a miss-rate threshold | per-init rows (matches AR/heat), show miss rate beside every error; threshold 50 % to grey |
-| D6 | Flood scope | GraphCast-only (2 of 8 models) vs also add ECMWF-direct `tp`; label "vs AI-estimated precip (PARDIG)"; or defer flood | GraphCast-only + ECMWF `tp` for ifs_hres as baseline, with the provisional-truth label; defer if the owner dislikes scoring vs an AI product |
-| D7 | MLC metrics | MLC-A (track + pressure) now, MLC-B peak/bomb extra; truth = ERA5 ARCO track as published | MLC-A, MLC-B as a cheap add-on |
-| D8 | Leads shown in the tables | store all 6-hourly leads; dashboard columns, e.g. 24/48/72/96/120 h for TC, 24/48/72/96 h for MLC, 24..120 h flood | as stated |
-| D9 | Compute window | OK to run a 2.5-3 h backfill on the LXC with 12 workers in its own pool, capped at ~40 GB RSS, outside the weekly run | yes, after the pilot memory number |
-| D10 | Sign convention | confirm along-track > 0 = ahead of observed storm, cross-track > 0 = right of observed track (Leonardo & Colle 2017) and the 2 km/h stationary cutoff; also the 6 h / 12 h centered-difference baseline | as specified in section 3.4 |
+### 8.0 Rules for every work package
+
+* **R1: backfills never overlap the weekly run.** `ewb-live-weekly.timer` fires **Monday 07:00 UTC**
+  (`Persistent=true`, `TimeoutStartSec=6h`), and the last weekly run peaked at **183.8 GB** total RSS on a
+  256 GB box (`data/perf.json`); a 40 GB backfill pool on top leaves no headroom. Therefore:
+  * No backfill/pilot job may run, or be allowed to still be running, between **Monday 06:00 UTC and
+    Monday 13:00 UTC** (one hour before the timer, the full 6 h timeout after). Start a long job
+    only if `now + its hard wall-clock cap` is before the next Monday 06:00 UTC.
+  * Every backfill is launched through one guard (WP1 adds `ops/lane_backfill.sh`): it refuses to start
+    inside the blocked window, refuses if `systemctl is-active ewb-live-weekly.service` (a Persistent catch-up
+    can fire at any time) or the weekly/deploy flock is held, sets `timeout` to the hard cap, and
+    re-checks every 5 minutes inside the job: if the weekly service becomes active or the blocked window is
+    reached it stops the pool and exits cleanly, leaving a resumable partial result (part files are
+    keyed by `(event, model, fingerprint, truth)`, so a rerun resumes).
+  * Pilot runs (< 15 min, < 10 GB) are exempt from the 40 GB cap but not from the window.
+* **R2: LXC only for compute**, via `ops/remote.sh`; every foreground command under `timeout` (<= 10 min),
+  anything longer in the background with a log polled by short commands; unit tests with tiny synthetic
+  data may run locally (`.venv/bin/python -m pytest tests -q`).
+* **R3: one PR per work package, base `develop`** (verify with `gh pr view --json baseRefName`), no PNGs
+  committed, no deploy and no merge by the agent; shared files (`pipeline.py`, `events/select.py`,
+  `dashboard/app.js`, `sources/registry.py`) get minimal additive edits; new logic goes in new modules.
+* **R4: scoring runs in its own worker pool** (`EWB_LIVE_SCORING_WORKERS`, default 12), reading with
+  `stores.mlwp_icechunk.open_init` only (never `open_model`: ~8 GB RSS each), per-read timeouts, and a
+  `ulimit -n` high enough for icechunk (the daily store update already hit "Too many open files").
+* **R5: honest results.** A work package ends with a channel entry in `notes/channel_scoring.md`
+  (append-only, same header format as the other channels) stating measured numbers, tests run and
+  anything left open.
+
+### 8.1 Order and budget
+
+| WP | What | Depends on | Agent-h | LXC wall (estimate) |
+|---|---|---|---|---|
+| WP0 | Pilot: one TC + one MLC event, measured memory/time | none | 4-5 | ~10-15 min |
+| WP1 | Shared track core + TC track metrics + TC lane wiring | WP0 | 12-15 | pilot repeat 5 min; backfill 2.5-3 h (8 models + baseline) |
+| WP2 | MLC lane (MLC-A + MLC-B) | WP1 core | 5-6 | 20-40 min backfill |
+| WP3 | EWB landfall classes for TC | WP1 | 4-6 | ~30 min |
+| WP4 | Flood lane | WP1 wiring only | 8-10 | 20-30 min |
+| | **Total** | | ~33-42 | ~4-5 h one-off, ~1 h/week after |
+
+Dashboard and About copy ride in each WP's PR (the lane's `noScores` is only removed in the PR whose
+rows exist on the box).
+
+### 8.2 WP0: pilot (measure first)
+
+* **Goal:** replace every estimate in this note that gates a later package with a measurement on one TC
+  and one MLC event.
+* **Events:** TC = the published storm `Polo` (EP, peak 155 kt, has an ocean->land transition; if it is not in
+  `events_selected.json` take the strongest published storm that is flagged as crossing land by the
+  110 m mask); MLC = the longest-lived published non-wrapped low (`details.lifetime_h` max, preferably
+  `details.bomb` true).
+* **Models:** all 8 virtual-store models + `ifs_hres` direct, every 00/12Z init with the storm present.
+* **Files to add:** `ewb_live/tools/track_pilot.py` (throwaway CLI, imports a minimal prototype of the
+  storm-following tracker from a module the WP1 core will absorb), `tests/test_track_pilot_smoke.py`
+  (synthetic closed-low field: tracker follows it; fails when the low vanishes).
+* **Files to touch:** none outside `ewb_live/tools/` and `notes/`.
+* **Output:** `notes/scoring_pilot.md` + `notes/screenshots/scoring_pilot.json` (JSON only, no PNGs):
+  per `(model, init)` read seconds, tracker seconds, peak RSS per worker and for the pool (sampled like
+  `pipeline._PeakRss`), miss rate by lead, median/p90 position error by lead, along/cross sign sanity
+  (a storm known to recurve), and the EWB landfall classes fed the pilot tracks for the TC event (works /
+  fails and why).
+* **Tests:** the smoke test above under `.venv/bin/python -m pytest tests -q` (offline).
+* **Acceptance:** (1) pilot ran inside R1 and under `timeout`; (2) measured numbers for s/(model,init),
+  peak RSS/worker, pool RSS at 12 workers (extrapolated by a 4-worker run, stated as such), (3) the
+  backfill wall-clock estimate and RSS cap for WP1 recomputed from them and written at the top of
+  `notes/scoring_pilot.md`; (4) if pool RSS projects above 40 GB or the tracker miss rate on the TC event
+  is above 50 % at 24-72 h, the agent **stops and reports to the orchestrator** instead of proceeding.
+* **Agent brief:** "Build a throwaway storm-following MSLP tracker pilot (`ewb_live/tools/track_pilot.py`), run it on
+  the LXC on Polo (TC) and the longest-lived MLC over all 8 store models + ifs_hres, write measured
+  RSS/time/miss/position numbers to `notes/scoring_pilot.md`, respect R1-R5, open a docs PR to develop."
+
+### 8.3 WP1: shared track core + TC track metrics + TC lane
+
+* **Goal:** TC rows `TrackPositionError`, `AlongTrackError`, `CrossTrackError`, `CentralPressureError`,
+  `TrackMiss` in `scores.parquet` for all 44 storms x 9 models, visible in the TC tab.
+* **Files to add:**
+  * `ewb_live/scoring/track_verif.py` (pure numpy, no I/O): `great_circle`, `bearing`,
+    `observed_motion` (section 3.4 step 2, first/last fix, stationary cutoff), `along_cross`,
+    `follow_track` (storm-following tracker, built on `events/mlc_track.py` primitives, param sets for TC
+    and MLC), `match_samples` (init/lead/valid-time matching incl. nearest-earlier-init shift),
+    `rows_for_pair` (emits the SCORE_COLUMNS rows and `TrackMiss`).
+  * `ewb_live/scoring/tc.py`: IBTrACS adapter from `details.track`, store reader (`open_init`, regional
+    window around the track, `msl` only for tracking), `score_tc_event(event, models) -> DataFrame, status`.
+  * `ewb_live/scoring/lane_pool.py`: the dedicated worker pool and RSS sampler (R4), reused by WP2/WP4.
+  * `ops/lane_backfill.sh`: the R1 guard and launcher (`ops/lane_backfill.sh <lane> [--models ...]`).
+  * `tests/test_track_verif.py`, `tests/test_score_tc.py`, `tests/test_lane_guard.py` (R1 guard logic with a
+    fake clock and fake `systemctl`).
+* **Files to touch (minimal, additive):** `ewb_live/pipeline.py` (`_score_job` dispatch by `event_type`; import
+  of `UNSCORED_TYPES`; `SIGNED_ERROR_METRICS`, `HIGHER_IS_BETTER`; the `_UNSCORED_REASON` entry for TC is
+  dropped), `ewb_live/events/select.py` (`UNSCORED_TYPES` loses `tropical_cyclone`),
+  `ewb_live/scoring/__init__.py` (exports), `dashboard/app.js` (`TYPE_META.tropical_cyclone`: drop `noScores`,
+  `FALLBACK_METRICS`, miss-rate/grey rule, `tcNotScoredNote` replaced), `dashboard/detection.py` (About
+  text: formulas, sign convention, resolution warning, miss handling).
+* **Tests:**
+  * Geometry, hand-computed cases: straight-ahead, 90 degrees right/left, backward, dateline crossing,
+    high latitude, stationary storm (NaN along/cross, position kept), first/last fix one-sided motion,
+    `along^2 + cross^2 = d^2` property test.
+  * Tracker: synthetic moving low, low that vanishes (misses from that lead on), two lows (no jump).
+  * Matching: 12 h cadence, nearest-earlier-init shift, pre-genesis init excluded (D2).
+  * Row contract: columns/dtypes equal SCORE_COLUMNS; `build_scorecard` on synthetic TC rows gives
+    skill only for `TrackPositionError`, none for the signed metrics; miss rows counted.
+  * Pipeline: TC pairs are no longer "unsupported"; `pair_coverage` stays decidable
+    (`tests/test_pair_status.py` and `tests/test_pipeline_unit.py` still pass).
+* **Acceptance:** (1) all tests pass; (2) on the LXC, a dev-tree run of 3 storms x 9 models writes the
+  rows and the dashboard dev site shows the TC tab with Mean/lead columns, signed-metric styling and
+  the miss rate; (3) the measured seconds per (model, init) agree with the WP0 pilot within 10 %; (4) full backfill (44 storms)
+  launched only through `ops/lane_backfill.sh` inside R1, <= 40 GB pool RSS, completes with
+  `full_run_complete` true for the lane; (5) `scores.parquet` rows for existing lanes are byte-for-byte
+  unaffected (row counts per type/metric unchanged); (6) PR base `develop`.
+* **Agent brief:** "Implement `ewb_live/scoring/track_verif.py` and the TC lane scorer per
+  `notes/scoring_design.md` sections 3 and 6 (formulas in 3.4, D1-D10 are decided), wire the pipeline and
+  dashboard, add `ops/lane_backfill.sh` with the R1 weekly-overlap guard, test as listed, backfill via the
+  guard, PR to develop."
+
+### 8.4 WP2: MLC lane
+
+* **Goal:** MLC-A rows (same five metrics) for 80 lows x 9 models, plus MLC-B `PeakDepthError` (hPa) and
+  `BombHitMiss` (contingency counts via `TruePositives/FalsePositives/FalseNegatives` style rows or a 0/1
+  agreement row; choose the one `build_scorecard` and the table render without special cases).
+* **Files to add:** `ewb_live/scoring/mlc.py` (ERA5-track adapter from `details.track`, window reader for
+  `msl`, MLC parameter set for `follow_track`: 4-5 degrees per 6 h step, 3 hPa closed contour; MLC-B
+  peak-depth and 24 h-fall verification), `tests/test_score_mlc.py`.
+* **Files to touch:** `ewb_live/pipeline.py` (dispatch + metric sets), `ewb_live/events/select.py`
+  (`UNSCORED_TYPES` loses `midlat_cyclone`), `dashboard/app.js` (`TYPE_META.midlat_cyclone`, metric labels),
+  `dashboard/detection.py`.
+* **Tests:** synthetic deepening low (pressure and bomb verification), truth-edge handling (leads whose
+  valid time passes the ARCO end are not scored), wrapped-bbox (antimeridian) track, `truth_source`
+  tag `era5_arco` invalidation, plus shared-core tests untouched.
+* **Acceptance:** tests pass; backfill of 80 events via the R1 guard in <= 1 h; MLC tab shows the five
+  metrics + MLC-B with miss rates; no regression in other lanes' row counts; PR base `develop`.
+* **Agent brief:** "Add the MLC lane scorer on top of `track_verif.py` (MLC-A and MLC-B per sections 4 and 6),
+  wire pipeline and dashboard, test as listed, run the 80-event backfill through `ops/lane_backfill.sh`, PR to
+  develop."
+
+### 8.5 WP3: EWB landfall classes for TC
+
+* **Goal:** `landfall_displacement`, `landfall_time_me`, `landfall_intensity_mae` rows for the storms
+  with an ocean->land crossing, computed by EWB's own classes from our forecast tracks.
+* **Files to add:** `ewb_live/scoring/landfall.py` (track -> EWB track DataArray layout
+  `(lead_time, valid_time)` with `latitude/longitude/valid_time`, observed landfall target from the
+  IBTrACS series, call `LandfallMetric(metrics=[...], approach="next", forecast_variable=target_variable=
+  "air_pressure_at_mean_sea_level")` through the `forecast_landfall`/`target_landfall` kwargs; fallback
+  `calc.find_landfalls` direct path if the layout is incompatible), `tests/test_landfall.py` (synthetic track
+  crossing a coastline; needs `third_party/ExtremeWeatherBench` on the LXC dev tree, the test skips
+  without it), `notes/landfall_validation.md` (comparison with the TC-B EWB pipeline on 3 landfalling
+  storms).
+* **Files to touch:** `ewb_live/scoring/tc.py` (call it), `ewb_live/pipeline.py`
+  (`SIGNED_ERROR_METRICS += landfall_time_me`), `dashboard/app.js` (labels, units hPa/km/h),
+  `dashboard/detection.py`.
+* **Tests:** synthetic landfall geometry and timing sign (forecast later = positive), open-ocean storm
+  gives no rows (not NaN rows), duplicates (island crossings) handled as EWB does.
+* **Acceptance:** on 3 landfalling storms the rows match a TC-B run to within the tolerance written in
+  `notes/landfall_validation.md` (displacement within one grid cell, time within the filter window),
+  rows appear only for storms with a landfall, existing rows unaffected, PR base `develop`.
+* **Agent brief:** "Feed our forecast tracks to EWB's `LandfallMetric` classes per section 3.2, emit the three
+  landfall metrics for landfalling storms only, validate against EWB's own TC pipeline on three storms
+  and document the comparison, PR to develop."
+
+### 8.6 WP4: flood lane
+
+* **Goal:** `CriticalSuccessIndex`, `FalseAlarmRatio`, `FractionsSkillScore`, `PrecipAreaBias` for 40 events
+  x {`graphcast`, `graphcast_gfs`, `ifs_hres`}; the other six models `unsupported: no precipitation variable
+  in the MLWP store`.
+* **Files to add:** `ewb_live/scoring/flood.py` (PARDIG daily truth reader from `data/pardig/daily`,
+  ERA5 thresholds via `climatology.precip_clim.precip_threshold_on`, forecast daily/3-day totals from
+  6-h `apcp` bins with fill/negative handling, contingency + FSS (1/3/5-cell neighbourhoods) + areal
+  bias over the padded verification domain and `start-2 .. end+2` days), `tests/test_score_flood.py`.
+* **Files to touch:** `ewb_live/sources/registry.py` and `ewb_live/sources/aiwp.py` (expose `apcp` as a
+  precipitation variable, name chosen and documented in the registry; m -> mm), `ewb_live/sources/ecmwf.py`
+  (`tp` mapping for `ifs_hres`: accumulated since init, de-accumulate to 6-h bins), `ewb_live/pipeline.py`
+  (dispatch, per-model `unsupported` reason, `HIGHER_IS_BETTER`/`SIGNED_ERROR_METRICS`),
+  `ewb_live/events/select.py` (`UNSCORED_TYPES` loses `flood`), `dashboard/app.js` (flood `TYPE_META`,
+  labels, the "vs AI-estimated precipitation (PARDIG)" copy), `dashboard/detection.py`.
+* **Tests:** exact contingency counts on a hand-built 3x3 truth/forecast pair, FSS limits (perfect = 1,
+  disjoint = 0), accumulation across the day boundary, fill values/negatives, IFS-initialised GraphCast
+  lead 0/6 h fill (day-1 total not emitted), PARDIG missing day not scored, de-accumulation of `tp`.
+* **Acceptance:** tests pass; the flood tab shows three scored models and six documented `unsupported`
+  ones with the provisional-truth note; backfill (40 events) via the R1 guard in <= 1 h; other lanes
+  unaffected; PR base `develop`.
+* **Agent brief:** "Add the flood lane scorer per sections 5 and 6: expose store `apcp` and ECMWF `tp`, verify
+  daily exceedance contingency/FSS/areal accumulation against PARDIG on the event's own ERA5-p95 threshold
+  for graphcast, graphcast_gfs and ifs_hres, document the six unsupported models, test as listed, backfill
+  via the guard, PR to develop."
 
 ---------------------------------------------------------------------------------------------
 
