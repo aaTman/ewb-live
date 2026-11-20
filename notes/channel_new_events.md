@@ -3731,3 +3731,18 @@ Branch `feat/round3-compress-tracks-freeze` (from `chore/integrate-lane-fixes`).
   from /opt/ewb-live-dev/data/results (schema 3, 124 track events: 44 TC + 80 MLC, tc_wind.json).
 - Preview served with `python -m ewb_live.serve --port 8063` (same URL mapping as production).
 - Repro sweep in progress.
+
+## [visual-tracks] 2026-11-19 — fix landed + verified: TC/MLC tracks must not stay on the map
+- REPRO (real 2026-11-19 dev build, 124 track events, every tab + 2 region views, notes/screenshots/visual-tracks/repro.md):
+  storm a1d6b391e4d8 (life.ongoing) kept its ring, label and whole line for 8 frames / 30 h past its last fix;
+  the hover-preview ghost also re-drew expired storms' tracks. No other lingering on this data (canvas-hit rows
+  A/B-disproved as other storms' pixels).
+- FIX (4f27621): expiredAt() — an ongoing storm now expires at its LAST fix (never extended past existing data);
+  the ghost obeys the same gate; EwbTracks._life gained `expired` for tests. SPEC.md has no such rule (module doc owns it).
+- VERIFY: verify.md sweep — 0 violations of 1364 observations; #gm-tracks canvas 0 px at window end; ghost 0 px × 124 events.
+- TESTS: units 590 passed (2 pre-existing env failures: missing third_party/ExtremeWeatherBench, unrelated);
+  e2e trackexpiry(new, incl. full 124-event real-data sweep) 4P, trackwind+tracklane+trackviz 28P, dashboard_fe 49P,
+  chips+guardian+regions 95P/1S against the local 8063 preview. Rewrote the e2e that encoded the old ongoing-linger behavior.
+- PR: (filled in below)
+
+## [visual-tracks] — DONE
