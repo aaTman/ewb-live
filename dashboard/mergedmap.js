@@ -798,9 +798,9 @@
   const G_BAR = 6;        // ONE uniform bar height (>= 5 px), every lane, never thinned
   const G_ROWGAP = 2;     // gap between sub-rows inside a lane
   const G_DENSE = 3;      // max concurrency <= this packs as sub-rows; more is a ribbon
-  const G_RIB = 16;       // density-ribbon lane height (~2.7 bar heights)
-  const G_GAP = 3;        // vertical gap between lane bands
-  const G_AX = 14;        // month-label band under the lanes (3px clear of the last band)
+  const G_RIB = 14;       // density-ribbon lane height (~2.3 bar heights)
+  const G_GAP = 2;        // vertical gap between lane bands
+  const G_AX = 13;        // month-label band under the lanes (a 10 px label, baseline 3 px up)
   const G_RIGHT = 12;     // trailing inset = slider thumb half-width (see styles.css)
   const G_MIN_W = 240;    // never shrink the axis below this
   const GUT = 2;          // x gutter between bars in one sub-row

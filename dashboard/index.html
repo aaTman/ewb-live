@@ -185,7 +185,13 @@
         <input id="raw-slider" type="range" min="0" max="0" step="1" value="0"
                aria-label="Frame time (6-hourly)">
       </div>
-      <svg id="gm-gantt" role="img" aria-label="Event timeline by type — click a bar to jump to it"></svg>
+      <!-- role=group, NOT role=img: the strip holds focusable controls (a dense
+           lane's label is a real button that expands it). role=img declares
+           presentational children, which both hides those buttons from a screen
+           reader and makes them focusable descendants of a non-composite role —
+           axe `nested-interactive` on #gm-gantt (the two axe e2e failures on live
+           with 7 lanes, 2026-11-20). A group keeps its label and its controls. -->
+      <svg id="gm-gantt" role="group" aria-label="Event timeline by type — click a bar to jump to it"></svg>
     </div>
     <p class="gm-note hidden" id="raw-note" role="status"></p>
   </section>

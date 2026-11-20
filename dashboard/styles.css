@@ -421,8 +421,18 @@ html.rail-collapsed .skip-link { left: 70px; }
 /* ---------- header: a title, not a toolbar ----------
    Everything that was a control here moved to the rail; the header is the page
    title + one line of plain language, on the canvas ground (no bar, no rule). */
-header.top { padding: 24px 0 0; }
+/* 16 px, not 24: every px above the map comes off the event list's rows. */
+header.top { padding: 16px 0 0; }
 header.top .shell { padding-inline: 24px; }
+/* The title line: the tagline rides the SAME line as the name from 620 up, so the
+   header settles at ~47 px (one text line) instead of 70 (two) — the home first
+   screen has a 900 px budget (map + scales + time strip + the event list must END
+   inside it; see the two first-screen tests). Below 620 there is no room on the
+   line, so it wraps under the name as before. */
+@media (min-width: 620px) {
+  header.top .shell { display: flex; align-items: baseline; gap: 0 14px; flex-wrap: wrap; }
+  .tagline { margin-top: 0; }
+}
 header.top h1 { font-size: var(--text-xl); }   /* 26 px, -0.02em/1.2 from the base rule */
 header.top h1 .badge { vertical-align: 5px; }
 .tagline { margin: 4px 0 0; color: var(--ink-secondary); font-size: var(--text-sm); max-width: 68ch; }
@@ -547,7 +557,7 @@ nav.controls {
    one page-wide filter besides the type tabs (map + list + scorecard). */
 .ctl-region { flex-direction: row; align-items: center; gap: 8px; margin-left: auto; flex-wrap: nowrap; }
 .type-filter:has(#type-tabs:empty), nav.controls:has(#lead-chips:empty) > * { visibility: hidden; }
-.sec-lede { color: var(--ink-secondary); font-size: var(--text-sm); margin: 4px 0 12px; max-width: 86ch; }
+.sec-lede { color: var(--ink-secondary); font-size: var(--text-sm); margin: 2px 0 8px; max-width: 86ch; }
 .home-only { }
 .detail-open .home-only, .deeplink .home-only { display: none !important; }
 /* The event page is led by the event's own title: the site line keeps the name and
@@ -584,7 +594,7 @@ nav.controls {
 :root { --shell-max: 1500px; }
 @media (min-width: 1100px) { :root { --shell-max: min(75vw, 1280px); } }
 .shell { width: 100%; max-width: var(--shell-max); margin-inline: auto; }
-main { padding: 24px 24px 8px; width: 100%; max-width: var(--shell-max); margin: 0 auto; }
+main { padding: 16px 24px 8px; width: 100%; max-width: var(--shell-max); margin: 0 auto; }
 section { margin-bottom: 24px; }
 .sec-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .sec-note { color: var(--ink-muted); font-size: var(--text-xs); margin: 4px 0 12px; }
@@ -782,7 +792,7 @@ tbody tr:hover td.model-col { background: var(--tint); }
   font-family: var(--font-mono); }
 /* EXPLORE: map + timeline on the left, the event list beside it. On wide
    screens the list takes the height of the map column (it never sets it). */
-.explore { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px 24px; margin-bottom: 24px; }
+.explore { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px 24px; margin-bottom: 24px; }
 .explore > section { margin-bottom: 0; min-width: 0; }
 .explore-head { min-width: 0; }
 .evlist { display: flex; flex-direction: column; min-height: 0; }
@@ -1010,18 +1020,18 @@ nav.controls .dd .dd-body {
 .gm-open-wrap:hover .gm-open-pill { stroke: var(--accent); }
 .gm-halo { fill: none; stroke: var(--canvas); stroke-width: 3; }
 .gm-time-row { display: grid; grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center; gap: 2px 12px; margin-top: 6px; }
+  align-items: center; gap: 2px 12px; margin-top: 4px; }
 .gm-time-row > span:empty { display: none; }   /* legacy leading spacer */
 .gm-date-readout { font-size: var(--text-base); font-weight: 500; white-space: nowrap; }
 /* the timeline card under the map is one widget: transport + current time, the
    scrubber, the event lanes (the colour scales ride inside the map itself) */
-.timeline { margin-top: 12px; padding: 10px 12px 6px; background: var(--bg-panel);
+.timeline { margin-top: 6px; padding: 8px 12px 4px; background: var(--bg-panel);
   border: 1px solid var(--border); border-radius: 6px; }
 .tl-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .tl-head .raw-speed { margin-left: auto; }
 .tl-play { min-width: 76px; font-weight: 500; }
 #gm-boxes .gm-ghost { fill-opacity: .12; stroke-width: 2; stroke-dasharray: 2 3; pointer-events: none; }
-#gm-gantt { width: 100%; display: block; margin-top: 2px; overflow: visible; }
+#gm-gantt { width: 100%; display: block; overflow: visible; }
 .gm-note { color: var(--text-dim); font-size: var(--text-sm); margin: 8px 0 0; }
 .gm-note[hidden] { display: none; }
 /* Adaptive colour scales (mergedmap.js renderLegend): a slim key strip BELOW
@@ -1048,7 +1058,7 @@ nav.controls .dd .dd-body {
 #gm-legend { display: grid; grid-template-columns:
     minmax(min-content, min(max-content, 42cqi)) 1fr auto;
   gap: 3px 8px; align-items: center; overflow-x: visible;
-  margin-top: 8px; padding: 6px 8px;
+  margin-top: 6px; padding: 4px 8px;
   width: 100%; max-width: 100%;
   background: var(--bg-panel); border: 1px solid var(--border);
   border-radius: 6px;
@@ -1347,21 +1357,22 @@ nav.controls { min-height: 46px; }
 .raw-map-wrap { min-height: 240px; }
 /* The gantt strip sizes itself to its OWN content — a band per lane that has an
    event in the window (a sparse lane grows for its sub-rows, a dense lane is a
-   16px density ribbon), a 3px gap between lanes, 14px for the month axis — and
+   14px density ribbon), a 2px gap between lanes, 13px for the month axis — and
    pins the SVG box (and its inline min-height) to that number, so a busy window
    is never cropped and can never overlap the cards below. A fixed CSS height
    there used to SCALE the whole strip to 56% (bars 6.8px tall, a 392px-wide axis
    drawn in a 672px box, the slider thumb off the date it points at). This min-
    height is only the reservation BEFORE the strip mounts (mergedmap overrides it
    inline once it renders); it is set to what a full new-event window settles at
-   collapsed — the seven lanes of the dev data (heat/cold/freeze/AR + flood/TC/MLC
-   ribbons) render 168px — so the legend below gets no jump when the data arrives.
+   collapsed — the seven lanes of the live 7-lane window (heat/cold/freeze/AR bars
+   + flood/TC/MLC ribbons) render 155px, measured 2026-11-20 at 1440 — so the
+   legend below gets no jump when the data arrives.
    The slider above shares the strip's time axis through --gm-lab so its thumb and
    the strip's cursor line land on the same x. */
-#gm-gantt { min-height: 168px; }
+#gm-gantt { min-height: 155px; }
 .tl-head { min-height: 30px; }
-header.top { min-height: 78px; }        /* measured settled height: 24 pad + 26/1.2 h1 + 4 + 12.5/1.5 */
-@media (max-width: 620px) { header.top { min-height: 70px; } }   /* 16px gutter rule */
+header.top { min-height: 48px; }        /* settled ~47 px: 16 pad + 26/1.2 h1, tagline on that line */
+@media (max-width: 619px) { header.top { min-height: 70px; } }   /* tagline wraps under the name + 16px gutter */
 @media (max-width: 459px) { header.top { min-height: 83px; } }   /* tagline wraps */
 
 /* raw-map slider: same quiet control as the global timeline (was browser-default blue) */

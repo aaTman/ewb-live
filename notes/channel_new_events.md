@@ -3955,3 +3955,41 @@ in this worktree (pre-existing env, no Python touched here). PR #6 body
 rewritten for both rounds (screenshots live in
 `/home/orca/orca/workspaces/ewb-live/screenshots/visual-legend/round2-*/`,
 none in the repo). Commits: 6ef0f10 (fix), 067bc44 (tests); head 067bc44.
+
+## [e2e-fix] 2026-11-20 10:45 UTC — first-screen budget + #gm-gantt a11y, DONE
+Four e2e failures on live (develop b652904, :8050, chromium, 7 lanes): two
+first-screen budget tests (#events-sec ended 943 px vs 900) and two axe tests
+(`nested-interactive` on #gm-gantt, light + dark). Reproduced them with the
+branch's own tests against :8050 and against a private preview tree
+(/opt/ewb-preview-e2e, live data read-only, ephemeral unit
+ewb-preview-e2e-web, port 8055 — port 8054 was already taken by /opt/ewb-live-tc;
+server stopped at the end, live/dev trees untouched).
+
+Measured 1440x900 breakdown (tmp probe scripts, not committed): header 78 +
+main pad 24 + explore-head 110.5 + grid gap 16 + map 353 + scales card 85+8 +
+time card 256+12 = 943. Two cliffs measured first, so the map column and the
+strip's gantt could NOT be narrowed: below the scales card's 680 px container
+query the strip stacks one lane per row (+75 px) and below the gantt's 600 px
+NARROW_W the labels move above the lanes (+77 px) — measured 998/1055 px, i.e.
+worse. So the cuts are vertical rhythm + the gantt's own constants, no content
+removed, budget unchanged: tagline joins the title line (header 78 -> 47,
+reservation re-measured 48 px, phone breakpoints kept), main/lede/grid-gap
+padding, the time card's margins, the scales card's padding, and G_RIB 16->14,
+G_GAP 3->2, G_AX 14->13 (bars stay 6 px, bands stay >= their label, the CLS
+reservation is re-measured 168 -> 155 px). End of #events-sec: 866 px, 34 px of
+headroom — enough for a 7th legend group (+21) or deeper lane packing (+12).
+
+axe: #gm-gantt is role=img = presentational children, while a DENSE lane's label
+is a real button (role=button tabindex=0) that expands it. The toggles were both
+hidden from AT and focusable descendants of a non-composite role. role=group
+keeps the strip's name and exposes the toggles; verified keyboard (focus + Enter
+expands: 41 -> 81 bars) and click (bar click still selects and jumps the slider)
+at 1440/390 x light/dark, chips one row at 1440, no overflow, no page or console
+errors.
+
+Tests: full chromium e2e on the preview with live data 182 passed / 1 skipped /
+0 failed (was 4 failed / 174 passed). Units in the preview tree with
+EWB_DATA_PREP_DIR: see the DONE entry in the PR (2 known box-dependent failures
+expected). Branch fix/e2e-first-screen-gantt-a11y -> develop; NOT merged, NOT
+deployed. Screenshots: notes/screenshots/firstscreen-{1440,390}-{light,dark}.png
+(gitignored, not committed).
