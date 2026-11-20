@@ -255,3 +255,37 @@ def test_qualification_clamps_to_the_qualify_day(tmp_path, monkeypatch):
     assert ev.start == dt.datetime(2026, 9, 1)            # began as a 15-cell patch
     assert ev.details["qualified_date"] == "2026-09-02"   # qualified on day 1
     assert qualified_at(ev, root) == "2026-09-02T00:00:00Z"
+
+
+def test_scan_publishes_the_persistence_box_with_fill(tmp_path, monkeypatch):
+    """SPEC §2: the Event bbox is the persistence box, not the tracker box.
+
+    A 5-col patch drifting 1 col/day for 3 days: the tracker box spans the
+    whole path (cols 3-9); the published box keeps the cols valid on >= 2 of
+    the 3 days (4-8) and the details report the fill of that box (1.0 whole,
+    0.8 on a typical day - the drifting ends are never qualifying together).
+    """
+    monkeypatch.setattr(temperature, "_event_temp_stats", _stats)
+    monkeypatch.setattr("ewb_live.viz.build.land_mask",
+                        lambda la, lo: np.ones((NY, NX), bool))
+    days = {}
+    for k in range(4):
+        d = D0 + dt.timedelta(days=k)
+        m = np.zeros((NY, NX), bool)
+        if k < 3:                       # days 0-2 drifting; day 3 ends the spell
+            m[ROWS, slice(3 + k, 8 + k)] = True
+        for h in frame_masks.HOURS:
+            days[(d, h)] = (m, np.zeros((NY, NX), bool))
+    root = _write_lane(tmp_path / "drift", days)
+    evs = temperature.scan_temperature_events(D0, D0 + dt.timedelta(days=3),
+                                              "heat_wave", frames_dir=root,
+                                              params=PARAMS)
+    assert len(evs) == 1
+    e = evs[0]
+    assert e.bbox == pytest.approx((LATS[2], LATS[6], LONS[4], LONS[8]))
+    det = e.details
+    assert det["tracker_params"]["publish_box"] == "persistence"
+    assert det["published_box_area_km2"] < det["tracker_box_area_km2"]
+    assert det["fill"] == 1.0
+    assert det["daily_fill"] == 0.8
+    assert validate_event(e) == []

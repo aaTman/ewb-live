@@ -1,0 +1,160 @@
+"""Ongoing-event id stability across weekly runs, shipped rules vs C3 (hb-implement).
+
+The weekly pipeline re-detects the whole 90-day window and rebuilds
+`data/results/events.json` from scratch; `make_event_id` hashes
+(type, start, published bbox), so an ongoing event's id lives exactly as long
+as its published box and start do not move. This script measures that, per
+ruleset, on the real lane: replay window W1 = start..E and the "next weekly
+run" W2 = start..E+7 (plus a start-sliding variant), and for the events that
+are `ongoing` at W1's end report how many survive W2 with the same id / start
+/ bbox.
+
+Rulesets (production code, no review-copy):
+  shipped = Params(claim_valid_only=False, seed_valid_only=False,
+                   merge_keep_box=False, publish_box="tracker")
+  c3      = Params()  (the new defaults)
+
+LXC-only (reads lane frames). Production /opt/ewb-live is read-only here.
+
+Run on the ewb LXC (scratch tree):
+  cd /opt/ewb-heatbox && EWB_LIVE_CACHE=/opt/ewb-heatbox/data/cache \
+    /opt/ewb-live/.venv/bin/python scripts/review/hb04_ongoing_ids.py \
+      --lane /opt/ewb-live/data/results/raw_exceedance \
+      --start 2026-08-21 --end 2026-11-06
+"""
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import datetime as dt
+import sys
+from pathlib import Path
+
+import numpy as np
+
+from ewb_live.events import frame_masks
+from ewb_live.events.event_tracker import (
+    Params,
+    persistence_box,
+    persistence_k_days,
+    track_events,
+)
+from ewb_live.events.temperature import _cell_area_km2
+from ewb_live.events.types import make_event_id, normalize_lon_180
+
+RULESETS = {
+    "shipped": dataclasses.replace(Params(), claim_valid_only=False,
+                                   seed_valid_only=False, merge_keep_box=False,
+                                   publish_box="tracker"),
+    "c3": Params(),
+}
+
+
+def published(dates, mask, cell_area, lats, lons, params, hazard="heat_wave"):
+    """The Events a scan would publish: (id, start, end, bbox, ongoing).
+
+    Mirrors the bbox mapping in scan_temperature_events (cell centres + the
+    wrap convention), without the truth reads this measurement does not need.
+    """
+    evs = track_events(mask, dates, cell_area, params, hazard)
+    ny, nx = mask.shape[1:]
+    out = []
+    for ev in evs:
+        d0 = dates.index(ev.start)
+        d1 = len(dates) - 1 if ev.end is None else dates.index(ev.end - dt.timedelta(days=1))
+        pub = ev.box
+        if params.publish_box == "persistence":
+            pub = persistence_box(mask[d0:d1 + 1], ev.box, cell_area,
+                                  persistence_k_days(d1 - d0 + 1,
+                                                     params.publish_min_fraction),
+                                  params.publish_trim) or ev.box
+        bbox = (float(lats[pub.i0]), float(lats[pub.i1]),
+                normalize_lon_180(float(lons[pub.j0])),
+                normalize_lon_180(float(lons[pub.j1])))
+        start_dt = dt.datetime.combine(ev.start, dt.time())
+        out.append({"id": make_event_id(hazard, start_dt, bbox),
+                    "start": ev.start, "end": ev.end, "bbox": bbox,
+                    "ongoing": ev.end is None,
+                    "box_km2": float(cell_area[pub.mask(ny, nx)].sum())})
+    return out
+
+
+def lon_arc(b) -> float:
+    return (b[3] - b[2]) % 360.0 or 360.0
+
+
+def overlaps(a, b) -> bool:
+    """Same spell? start within 1 d of each other and boxes intersect."""
+    if abs((a["start"] - b["start"]).days) > 1:
+        return False
+    lat = min(a["bbox"][1], b["bbox"][1]) - max(a["bbox"][0], b["bbox"][0])
+    if lat <= 0:
+        return False
+    for l0, l1 in ([(a["bbox"][2], a["bbox"][3])] if a["bbox"][2] <= a["bbox"][3]
+                   else [(a["bbox"][2], 180.0), (-180.0, a["bbox"][3])]):
+        for m0, m1 in ([(b["bbox"][2], b["bbox"][3])] if b["bbox"][2] <= b["bbox"][3]
+                       else [(b["bbox"][2], 180.0), (-180.0, b["bbox"][3])]):
+            if min(l1, m1) - max(l0, m0) > 0:
+                return True
+    return False
+
+
+def report(name: str, w1: list[dict], w2: list[dict]) -> None:
+    ongoing = [e for e in w1 if e["ongoing"]]
+    same_id = same_start = same_bbox = matched = lost = 0
+    for e in ongoing:
+        succ = [f for f in w2 if overlaps(e, f)]
+        if not succ:
+            lost += 1
+            continue
+        matched += 1
+        same_id += any(f["id"] == e["id"] for f in succ)
+        same_start += any(f["start"] == e["start"] for f in succ)
+        same_bbox += any(f["bbox"] == e["bbox"] for f in succ)
+    print(f"{name}: ongoing@W1end={len(ongoing)} matched-in-W2={matched} "
+          f"lost={lost} same-id={same_id} same-start={same_start} "
+          f"same-bbox={same_bbox}", flush=True)
+    for e in ongoing:
+        succ = [f for f in w2 if overlaps(e, f)]
+        tag = "KEPT" if any(f["id"] == e["id"] for f in succ) else (
+            "REKEYED" if succ else "LOST")
+        print(f"   {tag:8s} {e['id']} {e['start']} box {e['box_km2'] / 1e6:6.2f}M "
+              + (f"-> {sorted({f['id'] for f in succ})} "
+                 f"box {sorted(round(f['box_km2'] / 1e6, 2) for f in succ)}M"
+                 if succ else ""), flush=True)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--lane", type=Path, required=True)
+    ap.add_argument("--start", type=dt.date.fromisoformat, required=True)
+    ap.add_argument("--end", type=dt.date.fromisoformat, required=True,
+                    help="W1 end; W2 = start..end+7d and (start+7d)..end+7d")
+    a = ap.parse_args()
+    dates, lats, lons, masks = frame_masks.daily_masks(a.lane)
+    mask_all = masks["heat_wave"]
+    keep = (lats >= -60.0) & (lats <= 90.0)      # production lat clamp
+    lats, mask_all = lats[keep], mask_all[:, keep]
+    cell_area = _cell_area_km2(lats, float(abs(lons[1] - lons[0])), lons.size)
+    e2 = a.end + dt.timedelta(days=7)
+    win1 = [i for i, d in enumerate(dates) if a.start <= d <= a.end]
+    win2 = [i for i, d in enumerate(dates) if a.start <= d <= e2]
+    win2s = [i for i, d in enumerate(dates) if a.start + dt.timedelta(days=7) <= d <= e2]
+    for win in (win1, win2, win2s):
+        assert len(win) >= 14, "lane does not cover both windows"
+    for name, params in RULESETS.items():
+        def run(sel):
+            sel = list(sel)
+            return published([dates[i] for i in sel], mask_all[sel],
+                             cell_area, lats, lons, params)
+        w1 = run(win1)
+        print(f"== {name} | W1 {a.start}..{a.end} ({len(w1)} events) | "
+              f"W2 {a.start}..{e2} | W2s {a.start + dt.timedelta(days=7)}..{e2}",
+              flush=True)
+        report(" same-start W2 ", w1, run(win2))
+        report(" slid-start  W2s", w1, run(win2s))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

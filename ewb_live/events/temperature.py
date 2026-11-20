@@ -56,7 +56,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .event_tracker import Params, track_events
+from .event_tracker import (
+    Params,
+    persistence_box,
+    persistence_k_days,
+    track_events,
+)
 from .types import Event, make_event_id, normalize_lon_180
 
 logger = logging.getLogger(__name__)
@@ -410,7 +415,16 @@ def scan_temperature_events(
                 event_type, len(raw), int(mask.sum()))
 
     # --------------------------------------------------------- Event mapping --
-    from ..viz.build import consecutive_days
+    from ..viz import build as vb
+
+    # land mask on the mask grid: the denominator of the published `fill`
+    # (ocean cells can never be valid, so a whole-box denominator would lie)
+    try:
+        land = vb.land_mask(lats, lons)
+    except Exception as exc:                    # noqa: BLE001 - provenance only
+        logger.warning("no land mask for the fill stats (%s); publishing "
+                       "fill=None", exc)
+        land = None
 
     out: list[Event] = []
     dropped = 0
@@ -421,27 +435,39 @@ def scan_temperature_events(
         last = (ev.end - dt.timedelta(days=1)) if ev.end else dates[-1]
         if last < start:
             continue     # active only in the lookback, outside the window
+        d0 = dates.index(ev.start)
+        d1 = dates.index(last)
+        # the published rectangle: the persistence box (SPEC §2: cells valid
+        # on >= half the event's days, 2-98 % trimmed), falling back to the
+        # tracker box; publish_box="tracker" keeps the pre-2026-11-20 rule
+        pub_box = ev.box
+        if p.publish_box == "persistence":
+            pub_box = persistence_box(
+                mask[d0:d1 + 1], ev.box, cell_area,
+                persistence_k_days(d1 - d0 + 1, p.publish_min_fraction),
+                p.publish_trim) or ev.box
+        pub_mask = pub_box.mask(ny, nx)
         start_dt = dt.datetime.combine(ev.start, dt.time())
         end_excl = ev.end or (dates[-1] + dt.timedelta(days=1))
         end_dt = dt.datetime.combine(end_excl, dt.time())
-        cols = np.flatnonzero(ev.box.columns(nx))
-        if ev.box.j0 > ev.box.j1:      # wrapped box: order the columns as one
-            cols = np.concatenate([cols[cols >= ev.box.j0],   # continuous band
-                                   cols[cols <= ev.box.j1]])  # across 180
+        cols = np.flatnonzero(pub_box.columns(nx))
+        if pub_box.j0 > pub_box.j1:      # wrapped box: order the columns as one
+            cols = np.concatenate([cols[cols >= pub_box.j0],   # continuous band
+                                   cols[cols <= pub_box.j1]])  # across 180
         bbox = (
-            float(lats[ev.box.i0]),
-            float(lats[ev.box.i1]),
-            normalize_lon_180(float(lons[ev.box.j0])),
-            normalize_lon_180(float(lons[ev.box.j1])),
+            float(lats[pub_box.i0]),
+            float(lats[pub_box.i1]),
+            normalize_lon_180(float(lons[pub_box.j0])),
+            normalize_lon_180(float(lons[pub_box.j1])),
         )
-        # per-cell run lengths inside the box (curation severity + dashboard)
-        sub = mask[:, ev.box.i0:ev.box.i1 + 1][:, :, cols]
-        d0 = dates.index(ev.start)
-        d1 = dates.index(last)
-        runs = consecutive_days(sub[d0:d1 + 1])
+        # per-cell run lengths inside the published box (curation severity +
+        # dashboard)
+        sub = mask[:, pub_box.i0:pub_box.i1 + 1][:, :, cols]
+        runs = vb.consecutive_days(sub[d0:d1 + 1])
         over_floor = runs[runs >= p.min_days]
         if t2m_daily is not None:
-            sub_t = t2m_daily[d0:d1 + 1][:, ev.box.i0:ev.box.i1 + 1][:, :, cols]
+            sub_t = (t2m_daily[d0:d1 + 1][:, pub_box.i0:pub_box.i1 + 1]
+                     [:, :, cols])
             stats = _temp_stats(sub_t[sub[d0:d1 + 1]], event_type)
             if stats:
                 stats["temp_source"] = t2m_source
@@ -467,9 +493,25 @@ def scan_temperature_events(
         if event_type == "cold_snap" and t2m_dmax is not None:
             from .cold_snap import subzero_flags
 
-            sub_dmax = t2m_dmax[d0:d1 + 1][:, ev.box.i0:ev.box.i1 + 1][:, :, cols]
+            sub_dmax = (t2m_dmax[d0:d1 + 1][:, pub_box.i0:pub_box.i1 + 1]
+                        [:, :, cols])
             subzero = subzero_flags(sub[d0:d1 + 1], sub_dmax)
 
+        # how much of the published box is really the event (SPEC §2): fill
+        # = land area of the event's valid cells / land area of the box;
+        # daily_fill = the same share on a typical single day (the dilution
+        # the score sees)
+        land_area = (0.0 if land is None else
+                     float(((land & pub_mask) * cell_area).sum()))
+        fill: float | None = None
+        daily_fill: float | None = None
+        if land_area > 0.0:
+            days_sub = mask[d0:d1 + 1]
+            pub_land = pub_mask & land
+            fill = round(float(((days_sub.any(axis=0) & pub_land)
+                                * cell_area).sum()) / land_area, 3)
+            daily = [float(((m & pub_land) * cell_area).sum()) for m in days_sub]
+            daily_fill = round(float(np.median(daily)) / land_area, 3)
         details: dict[str, Any] = {
             "quantile": quantile,
             **subzero,
@@ -496,6 +538,13 @@ def scan_temperature_events(
                 float(lats[ev.anchor.i0]), float(lats[ev.anchor.i1]),
                 normalize_lon_180(float(lons[ev.anchor.j0])),
                 normalize_lon_180(float(lons[ev.anchor.j1]))],
+            # box provenance (SPEC §2): the tracking box vs the published one
+            "tracker_box_area_km2": round(float(
+                cell_area[ev.box.mask(ny, nx)].sum()), 1),
+            "published_box_area_km2": round(float(
+                cell_area[pub_mask].sum()), 1),
+            "fill": fill,
+            "daily_fill": daily_fill,
             "tracker_params": dataclasses.asdict(p),
             "detection": ("footprint/core tracker: candidate >="
                           f"{p.seed_area_km2:.0f} km2, event >="
