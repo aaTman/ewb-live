@@ -200,9 +200,11 @@ def follow_track(field: np.ndarray, lat: np.ndarray, lon: np.ndarray,
     """Follow one low through a ``(step, lat, lon)`` MSLP stack (hPa).
 
     ``step`` 0 is the init (lead 0); lat ascending, lon ascending and contiguous
-    (may exceed 180). Returns ``(lat, lon, mslp, ok)`` arrays, one per step;
-    ``ok`` is False where there is no valid low or the track is lost. Position
-    and MSLP are NaN there.
+    (may exceed 180). Returns ``(lat, lon, mslp, ok, nodata)`` arrays, one per
+    step; ``ok`` is False where there is no valid low or the track is lost,
+    position and MSLP are NaN there. ``nodata`` marks steps whose field is all
+    fill/NaN (e.g. GraphCast lead 0): they are not the tracker's failure, do not
+    count towards losing the track, and are not verified.
     """
     nstep, ny, nx = field.shape
     dlat = float(np.mean(np.abs(np.diff(lat))))
@@ -212,6 +214,7 @@ def follow_track(field: np.ndarray, lat: np.ndarray, lon: np.ndarray,
     out_lon = np.full(nstep, np.nan)
     out_p = np.full(nstep, np.nan)
     ok = np.zeros(nstep, bool)
+    nodata = np.zeros(nstep, bool)
     prev = (start_lat, start_lon)               # last accepted (or carried) position
     vel = np.zeros(2)                           # (dlat, dlon) per step
     misses = 0
@@ -222,9 +225,7 @@ def follow_track(field: np.ndarray, lat: np.ndarray, lon: np.ndarray,
             continue
         f = np.asarray(field[s], float)
         if not np.isfinite(f).any():
-            misses += 1
-            if misses >= p.lost_after:
-                lost = True
+            nodata[s] = True
             continue
         f = np.where(np.isfinite(f), f, np.nanmax(f))
         sm = ndimage.gaussian_filter(f, p.smooth_sigma_cells, mode="nearest")
@@ -262,7 +263,7 @@ def follow_track(field: np.ndarray, lat: np.ndarray, lon: np.ndarray,
             vel = step if n <= cap else step * (cap / n)
         prev = new
     out_lon = wrap_deg(out_lon)
-    return out_lat, out_lon, out_p, ok
+    return out_lat, out_lon, out_p, ok, nodata
 
 
 # =============================================================================
@@ -458,7 +459,7 @@ def run_job(job: dict) -> dict:
                    window=[round(x, 2) for x in win], grid=list(fld.shape))
         i0 = idx[init]
         t1 = time.perf_counter()
-        flat, flon, fp, ok = follow_track(fld, lat, lon, float(storm.lat[i0]),
+        flat, flon, fp, ok, nod = follow_track(fld, lat, lon, float(storm.lat[i0]),
                                           float(storm.lon[i0]), storm.params)
         rec["track_s"] = round(time.perf_counter() - t1, 3)
         samples = []
@@ -467,6 +468,9 @@ def run_job(job: dict) -> dict:
                 continue                      # lead 0 only seeds the tracker
             k = idx[init + dt.timedelta(hours=h)]
             hd, sp = observed_motion(storm.times, storm.lat, storm.lon, k)
+            if nod[j]:
+                samples.append({"lead": h, "nodata": True})
+                continue
             row = {"lead": h, "tracked": bool(ok[j])}
             if ok[j]:
                 d, a, c = along_cross(storm.lat[k], storm.lon[k], flat[j], flon[j], hd, sp)
@@ -649,10 +653,12 @@ def cmd_run(args) -> int:
             _kill_children()
         else:
             ex.shutdown(wait=True)
+        wpids = {r.get("pid") for r in results}          # job-running workers (not the spawn tracker)
+        wpeaks = [v for k, v in rss.peak_by_pid.items() if k in wpids]
         pool = {"workers": args.workers, "dask_threads": args.dask_threads,
                 "peak_total_rss_gb": round(rss.peak_total / 1e9, 2),
-                "peak_worker_rss_gb": round(max(rss.peak_by_pid.values(), default=0) / 1e9, 3),
-                "worker_peaks_gb": sorted(round(v / 1e9, 3) for v in rss.peak_by_pid.values()),
+                "peak_worker_rss_gb": round(max(wpeaks, default=0) / 1e9, 3),
+                "worker_peaks_gb": sorted(round(v / 1e9, 3) for v in wpeaks),
                 "wall_s": round(time.time() - t_start, 1), "abort": abort,
                 "n_jobs_run": len(results),
                 "timeline": rss.timeline[:: max(1, len(rss.timeline) // 300)]}
@@ -706,7 +712,8 @@ def aggregate(jobs: list[dict], pool: dict | None, workers_target: int = 12) -> 
     # miss rate / error by (kind, lead), pooled and per model
     out["by_kind"] = {}
     for kind in sorted({r["kind"] for r in good}):
-        rows = [(r["model"], s) for r in good if r["kind"] == kind for s in r["samples"]]
+        rows = [(r["model"], s) for r in good if r["kind"] == kind for s in r["samples"]
+                if not s.get("nodata")]
         leads = sorted({s["lead"] for _, s in rows})
         per_lead, per_model = {}, {}
         for L in leads:
@@ -735,6 +742,7 @@ def aggregate(jobs: list[dict], pool: dict | None, workers_target: int = 12) -> 
             "by_lead": per_lead, "by_model": per_model,
             "miss_rate_24_72h_pooled": round(1 - sum(s["tracked"] for s in gate) / len(gate), 3) if gate else None,
             "n_samples_24_72h": len(gate),
+            "n_nodata_samples": sum(1 for r in good if r["kind"] == kind for x in r["samples"] if x.get("nodata")),
             "event_id": next(r["event_id"] for r in good if r["kind"] == kind),
         }
     return out
@@ -905,7 +913,7 @@ def cmd_landfall(args) -> int:
     mine.sort(key=lambda r: r["init"])
     inits, rows = [], []
     for r in mine:
-        pts = [(s["lead"], s["fc_lat"], s["fc_lon"]) for s in r["samples"] if s["tracked"]]
+        pts = [(s["lead"], s["fc_lat"], s["fc_lon"]) for s in r["samples"] if s.get("tracked")]
         if len(pts) >= 4:
             inits.append(np.datetime64(r["init"], "ns"))
             rows.append(pts)

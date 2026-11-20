@@ -39,7 +39,7 @@ def _path(n, lat0=10.0, lon0=-110.0, dlat=1.0, dlon=1.2):
 def test_tracker_follows_moving_low():
     path = _path(10)
     fld = _stack([[p] for p in path])
-    la, lo, pr, ok = tp.follow_track(fld, LAT, LON, path[0][0], path[0][1], tp.TC_PARAMS)
+    la, lo, pr, ok, nod = tp.follow_track(fld, LAT, LON, path[0][0], path[0][1], tp.TC_PARAMS)
     assert ok.all()
     assert np.max(tp.haversine_km(la, lo, [p[0] for p in path], [p[1] for p in path])) < 30.0
     assert np.allclose(pr, 1012.0 - 30.0, atol=0.5)
@@ -48,7 +48,7 @@ def test_tracker_follows_moving_low():
 def test_tracker_loses_vanished_low():
     path = _path(10)
     fld = _stack([[p] if i < 5 else [] for i, p in enumerate(path)])
-    la, lo, pr, ok = tp.follow_track(fld, LAT, LON, path[0][0], path[0][1], tp.TC_PARAMS)
+    la, lo, pr, ok, nod = tp.follow_track(fld, LAT, LON, path[0][0], path[0][1], tp.TC_PARAMS)
     assert ok[:5].all()
     assert not ok[5:].any()                    # vanished at step 5: misses ever after
     assert np.isnan(la[5:]).all() and np.isnan(pr[5:]).all()
@@ -58,7 +58,7 @@ def test_tracker_does_not_jump_to_a_neighbouring_deeper_low():
     path = _path(10)
     # a deeper low 12 degrees away stays put; it must never capture the track
     fld = _stack([[p, (30.0, -95.0, 45.0)] for p in path])
-    la, lo, pr, ok = tp.follow_track(fld, LAT, LON, path[0][0], path[0][1], tp.TC_PARAMS)
+    la, lo, pr, ok, nod = tp.follow_track(fld, LAT, LON, path[0][0], path[0][1], tp.TC_PARAMS)
     assert ok.all()
     assert np.max(tp.haversine_km(la, lo, [p[0] for p in path], [p[1] for p in path])) < 30.0
 
@@ -67,7 +67,7 @@ def test_open_trough_is_not_a_low():
     # a monotone ramp has no closed contour anywhere
     ramp = np.tile(np.linspace(1000.0, 1020.0, LON.size), (LAT.size, 1))
     fld = np.array([ramp, ramp])
-    *_, ok = tp.follow_track(fld, LAT, LON, 20.0, -100.0, tp.TC_PARAMS)
+    *_, ok, nod = tp.follow_track(fld, LAT, LON, 20.0, -100.0, tp.TC_PARAMS)
     assert not ok.any()
 
 
@@ -136,3 +136,14 @@ def test_recurving_track_puts_persistence_on_the_outside(turn_sign, frac_key):
     res = tp.persistence_sanity(_arc_storm(turn_sign))
     for lead in (48, 96):
         assert res["by_lead"][lead][frac_key] >= 0.9
+
+
+def test_all_nan_step_is_nodata_not_a_miss():
+    path = _path(6)
+    fld = _stack([[p] for p in path])
+    fld[0] = np.nan                                    # e.g. GraphCast lead 0 fill
+    fld[3] = np.nan                                    # and a later fill step
+    la, lo, pr, ok, nod = tp.follow_track(fld, LAT, LON, path[0][0], path[0][1], tp.TC_PARAMS)
+    assert nod[0] and nod[3] and nod.sum() == 2
+    assert ok[[1, 2, 4, 5]].all()                      # fill steps neither lose nor invent the track
+    assert not ok[[0, 3]].any()
