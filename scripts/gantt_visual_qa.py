@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """visual-gantt QA: measure + shoot the timeline card (the Gantt strip under the
-map) at four viewports in light and dark.
+map) at four viewports in light and dark, for BOTH the sparse 3-lane live window
+and the dense new-event window (midlat/TC/flood → density ribbons).
 
-    .venv/bin/python scripts/gantt_visual_qa.py --url http://127.0.0.1:8061 \
-        --out notes/screenshots/visual-gantt --tag after
+    .venv/bin/python scripts/gantt_visual_qa.py --url http://127.0.0.1:8079 \
+        --out /home/orca/orca/workspaces/ewb-live/screenshots/visual-gantt --tag dev-r2
 
-Reports, per viewport x theme: the SVG box height, the card's horizontal
-overflow, how many bars are FULLY covered by another bar in the same lane, the
-sub-row depth per lane, the lane-label width vs the label column, and whether
-the strip's bottom edge overlaps the card boundary or the cards below it.
+Reports, per viewport x theme: the SVG box height, overflow, how many bars are
+FULLY covered by another bar in the same lane, the smallest DRAWN bar height (must
+be >= 5px), the time axis's share of the strip width (must be >= 80%), how many
+lanes render as a density ribbon, whether a lane label runs past the SVG box, and
+whether the strip's bottom sits inside the card. Screenshots are PNGs — the owner
+rule is they NEVER go in the repo, so --out must point OUTSIDE it.
 """
 from __future__ import annotations
 
@@ -68,19 +71,32 @@ MEASURE = """() => {
   const labOver = labs.map((t) => ({ t: t.textContent, w: +rect(t).width.toFixed(1),
     clipped: rect(t).right > cr.right - 2 })).filter((o) => o.clipped);
   const next = document.querySelector('#events-sec');
+  // RIBBON awareness (round 2): a dense lane paints a density ribbon instead of
+  // bars; every DRAWN bar must keep ONE height >= 5px, the time axis must keep
+  // >= 80% of the strip width, and a lane label must never run past the SVG box.
+  const ribbons = [...svg.querySelectorAll('.gm-ribbon')];
+  const lane0 = lanes[0] ? rect(lanes[0]) : r;
+  const axisFrac = r.width ? (lane0.right - lane0.left) / r.width : 1;
+  const barHs = [...new Set(bars.map((b) => +rect(b).height.toFixed(2)))];
+  const minBarH = bars.length ? Math.min(...barHs) : null;
+  const labClip = labs.filter((t) => rect(t).right > r.right + 1).map((t) => t.textContent.slice(0, 24));
   return {
     svg: { w: +r.width.toFixed(1), h: +r.height.toFixed(1), top: +r.top.toFixed(1), bottom: +r.bottom.toFixed(1) },
     svgAttrs: { w: svg.getAttribute('width'), h: svg.getAttribute('height'), vb: svg.getAttribute('viewBox') },
     card: { w: +cr.width.toFixed(1), right: +cr.right.toFixed(1) },
     barCount: bars.length,
     barW: bars.map((b) => +rect(b).width.toFixed(1)),
-    barH: [...new Set(bars.map((b) => +rect(b).height.toFixed(2)))],
+    barH: barHs,
+    minBarH, axisFrac: +axisFrac.toFixed(3),
+    ribbonLanes: ribbons.length,
+    ribSegs: svg.querySelectorAll('.gm-rib-seg').length,
     laneCount: lanes.length,
     laneDepth: depth,
     coveredCount: covered.length,
     coveredSameLane: covered.filter((c) => c.sameLane).length,
     coveredExamples: covered.slice(0, 4),
     labelOverflow: labOver,
+    labelClip: labClip,
     labels: labs.map((t) => t.textContent),
     overflowDoc: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     overflowTimeline: (() => { const t = document.querySelector('.timeline'); return t.scrollWidth - t.clientWidth; })(),
@@ -106,12 +122,13 @@ def main() -> int:
                 ctx = br.new_context(viewport=vp, color_scheme=theme)
                 pg = ctx.new_page()
                 errs: list[str] = []
-                pg.on("console", lambda m, e=errs: e.append(m.text[:200]) if m.type == "error" else None)
+                pg.on("console", lambda m, e=errs: e.append(m.text[:200])
+                      if m.type == "error" and "Failed to load resource" not in m.text else None)
                 pg.on("pageerror", lambda e, errs=errs: errs.append("pageerror " + str(e)[:200]))
                 pg.goto(a.url + "/", wait_until="domcontentloaded")
                 pg.wait_for_selector("#event-table tbody tr[data-id]", timeout=40000)
                 pg.wait_for_function("() => typeof MergedMap !== 'undefined' && MergedMap._dbg().mounted === true", timeout=40000)
-                pg.wait_for_selector("#gm-gantt .gm-bar", timeout=40000)
+                pg.wait_for_function("() => document.querySelector('#gm-gantt .gm-bar, #gm-gantt .gm-rib-seg')", timeout=40000)
                 pg.wait_for_timeout(1200)
                 pg.evaluate("(t) => { document.documentElement.dataset.theme = t; }", theme)
                 pg.wait_for_timeout(350)
@@ -133,16 +150,19 @@ def main() -> int:
                 ctx.close()
         br.close()
     (out / f"measure-{a.tag}.json").write_text(json.dumps(rep, indent=1))
-    print(f"{'viewport':11} {'theme':6} {'svgH':>6} {'ovfDoc':>7} {'ovfTL':>6} "
-          f"{'covered':>8} {'covLane':>8} {'depth':>14} {'labOver':>8} {'inCard':>7} {'errs':>5}")
+    print(f"{'viewport':11} {'theme':6} {'svgH':>6} {'ovfDoc':>7} {'covLane':>8} "
+          f"{'minBarH':>8} {'axis%':>6} {'rib':>4} {'labClip':>8} {'inCard':>7} {'errs':>5}")
     bad = 0
     for m in rep["runs"]:
+        # a bar drawn below 5px, an axis under 80% of the width, a label running past
+        # the SVG box, a bar hidden behind another, overflow, or a console error all FAIL
         bad += (m["coveredSameLane"] > 0) + (m["overflowDoc"] > 0) + (m["overflowTimeline"] > 0) \
                + (not m["ganttBottomInsideCard"]) + (len(m["labelOverflow"]) > 0) \
-               + (len(m["consoleErrors"]) > 0)
+               + (len(m["consoleErrors"]) > 0) + (len(m["labelClip"]) > 0) \
+               + (m["minBarH"] is not None and m["minBarH"] < 5) + (m["axisFrac"] < 0.8)
         print(f"{m['viewport']:11} {m['theme']:6} {m['svg']['h']:>6} {m['overflowDoc']:>7} "
-              f"{m['overflowTimeline']:>6} {m['coveredCount']:>8} {m['coveredSameLane']:>8} "
-              f"{str(m['laneDepth']):>14} {len(m['labelOverflow']):>8} "
+              f"{m['coveredSameLane']:>8} {str(m['minBarH']):>8} {m['axisFrac']*100:>5.0f}% "
+              f"{m['ribbonLanes']:>4} {len(m['labelClip']):>8} "
               f"{str(m['ganttBottomInsideCard']):>7} {len(m['consoleErrors']):>5}")
     print("FAILS:", bad)
     return 0

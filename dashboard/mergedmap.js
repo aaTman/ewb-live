@@ -804,7 +804,8 @@
   const G_RIGHT = 12;     // trailing inset = slider thumb half-width (see styles.css)
   const G_MIN_W = 240;    // never shrink the axis below this
   const GUT = 2;          // x gutter between bars in one sub-row
-  const NARROW_W = 600;   // below this container width, labels switch to their short form
+  const NARROW_W = 600;   // below this container width, labels move ABOVE their lane
+  const G_CAP = 11;       // the caption row a narrow strip puts each lane name on
   const G_LAB_MIN = 40, G_LAB_MAX = 150, G_LAB_FRAC = 0.34;   // label column limits
   // a lane's band height from its packed row count (>= 1) in bars-mode
   const G_BARS_H = (rows) => Math.max(G_BAR, rows * G_BAR + (rows - 1) * G_ROWGAP);
@@ -937,8 +938,9 @@
     // map column's width minus the card's gutters rather than paint a 0-wide axis.
     const own = svg.clientWidth || $('#raw-map-wrap').clientWidth - 26;
     const W = Math.max(G_MIN_W, own);
-    // below NARROW_W the label column is too tight for the full names, so it drops
-    // to the short form (TC / MLC / Cold …) and the time axis takes back the width
+    // below NARROW_W there is no room for a label column that is ALSO >= 80 % axis,
+    // so the names move to a caption row above each lane and the axis gets the full
+    // width (round 2: a 30 %-wide column clipped "Tropical cyclone" at 390 px)
     const narrow = W < NARROW_W;
     const labOf = (type) => (narrow ? (TYPES[type].narrow || TYPES[type].short) : TYPES[type].short);
     const t0 = tsToDate(raw.frames[0]).getTime();
@@ -973,9 +975,15 @@
     const laneItems = new Map(lanes.map((type) =>
       [type, tlEvents().filter((ev) => ev.type === type && inWindow(ev))]));
     const dense = new Set(lanes.filter((type) => depthOf(laneItems.get(type)) > G_DENSE));
-    // reserve the caret column for every dense lane (▸/▾ is part of its label)
-    const { pad: LAB, name: laneName } = labelMetrics(svg, W,
-      lanes.map((type) => (dense.has(type) ? '▸ ' : '') + labOf(type)));
+    // WIDE: names sit in a left column sized to them (caret reserved for dense lanes).
+    // NARROW: the column would eat the axis, so LAB collapses to 0, the axis runs the
+    // full width, and each lane is named on a caption row above its band instead.
+    let LAB, laneName;
+    if (narrow) { LAB = 0; laneName = (s) => s; }
+    else {
+      ({ pad: LAB, name: laneName } = labelMetrics(svg, W,
+        lanes.map((type) => (dense.has(type) ? '▸ ' : '') + labOf(type))));
+    }
     $('#global-sec').style.setProperty('--gm-lab', LAB + 'px');
 
     const x = (ms) => LAB + Math.min(1, Math.max(0, (ms - t0) / span)) * (W - LAB - G_RIGHT);
@@ -1003,7 +1011,14 @@
       return { type, items, rows, isDense, expanded, mode, bh, lab: labOf(type) };
     });
     let top = 0;
-    for (const g of groups) { g.y = top; top += g.bh + G_GAP; }
+    for (const g of groups) {
+      // narrow: a caption row (G_CAP) sits ABOVE the band for a named lane, so the
+      // axis can run the full width with no left column; g.y stays the BAND top.
+      g.capH = (narrow && g.rows) ? G_CAP : 0;
+      g.capY = top;
+      g.y = top + g.capH;
+      top += g.capH + g.bh + G_GAP;
+    }
     const gridBot = groups.length ? groups[groups.length - 1].y + groups[groups.length - 1].bh : 0;
     const H = gridBot + G_AX;
     svg.setAttribute('width', W); svg.setAttribute('height', H);
@@ -1021,11 +1036,13 @@
       mk('rect', { class: 'gm-lane' + (i % 2 ? ' gm-lane-alt' : '') + (g.rows ? '' : ' gm-lane-none'),
                    x: LAB, y: g.y, width: W - LAB - G_RIGHT, height: g.bh, rx: Math.min(2.5, g.bh / 2) }, svg);
       if (i) mk('line', { class: 'gm-lane-sep', x1: 0, x2: W - G_RIGHT,
-                          y1: g.y - G_GAP / 2, y2: g.y - G_GAP / 2 }, svg);
+                          y1: g.capY - G_GAP / 2, y2: g.capY - G_GAP / 2 }, svg);
       if (!g.rows) return;
       const caret = g.isDense ? (g.expanded ? '▾ ' : '▸ ') : '';
       const full = caret + g.lab;
-      const t = mk('text', { class: 'gm-lane-lab' + (g.isDense ? ' toggle' : ''), x: 0, y: g.y + g.bh / 2, dy: '.36em' }, svg);
+      const labY = narrow ? g.capY + G_CAP - 2 : g.y + g.bh / 2;   // above the band, or centred in it
+      const t = mk('text', { class: 'gm-lane-lab' + (g.isDense ? ' toggle' : ''),
+                             x: 0, y: labY, dy: narrow ? '0' : '.36em' }, svg);
       t.textContent = laneName(full);
       if (g.isDense) {
         t.setAttribute('role', 'button'); t.setAttribute('tabindex', '0');

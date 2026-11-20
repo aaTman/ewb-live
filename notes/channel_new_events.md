@@ -3810,3 +3810,22 @@ the 4 px gap, the 160 px minimum window, and everything on the box.
 **Follow-up worth filing:** the strip and the tracklane each size a timeline column in
 their own way (`--gm-lab` vs `TL_LAB`); a shared measure would stop the two drifting again
 the way the 62 px box and the 110-unit viewBox did.
+
+## [visual-gantt] 2026-11-20 02:20 UTC — round 2: dense-lane time strip
+Round 1 was only exercised on the 3-lane live window. On the new-event window
+(205 events) the flood/TC lanes became 2.2px hairlines, the midlat lane was
+missing, and labels clipped at 390px. Changed `renderGantt`: every lane with
+events shows (midlat_cyclone added to LANE_ORDER); one uniform 6px bar height,
+lanes GROW for sub-rows instead of thinning; dense lanes (concurrency > 3) draw a
+clickable DENSITY RIBBON with a hover "N active, <date>" readout and selected/
+previewed events redrawn on top; the dense lane's label is a keyboard/aria button
+that toggles ribbon↔expanded (in-memory only); below 600px the label column
+collapses and names move above each lane so the time axis keeps >= 80% width.
+CLS reservation (styles.css min-height) updated to the collapsed new-event height.
+QA (`scripts/gantt_visual_qa.py`, updated for ribbons) FAILS:0 on BOTH the live 3-lane
+and the dev 7-lane windows at 1440/1024/390/320 light+dark. New e2e: dense lane =
+ribbon (no hairlines), expand shows all bars none hidden, selected bar over ribbon,
+midlat lane appears with MLC data, narrow axis stays wide — all pass. The 4 e2e
+failures in test_dashboard_fe.py (open/EV3-panel, live-row↔box sync, heat-detail)
+and the 2 test_events_unit.py detector failures reproduce on origin/develop's own
+files — pre-existing, unrelated to this JS/CSS-only change.
