@@ -1232,6 +1232,204 @@ def test_merged_gantt_bar_click_jumps_and_selects(gd_server, page_ctx):
     assert "sel=gf1" in page.evaluate("decodeURIComponent(location.hash)")
 
 
+def _dense_timeline():
+    """A lane that overlaps ITSELF: 7 heat waves in an 11-day window (4-5 of them
+    live at once), the shape the owner's 'the time bar … has become a mess' report
+    is about. Keys are [start, end) ISO days; every entry gets qualified_at = start.
+    """
+    days = _GD_DAYS
+    # peak concurrency 8 on 2026-01-05: deeper than the dense-lane cutoff, so the
+    # strip renders this lane as a density RIBBON (not 8 stacked bars) by default
+    heat = [("2026-01-01", "2026-01-05"), ("2026-01-02", "2026-01-06"),
+            ("2026-01-02", "2026-01-07"), ("2026-01-03", "2026-01-08"),
+            ("2026-01-04", "2026-01-08"), ("2026-01-05", "2026-01-09"),
+            ("2026-01-05", "2026-01-07"), ("2026-01-05", "2026-01-11"),
+            ("2026-01-06", "2026-01-10"), ("2026-01-06", "2026-01-08"),
+            ("2026-01-07", "2026-01-09"), ("2026-01-08", "2026-01-11")]
+    evs = []
+    for i, (a, b) in enumerate(heat):
+        evs.append({"id": f"dn{i}", "type": "heat_wave", "title": f"Heat Dense {i} (e2e)",
+                    "start": a, "end": b, "bbox": [30.0, 45.0, -100.0, -80.0],
+                    "days": [d for d in days if a <= d < b],
+                    "qualified_at": a.replace("-", "") + "00"})
+    evs.append({"id": "dfr", "type": "freeze", "title": "Freeze Sparse (e2e)",
+                "start": "2026-01-03", "end": "2026-01-06", "bbox": [40.0, 50.0, 10.0, 20.0],
+                "days": _GD_DAYS[2:5], "qualified_at": "2026010300"})
+    return {"schema": 1, "generated": "2026-01-11T00:00:00Z",
+            "window": {"start": "2026-01-01", "end": "2026-01-11", "days": 11},
+            "events": evs}
+
+
+@pytest.fixture(scope="module")
+def dense_server(tmp_path_factory):
+    """The merged-map fixture with the dense single-lane timeline swapped in."""
+    root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-dense")), raw_frames=GD_RAW_TS)
+    p = os.path.join(root, "data", "results", "global_timeline.json")
+    tl = _dense_timeline()
+    json.dump(tl, open(p, "w"))
+    sel_p = os.path.join(root, "data", "results", "events_selected.json")
+    sel = json.load(open(sel_p))
+    lst = sel["events"] if isinstance(sel, dict) else sel
+    for e in tl["events"]:
+        lst.append({"id": e["id"], "event_type": e["type"], "title": e["title"],
+                    "bbox": e["bbox"], "start": e["start"], "end": e["end"],
+                    "details": {"region": "e2e"}})
+    json.dump(sel, open(sel_p, "w"))
+    srv, url = _gd_server(root)
+    yield url
+    srv.shutdown()
+
+
+# THE DENSE-LANE MODEL (visual-gantt round 2, 2026-11-20): a lane whose events
+# overlap more than G_DENSE (3) deep is a DENSITY RIBBON — a step area whose height
+# is the active-event count — NOT a smear of 2px hairlines; its label is a button
+# that expands it to packed rows, and a SELECTED event is ALWAYS redrawn as a full
+# bar over the ribbon. Every DRAWN bar keeps ONE height (>= 5px), nothing is scaled.
+def _gantt_bars(page):
+    """Geometry of the DRAWN bars + the overlap check: two bars in the strip must
+    never be fully inside one another (that is a bar the reader cannot click)."""
+    return page.evaluate("""() => {
+        const svg = document.querySelector('#gm-gantt');
+        const R = (n) => n.getBoundingClientRect();
+        const bars = [...svg.querySelectorAll('.gm-bar')];
+        const heights = [...new Set(bars.map((b) => +R(b).height.toFixed(2)))];
+        let covers = 0;
+        for (let i = 0; i < bars.length; i++) for (let j = i + 1; j < bars.length; j++) {
+            const a = R(bars[i]), b = R(bars[j]);
+            if (a.left >= b.left - 0.5 && a.right <= b.right + 0.5
+                && a.top >= b.top - 0.5 && a.bottom <= b.bottom + 0.5) covers++;
+        }
+        const box = svg.getBoundingClientRect(), vb = svg.viewBox.baseVal;
+        const card = document.querySelector('.timeline').getBoundingClientRect();
+        return { ids: bars.map((b) => b.dataset.id).sort(), nBars: bars.length,
+                 heights, covers, minH: bars.length ? Math.min(...heights) : null,
+                 ribbons: svg.querySelectorAll('.gm-ribbon').length,
+                 scale: Math.min(box.width / vb.width, box.height / vb.height),
+                 inCard: box.bottom <= card.bottom + 1,
+                 overflowDoc: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    }""")
+
+
+def _expand_first_collapsed(page):
+    """Click the first dense lane label still collapsed (aria-expanded=false) via a
+    real MouseEvent (an SVG <text> has no .click()); a toggle click re-renders the SVG."""
+    return page.evaluate("""() => {
+        const t = [...document.querySelectorAll('#gm-gantt .gm-lane-lab.toggle')]
+            .find((e) => e.getAttribute('aria-expanded') === 'false');
+        if (!t) return null;
+        t.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        return t.textContent;
+    }""")
+
+
+def test_dense_lane_renders_a_ribbon_not_hairlines(dense_server, page_ctx):
+    """The dense heat lane (12 events, ~8 deep) must be a density RIBBON with NO
+    hairline bars; the sparse freeze lane stays a single bar. Nothing scaled/hidden."""
+    page = page_ctx
+    _mm_goto(page, dense_server)
+    m = _gantt_bars(page)
+    assert m["ribbons"] >= 1, "the dense lane drew no density ribbon"
+    assert set(m["ids"]) == {"dfr"}, m["ids"]   # heat lives in the ribbon; only freeze is a bar
+    assert m["minH"] is None or m["minH"] >= 5, m
+    assert abs(m["scale"] - 1) <= 0.01, f"strip is SCALED: {m}"
+    assert m["covers"] == 0 and m["inCard"] and m["overflowDoc"] <= 0, m
+    assert page.errors == [], page.errors
+
+
+def test_dense_label_expands_to_all_bars_none_hidden(dense_server, page_ctx):
+    """The lane label is a button. Expanding the dense lane paints every event as a
+    uniform full-height bar with none hidden; the sparse lane's bar is always there.
+    Re-loaded per width so the in-memory expand toggle starts collapsed."""
+    page = page_ctx
+    for w, h in ((1024, 768), (390, 844)):
+        _mm_goto(page, dense_server)
+        page.set_viewport_size({"width": w, "height": h}); page.wait_for_timeout(500)
+        lab = _expand_first_collapsed(page); page.wait_for_timeout(350)
+        assert lab, "no dense lane to expand"
+        m = _gantt_bars(page)
+        assert m["nBars"] >= 12, f"{w}px: expanding a dense lane drew few bars: {m}"
+        assert m["minH"] is not None and m["minH"] >= 5, f"{w}px: a bar under 5px: {m}"
+        assert m["covers"] == 0, f"{w}px: an expanded lane hides a bar: {m}"
+        assert abs(m["scale"] - 1) <= 0.01 and m["inCard"] and m["overflowDoc"] <= 0, m
+    assert page.errors == [], page.errors
+
+
+def test_selected_event_draws_over_ribbon(dense_server, page_ctx):
+    """A selected event of a RIBBON lane is always redrawn as a full bar on top, so
+    the selection never disappears into the ribbon; clicking it toggles it back off."""
+    page = page_ctx
+    _mm_goto(page, dense_server)
+    assert page.locator("#gm-gantt .gm-bar[data-id=dn3]").count() == 0   # collapsed: in the ribbon
+    page.evaluate("MergedMap.select('dn3')"); page.wait_for_timeout(250)
+    assert page.locator("#gm-gantt .gm-bar[data-id=dn3]").count() == 1, "selection vanished in the ribbon"
+    page.locator("#gm-gantt .gm-bar[data-id=dn3]").click(); page.wait_for_timeout(250)
+    assert "dn3" not in page.evaluate("MergedMap._dbg().sel"), "bar click did not toggle selection"
+    assert page.errors == [], page.errors
+
+
+# MIDLAT LANE (round 2): midlat_cyclone was dropped from LANE_ORDER while empty;
+# it now publishes storms and MUST appear whenever the window has MLC events.
+def _mlc_timeline():
+    grid = {"ny": 2, "nx": 2, "lat0": 40.0, "lat1": 42.0, "lon0": -100.0, "lon1": -98.0,
+            "step_deg": 1.0, "step_lon": 1.0}
+    def ev(i, typ, a, b):
+        return {"id": f"ml{i}", "type": typ, "title": f"{typ} {i} (e2e)",
+                "start": a, "end": b, "bbox": [40.0, 42.0, -100.0, -98.0], "grid": grid,
+                "days": [a, b], "qualified_at": a.replace("-", "") + "00"}
+    evs = [ev(0, "midlat_cyclone", "2026-01-02", "2026-01-05"),
+           ev(1, "midlat_cyclone", "2026-01-04", "2026-01-07"),
+           ev(2, "heat_wave", "2026-01-06", "2026-01-09")]
+    return {"schema": 1, "generated": "2026-01-11T00:00:00Z",
+            "window": {"start": "2026-01-01", "end": "2026-01-11", "days": 10},
+            "events": evs}
+
+
+@pytest.fixture(scope="module")
+def mlc_server(tmp_path_factory):
+    """A timeline that contains midlat_cyclone events — the lane the old code hid."""
+    root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-mlc")), raw_frames=GD_RAW_TS)
+    p = os.path.join(root, "data", "results", "global_timeline.json")
+    tl = _mlc_timeline()
+    json.dump(tl, open(p, "w"))
+    sel_p = os.path.join(root, "data", "results", "events_selected.json")
+    sel = json.load(open(sel_p)); lst = sel["events"] if isinstance(sel, dict) else sel
+    for e in tl["events"]:
+        lst.append({"id": e["id"], "event_type": e["type"], "title": e["title"],
+                    "bbox": e["bbox"], "start": e["start"], "end": e["end"],
+                    "details": {"region": "e2e"}})
+    json.dump(sel, open(sel_p, "w"))
+    srv, url = _gd_server(root); yield url; srv.shutdown()
+
+
+def test_midlat_cyclone_lane_shows_when_data_has_it(mlc_server, page_ctx):
+    page = page_ctx
+    _mm_goto(page, mlc_server)
+    labs = page.eval_on_selector_all("#gm-gantt .gm-lane-lab", "e=>e.map((t)=>t.textContent)")
+    assert any("Midlat" in t for t in labs), f"no midlat lane among {labs}"
+    ids = page.eval_on_selector_all("#gm-gantt .gm-bar", "e=>e.map((b)=>b.dataset.id)")
+    assert "ml0" in ids and "ml1" in ids, ids   # both MLC events drawn on the strip
+
+
+def test_narrow_strip_keeps_the_axis_wide(dense_server, page_ctx):
+    """At phone width the label column collapses (names move ABOVE their lanes) so
+    the time axis keeps >= 80% of the strip and no label is clipped."""
+    page = page_ctx
+    _mm_goto(page, dense_server)
+    page.set_viewport_size({"width": 390, "height": 844}); page.wait_for_timeout(500)
+    m = page.evaluate("""() => {
+        const svg = document.querySelector('#gm-gantt'); const R = (n) => n.getBoundingClientRect();
+        const r = R(svg); const lane = document.querySelector('#gm-gantt .gm-lane');
+        const labs = [...svg.querySelectorAll('.gm-lane-lab')];
+        const axisFrac = lane ? (R(lane).right - R(lane).left) / r.width : 0;
+        return { axisFrac, clip: labs.filter((t) => R(t).right > r.right + 1).length,
+                 gmLab: getComputedStyle(document.querySelector('#global-sec')).getPropertyValue('--gm-lab').trim() };
+    }""")
+    assert m["axisFrac"] >= 0.8, m
+    assert m["clip"] == 0, m
+    assert m["gmLab"] in ("0px", "0"), f"narrow must collapse the label column: {m}"
+    assert page.errors == [], page.errors
+
+
 def test_merged_old_links_redirect(gd_server, page_ctx):
     page = page_ctx
     page.goto(gd_server + "/#raw=2026010200&layers=h,f")
@@ -1337,21 +1535,30 @@ _HEAT_PIXEL_JS = """(() => {
 
 
 def test_merged_slider_spans_gantt_axis(gd_server, page_ctx):
-    """Slider thumb travel == gantt time axis [LAB(44), W-12] so a thumb
-    position lands on the same date in the strip below (orchestrator polish
-    08 Nov: full-width track, readout above, aligned scrubbing)."""
+    """Slider thumb travel == the gantt time axis [LAB, W - 12] so a thumb position
+    lands on the same date in the strip below (orchestrator polish 08 Nov: full-width
+    track, readout above, aligned scrubbing). LAB is no longer the hardcoded 44 the
+    strip used to assume: it is MEASURED from the lane names so a long one can never
+    be clipped (visual-gantt 2026-11-19), and mergedmap hands it to the slider's CSS
+    margins as --gm-lab. The contract is unchanged — read the axis from the strip and
+    check the thumb lands on it.
+    """
     page = page_ctx
     _mm_goto(page, gd_server)
     m = page.evaluate("""() => {
         const s = document.querySelector('#raw-slider').getBoundingClientRect();
         const g = document.querySelector('#gm-gantt').getBoundingClientRect();
         const r = document.querySelector('#raw-readout').getBoundingClientRect();
+        const lab = parseFloat(getComputedStyle(
+            document.querySelector('#global-sec')).getPropertyValue('--gm-lab')) || 44;
+        const lane = document.querySelector('#gm-gantt .gm-lane');
         return {thumbL: s.x + 8, thumbR: s.right - 8,
-                axisL: g.x + 44, axisR: g.right - 12,
-                readoutBottom: r.bottom, sliderTop: s.top, sw: s.width, gw: g.width};
-    }""")
+                axisL: g.x + lab, axisR: g.right - 12, lab,
+                laneX: lane ? lane.getBoundingClientRect().x - g.x : null,
+                readoutBottom: r.bottom, sliderTop: s.top, sw: s.width, gw: g.width}; }""")
     assert abs(m["thumbL"] - m["axisL"]) <= 2, m
     assert abs(m["thumbR"] - m["axisR"]) <= 2, m
+    assert m["laneX"] is not None and abs(m["laneX"] - m["lab"]) <= 2, m   # axis == lane ground start
     assert m["sw"] >= 0.85 * m["gw"], m          # full-width, not a 130px stub
     assert m["readoutBottom"] <= m["sliderTop"], m  # readout sits above the track
 
@@ -1836,14 +2043,18 @@ def test_flood_chip_isolates_raw_layers(flood_server, page_ctx):
     assert errs == [], errs
 
 
-def test_legend_sits_below_the_map_and_never_moves_the_page(dur_server, page_ctx):
-    """New contract (2026-11-11 redesign): the colour scales are an in-flow
-    strip BELOW the map — outside #raw-map-wrap, never covering the canvas.
-    Its height is fixed per layout, so content changes (a lane off through
-    the tabs, a Region view) never move what sits below the strip: the map
-    box, the slider and the gantt keep their exact rectangles. (The event
-    list and the scorecard DO reflow on a tab change — that is the tabs'
-    own page-wide filter contract, not the strip's layout.)"""
+def test_legend_sits_below_the_map_and_hugs_its_content(dur_server, page_ctx):
+    """Contract (2026-11-11 redesign + the 2026-11-19 "the card is too large
+    for the colour scales" pass): the colour scales are an in-flow strip BELOW
+    the map — outside #raw-map-wrap, never covering the canvas — and the card
+    is exactly as tall as the rows it holds. So the MAP and the strip's own
+    box never move (the strip hangs under the map; it can only push what is
+    below it), and content changes that keep the same rows (a frame under the
+    slider, a Region view, a lane whose stops dim or light up) keep the strip's
+    exact box: nothing under it stirs while the map animates. A lane-count
+    change is a deliberate tab click — the Explore view reflows anyway — and
+    with height = content what sits below moves by exactly the strip's own
+    height delta, which is what the last two asserts pin down."""
     page = page_ctx
     _mm_goto(page, dur_server)
     _mm_frame(page, RAW_TS[1])
@@ -1863,15 +2074,195 @@ def test_legend_sits_below_the_map_and_never_moves_the_page(dur_server, page_ctx
     page.locator("#type-tabs [data-tab=atmospheric_river]").click()   # 3 -> 1 lane
     page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 1")
     b = page.evaluate(geo)
-    assert b["groups"] == 1 and b["leg"][3] == a["leg"][3], (a, b)   # height is fixed
-    assert b["below"] == a["below"] and b["map"] == a["map"], (a, b)  # nothing moved
+    assert b["groups"] == 1 and b["map"] == a["map"], (a, b)          # the map never moves
+    assert b["leg"][:2] == a["leg"][:2], (a, b)          # nor does the strip's top edge
+    dh = b["leg"][3] - a["leg"][3]                       # height = content: it may change…
+    assert dh != 0, (a, b)                               # …and it really is content-driven
+    for got, want in zip(b["below"], a["below"]):        # below rides the strip's own delta
+        assert abs(got[1] - want[1] - dh) <= 1, (a, b, dh)   # (rects are rounded to integers)
     page.locator("#type-tabs button", has_text="All").click()
     page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 3")
+    a2 = page.evaluate(geo)
+    assert a2["leg"] == a["leg"] and a2["below"] == a["below"], (a, a2)   # back: same box
     page.evaluate("MergedMap.setRegion({key:'europe', label:'Europe', lat:[35,75], lon:[-12.5,42.5]})")
     page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group.none').length === 3")
-    c = page.evaluate(geo)
+    c = page.evaluate(geo)                               # 'none in view' is an overlay:
     assert c["leg"] == a["leg"] and c["map"] == a["map"] and c["below"] == a["below"], (a, c)
     page.evaluate("MergedMap.setRegion(null)")
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"
+
+
+LEGEND_HUG_JS = """() => {
+    const r = (el) => { const b = el.getBoundingClientRect();
+        return {l: b.left, t: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height}; };
+    const leg = document.querySelector('#gm-legend');
+    const L = r(leg), map = r(document.querySelector('#raw-map-wrap'));
+    const kids = [...leg.children].filter((e) => e.getBoundingClientRect().width > 0).map(r);
+    const u = {l: Math.min(...kids.map((k) => k.l)), t: Math.min(...kids.map((k) => k.t)),
+               r: Math.max(...kids.map((k) => k.r)), b: Math.max(...kids.map((k) => k.b))};
+    return {
+      compact: leg.classList.contains('compact'),
+      rows: new Set(kids.map((k) => Math.round(k.t))).size,
+      gapLeft: +(u.l - L.l).toFixed(1), gapRight: +(L.r - u.r).toFixed(1),
+      gapTop: +(u.t - L.t).toFixed(1), gapBottom: +(L.b - u.b).toFixed(1),
+      leftVsMap: +(L.l - map.l).toFixed(1), rightVsMap: +(map.r - L.r).toFixed(1),
+      wider: L.w > map.w + 1,                             // larger than the map column?
+      fits: leg.scrollWidth <= leg.clientWidth + 1,       // nothing behind a scroll
+      inside: kids.every((k) => k.r <= L.r + 1 && k.l >= L.l - 1),
+      pillsOut: [...leg.querySelectorAll('.lg-none')].filter(
+          (p) => p.getBoundingClientRect().top < L.t - 0.5).length,
+      h: +L.h.toFixed(1), w: +L.w.toFixed(1),
+    }; }"""
+
+
+# 7-lane grid contract (round 2, dev data): column starts per row, the swatch
+# column (and the ramp box, whose swatches centre inside wider labelled bins
+# when expanded), and the Scales pill's size/corner. `--lg-wide` is the same
+# switch the CSS container query flips, so JS and CSS agree on the layout.
+LEGEND_GRID7_JS = """() => {
+    const r = (el) => { const b = el.getBoundingClientRect();
+        return {l: b.left, t: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height}; };
+    const leg = document.querySelector('#gm-legend');
+    const L = r(leg), map = r(document.querySelector('#raw-map-wrap'));
+    const gs = [...leg.querySelectorAll('.lg-group')];
+    const rows = new Map();
+    for (const g of gs) { const t = Math.round(r(g).t);
+        rows.set(t, [...(rows.get(t) || []), r(g).l]); }
+    const byIdx = new Map();                      // column index -> lefts per row
+    for (const lefts of rows.values())
+        lefts.sort((a, b) => a - b).forEach((l, i) =>
+            byIdx.set(i, [...(byIdx.get(i) || []), l]));
+    const colSpread = Math.max(...[...byIdx.values()].map(
+        (ls) => Math.max(...ls) - Math.min(...ls)));
+    const stops = gs.map((g) => g.querySelector('.lg-stops'));
+    const swatchL = stops.map((s) => Math.min(...[...s.querySelectorAll('.swatch')]
+        .map((x) => r(x).l)));
+    const stopsL = stops.map((s) => r(s).l);
+    const sp = (xs) => Math.round(Math.max(...xs) - Math.min(...xs));
+    const tog = leg.querySelector('.lg-toggle');
+    const T = tog ? r(tog) : null;
+    return {
+      wide: getComputedStyle(leg).getPropertyValue('--lg-wide').trim() === '1',
+      hug: leg.classList.contains('hug'),
+      groups: gs.length,
+      rows: new Set(gs.map((g) => Math.round(r(g).t))).size,
+      colSpread: Math.round(colSpread),
+      stopsSpread: sp(stopsL), swatchSpread: sp(swatchL),
+      leftVsMap: +(L.l - map.l).toFixed(1), rightVsMap: +(map.r - L.r).toFixed(1),
+      fits: leg.scrollWidth <= leg.clientWidth + 1,
+      inside: [...leg.children].filter((e) => e.getBoundingClientRect().width > 0)
+          .every((e) => { const k = r(e);
+              return k.r <= L.r + 1 && k.l >= L.l - 1; }),
+      toggle: !!T, togH: T ? +T.h.toFixed(1) : null,
+      togTopRight: T ? (() => {
+          const tops = [...new Set(gs.map((g) => Math.round(r(g).t)))].sort((a, b) => a - b);
+          const row2 = tops.length > 1 ? tops[1] : L.b;   // still inside row 1?
+          return T.t < row2 - 1 && T.r >= L.r - 13;
+        })() : false,
+    }; }"""
+
+
+def test_legend_card_hugs_its_scales_and_aligns_with_the_map(dur_server, page_ctx):
+    """Owner 2026-11-19: "the box/card holding the color scales is misaligned
+    and too large relative to the color scales." Locks the tidy-up in: the
+    card's left edge IS the map/timeline left edge, the card never exceeds the
+    map column, and at most one padding (12 px) of air separates the card from
+    the union of its children on every side — no dead band under the swatches,
+    no hole beside the last one. A wrapped multi-row strip may fill the column
+    (its widest row genuinely needs it), which is the single case `gapRight`
+    is allowed to trade against `rightVsMap`. Nothing is hidden and the 'none
+    in view' pill stays inside the card — compact and expanded, light and dark,
+    from 320 up.
+
+    Round 2 (owner 2026-11-20, all 7 dev lanes): the live fixture carries 3
+    lanes, so the four groups the dev build adds ride the track layer's own
+    seam (window.onTrackLegend) and the grid contract gets measured with 7:
+    stacked rows share ONE swatch column (0 px spread), a wrapped wide strip
+    shares ONE set of column starts and its right edge is the map's, and the
+    'Scales' pill stays one swatch row tall (~44 px was the complaint) at
+    every width, stacked and expanded."""
+    page = page_ctx
+    _mm_goto(page, dur_server)
+    _mm_frame(page, RAW_TS[1])
+    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    for theme in ("light", "dark"):
+        page.evaluate(f"document.documentElement.dataset.theme = '{theme}'")
+        for w in (320, 390, 768, 1100, 1440):
+            page.set_viewport_size({"width": w, "height": 900})
+            page.wait_for_timeout(600)          # ResizeObserver refit + legend reflow
+            for state in ("compact", "expanded"):
+                if state == "expanded":
+                    if page.locator("#gm-legend .lg-toggle").count() == 0:
+                        continue                # under three lanes there is nothing to expand
+                    page.click("#gm-legend .lg-toggle")
+                    page.wait_for_timeout(300)
+                p = page.evaluate(LEGEND_HUG_JS)
+                where = (theme, w, state, p)
+                assert abs(p["leftVsMap"]) <= 1, where      # one left edge with map + timeline
+                assert not p["wider"], where                # never larger than the map column
+                assert p["fits"] and p["inside"], where     # nothing hidden behind a scroll
+                assert p["pillsOut"] == 0, where            # 'none in view' stays in the card
+                assert min(p["gapLeft"], 99) <= 12, where
+                assert p["gapTop"] <= 12 and p["gapBottom"] <= 12, where
+                assert p["gapRight"] <= 12 or abs(p["rightVsMap"]) <= 1, where
+                if state == "expanded":
+                    page.click("#gm-legend .lg-toggle")
+                    page.wait_for_timeout(300)
+    # ---- round 2: the 7-lane dev case on the same fixture -----------------
+    page.evaluate("""() => {
+      const grp = (name, hue) => '<span class="lg-group" data-track="' + hue + '">'
+        + '<span class="lg-head"><span class="lg-name">' + name + '</span>'
+        + '<span class="lg-unit">kt \u00b7 7 published</span></span>'
+        + '<span class="lg-stops">' + [1, 2, 3, 4, 5, 6].map((i) =>
+            '<span class="lg-bin"><i class="swatch" style="background:var(--series-'
+            + hue + ')"></i><span class="lg-t">C' + i + '</span></span>').join('')
+        + '<span class="lg-bin wide"><i class="swatch lg-line" '
+        + 'style="background:var(--series-' + hue + ')"></i>'
+        + '<span class="lg-t">track</span></span></span></span>';
+      window.onTrackLegend = () => grp('Flood', 'l') + grp('Tropical cyclone', 'tc')
+        + grp('Midlatitude cyclone', 'mlc') + grp('Cold snap', 'f');
+    }""")
+    _mm_frame(page, RAW_TS[0])                       # re-render: the seam is called
+    page.wait_for_function(
+        "() => document.querySelectorAll('#gm-legend .lg-group').length === 7")
+    for w in (320, 390, 1024, 1440):
+        page.set_viewport_size({"width": w, "height": 900})
+        page.wait_for_timeout(650)                   # ResizeObserver refit + reflow
+        for state in ("compact", "expanded"):
+            if state == "expanded":
+                page.click("#gm-legend .lg-toggle")
+                page.wait_for_timeout(300)
+            p = page.evaluate(LEGEND_GRID7_JS)
+            where = (w, state, p)
+            assert p["groups"] == 7 and p["toggle"], where
+            assert p["fits"] and p["inside"], where            # nothing behind a scroll
+            assert abs(p["leftVsMap"]) <= 1, where
+            assert p["togH"] <= 24, where                      # one swatch row, not 44
+            if p["wide"]:
+                if state == "compact":
+                    # 7 lanes never fit one row at these widths: the strip
+                    # fills the map column and its wrapped rows share ONE
+                    # column grid.
+                    assert p["rows"] > 1 and not p["hug"], where
+                    assert abs(p["rightVsMap"]) <= 1, where
+                    assert p["colSpread"] == 0, where          # row 2 under row 1
+                # the EXPANDED wide strip keeps round 1's packed flex rows:
+                # its labelled groups are 159-522 px wide, so any grid of
+                # equal columns that holds the widest one holds one group per
+                # row — the packed row IS the tidy layout there. The shared
+                # invariants (fits, inside, left edge, pill size) still hold.
+            else:
+                assert abs(p["rightVsMap"]) <= 1, where        # stacked = map column
+                assert p["rows"] == 7, where                   # one lane per row
+                assert p["stopsSpread"] == 0, where            # shared ramp column
+                if state == "compact":
+                    assert p["swatchSpread"] == 0, where       # shared swatch column
+                # the pill rides the card's top-right corner while stacked
+                assert p["togTopRight"], where
+            if state == "expanded":
+                page.click("#gm-legend .lg-toggle")
+                page.wait_for_timeout(300)
     errs = [e for e in page.errors if "Failed to load resource" not in e]
     assert errs == [], f"unexpected page errors: {errs}"
 
@@ -1895,14 +2286,14 @@ def test_legend_never_hides_a_lane_behind_a_scroll(dur_server, page_ctx):
         return { fits: leg.scrollWidth <= leg.clientWidth + 1,
                  inside: gs.every((r) => r.right <= lb.right + 1 && r.left >= lb.left - 1),
                  rows, lanes: gs.length,
-                 dir: getComputedStyle(leg).flexDirection }; }"""
+                 stacked: getComputedStyle(leg).getPropertyValue('--lg-wide').trim() !== '1' }; }"""
     for w in (320, 390, 768, 1100, 1440):
         page.set_viewport_size({"width": w, "height": 900})
         page.wait_for_timeout(600)          # ResizeObserver refit + legend reflow
         p = page.evaluate(probe)
         assert p["fits"] and p["inside"], (w, p)
         assert p["lanes"] == 3, (w, p)
-        if p["dir"] == "column":
+        if p["stacked"]:
             assert p["rows"] == 3, (w, p)   # stacked: one lane per row
     errs = [e for e in page.errors if "Failed to load resource" not in e]
     assert errs == [], f"unexpected page errors: {errs}"

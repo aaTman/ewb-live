@@ -157,10 +157,13 @@
       <svg id="gm-boxes" hidden></svg>
     </div>
     <!-- The colour scales sit BELOW the map (owner complaint 2026-11-11: the
-         in-map panel hid a quarter of it). It is a fixed-height slim strip —
-         one row, horizontal scroll when narrow — so its content changing
-         (layer toggles, the frame, the Region view) can never reflow the
-         timeline or the cards below. -->
+         in-map panel hid a quarter of it). The card is a slim strip that hugs
+         what it holds — as wide as its row, as tall as its rows, and narrower
+         than the map column when the scales are — because "too large for the
+         colour scales" was the 2026-11-19 complaint. Lanes stack one per row
+         in a narrow map column; nothing hides behind a scroll bar. Its own box
+         changes only with its rows, so a frame, a Region view or a lane going
+         'none in view' never reflows the timeline or the cards below. -->
     <span id="gm-legend" class="gm-legend" role="group" aria-label="Map colour legend — what the lane colours mean"></span>
     <div class="timeline" role="group" aria-label="Time controls">
       <div class="tl-head">
@@ -182,7 +185,13 @@
         <input id="raw-slider" type="range" min="0" max="0" step="1" value="0"
                aria-label="Frame time (6-hourly)">
       </div>
-      <svg id="gm-gantt" role="img" aria-label="Event timeline by type — click a bar to jump to it"></svg>
+      <!-- role=group, NOT role=img: the strip holds focusable controls (a dense
+           lane's label is a real button that expands it). role=img declares
+           presentational children, which both hides those buttons from a screen
+           reader and makes them focusable descendants of a non-composite role —
+           axe `nested-interactive` on #gm-gantt (the two axe e2e failures on live
+           with 7 lanes, 2026-11-20). A group keeps its label and its controls. -->
+      <svg id="gm-gantt" role="group" aria-label="Event timeline by type — click a bar to jump to it"></svg>
     </div>
     <p class="gm-note hidden" id="raw-note" role="status"></p>
   </section>

@@ -421,8 +421,18 @@ html.rail-collapsed .skip-link { left: 70px; }
 /* ---------- header: a title, not a toolbar ----------
    Everything that was a control here moved to the rail; the header is the page
    title + one line of plain language, on the canvas ground (no bar, no rule). */
-header.top { padding: 24px 0 0; }
+/* 16 px, not 24: every px above the map comes off the event list's rows. */
+header.top { padding: 16px 0 0; }
 header.top .shell { padding-inline: 24px; }
+/* The title line: the tagline rides the SAME line as the name from 620 up, so the
+   header settles at ~47 px (one text line) instead of 70 (two) — the home first
+   screen has a 900 px budget (map + scales + time strip + the event list must END
+   inside it; see the two first-screen tests). Below 620 there is no room on the
+   line, so it wraps under the name as before. */
+@media (min-width: 620px) {
+  header.top .shell { display: flex; align-items: baseline; gap: 0 14px; flex-wrap: wrap; }
+  .tagline { margin-top: 0; }
+}
 header.top h1 { font-size: var(--text-xl); }   /* 26 px, -0.02em/1.2 from the base rule */
 header.top h1 .badge { vertical-align: 5px; }
 .tagline { margin: 4px 0 0; color: var(--ink-secondary); font-size: var(--text-sm); max-width: 68ch; }
@@ -547,7 +557,7 @@ nav.controls {
    one page-wide filter besides the type tabs (map + list + scorecard). */
 .ctl-region { flex-direction: row; align-items: center; gap: 8px; margin-left: auto; flex-wrap: nowrap; }
 .type-filter:has(#type-tabs:empty), nav.controls:has(#lead-chips:empty) > * { visibility: hidden; }
-.sec-lede { color: var(--ink-secondary); font-size: var(--text-sm); margin: 4px 0 12px; max-width: 86ch; }
+.sec-lede { color: var(--ink-secondary); font-size: var(--text-sm); margin: 2px 0 8px; max-width: 86ch; }
 .home-only { }
 .detail-open .home-only, .deeplink .home-only { display: none !important; }
 /* The event page is led by the event's own title: the site line keeps the name and
@@ -584,7 +594,7 @@ nav.controls {
 :root { --shell-max: 1500px; }
 @media (min-width: 1100px) { :root { --shell-max: min(75vw, 1280px); } }
 .shell { width: 100%; max-width: var(--shell-max); margin-inline: auto; }
-main { padding: 24px 24px 8px; width: 100%; max-width: var(--shell-max); margin: 0 auto; }
+main { padding: 16px 24px 8px; width: 100%; max-width: var(--shell-max); margin: 0 auto; }
 section { margin-bottom: 24px; }
 .sec-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .sec-note { color: var(--ink-muted); font-size: var(--text-xs); margin: 4px 0 12px; }
@@ -782,7 +792,7 @@ tbody tr:hover td.model-col { background: var(--tint); }
   font-family: var(--font-mono); }
 /* EXPLORE: map + timeline on the left, the event list beside it. On wide
    screens the list takes the height of the map column (it never sets it). */
-.explore { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px 24px; margin-bottom: 24px; }
+.explore { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px 24px; margin-bottom: 24px; }
 .explore > section { margin-bottom: 0; min-width: 0; }
 .explore-head { min-width: 0; }
 .evlist { display: flex; flex-direction: column; min-height: 0; }
@@ -1010,56 +1020,80 @@ nav.controls .dd .dd-body {
 .gm-open-wrap:hover .gm-open-pill { stroke: var(--accent); }
 .gm-halo { fill: none; stroke: var(--canvas); stroke-width: 3; }
 .gm-time-row { display: grid; grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center; gap: 2px 12px; margin-top: 6px; }
+  align-items: center; gap: 2px 12px; margin-top: 4px; }
 .gm-time-row > span:empty { display: none; }   /* legacy leading spacer */
 .gm-date-readout { font-size: var(--text-base); font-weight: 500; white-space: nowrap; }
 /* the timeline card under the map is one widget: transport + current time, the
    scrubber, the event lanes (the colour scales ride inside the map itself) */
-.timeline { margin-top: 12px; padding: 10px 12px 6px; background: var(--bg-panel);
+.timeline { margin-top: 6px; padding: 8px 12px 4px; background: var(--bg-panel);
   border: 1px solid var(--border); border-radius: 6px; }
 .tl-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .tl-head .raw-speed { margin-left: auto; }
 .tl-play { min-width: 76px; font-weight: 500; }
 #gm-boxes .gm-ghost { fill-opacity: .12; stroke-width: 2; stroke-dasharray: 2 3; pointer-events: none; }
-#gm-gantt { width: 100%; display: block; margin-top: 2px; overflow: visible; }
+#gm-gantt { width: 100%; display: block; overflow: visible; }
 .gm-note { color: var(--text-dim); font-size: var(--text-sm); margin: 8px 0 0; }
 .gm-note[hidden] { display: none; }
 /* Adaptive colour scales (mergedmap.js renderLegend): a slim key strip BELOW
    the map (owner complaint 2026-11-11: the in-map panel hid a quarter of the
-   map). Its height is FIXED for a given width — content changing (layer
-   toggles, the frame under the slider, the Region view) can never move the
-   timeline or the cards below. Wide containers: one row. Narrow containers
-   (container query on #global-sec, so it follows the MAP column, not the
-   viewport): lanes stack one per row — no horizontal scroll at any width
-   from 320 up, nothing hidden behind a scrollbar nobody discovers. Every
-   stop is labelled in its lane's own units; a stop the CURRENT frame does
-   not paint dims with a dashed edge, and a lane with nothing in view says
-   so. Swatches are uniform-width; each ramp's labels set one shared column
-   width, centred under their swatch, so the key reads as even as the scale. */
+   map). The card is a CSS GRID (owner round 2 2026-11-20: with all 7 lanes
+   the stacked swatches started at a different x on every row, the wide card
+   wrapped into ragged rows, and the right edge lined up with nothing):
+   narrow/stacked (container query on #global-sec, so it follows the MAP
+   column, not the viewport) = two aligned columns, `label | swatches` — the
+   label column is the max-content of the LONGEST label (capped at 42cqi so a
+   320-px card never has to overflow it), so every row's swatches start at
+   the same x — and the card spans the full map column: its left AND right
+   edges are the map/timeline edges. Wide: the compact strip lays its groups
+   in equal grid columns so a wrapped row lines up under the first; a strip
+   that lands in ONE row hugs its scales (fit-content — round 1's promise,
+   legendHug in mergedmap.js), and the expanded (labelled) strip keeps its
+   packed rows. Height = its rows + padding; no dead air beyond the padding.
+   No horizontal scroll at any width from 320 up, nothing hidden behind a
+   scrollbar nobody discovers. Every stop is labelled in its lane's own
+   units; a stop the CURRENT frame does not paint dims with a dashed edge,
+   and a lane with nothing in view says so. Swatches are uniform-width; each
+   ramp's labels set one shared column width, centred under their swatch. */
 #global-sec { container-type: inline-size; }
-#gm-legend { display: flex; flex-direction: column; align-items: flex-start;
-  gap: 3px; overflow-x: visible;
-  margin-top: 8px; padding: 5px 8px 4px; min-height: 116px;
+#gm-legend { display: grid; grid-template-columns:
+    minmax(min-content, min(max-content, 42cqi)) 1fr auto;
+  gap: 3px 8px; align-items: center; overflow-x: visible;
+  margin-top: 6px; padding: 4px 8px;
+  width: 100%; max-width: 100%;
   background: var(--bg-panel); border: 1px solid var(--border);
-  border-radius: 6px; }
-/* height is reserved while empty (CLS contract with the reservations below);
-   it only paints chrome once it paints content */
-#gm-legend:empty { visibility: hidden; border-color: transparent; background: none; }
+  border-radius: 6px;
+  --lg-wide: 0; }   /* legendHug (mergedmap.js) reads this: rows vs columns */
+/* While EMPTY the strip is only a reservation (CLS: nothing below it may
+   jump when the first frame paints); the reservation is the height the
+   settled compact strip measures at that width, so filling it is a no-op.
+   It paints no chrome until it paints content. */
+#gm-legend:empty { visibility: hidden; border-color: transparent; background: none;
+  min-height: 116px; }
 .gm-legend .swatch { width: 20px; height: 10px; border: 1px solid var(--border-strong);
   border-radius: 2px; display: block; }
-/* one group per lane: stacked name+unit, then the ramp of stops to its right */
-.lg-group { display: flex; align-items: center; gap: 8px; flex: none; position: relative;
-  /* the storm ramps are long (T DT SC1 C2–3 C4–5 track dissipated = 7 keys) and
+/* one group per lane, ONE GRID ROW: it spans the strip's label+swatch tracks
+   as a SUBGRID, so the head sits in the shared label column and the ramp in
+   the swatch column — every row's swatches start at the same x. Wide
+   containers switch it back to a flex row (head beside its ramp).
+   The storm ramps are long (T DT SC1 C2–3 C4–5 track dissipated = 7 keys) and
      one group is wider than a 320–430 px column, which pushed the whole page
      73 px sideways at 390 (measured 2026-11-18, once TC/MLC had published
      events). Wrap INSIDE the group: the contract is that from 320 up the strip
      never scrolls and every ON lane is fully inside it
      (tests/e2e/test_dashboard_fe.py::test_legend_never_hides_a_lane_behind_a_scroll). */
-  flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.lg-group { position: relative; flex-wrap: wrap; min-width: 0; max-width: 100%;
+  display: grid; grid-template-columns: subgrid;
+  grid-column: 1 / span 2; align-items: center; }
 .lg-head { display: grid; gap: 1px; }
 .lg-name { font-size: var(--text-2xs); font-weight: 500; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--text-dim); white-space: nowrap; }
-.lg-unit { font-size: var(--text-2xs); color: var(--ink-muted); white-space: nowrap; }
+  text-transform: uppercase; color: var(--text-dim); }
+.lg-unit { font-size: var(--text-2xs); color: var(--ink-muted); }
+/* Stacked, the head WRAPS (label column floor = its longest WORD, not a
+   264px nowrap unit string that would push the ramps past the card edge at
+   320/390); the wide rows keep every label on one line. */
+@container (min-width: 680px) {
+  .lg-name, .lg-unit { white-space: nowrap; }
+}
 /* 'none in view' floats as a pill over its lane — an empty lane is a
    transient Region/frame state, and a third grid line in the head would
    grow the strip and move everything below it (the strip's whole promise
@@ -1092,13 +1126,16 @@ nav.controls .dd .dd-body {
    Region/frame where a lane paints nothing. Same rule as above — ink, not
    opacity. */
 .lg-group.none .swatch { opacity: .32; }
-@container (min-width: 680px) {   /* one row when the map column can hold all three lanes */
-  #gm-legend { flex-direction: row; align-items: center; gap: 20px;
-    min-height: 48px; padding: 6px 8px 4px;
+@container (min-width: 680px) {   /* rows when the map column can hold the lanes */
+  #gm-legend { --lg-wide: 1; display: flex; flex-direction: row; align-items: center;
+    gap: 20px; padding: 6px 8px; width: fit-content;
     /* a track lane adds a group; the strip still NEVER scrolls horizontally
        (test_legend_never_hides_a_lane_behind_a_scroll), it wraps instead — the
        only promise a fourth lane can keep without hiding a colour */
     flex-wrap: wrap; row-gap: 4px; }
+  #gm-legend:empty { min-height: 35px; }   /* one settled compact row */
+  .lg-group { display: flex; align-items: center; gap: 8px; flex: none;
+    grid-column: auto; }
   .lg-bin.prov { width: auto; }
   .lg-bin.prov .lg-t { display: none; }   /* the dither texture + its title carry it in one row */
   /* one row has no vertical air between the lanes: a hairline divider keeps
@@ -1106,33 +1143,73 @@ nav.controls .dd .dd-body {
      belongs to its own title and never touches the previous group */
   .lg-group + .lg-group::before { content: ""; position: absolute; left: -11px;
     top: 3px; bottom: 3px; width: 1px; background: var(--border); }
+  /* COMPACT wide: equal grid columns so a wrapped row lines up under the
+     first (the ragged 4-then-2 layout was the 1440 complaint). The column
+     floor is the widest COMPACT group (~246 px: a storm lane's long name +
+     7-key ramp), so no group has to wrap inside its column and the fr max
+     keeps every column inside the card at any width. Multi-row fills the
+     map column — both edges are the map's; a strip that lands in ONE row
+     hugs (legendHug adds .hug + max-content tracks). */
+  #gm-legend.compact { display: grid; align-items: center;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 4px 18px; width: 100%; }
+  #gm-legend.compact.hug { width: fit-content; }
+  /* wrapped compact strip (legendHug adds .cols + the paired track list): each
+     lane is a subgrid over one `label | swatches` pair, so the swatches of every
+     row start at the same x in their column; the toggle sits in the top-right
+     corner the inline padding-right reserves, never on a row of its own */
+  #gm-legend.compact.cols { position: relative; gap: 4px 10px; }
+  #gm-legend.compact.cols .lg-group { display: grid; grid-template-columns: subgrid;
+    grid-column: span 2; }
+  #gm-legend.compact.cols .lg-head, #gm-legend.compact.cols .lg-stops { justify-self: start; }
+  #gm-legend.compact.cols .lg-toggle { position: absolute; top: 6px; right: 8px; }
+  #gm-legend.compact .lg-stops { flex-wrap: nowrap; }
+  /* the aligned columns carry the separation; the flex-row hairline would
+     float 3 px outside the card on each row's first column */
+  #gm-legend.compact .lg-group + .lg-group::before { content: none; }
+  /* auto-placed last (order: 99): the end of the strip's last row */
+  #gm-legend.compact .lg-toggle, #gm-legend:not(.compact) .lg-toggle {
+    grid-row: auto; grid-column: auto; align-self: center; justify-self: start; }
 }
 
 /* COMPACT legend (default whenever 3+ lanes share the strip — owner 2026-11-19,
-   first-screen budget): lane name + its colour swatches on ONE wrapped line,
-   numbers/units hidden (every swatch and group keeps its title; the "Scales"
-   control restores the labelled ramps). Same at every width — it wraps, it
-   never scrolls. */
-#gm-legend.compact { flex-direction: row; flex-wrap: wrap; align-items: center;
-  gap: 4px 18px; min-height: 48px; padding: 5px 8px; }   /* = the one-lane strip's height: a tab switch never moves what is below */
-#gm-legend.compact .lg-group { flex-wrap: nowrap; gap: 6px; }
+   first-screen budget): lane name + its colour swatches on one line, numbers
+   and units hidden (every swatch and group keeps its title; the "Scales"
+   control restores the labelled ramps). Its tracks come from the SAME grid as
+   the labelled strip — stacked rows share one label column, and at >=680px
+   the columns take over (see the container rule) — so the swatch column is
+   aligned in every state. It wraps/stacks, it never scrolls, and the card is
+   exactly as tall as its rows. */
+#gm-legend.compact { gap: 4px 8px; padding: 6px 8px; }
+#gm-legend.compact .lg-group { gap: 6px; }
 #gm-legend.compact .lg-head { display: block; }
 #gm-legend.compact .lg-unit, #gm-legend.compact .lg-t { display: none; }
-#gm-legend.compact .lg-stops { flex-wrap: nowrap; gap: 2px; }
+#gm-legend.compact .lg-stops { gap: 2px; }   /* nowrap only in the wide grid (container rule); stacked it wraps inside its column */
 #gm-legend.compact .lg-bin, #gm-legend.compact .lg-bin.prov,
 #gm-legend.compact .lg-group[data-layer] .lg-bin,
 #gm-legend.compact .lg-group[data-track] .lg-bin,
 #gm-legend.compact .lg-group[data-track] .lg-bin.wide { width: auto; margin-left: 0; }
 #gm-legend.compact .swatch { width: 14px; }
 #gm-legend.compact .swatch.lg-line { width: 18px; }
-#gm-legend.compact .lg-none { top: -6px; }
-.lg-toggle { order: 99; margin-left: auto; padding: 1px 8px; border-radius: 999px;
+/* -6px was measured against a card that carried 48px of fixed height, which
+   pushed the lane row 13.5px below the border. With the card hugging its rows
+   the lane row sits at the padding edge, and -6 would leave the pill 1px from
+   the top border — -4 keeps the same relationship to the swatches and clears
+   the border (measured: pill 3px below the card's top edge). */
+#gm-legend.compact .lg-none { top: -4px; }
+/* the "Scales" control (owner round 2: the 390-px pill was ~44 px tall —
+   the biggest thing in the card). It is ONE SWATCH ROW tall (~21 px) at every
+   width — never stretched by its grid cell — and rides at the END of the last
+   row in the wide layouts (auto-placed, order: 99) and at the card's TOP-RIGHT
+   corner while stacked (the grid's row-1 trailing column, which the stacked
+   lanes never enter). Same placement contract in compact and expanded. */
+.lg-toggle { order: 99; grid-row: 1; grid-column: 3;
+  align-self: center; justify-self: end; white-space: nowrap;
+  padding: 1px 8px; border-radius: 999px;
   font: 400 var(--text-2xs)/1.6 var(--font-sans); letter-spacing: .04em; color: var(--ink-secondary); }
-#gm-legend:not(.compact) .lg-toggle { order: 0; align-self: flex-start; margin-left: 0; }
 @media (pointer: coarse), (max-width: 479px) {
-  .lg-toggle { min-height: 44px; min-width: 44px; padding: 0 12px; }
+  .lg-toggle { min-width: 44px; padding: 1px 12px; }   /* wide enough to tap; height stays one row (owner 2026-11-20) */
 }
-@container (min-width: 680px) { #gm-legend:not(.compact) .lg-toggle { margin-left: auto; align-self: center; order: 99; } }
 
 /* base map primitives live in the canvas paint — see mergedmap.js drawBase */
 
@@ -1148,14 +1225,29 @@ nav.controls .dd .dd-body {
 .raw-play-row { display: flex; gap: 6px; align-items: center; }
 .raw-speed { font-size: var(--text-sm); color: var(--text-dim);
   display: inline-flex; gap: 6px; align-items: center; }
-/* thumb centers land on the gantt time axis (see renderGantt AX constants):
-   left = LAB(44) - thumb/2(8) = 36; right = trailing(12) - 8 = 4.
-   calc keeps the thumb INSIDE the gantt span (width:100% + margins overflows). */
-.gm-time-row #raw-slider { width: calc(100% - 40px); grid-column: 1 / -1; margin-inline: 36px 4px; }
-/* Gantt primitives */
-#gm-gantt .gm-lane { fill: var(--bg-inset); }
+/* thumb centres land on the gantt time axis (see renderGantt's G_* constants):
+   the strip's label column is MEASURED (a lane name is never clipped) and handed
+   here as --gm-lab, so left = LAB - thumb/2(8) and right = G_RIGHT(12) - 8. calc
+   keeps the thumb INSIDE the gantt span (width:100% + margins overflows). Change
+   G_RIGHT in mergedmap.js together with the 12px here. */
+.gm-time-row #raw-slider { grid-column: 1 / -1;
+  margin-inline: calc(var(--gm-lab, 44px) - 8px) 4px;
+  width: calc(100% - var(--gm-lab, 44px) - 12px + 16px); }
+/* Gantt primitives. The strip is 1 user unit = 1 CSS px (see renderGantt), so a
+   lane name paints at its real --text-2xs size and the axis spans the box. */
+#gm-gantt .gm-lane { fill: var(--bg-inset); opacity: .5; }   /* one ground per lane */
+#gm-gantt .gm-lane-alt { opacity: 1; }                       /* alternating rhythm */
+#gm-gantt .gm-lane-none { opacity: .35; }   /* lane in the window, nothing in this view */
+#gm-gantt .gm-lane-lab.none { opacity: .55; }
+#gm-gantt .gm-lane-sep { stroke: var(--border); stroke-width: 1; }
 #gm-gantt .gm-bar { transition: opacity 120ms; }
+#gm-gantt .gm-lane-lab.toggle { cursor: pointer; }   /* dense lane: its label expands/collapses */
+#gm-gantt .gm-lane-lab.toggle:hover { fill: var(--ink); text-decoration: underline; }
+#gm-gantt .gm-lane-lab.toggle:focus-visible { outline: 1px solid var(--ring); outline-offset: 1px; }
+#gm-gantt .gm-ribbon .gm-rib-seg { shape-rendering: crispEdges; }
 #gm-gantt .gm-tick { stroke: var(--border); }
+#gm-gantt .gm-tick.minor { opacity: .55; }   /* week ticks: lighter than a month */
+#gm-gantt .gm-cursor { stroke: var(--matte-black); stroke-width: 1; pointer-events: none; }
 #gm-gantt text { font-family: var(--font-mono); font-size: var(--text-2xs); fill: var(--ink-muted); }
 #gm-gantt .gm-lane-lab { fill: var(--ink-muted); }
 
@@ -1263,10 +1355,24 @@ nav.controls { min-height: 46px; }
 .type-filter { min-height: 30px; }   /* one chip row; wrapping rows grow it (measured, not fixed) */
 @media (pointer: coarse), (max-width: 479px) { .type-filter { min-height: 44px; } }
 .raw-map-wrap { min-height: 240px; }
-#gm-gantt { height: 62px; }
+/* The gantt strip sizes itself to its OWN content — a band per lane that has an
+   event in the window (a sparse lane grows for its sub-rows, a dense lane is a
+   14px density ribbon), a 2px gap between lanes, 13px for the month axis — and
+   pins the SVG box (and its inline min-height) to that number, so a busy window
+   is never cropped and can never overlap the cards below. A fixed CSS height
+   there used to SCALE the whole strip to 56% (bars 6.8px tall, a 392px-wide axis
+   drawn in a 672px box, the slider thumb off the date it points at). This min-
+   height is only the reservation BEFORE the strip mounts (mergedmap overrides it
+   inline once it renders); it is set to what a full new-event window settles at
+   collapsed — the seven lanes of the live 7-lane window (heat/cold/freeze/AR bars
+   + flood/TC/MLC ribbons) render 155px, measured 2026-11-20 at 1440 — so the
+   legend below gets no jump when the data arrives.
+   The slider above shares the strip's time axis through --gm-lab so its thumb and
+   the strip's cursor line land on the same x. */
+#gm-gantt { min-height: 155px; }
 .tl-head { min-height: 30px; }
-header.top { min-height: 78px; }        /* measured settled height: 24 pad + 26/1.2 h1 + 4 + 12.5/1.5 */
-@media (max-width: 620px) { header.top { min-height: 70px; } }   /* 16px gutter rule */
+header.top { min-height: 48px; }        /* settled ~47 px: 16 pad + 26/1.2 h1, tagline on that line */
+@media (max-width: 619px) { header.top { min-height: 70px; } }   /* tagline wraps under the name + 16px gutter */
 @media (max-width: 459px) { header.top { min-height: 83px; } }   /* tagline wraps */
 
 /* raw-map slider: same quiet control as the global timeline (was browser-default blue) */
