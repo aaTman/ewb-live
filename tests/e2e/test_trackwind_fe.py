@@ -597,9 +597,13 @@ def test_no_line_or_dot_is_painted_after_every_storm_ended(pw, nowind_server):
     pg.close(); b.close()
 
 
-def test_an_ongoing_storm_keeps_its_marks_past_the_last_fix(pw, tmp_path_factory):
-    """life.ongoing (the live tail) is the one exception: its track is open, so
-    frames after the last fix still draw it."""
+def test_an_ongoing_storm_leaves_the_map_at_its_last_fix(pw, tmp_path_factory):
+    """life.ongoing (the live tail: dissipation not yet confirmed at the data
+    edge) no longer keeps a storm on the map forever — owner, 2026-11-19
+    (emphasised), after the 2026-11-19 build left storm a1d6b391e4d8 drawn for
+    8 frames past its last fix. Past the last fix the asset holds no data to
+    reveal, so the storm leaves there: drawn AT the last fix with state
+    'ongoing', gone from the next step to the end of the window."""
     root = _fixture(tmp_path_factory.mktemp("twon"))
     p = os.path.join(root, "data", "results", "tc_wind.json")
     doc = json.load(open(p))
@@ -610,9 +614,15 @@ def test_an_ongoing_storm_keeps_its_marks_past_the_last_fix(pw, tmp_path_factory
     srv, url = _serve(root)
     b = pw.chromium.launch()
     pg = _open(b, url)
-    _goto(pg, "2026010412")                                   # 18 h past the last fix
+    _goto(pg, "2026010318")                                  # AT the last fix
     assert FADE["id"] in _marks(pg)
     assert _mark_state(pg, FADE["id"])["state"] == "ongoing"
+    for f in ("2026010400", "2026010406", "2026010412"):     # past it: off the map
+        _goto(pg, f)
+        assert FADE["id"] not in _marks(pg), f"the ongoing storm lingers at {f}"
+        life = pg.evaluate("(i) => window.EwbTracks._life(i)", FADE["id"])
+        assert life["ongoing"] is True and life["expired"] is True, (f, life)
+    assert not pg.errors, pg.errors
     pg.close(); b.close(); srv.shutdown()
 
 

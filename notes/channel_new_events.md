@@ -3724,3 +3724,25 @@ Branch `feat/round3-compress-tracks-freeze` (from `chore/integrate-lane-fixes`).
 **D — verification:** full e2e on :8051 (chromium, by name): first run 3F/168P (all fixed: busiest-day + list-row = track rule now also respects the published end; legend height = one-lane strip), final **1F/170P/2S** vs the integrator's 1F/166P: the one failure is `test_region_deep_link_waits_for_lazy_file` (startup race, `window.__debug` undefined at the first poll — passes 3/3 alone and the file 9/9; guarded with `window.__debug &&` in the test); the integrator's open failure (first-screen) is now green. Units 599 P / 28 S / 0 F (EWB_DATA_PREP_DIR set). Browser QA `scripts/integration2_qa.py` -> `notes/screenshots/round3/qa/`: 7 tabs + All x 1440/390 x light/dark, **console errors 0, overflow 0**, detail renders for all lanes; before/after in `before-*`/`after-*-{1440x900,390x844,320x640}-{light,dark}.png` + `before_measure.json`/`after_measure.json`; expanded legend `legend_expanded_1440.png`. 320 px: no horizontal scroll (chips 5 rows, legend 181 px).
 **E — PR-ready:** vs `main` 215 commits / 317 files (53 in code dirs). **There is NO `develop` branch** (local or origin: main, reconcile-live, ci/self-hosted-runner) -> per the PR rule I stopped: owner must say which base. **`ne-subsets` e4fd539 IS reachable** (via ne-coldsnap merge 1816b34) — history not rewritten; `git revert -m 1 e4fd539` tested in a scratch worktree: code reverts cleanly, only notes + `test_mlwp_store_guard.py` conflict (resolution in the plan). Plan: `notes/promotion_plan.md` (contents, live steps incl. full `weekly --days 90`, rollback, risks).
 **Needs the owner:** (1) PR base (no `develop`); (2) subsets handling (revert-on-branch recommended); (3) the older items: TC-8 track-presence check, AR gate 15 vs 13, scoring of TC/MLC/flood; (4) FYI `ewb-live-precipclim.service` is in failed state on the box (the store itself exists).
+
+## [visual-tracks] 2026-11-19 17:05 UTC — started: rebased, real data synced, local preview on 8063
+- Branch fix/ui-track-expiry rebased onto origin/develop (b652904).
+- Live /opt/ewb-live data is schema-2 (no track lanes); copied the current DEV build read-only
+  from /opt/ewb-live-dev/data/results (schema 3, 124 track events: 44 TC + 80 MLC, tc_wind.json).
+- Preview served with `python -m ewb_live.serve --port 8063` (same URL mapping as production).
+- Repro sweep in progress.
+
+## [visual-tracks] 2026-11-19 — fix landed + verified: TC/MLC tracks must not stay on the map
+- REPRO (real 2026-11-19 dev build, 124 track events, every tab + 2 region views, notes/screenshots/visual-tracks/repro.md):
+  storm a1d6b391e4d8 (life.ongoing) kept its ring, label and whole line for 8 frames / 30 h past its last fix;
+  the hover-preview ghost also re-drew expired storms' tracks. No other lingering on this data (canvas-hit rows
+  A/B-disproved as other storms' pixels).
+- FIX (4f27621): expiredAt() — an ongoing storm now expires at its LAST fix (never extended past existing data);
+  the ghost obeys the same gate; EwbTracks._life gained `expired` for tests. SPEC.md has no such rule (module doc owns it).
+- VERIFY: verify.md sweep — 0 violations of 1364 observations; #gm-tracks canvas 0 px at window end; ghost 0 px × 124 events.
+- TESTS: units 590 passed (2 pre-existing env failures: missing third_party/ExtremeWeatherBench, unrelated);
+  e2e trackexpiry(new, incl. full 124-event real-data sweep) 4P, trackwind+tracklane+trackviz 28P, dashboard_fe 49P,
+  chips+guardian+regions 95P/1S against the local 8063 preview. Rewrote the e2e that encoded the old ongoing-linger behavior.
+- PR: https://github.com/aaTman/ewb-live/pull/4 (base develop, head afc41b8)
+
+## [visual-tracks] — DONE
