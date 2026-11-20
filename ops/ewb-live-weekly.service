@@ -8,6 +8,6 @@ Description=EWB Live weekly refresh cycle (ewb_live.weekly)
 Type=oneshot
 WorkingDirectory=__REPO__
 ExecStart=__REPO__/.venv/bin/python -m ewb_live.weekly
-TimeoutStartSec=6h
+TimeoutStartSec=24h
 StandardOutput=append:__REPO__/logs/weekly.log
 StandardError=append:__REPO__/logs/weekly.log
