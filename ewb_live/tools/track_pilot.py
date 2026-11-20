@@ -279,9 +279,14 @@ class Storm:
     lon: np.ndarray
     pres: np.ndarray               # hPa, NaN when missing
     params: TrackerParams = field(default=TC_PARAMS)
+    wind: np.ndarray | None = None  # kt (TC best-track slot 3); None for MLC
 
     def index(self) -> dict:
         return {t: i for i, t in enumerate(self.times)}
+
+
+def _parse_wind(rows) -> np.ndarray:
+    return np.array([np.nan if len(r) < 4 or r[3] is None else float(r[3]) for r in rows])
 
 
 def _parse_track(rows) -> tuple[list, np.ndarray, np.ndarray, np.ndarray]:
@@ -304,7 +309,8 @@ def load_storms(path: str = EVENTS_JSON, tc_name: str = "Polo") -> dict[str, Sto
         e = max((x for x in tcs if not x["details"].get("antimeridian_wrap")),  # that crosses land is
                 key=lambda x: x["details"].get("peak_wind_kt") or 0)            # picked by the owner
     t, la, lo, pr = _parse_track(e["details"]["track"])
-    storms = {"tc": Storm("tc", e["id"], e["details"].get("name") or e["title"], t, la, lo, pr, TC_PARAMS)}
+    storms = {"tc": Storm("tc", e["id"], e["details"].get("name") or e["title"], t, la, lo, pr,
+                          TC_PARAMS, _parse_wind(e["details"]["track"]))}
     mlcs = [x for x in ev if x["event_type"] == "midlat_cyclone"
             and not x["details"].get("antimeridian_wrap")
             and not x["details"].get("track_crosses_antimeridian")]
@@ -693,7 +699,8 @@ def _pct(a, q):
     return None if a.size == 0 else round(float(np.percentile(a, q)), 1)
 
 
-def aggregate(jobs: list[dict], pool: dict | None, workers_target: int = 12) -> dict:
+def aggregate(jobs: list[dict], pool: dict | None, workers_target: int = 12,
+              wind_at_init: dict | None = None) -> dict:
     """Headline numbers from the per-job records."""
     out: dict = {"n_jobs": len(jobs)}
     by_status: dict[str, int] = {}
@@ -756,7 +763,29 @@ def aggregate(jobs: list[dict], pool: dict | None, workers_target: int = 12) -> 
             win = [s for mm, s in rows if mm == m and 24 <= s["lead"] <= 72]
             per_model[m]["miss_rate_24_72h"] = round(1 - sum(s["tracked"] for s in win) / len(win), 3) if win else None
         gate = [s for _, s in rows if 24 <= s["lead"] <= 72]
+        stages = {}
+        if kind == "tc" and wind_at_init:
+            def stage(w):
+                return "unknown" if w is None or not np.isfinite(w) else (
+                    "<34 kt (pre-TS)" if w < 34 else "34-63 kt (TS/Cat 1)" if w < 64 else ">=64 kt (hurricane)")
+            for r in good:
+                if r["kind"] != "tc":
+                    continue
+                st_ = stage(wind_at_init.get(r["init"]))
+                d = stages.setdefault(st_, {"inits": set(), "n": 0, "tracked": 0, "d48": []})
+                d["inits"].add(r["init"])
+                for x in r["samples"]:
+                    if x.get("nodata") or not (24 <= x["lead"] <= 72):
+                        continue
+                    d["n"] += 1
+                    d["tracked"] += bool(x["tracked"])
+                    if x["tracked"]:
+                        d["d48"].append(x["d_km"])
+            stages = {k: {"n_inits": len(v["inits"]), "n_samples_24_72h": v["n"],
+                          "miss_rate_24_72h": round(1 - v["tracked"] / v["n"], 3) if v["n"] else None,
+                          "median_d_km_24_72h": _pct(v["d48"], 50)} for k, v in sorted(stages.items())}
         out["by_kind"][kind] = {
+            "by_init_intensity": stages,
             "by_lead": per_lead, "by_model": per_model,
             "miss_rate_24_72h_pooled": round(1 - sum(s["tracked"] for s in gate) / len(gate), 3) if gate else None,
             "n_samples_24_72h": len(gate),
@@ -776,7 +805,9 @@ def cmd_report(args) -> int:
     pn = out / "pool_main.json"
     pool = json.loads(pn.read_text()) if pn.exists() else (
         json.loads((out / "pool.json").read_text()) if (out / "pool.json").exists() else None)
-    agg = aggregate(jobs, pool, args.target_workers)
+    st = load_storms(args.events_json, args.tc_name)["tc"]
+    wind = {t.isoformat(): float(w) for t, w in zip(st.times, st.wind)}
+    agg = aggregate(jobs, pool, args.target_workers, wind)
     print(json.dumps(agg, indent=1))
     return 0
 
