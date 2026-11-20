@@ -699,6 +699,14 @@ def _pct(a, q):
     return None if a.size == 0 else round(float(np.percentile(a, q)), 1)
 
 
+def _mean(a):
+    return round(float(np.mean(a)), 3) if len(a) else None
+
+
+def _ratio(num, den):
+    return round(float(np.sum(num) / np.sum(den)), 3) if len(num) and np.sum(den) else None
+
+
 def aggregate(jobs: list[dict], pool: dict | None, workers_target: int = 12,
               wind_at_init: dict | None = None) -> dict:
     """Headline numbers from the per-job records."""
@@ -719,6 +727,14 @@ def aggregate(jobs: list[dict], pool: dict | None, workers_target: int = 12,
             "mean_track_s": round(float(np.mean(sec("track_s"))), 2),
             "mean_leads_read": round(float(np.mean(sec("n_leads_read"))), 1),
             "mean_read_s_per_lead": round(float(np.sum(sec("read_s")) / max(1, np.sum(sec("n_leads_read")))), 3),
+            "store_models_mean_job_s": _mean([r["job_s"] for r in good if r["model"] != "ifs_hres"]),
+            "store_models_mean_open_s": _mean([r["open_s"] for r in good if r["model"] != "ifs_hres"]),
+            "store_models_mean_read_s": _mean([r["read_s"] for r in good if r["model"] != "ifs_hres"]),
+            "store_models_read_s_per_lead": _ratio([r["read_s"] for r in good if r["model"] != "ifs_hres"],
+                                                   [r["n_leads_read"] for r in good if r["model"] != "ifs_hres"]),
+            "ifs_hres_mean_job_s": _mean([r["job_s"] for r in good if r["model"] == "ifs_hres"]),
+            "ifs_hres_read_s_per_lead": _ratio([r["read_s"] for r in good if r["model"] == "ifs_hres"],
+                                               [r["n_leads_read"] for r in good if r["model"] == "ifs_hres"]),
             "by_model_mean_job_s": {m: round(float(np.mean([r["job_s"] for r in good if r["model"] == m])), 2)
                                     for m in sorted({r["model"] for r in good})},
         }
@@ -728,8 +744,8 @@ def aggregate(jobs: list[dict], pool: dict | None, workers_target: int = 12,
         out["rss"] = {
             "workers_measured": w, "dask_threads_per_worker": pool.get("dask_threads"),
             "peak_worker_rss_gb": pw, "peak_pool_total_rss_gb_measured": pool["peak_total_rss_gb"],
-            "parent_plus_overhead_gb": round(pool["peak_total_rss_gb"] - sum(pool["worker_peaks_gb"]), 2)
-            if pool["worker_peaks_gb"] else None,
+            "recycle": pool.get("recycle", 0),
+            "n_worker_processes_seen": len(pool["worker_peaks_gb"]),
             f"projected_pool_rss_gb_at_{workers_target}_workers": round(workers_target * pw + 0.5, 2),
             "projection_note": f"{workers_target} x peak-per-worker + 0.5 GB parent, extrapolated from a {w}-worker run",
         }
@@ -809,6 +825,71 @@ def cmd_report(args) -> int:
     wind = {t.isoformat(): float(w) for t, w in zip(st.times, st.wind)}
     agg = aggregate(jobs, pool, args.target_workers, wind)
     print(json.dumps(agg, indent=1))
+    return 0
+
+
+def _load_run(d: Path) -> dict:
+    latest: dict = {}
+    for x in (d / "jobs.jsonl").read_text().splitlines():
+        r = json.loads(x)
+        latest[(r["kind"], r["model"], r["init"])] = r
+    pn = d / "pool_main.json"
+    pool = json.loads(pn.read_text()) if pn.exists() else json.loads((d / "pool.json").read_text())
+    return {"jobs": list(latest.values()), "pool": pool}
+
+
+def cmd_assemble(args) -> int:
+    """Build notes/screenshots/scoring_pilot.json from the run directories on the box."""
+    storms = load_storms(args.events_json, args.tc_name)
+    wind = {t.isoformat(): float(w) for t, w in zip(storms["tc"].times, storms["tc"].wind)}
+    runs = {}
+    for spec in args.runs:
+        name, path = spec.split("=")
+        run = _load_run(Path(path))
+        pool = dict(run["pool"])
+        pool["timeline"] = pool.get("timeline", [])[:: max(1, len(pool.get("timeline", [])) // 60)]
+        agg = aggregate(run["jobs"], run["pool"], 12, wind)
+        runs[name] = {"dir": path, "pool": pool, "aggregate": agg, "jobs": run["jobs"]}
+    main = runs[args.main]
+    mj = main["jobs"]
+    table = [{k: r.get(k) for k in ("kind", "model", "init", "status", "offset_h", "n_leads_read", "open_s",
+                                    "read_s", "track_s", "job_s", "rss_gb_end", "retries")}
+             for r in sorted(mj, key=lambda r: (r["kind"], r["init"], r["model"]))]
+    gaps = sorted({(r["kind"], r["model"], r["init"]) for r in mj if r["status"] == "no_data"})
+    # recompute the WP1 backfill estimate from the measured per-lead costs (section 8.3)
+    sa = runs[args.store_run]["aggregate"]["seconds_per_model_init"]
+    ia = runs[args.ifs_run]["aggregate"]["seconds_per_model_init"]
+    est = {}
+    for lane, combos, samples, models in (("tc", 674, 13345, 8), ("mlc", 600, 5504, 8)):
+        leads = samples / combos + 1.0                      # + lead 0
+        store_jobs, ifs_jobs = combos * models, combos
+        store_s = store_jobs * (sa["store_models_mean_open_s"] + leads * sa["store_models_read_s_per_lead"] + 0.03)
+        ifs_s = ifs_jobs * leads * ia["ifs_hres_read_s_per_lead"]
+        est[lane] = {"leads_per_job": round(leads, 1), "store_jobs": store_jobs, "ifs_jobs": ifs_jobs,
+                     "store_worker_seconds": round(store_s), "ifs_worker_seconds": round(ifs_s),
+                     "wall_min_12_workers": round((store_s + ifs_s) / 12 / 60, 1),
+                     "wall_min_12_workers_store_only": round(store_s / 12 / 60, 1)}
+    out = {
+        "generated_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "host": os.uname().nodename, "main_run": args.main,
+        "storms": {k: {"event_id": s.event_id, "name": s.name, "n_fixes": len(s.times),
+                       "first_fix": s.times[0].isoformat(), "last_fix": s.times[-1].isoformat(),
+                       "n_inits": len(inits_for(s)), "params": vars(s.params)} for k, s in storms.items()},
+        "n_jobs": len(mj),
+        "headline": runs[args.main]["aggregate"],
+        "runs": {k: {"dir": v["dir"], "pool": v["pool"],
+                     "aggregate": {kk: vv for kk, vv in v["aggregate"].items() if kk != "by_kind"}}
+                 for k, v in runs.items()},
+        "store_gaps_no_data": [{"kind": a, "model": b, "init": c} for a, b, c in gaps],
+        "wp1_backfill_estimate": est,
+        "per_job": table,
+    }
+    for name in ("sanity.json", "landfall_spike.json"):
+        f = Path(args.out) / name
+        if f.exists():
+            out[name.removesuffix(".json")] = json.loads(f.read_text())
+    Path(args.out_json).write_text(json.dumps(out, indent=1, default=str))
+    print(f"wrote {args.out_json} ({Path(args.out_json).stat().st_size} bytes)")
     return 0
 
 
@@ -1090,6 +1171,14 @@ def main(argv=None) -> int:
     common(rp)
     rp.add_argument("--target-workers", type=int, default=12)
     rp.set_defaults(fn=cmd_report)
+    asm = sub.add_parser("assemble")
+    common(asm)
+    asm.add_argument("--runs", nargs="+", required=True, help="NAME=dir ...")
+    asm.add_argument("--main", default="A")
+    asm.add_argument("--store-run", default="B")
+    asm.add_argument("--ifs-run", default="C")
+    asm.add_argument("--out-json", required=True)
+    asm.set_defaults(fn=cmd_assemble)
     sub.add_parser("guard").set_defaults(fn=lambda a: (print(*guard_status()), 0)[1])
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
