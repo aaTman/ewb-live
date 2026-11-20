@@ -421,15 +421,14 @@ html.rail-collapsed .skip-link { left: 70px; }
 /* ---------- header: a title, not a toolbar ----------
    Everything that was a control here moved to the rail; the header is the page
    title + one line of plain language, on the canvas ground (no bar, no rule). */
-/* 16 px, not 24: the home first screen has a 900 px budget (map + scales +
-   time strip + the event list must END inside it — see the two first-screen
-   tests), and every px above the map is taken from the list's rows. */
+/* 16 px, not 24: every px above the map comes off the event list's rows. */
 header.top { padding: 16px 0 0; }
 header.top .shell { padding-inline: 24px; }
 /* The title line: the tagline rides the SAME line as the name from 620 up, so the
-   header costs one text line (47 px settled) instead of two (70) — the home first
-   screen has a 900 px budget and every px here comes off the event list. Below
-   620 there is no room on the line, so it wraps under the name as before. */
+   header settles at ~47 px (one text line) instead of 70 (two) — the home first
+   screen has a 900 px budget (map + scales + time strip + the event list must END
+   inside it; see the two first-screen tests). Below 620 there is no room on the
+   line, so it wraps under the name as before. */
 @media (min-width: 620px) {
   header.top .shell { display: flex; align-items: baseline; gap: 0 14px; flex-wrap: wrap; }
   .tagline { margin-top: 0; }
@@ -1372,7 +1371,7 @@ nav.controls { min-height: 46px; }
    the strip's cursor line land on the same x. */
 #gm-gantt { min-height: 155px; }
 .tl-head { min-height: 30px; }
-header.top { min-height: 48px; }        /* measured settled height, tagline on the title line: 16 pad + 26/1.2 h1 */
+header.top { min-height: 48px; }        /* settled ~47 px: 16 pad + 26/1.2 h1, tagline on that line */
 @media (max-width: 619px) { header.top { min-height: 70px; } }   /* tagline wraps under the name + 16px gutter */
 @media (max-width: 459px) { header.top { min-height: 83px; } }   /* tagline wraps */
 
