@@ -3829,3 +3829,15 @@ midlat lane appears with MLC data, narrow axis stays wide — all pass. The 4 e2
 failures in test_dashboard_fe.py (open/EV3-panel, live-row↔box sync, heat-detail)
 and the 2 test_events_unit.py detector failures reproduce on origin/develop's own
 files — pre-existing, unrelated to this JS/CSS-only change.
+
+## [visual-gantt] 2026-11-20 02:40 UTC — round 2 DONE
+PR #5 (base develop, head fix/ui-gantt-strip @ a3222ff) updated with round-2 body.
+The time strip now survives the dense new-event window: midlat lane present, one
+6px bar height, density ribbons for concurrency>3 (click-to-jump + selected-on-top),
+a keyboard/aria label toggle to expand, full labels above the lane below 600px with
+the axis kept >=80%, CLS reservation re-synced. QA FAILS:0 on live+dev at 4 widths x
+2 themes; ribbon/expand/selection/MLC/narrow e2e added and green, existing gantt
+e2e green. The 4 detail-panel/row-sync e2e failures + 2 detector unit failures are
+pre-existing (reproduce on origin/develop's own files). Screenshots kept OUTSIDE the
+repo per owner rule (no PNG in the diff). No CI check-runs reported: the repo's
+ci.yml is not on this branch's base merge, so GitHub reports none for the PR.
