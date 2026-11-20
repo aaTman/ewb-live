@@ -1280,7 +1280,7 @@ nav.controls { min-height: 46px; }
 .raw-map-wrap { min-height: 240px; }
 /* The gantt strip sizes itself to its OWN content — a band per lane that has an
    event in the window (a sparse lane grows for its sub-rows, a dense lane is a
-   16px density ribbon), a 3px gap between lanes, 11px for the month axis — and
+   16px density ribbon), a 3px gap between lanes, 14px for the month axis — and
    pins the SVG box (and its inline min-height) to that number, so a busy window
    is never cropped and can never overlap the cards below. A fixed CSS height
    there used to SCALE the whole strip to 56% (bars 6.8px tall, a 392px-wide axis
@@ -1288,10 +1288,10 @@ nav.controls { min-height: 46px; }
    height is only the reservation BEFORE the strip mounts (mergedmap overrides it
    inline once it renders); it is set to what a full new-event window settles at
    collapsed — the seven lanes of the dev data (heat/cold/freeze/AR + flood/TC/MLC
-   ribbons) render 165px — so the legend below gets no jump when the data arrives.
+   ribbons) render 168px — so the legend below gets no jump when the data arrives.
    The slider above shares the strip's time axis through --gm-lab so its thumb and
    the strip's cursor line land on the same x. */
-#gm-gantt { min-height: 165px; }
+#gm-gantt { min-height: 168px; }
 .tl-head { min-height: 30px; }
 header.top { min-height: 78px; }        /* measured settled height: 24 pad + 26/1.2 h1 + 4 + 12.5/1.5 */
 @media (max-width: 620px) { header.top { min-height: 70px; } }   /* 16px gutter rule */

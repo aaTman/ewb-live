@@ -800,7 +800,7 @@
   const G_DENSE = 3;      // max concurrency <= this packs as sub-rows; more is a ribbon
   const G_RIB = 16;       // density-ribbon lane height (~2.7 bar heights)
   const G_GAP = 3;        // vertical gap between lane bands
-  const G_AX = 11;        // month-label band under the lanes
+  const G_AX = 14;        // month-label band under the lanes (3px clear of the last band)
   const G_RIGHT = 12;     // trailing inset = slider thumb half-width (see styles.css)
   const G_MIN_W = 240;    // never shrink the axis below this
   const GUT = 2;          // x gutter between bars in one sub-row
@@ -942,7 +942,8 @@
     // so the names move to a caption row above each lane and the axis gets the full
     // width (round 2: a 30 %-wide column clipped "Tropical cyclone" at 390 px)
     const narrow = W < NARROW_W;
-    const labOf = (type) => (narrow ? (TYPES[type].narrow || TYPES[type].short) : TYPES[type].short);
+    let shortNames = narrow;
+    const labOf = (type) => (shortNames ? (TYPES[type].narrow || TYPES[type].short) : TYPES[type].short);
     const t0 = tsToDate(raw.frames[0]).getTime();
     const t1 = tsToDate(raw.frames[raw.frames.length - 1]).getTime();
     const span = Math.max(1, t1 - t0);
@@ -981,8 +982,13 @@
     let LAB, laneName;
     if (narrow) { LAB = 0; laneName = (s) => s; }
     else {
-      ({ pad: LAB, name: laneName } = labelMetrics(svg, W,
-        lanes.map((type) => (dense.has(type) ? '▸ ' : '') + labOf(type))));
+      const names = () => lanes.map((type) => (dense.has(type) ? '▸ ' : '') + labOf(type));
+      ({ pad: LAB, name: laneName } = labelMetrics(svg, W, names()));
+      // a column too narrow for a full name takes the short forms (TC, MLC), not an ellipsis
+      if (names().some((n) => laneName(n) !== n)) {
+        shortNames = true;
+        ({ pad: LAB, name: laneName } = labelMetrics(svg, W, names()));
+      }
     }
     $('#global-sec').style.setProperty('--gm-lab', LAB + 'px');
 
