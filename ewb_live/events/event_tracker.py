@@ -23,6 +23,11 @@ growing*:
    neighbour brushing the edge is not swallowed. Its box grows to cover every
    footprint it has ever had and never shrinks; objects that claim the same
    region merge into the older one.
+   Since the 2026-11-20 box-size rule (SPEC §2, ``notes/heatwave_box_diagnosis.md``)
+   the claimed part of a region is only its **valid** cells within
+   ``move_cells`` of what the event holds (``claim_valid_only``), a candidate
+   seeds as the region's valid cells (``seed_valid_only``), and a merge keeps
+   the older object's box instead of unioning the two (``merge_keep_box``).
 4. **Qualify / end.** A candidate becomes an event the first day its footprint
    holds ``qualify_area_km2`` (200k km2); it is valid when it qualified and
    lasted >= ``min_days`` (3) days. An event ends on the first day its **core**
@@ -34,6 +39,12 @@ growing*:
    appearing elsewhere inside its grown box. That is what stops the permanently
    hot belts (Amazon, Sahara/Sahel, Indonesia) from running for a whole season.
 
+The tracker box is the *tracking* geometry. What a scan publishes as the event
+rectangle (``ewb_live/events/temperature.py``) is the **persistence box**
+(:func:`persistence_box`, ``publish_box="persistence"``): the bbox of the cells
+valid on at least half the event's days, trimmed to their 2-98 % area-weighted
+range.
+
 Everything is day-by-day and never looks ahead, so it can run each morning on
 the newest day. Longitude wraps (``circular_span``/``dilate``); latitude does
 not. Boxes are grid-index boxes with inclusive bounds; ``j0 > j1`` means the
@@ -43,6 +54,7 @@ on a -180..180 grid).
 from __future__ import annotations
 
 import datetime as dt
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
@@ -147,6 +159,84 @@ def label_regions(valid: np.ndarray, radius: int, min_fraction: float) -> np.nda
     return labels
 
 
+def _arc_cols(mask: np.ndarray, nx: int) -> np.ndarray:
+    """Column indices of the shortest seam-wrapping arc covering ``mask``'s columns."""
+    j0, j1 = circular_span(mask.any(axis=0))
+    return (j0 + np.arange((j1 - j0) % nx + 1)) % nx
+
+
+def _weighted_quantile(values: np.ndarray, weights: np.ndarray, q: float) -> float:
+    """Area-weighted ``q``-quantile of ascending ``values``."""
+    w = np.cumsum(weights)
+    if not w.size or w[-1] <= 0:
+        return float(values[0]) if values.size else 0.0
+    return float(values[int(np.searchsorted(w / w[-1], q))])
+
+
+def persistence_k_days(duration_days: int, min_fraction: float) -> int:
+    """Persistence day-count: ``max(2, ceil(min_fraction x days))``."""
+    return max(2, math.ceil(min_fraction * duration_days))
+
+
+def persistence_box(daily_mask: np.ndarray, box: Box, cell_area: np.ndarray,
+                    k_days: int, trim: float | None = None) -> Box | None:
+    """The published rectangle of an event: bbox of its persistent cells.
+
+    Of the cells inside the tracker ``box``, keep those valid on at least
+    ``k_days`` of the given days, optionally trim to the area-weighted
+    ``[trim, 1-trim]`` lat/lon range of that mask (a one-cell outlier column
+    no longer stretches the published box), and return the bbox. If no cell
+    reaches ``k_days`` the bbox of every ever-valid cell is used instead;
+    ``None`` when the event held no valid cell at all inside ``box``. Only
+    ``box``'s own cells count — other spells' cells are not this event's
+    event (SPEC §2, published box).
+
+    Args:
+        daily_mask: Boolean ``(days, lat, lon)`` mask of the event's days only.
+        box: The event's tracker box (the search area).
+        cell_area: ``(lat, lon)`` cell areas in km2 (broadcastable).
+        k_days: Persistence threshold in days (see :func:`persistence_k_days`).
+        trim: Area-weighted quantile to trim each edge by; None to skip.
+
+    Returns:
+        The persistence box, or None when the event has no valid cell.
+    """
+    ny, nx = daily_mask.shape[1:]
+    boxmask = box.mask(ny, nx)
+    ever = daily_mask.any(axis=0) & boxmask
+    if not ever.any():
+        return None
+    keep = (daily_mask.sum(axis=0) >= max(1, k_days)) & boxmask
+    if not keep.any():
+        keep = ever
+    cols = _arc_cols(keep, nx)
+    sub = keep[:, cols]
+    area = cell_area[:, cols]
+    i_lo = c_lo = 0
+    if trim is not None:
+        row_idx = np.arange(ny)
+        row_w = (sub * area).sum(axis=1)
+        col_idx = np.arange(cols.size)
+        col_w = (sub * area).sum(axis=0)
+        i0 = int(np.floor(_weighted_quantile(row_idx, row_w, trim)))
+        i1 = int(np.ceil(_weighted_quantile(row_idx, row_w, 1.0 - trim)))
+        c0 = int(np.floor(_weighted_quantile(col_idx, col_w, trim)))
+        c1 = int(np.ceil(_weighted_quantile(col_idx, col_w, 1.0 - trim)))
+        sub = sub[max(0, i0):i1 + 1, max(0, c0):c1 + 1]
+        i_lo = max(0, i0)
+        c_lo = max(0, c0)
+        if not sub.any():        # the trim cut through every row or column
+            cols = _arc_cols(ever, nx)
+            sub = ever[:, cols]
+            i_lo = c_lo = 0
+    rr = np.flatnonzero(sub.any(axis=1))
+    cc = np.flatnonzero(sub.any(axis=0))
+    if rr.size == 0 or cc.size == 0:
+        return None
+    return Box(int(i_lo + rr[0]), int(i_lo + rr[-1]),
+               int(cols[c_lo + cc[0]]), int(cols[c_lo + cc[-1]]))
+
+
 @dataclass(frozen=True)
 class Params:
     """Detection settings. Areas in km2, distances in grid cells (0.25 deg).
@@ -169,6 +259,25 @@ class Params:
         max_box_area_km2: Largest box allowed: a bigger region cannot seed, and
             an event at the cap keeps its box and clips its footprint to it.
             None means no limit.
+        claim_valid_only: A claimed region continues the event only for its
+            *valid* cells within ``move_cells`` of the cells the event already
+            holds; the rest of the region stays free and may seed its own
+            candidate (2026-11-20 box-size rule, SPEC §2 step 4). False keeps
+            the original whole-region claim.
+        seed_valid_only: A new candidate's footprint and first box are the
+            labelled region's valid cells only, never its closing-filled
+            bridge cells. False keeps the original whole-region seeding.
+        merge_keep_box: When objects claim the same cells the older one keeps
+            its own box and the group's claimed cells are clipped into it; a
+            merge never unions two boxes. False keeps the original box-union.
+        publish_box: The rectangle a scan publishes for the event:
+            ``"persistence"`` = :func:`persistence_box` over the event's days,
+            ``"tracker"`` = the cumulative tracker box.
+        publish_min_fraction: The persistence box keeps the cells valid on at
+            least ``max(2, ceil(fraction x duration_days))`` event days
+            (:func:`persistence_k_days`).
+        publish_trim: Area-weighted lat/lon quantile each persistence-box edge
+            is trimmed by (0.02 keeps the 2-98 % range); None disables it.
     """
 
     seed_area_km2: float = 5e4
@@ -183,6 +292,12 @@ class Params:
     join_area_km2: float = 1e4
     anchor_day: int | None = 3
     max_box_area_km2: float | None = None
+    claim_valid_only: bool = True
+    seed_valid_only: bool = True
+    merge_keep_box: bool = True
+    publish_box: Literal["persistence", "tracker"] = "persistence"
+    publish_min_fraction: float = 0.5
+    publish_trim: float | None = 0.02
 
 
 @dataclass
@@ -290,14 +405,22 @@ class Tracker:
         for group in groups:
             ev = self.active[group[0]]
             group_hits = set().union(*(hits[k] for k in group))
+            merged_in = False
             for k in group[1:]:
                 other = self.active[k]
-                ev.box = ev.box.union(other.box, nx)
+                if p.merge_keep_box:
+                    merged_in = True
+                else:
+                    ev.box = ev.box.union(other.box, nx)
                 if other.qualified is not None and (
                         ev.qualified is None or other.qualified < ev.qualified):
                     ev.qualified = other.qualified
             share = np.isin(labels, list(group_hits)) & ~taken if group_hits \
                 else np.zeros((ny, nx), bool)
+            if p.claim_valid_only and ev.footprint.any():
+                share &= valid & dilate(ev.footprint, p.move_cells)
+            if merged_in:
+                share &= ev.box.mask(ny, nx)
             if share.any():
                 grown = ev.box.union(Box.from_mask(share), nx)
                 if self.fits(grown):
@@ -334,6 +457,10 @@ class Tracker:
         free_area[0] = 0.0
         for label in np.flatnonzero(free_area >= p.seed_area_km2):
             region = (labels == label) & ~taken
+            if p.seed_valid_only:
+                region &= valid
+                if not region.any():
+                    continue
             if (occupied & region).any():
                 continue
             box = Box.from_mask(region)
