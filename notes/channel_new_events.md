@@ -3743,6 +3743,6 @@ Branch `feat/round3-compress-tracks-freeze` (from `chore/integrate-lane-fixes`).
 - TESTS: units 590 passed (2 pre-existing env failures: missing third_party/ExtremeWeatherBench, unrelated);
   e2e trackexpiry(new, incl. full 124-event real-data sweep) 4P, trackwind+tracklane+trackviz 28P, dashboard_fe 49P,
   chips+guardian+regions 95P/1S against the local 8063 preview. Rewrote the e2e that encoded the old ongoing-linger behavior.
-- PR: (filled in below)
+- PR: https://github.com/aaTman/ewb-live/pull/4 (base develop, head afc41b8)
 
 ## [visual-tracks] — DONE
