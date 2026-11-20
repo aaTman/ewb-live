@@ -461,7 +461,15 @@ def run_job(job: dict) -> dict:
             import dask
 
             with dask.config.set(scheduler="threads", num_workers=job["dask_threads"]):
-                lat, lon, fld, offset, open_s, read_s = read_store_msl(model, init, leads, win)
+                for attempt in range(3):          # transient S3 "error fetching virtual reference"
+                    try:
+                        lat, lon, fld, offset, open_s, read_s = read_store_msl(model, init, leads, win)
+                        break
+                    except Exception as exc:  # noqa: BLE001
+                        if attempt == 2 or "StorageError" not in f"{type(exc).__name__} {exc}":
+                            raise
+                        rec["retries"] = rec.get("retries", 0) + 1
+                        time.sleep(2.0 * (attempt + 1))
         rec.update(offset_h=offset, open_s=round(open_s, 3), read_s=round(read_s, 3),
                    window=[round(x, 2) for x in win], grid=list(fld.shape))
         i0 = idx[init]
@@ -604,7 +612,8 @@ def cmd_run(args) -> int:
     if args.resume and jl.exists():
         for line in jl.read_text().splitlines():
             r = json.loads(line)
-            done_keys.add((r["kind"], r["model"], r["init"]))
+            if r.get("status") in ("scored", "no_data"):      # errors are retried
+                done_keys.add((r["kind"], r["model"], r["init"]))
         jobs = [j for j in jobs if (j["kind"], j["model"], j["init"]) not in done_keys]
     print(f"{len(jobs)} jobs ({len(done_keys)} already done), {args.workers} workers, "
           f"dask threads {args.dask_threads}, storms: "
@@ -759,8 +768,14 @@ def aggregate(jobs: list[dict], pool: dict | None, workers_target: int = 12) -> 
 
 def cmd_report(args) -> int:
     out = Path(args.out)
-    jobs = [json.loads(x) for x in (out / "jobs.jsonl").read_text().splitlines()]
-    pool = json.loads((out / "pool.json").read_text()) if (out / "pool.json").exists() else None
+    latest: dict = {}
+    for x in (out / "jobs.jsonl").read_text().splitlines():      # a retry supersedes an earlier error
+        r = json.loads(x)
+        latest[(r["kind"], r["model"], r["init"])] = r
+    jobs = list(latest.values())
+    pn = out / "pool_main.json"
+    pool = json.loads(pn.read_text()) if pn.exists() else (
+        json.loads((out / "pool.json").read_text()) if (out / "pool.json").exists() else None)
     agg = aggregate(jobs, pool, args.target_workers)
     print(json.dumps(agg, indent=1))
     return 0
@@ -921,8 +936,17 @@ def cmd_landfall(args) -> int:
     mine = [r for r in jobs if r["kind"] == "tc" and r["model"] == args.model and r["status"] == "scored"]
     mine.sort(key=lambda r: r["init"])
     inits, rows = [], []
+    tidx = storm.index()
     for r in mine:
-        pts = [(s["lead"], s["fc_lat"], s["fc_lon"]) for s in r["samples"] if s.get("tracked")]
+        ini = dt.datetime.fromisoformat(r["init"])
+        pts = []
+        for s in r["samples"]:
+            if not s.get("tracked"):
+                continue
+            k = tidx.get(ini + dt.timedelta(hours=s["lead"]))
+            op = storm.pres[k] if k is not None else np.nan
+            fp = (op + s["dp_hpa"]) if (s.get("dp_hpa") is not None and np.isfinite(op)) else np.nan
+            pts.append((s["lead"], s["fc_lat"], s["fc_lon"], fp))      # fc MSLP = obs + (fc - obs)
         if len(pts) >= 4:
             inits.append(np.datetime64(r["init"], "ns"))
             rows.append(pts)
@@ -935,10 +959,10 @@ def cmd_landfall(args) -> int:
         lon = np.full_like(lat, np.nan)
         pres = np.full_like(lat, np.nan)
         for i, pts in enumerate(rows):
-            for L, la, lo in pts:
+            for L, la, lo, fp in pts:
                 j = int(L // LEAD_STEP_H) - 1
                 lat[i, j], lon[i, j] = la, lo
-                pres[i, j] = 1000.0 * 100.0               # placeholder: pilot stores no central MSLP per step
+                pres[i, j] = fp * 100.0                    # Pa; NaN where the best track has no pressure
         fc = xr.DataArray(
             pres, dims=("init_time", "lead_time"),
             coords={"init_time": np.array(inits, dtype="datetime64[ns]"),
