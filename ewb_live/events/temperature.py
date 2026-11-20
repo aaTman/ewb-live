@@ -6,7 +6,13 @@ methodology of 2026-11-10, ported from github.com/aaTman/ewb-events into
 ``ewb_live/events/event_tracker.py`` and specified in SPEC §2: regions ->
 candidates at 50k km2 -> events at 200k km2 of footprint, a box that grows with
 the footprint, and an end when the **core** (the cells valid every day since
-the event began, measured in the day-3 anchor box) falls below 100k km2. It
+the event began, measured in the day-3 anchor box) falls below 100k km2. Since
+the 2026-11-20 box-size rule the tracker box (cumulative) is only the tracking
+geometry: the published Event bbox is the **persistence box** (the cells valid
+on >= half the event's days, area-weighted 2-98 % trimmed; ``Params.publish_box
+/ publish_min_fraction / publish_trim``) and the event id hashes the frozen
+day-3 anchor bbox, so an ongoing event keeps its id across weekly runs while
+its published box is redrawn (SPEC §2, notes/footprint_tracker.md). It
 replaced, in order: the upstream EWB blob tracker (unbounded 1 deg-per-edge
 expansion, "blob vanished or <50% of own peak" ending, no seed suppression;
 notes/ewb.md) and the same morning's interim 200k-seed/+250 km-box rule
@@ -335,9 +341,11 @@ def scan_temperature_events(
 
     Tracking is the owner's footprint/core methodology
     (``ewb_live/events/event_tracker.py``, SPEC §2): regions -> candidates at
-    50k km2 -> events at 200k km2 of footprint, box grows with the footprint,
-    end when the core (valid every day since the start, measured in the day-3
-    anchor box) holds less than 100k km2. ``min_area_km2`` overrides the 200k
+    50k km2 -> events at 200k km2 of footprint, an end when the core (valid
+    every day since the start, measured in the day-3 anchor box) holds less
+    than 100k km2. The tracker box keeps growing with the footprint (follow/
+    claim/seeding geometry); the published Event bbox is the persistence box
+    and the id hashes the day-3 anchor box (SPEC §2, 2026-11-20 rule). ``min_area_km2`` overrides the 200k
     qualify floor; ``params`` replaces the whole settings block.
     Returns Events overlapping the window, sorted by start.
     """
