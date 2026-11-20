@@ -1148,14 +1148,25 @@ nav.controls .dd .dd-body {
 .raw-play-row { display: flex; gap: 6px; align-items: center; }
 .raw-speed { font-size: var(--text-sm); color: var(--text-dim);
   display: inline-flex; gap: 6px; align-items: center; }
-/* thumb centers land on the gantt time axis (see renderGantt AX constants):
-   left = LAB(44) - thumb/2(8) = 36; right = trailing(12) - 8 = 4.
-   calc keeps the thumb INSIDE the gantt span (width:100% + margins overflows). */
-.gm-time-row #raw-slider { width: calc(100% - 40px); grid-column: 1 / -1; margin-inline: 36px 4px; }
-/* Gantt primitives */
-#gm-gantt .gm-lane { fill: var(--bg-inset); }
+/* thumb centres land on the gantt time axis (see renderGantt's G_* constants):
+   the strip's label column is MEASURED (a lane name is never clipped) and handed
+   here as --gm-lab, so left = LAB - thumb/2(8) and right = G_RIGHT(12) - 8. calc
+   keeps the thumb INSIDE the gantt span (width:100% + margins overflows). Change
+   G_RIGHT in mergedmap.js together with the 12px here. */
+.gm-time-row #raw-slider { grid-column: 1 / -1;
+  margin-inline: calc(var(--gm-lab, 44px) - 8px) 4px;
+  width: calc(100% - var(--gm-lab, 44px) - 12px + 16px); }
+/* Gantt primitives. The strip is 1 user unit = 1 CSS px (see renderGantt), so a
+   lane name paints at its real --text-2xs size and the axis spans the box. */
+#gm-gantt .gm-lane { fill: var(--bg-inset); opacity: .5; }   /* one ground per lane */
+#gm-gantt .gm-lane-alt { opacity: 1; }                       /* alternating rhythm */
+#gm-gantt .gm-lane-none { opacity: .35; }   /* lane in the window, nothing in this view */
+#gm-gantt .gm-lane-lab.none { opacity: .55; }
+#gm-gantt .gm-lane-sep { stroke: var(--border); stroke-width: 1; }
 #gm-gantt .gm-bar { transition: opacity 120ms; }
 #gm-gantt .gm-tick { stroke: var(--border); }
+#gm-gantt .gm-tick.minor { opacity: .55; }   /* week ticks: lighter than a month */
+#gm-gantt .gm-cursor { stroke: var(--matte-black); stroke-width: 1; pointer-events: none; }
 #gm-gantt text { font-family: var(--font-mono); font-size: var(--text-2xs); fill: var(--ink-muted); }
 #gm-gantt .gm-lane-lab { fill: var(--ink-muted); }
 
@@ -1263,7 +1274,18 @@ nav.controls { min-height: 46px; }
 .type-filter { min-height: 30px; }   /* one chip row; wrapping rows grow it (measured, not fixed) */
 @media (pointer: coarse), (max-width: 479px) { .type-filter { min-height: 44px; } }
 .raw-map-wrap { min-height: 240px; }
-#gm-gantt { height: 62px; }
+/* The gantt strip sizes itself to its OWN content — 15px for each lane that has
+   an event in the window, 3px between lanes, 11px for the month axis (G_H() in
+   mergedmap.js) — and pins the SVG box to the same number, so a busy window is
+   never cropped and can never overlap the cards below it. A fixed CSS height
+   there used to SCALE the whole strip to 56% (bars 6.8px tall, the time axis
+   drawn 392px wide in a 672px box, the slider thumb off the date it points at).
+   62px is what the live window settles at today (heat / freeze / AR) — exactly
+   what the fixed height used to reserve, so the legend still gets no jump when
+   the data arrives — and six lanes would render 116px. The slider above shares
+   the strip's time axis through --gm-lab so its thumb and the strip's cursor
+   line land on the same x. */
+#gm-gantt { min-height: 62px; }
 .tl-head { min-height: 30px; }
 header.top { min-height: 78px; }        /* measured settled height: 24 pad + 26/1.2 h1 + 4 + 12.5/1.5 */
 @media (max-width: 620px) { header.top { min-height: 70px; } }   /* 16px gutter rule */

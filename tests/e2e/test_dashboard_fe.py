@@ -1232,6 +1232,128 @@ def test_merged_gantt_bar_click_jumps_and_selects(gd_server, page_ctx):
     assert "sel=gf1" in page.evaluate("decodeURIComponent(location.hash)")
 
 
+def _dense_timeline():
+    """A lane that overlaps ITSELF: 7 heat waves in an 11-day window (4-5 of them
+    live at once), the shape the owner's 'the time bar … has become a mess' report
+    is about. Keys are [start, end) ISO days; every entry gets qualified_at = start.
+    """
+    days = _GD_DAYS
+    # peak concurrency 8 on 2026-01-05: deeper than G_ROW_MAX, so the strip has to
+    # stack what it can and announce what it cannot
+    heat = [("2026-01-01", "2026-01-05"), ("2026-01-02", "2026-01-06"),
+            ("2026-01-02", "2026-01-07"), ("2026-01-03", "2026-01-08"),
+            ("2026-01-04", "2026-01-08"), ("2026-01-05", "2026-01-09"),
+            ("2026-01-05", "2026-01-07"), ("2026-01-05", "2026-01-11"),
+            ("2026-01-06", "2026-01-10"), ("2026-01-06", "2026-01-08"),
+            ("2026-01-07", "2026-01-09"), ("2026-01-08", "2026-01-11")]
+    evs = []
+    for i, (a, b) in enumerate(heat):
+        evs.append({"id": f"dn{i}", "type": "heat_wave", "title": f"Heat Dense {i} (e2e)",
+                    "start": a, "end": b, "bbox": [30.0, 45.0, -100.0, -80.0],
+                    "days": [d for d in days if a <= d < b],
+                    "qualified_at": a.replace("-", "") + "00"})
+    evs.append({"id": "dfr", "type": "freeze", "title": "Freeze Sparse (e2e)",
+                "start": "2026-01-03", "end": "2026-01-06", "bbox": [40.0, 50.0, 10.0, 20.0],
+                "days": _GD_DAYS[2:5], "qualified_at": "2026010300"})
+    return {"schema": 1, "generated": "2026-01-11T00:00:00Z",
+            "window": {"start": "2026-01-01", "end": "2026-01-11", "days": 11},
+            "events": evs}
+
+
+@pytest.fixture(scope="module")
+def dense_server(tmp_path_factory):
+    """The merged-map fixture with the dense single-lane timeline swapped in."""
+    root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-dense")), raw_frames=GD_RAW_TS)
+    p = os.path.join(root, "data", "results", "global_timeline.json")
+    tl = _dense_timeline()
+    json.dump(tl, open(p, "w"))
+    sel_p = os.path.join(root, "data", "results", "events_selected.json")
+    sel = json.load(open(sel_p))
+    lst = sel["events"] if isinstance(sel, dict) else sel
+    for e in tl["events"]:
+        lst.append({"id": e["id"], "event_type": e["type"], "title": e["title"],
+                    "bbox": e["bbox"], "start": e["start"], "end": e["end"],
+                    "details": {"region": "e2e"}})
+    json.dump(sel, open(sel_p, "w"))
+    srv, url = _gd_server(root)
+    yield url
+    srv.shutdown()
+
+
+# BARS NEVER HIDE EACH OTHER (owner 2026-11-19: "the time bar with the events
+# overlapping what time they occur has become a mess with the new events"). Every
+# event of a lane used to be drawn on the SAME row, so a later bar painted over an
+# earlier one and the bar underneath could be neither seen nor clicked. The strip
+# stacks sub-rows; past the cap it stacks half-height rows and the bar SAYS so.
+def _gantt_geom(page):
+    return page.evaluate("""() => {
+        const svg = document.querySelector('#gm-gantt');
+        const R = (n) => n.getBoundingClientRect();
+        const bars = [...svg.querySelectorAll('.gm-bar')];
+        const bands = [...svg.querySelectorAll('.gm-lane')];
+        const laneOf = (b) => {          // the lane ground band a bar sits in
+            const r = R(b); let best = -1, bd = 1e9;
+            bands.forEach((l, i) => { const q = R(l);
+                const d = Math.abs((r.top + r.bottom) / 2 - (q.top + q.bottom) / 2);
+                if (d < bd) { bd = d; best = i; } });
+            return best; };
+        const shared = (b) => /shares its row/.test(b.querySelector('title').textContent || '');
+        let stacks = 0, covers = 0;
+        const clean = [], dirty = [];
+        for (let i = 0; i < bars.length; i++) for (let j = i + 1; j < bars.length; j++) {
+            if (laneOf(bars[i]) !== laneOf(bars[j])) continue;
+            const a = R(bars[i]), b = R(bars[j]);
+            if (!(a.left < b.right - 0.5 && b.left < a.right - 0.5
+                  && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5)) continue;
+            // fully covered = one rect inside the other: that is the real failure
+            const inside = (x, y) => x.left >= y.left - 0.5 && x.right <= y.right + 0.5
+                && x.top >= y.top - 0.5 && x.bottom <= y.bottom + 0.5;
+            if ((inside(a, b) && !shared(bars[i])) || (inside(b, a) && !shared(bars[j]))) covers++;
+            (shared(bars[i]) || shared(bars[j]) ? dirty : clean)
+                .push([bars[i].dataset.id, bars[j].dataset.id]);
+        }
+        const box = svg.getBoundingClientRect(), vb = svg.viewBox.baseVal;
+        const card = document.querySelector('.timeline').getBoundingClientRect();
+        return { ids: bars.map((b) => b.dataset.id).sort(), clean, dirty, covers, stacks,
+                 rows: [...new Set(bars.filter((b) => laneOf(b) === bands.length - 1
+                     || true).map((b) => laneOf(b)))].length,
+                 lane0rows: new Set(bars.filter((b) => laneOf(b) === 0).map((b) => Math.round(R(b).top))).size,
+                 shared: bars.filter(shared).map((b) => b.dataset.id),
+                 scale: Math.min(box.width / vb.width, box.height / vb.height),
+                 inCard: box.bottom <= card.bottom + 1,
+                 overflowSvg: svg.scrollWidth - svg.clientWidth,
+                 overflowDoc: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    }""")
+
+
+def test_gantt_no_bar_is_hidden_behind_another(dense_server, page_ctx):
+    page = page_ctx
+    _mm_goto(page, dense_server)
+    for w, h in ((1024, 768), (390, 844)):
+        page.set_viewport_size({"width": w, "height": h})
+        page.wait_for_timeout(600)      # the refit redraws the strip at the new width
+        m = _gantt_geom(page)
+        assert m["ids"] == sorted(["dfr"] + [f"dn{i}" for i in range(12)]), m["ids"]  # nothing dropped
+        assert m["clean"] == [], f"{w}px: bars overlap in both axes unannounced: {m['clean']}"
+        assert m["covers"] == 0, f"{w}px: a bar sits behind another unannounced: {m}"
+        assert m["lane0rows"] >= 4, f"{w}px: the packed lane barely stacked: {m}"   # 5 rows, then share
+        assert m["shared"], f"{w}px: past the sub-row cap nothing said it was sharing: {m}"
+        assert abs(m["scale"] - 1) <= 0.01, f"{w}px: the strip is still SCALED: {m}"
+        assert m["inCard"] and m["overflowSvg"] <= 0 and m["overflowDoc"] <= 0, m
+    assert page.errors == [], page.errors
+    # behaviour kept: a bar selects + jumps (pick one the packer left alone)
+    page.set_viewport_size({"width": 1024, "height": 768})
+    page.wait_for_timeout(500)
+    m = _gantt_geom(page)
+    solo = [i for i in m["ids"] if i not in set(m["shared"])][0]
+    q = page.evaluate("(id) => state.events.find((e) => e.id === id).start", solo)
+    page.locator(f'#gm-gantt .gm-bar[data-id={solo}]').click()
+    page.wait_for_timeout(300)
+    assert f"sel={solo}" in page.evaluate("decodeURIComponent(location.hash)")
+    assert q[8:10] + " Jan 2026" in page.inner_text("#raw-readout"), (q, page.inner_text("#raw-readout"))
+    assert page.errors == [], page.errors
+
+
 def test_merged_old_links_redirect(gd_server, page_ctx):
     page = page_ctx
     page.goto(gd_server + "/#raw=2026010200&layers=h,f")
@@ -1337,21 +1459,30 @@ _HEAT_PIXEL_JS = """(() => {
 
 
 def test_merged_slider_spans_gantt_axis(gd_server, page_ctx):
-    """Slider thumb travel == gantt time axis [LAB(44), W-12] so a thumb
-    position lands on the same date in the strip below (orchestrator polish
-    08 Nov: full-width track, readout above, aligned scrubbing)."""
+    """Slider thumb travel == the gantt time axis [LAB, W - 12] so a thumb position
+    lands on the same date in the strip below (orchestrator polish 08 Nov: full-width
+    track, readout above, aligned scrubbing). LAB is no longer the hardcoded 44 the
+    strip used to assume: it is MEASURED from the lane names so a long one can never
+    be clipped (visual-gantt 2026-11-19), and mergedmap hands it to the slider's CSS
+    margins as --gm-lab. The contract is unchanged — read the axis from the strip and
+    check the thumb lands on it.
+    """
     page = page_ctx
     _mm_goto(page, gd_server)
     m = page.evaluate("""() => {
         const s = document.querySelector('#raw-slider').getBoundingClientRect();
         const g = document.querySelector('#gm-gantt').getBoundingClientRect();
         const r = document.querySelector('#raw-readout').getBoundingClientRect();
+        const lab = parseFloat(getComputedStyle(
+            document.querySelector('#global-sec')).getPropertyValue('--gm-lab')) || 44;
+        const lane = document.querySelector('#gm-gantt .gm-lane');
         return {thumbL: s.x + 8, thumbR: s.right - 8,
-                axisL: g.x + 44, axisR: g.right - 12,
-                readoutBottom: r.bottom, sliderTop: s.top, sw: s.width, gw: g.width};
-    }""")
+                axisL: g.x + lab, axisR: g.right - 12, lab,
+                laneX: lane ? lane.getBoundingClientRect().x - g.x : null,
+                readoutBottom: r.bottom, sliderTop: s.top, sw: s.width, gw: g.width}; }""")
     assert abs(m["thumbL"] - m["axisL"]) <= 2, m
     assert abs(m["thumbR"] - m["axisR"]) <= 2, m
+    assert m["laneX"] is not None and abs(m["laneX"] - m["lab"]) <= 2, m   # axis == lane ground start
     assert m["sw"] >= 0.85 * m["gw"], m          # full-width, not a 130px stub
     assert m["readoutBottom"] <= m["sliderTop"], m  # readout sits above the track
 

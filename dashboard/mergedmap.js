@@ -770,63 +770,247 @@
     for (const L of LAYERS) on[L.key] = tab === 'all' || (!!key && L.key === key);
   }
 
-  /* ---------------- Gantt strip (qualified → end, shared time scale) ---------------- */
+  /* ---------------- Gantt strip (qualified → end, shared time scale) ----------------
+     Owner 2026-11-19: "the time bar with the events overlapping what time they
+     occur has become a mess with the new events". Two defects, both fixed here.
+
+     1 · IT DID NOT FIT ITS OWN BOX. renderGantt wrote a content height into
+         width/height AND the viewBox (lanes + axis: ~110 for 6 lanes) while
+         styles.css pinned `#gm-gantt { height: 62px }` as the CLS reservation.
+         A viewBox that disagrees with the box makes the SVG's default
+         preserveAspectRatio SCALE the drawing: 62/110 = 0.56, so bars came out
+         6.8 px tall and the time axis was DRAWN 392 px wide inside a 672 px box,
+         centred — which is also why the slider thumb stopped landing on the date
+         it points at (test_merged_slider_spans_gantt_axis measures it). Geometry
+         here is 1 user unit = 1 CSS px, and the height is a function of the LANE
+         COUNT ONLY — never the frame, the tab, the region filter or how full a
+         lane is — so the reservation in styles.css stays exact (keep it equal to
+         G_H(LANE_ORDER.length): 6 lanes -> 122px, 7 -> 141px) and nothing under
+         the map ever jumps. The budget it has to live in is the first-screen
+         contract in test_controls_live_in_the_section_they_change (the events
+         column must end above 900 px at 1440x900), which is what sets G_SLOT.
+     2 · OVERLAPPING EVENTS HID EACH OTHER. Every event of a lane was drawn on
+         the SAME row, so a later bar painted over an earlier one: in the live
+         window 7 of 15 heat pairs and 4 of 12 AR pairs overlapped, and the bar
+         underneath could be neither seen nor clicked. A lane now splits its slot
+         into as many EQUAL rows as its own overlap depth needs (greedy interval
+         packing: the first row whose last bar has ended), up to G_ROW_MAX — a
+         deeper lane thins its bars rather than growing the strip, which is what
+         keeps the strip's height independent of how crowded the data is. Bars in
+         one row never overlap in x and rows never overlap in y, so nothing hides
+         anything; only past G_ROW_MAX do bars have to share a row, and they say
+         so in the tooltip instead of disappearing. */
+  const G_BAR = 7, G_BAND_GAP = 1;                   // full bar height, gap between rows
+  const G_BANDS = 2;                                 // rows a lane gets by default
+  const G_ROW_MAX = 5;      // deeper only by thinning (7/7/4.3/3/2.2 px), then share
+  const G_SLOT = G_BANDS * G_BAR + (G_BANDS - 1) * G_BAND_GAP;   // 15: one lane's slot
+  const G_GAP = 3;                                   // between lanes
+  const G_AX = 11;                                   // month-label band under the lanes
+  const G_RIGHT = 12;                                // trailing inset = thumb half-width
+  const G_MIN_W = 240;                               // never shrink the axis below this
+  const GUT = 2;                                     // x gutter between bars in one band
+  const G_LAB_MIN = 44, G_LAB_MAX = 150, G_LAB_FRAC = 0.34;   // lane-label column limits
+  // strip height for n lanes. styles.css reserves exactly G_H(6) = 116px.
+  const G_H = (n) => n * G_SLOT + Math.max(0, n - 1) * G_GAP + G_AX;
+
+  /* Lane labels are the strip's only text that must never be clipped: the old 44 px
+     column clipped nothing only because the whole strip was scaled to 56%; at true
+     size `Tropical cyclone` needs ~101 px of --text-2xs mono. Widths are measured
+     once per font and cached — required for correctness, not just speed, because
+     getComputedTextLength() returns 0 while the section is hidden (detail view
+     open), and caching a 0 would collapse the column under the slider's margin and
+     misalign the axis. Below G_LAB_FRAC of the width the names are ellipsised by
+     CHARACTER (the label font is mono, so one advance is exact) and the full name
+     moves to the label's tooltip. */
+  const gLab = { font: '', ch: 0, w: new Map(), pad: G_LAB_MIN };
+  function labelMetrics(svg, W, names) {
+    const root = getComputedStyle(document.documentElement);
+    const font = root.getPropertyValue('--text-2xs').trim() + '|'
+      + root.getPropertyValue('--font-mono').trim();
+    if (gLab.font !== font) { gLab.font = font; gLab.ch = 0; gLab.w.clear(); }
+    let max = 0, ch = gLab.ch, ok = gLab.ch > 0;
+    const probe = mk('text', { class: 'gm-lane-lab', x: 0, y: -9999 }, svg);
+    for (const n of names) {
+      let w = gLab.w.get(n);
+      if (w === undefined) {
+        probe.textContent = n;
+        w = probe.getComputedTextLength();
+        if (w > 0) gLab.w.set(n, w); else ok = false;   // hidden: measure nothing
+      }
+      if (w > 0) { max = Math.max(max, w); ch = Math.max(ch, w / n.length); }
+    }
+    probe.textContent = 'M';
+    const em = probe.getComputedTextLength();
+    probe.remove();
+    if (em > 0) { ch = Math.max(ch, em); ok = true; }
+    if (!ok) return { pad: gLab.w.size ? gLab.pad : G_LAB_MIN, name: (n) => n };
+    const pad = Math.min(Math.max(G_LAB_MIN, Math.round(max) + 9), G_LAB_MAX,
+      Math.max(G_LAB_MIN + 12, Math.round(W * G_LAB_FRAC)));
+    gLab.pad = pad;
+    const name = (short) => {
+      if ((gLab.w.get(short) || 0) <= pad - 8) return short;
+      const fits = Math.floor((pad - 8) / ch);
+      return fits < 3 ? short.slice(0, 1) + '…'
+        : short.slice(0, fits - 1).replace(/[\s.]+$/, '') + '…';
+    };
+    return { pad, name };
+  }
+
   function renderGantt() {
     const svg = $('#gm-gantt');
     svg.innerHTML = '';
-    if (!tl) return;
-    const W = Math.max(320, $('#raw-map-wrap').clientWidth);
-    const LANE_H = 12, GAP = 4, LAB = 44, TOP = 2, AX = 16;
-    const H = TOP + LANE_H * LANE_ORDER.length + GAP * (LANE_ORDER.length - 1) + AX;
-    svg.setAttribute('width', W); svg.setAttribute('height', H);
-    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    if (!tl) { svg.removeAttribute('viewBox'); return; }
+    // The strip's OWN content box is the geometry: `width: 100%` makes it the
+    // card's content width, and the slider sits in that same box (same origin x,
+    // same width), so [LAB, W - G_RIGHT] is exactly the thumb's travel and 1 user
+    // unit is 1 CSS px. Hidden (detail view open) it measures 0 — fall back to the
+    // map column's width minus the card's gutters rather than paint a 0-wide axis.
+    const own = svg.clientWidth || $('#raw-map-wrap').clientWidth - 26;
+    const W = Math.max(G_MIN_W, own);
     const t0 = tsToDate(raw.frames[0]).getTime();
     const t1 = tsToDate(raw.frames[raw.frames.length - 1]).getTime();
-    const x = (ms) => LAB + Math.min(1, Math.max(0, (ms - t0) / (t1 - t0))) * (W - LAB - 12);  // trailing 12 = slider thumb inset
+    const span = Math.max(1, t1 - t0);
     const anySel = sel.size > 0;
     const tab = pageTab();
-    for (const type of LANE_ORDER) {
-      const li = LANE_ORDER.indexOf(type);
-      const y = TOP + li * (LANE_H + GAP);
-      const lab = mk('text', { x: 0, y: y + LANE_H - 3, class: 'gm-lane-lab' }, svg);
-      lab.textContent = TYPES[type].short;
-      mk('rect', { class: 'gm-lane', x: LAB, y, width: W - LAB - 12, height: LANE_H, rx: 2, opacity: .35 }, svg);
-      for (const ev of tlEvents()) {
-        if (ev.type !== type) continue;
+
+    /* 1 · filter first — the region view, the type tab and the frame-window clamp
+     behave exactly as before — because the label column is sized to the names this
+     strip will actually DRAW: a lane with nothing in the window collapses to a
+     rule and hands its ~100 px of label back to the axis, which is where the
+     overlap problem lives. Then the custom property hands the column to the
+     slider's margins, so the thumb travel and the time axis cannot drift apart
+     (see styles.css). */
+    const inWindow = (ev) => qualTs(ev) <= raw.frames[raw.frames.length - 1] && endTs(ev) >= raw.frames[0];
+    // A LANE belongs to the strip when its type has any event in the window; the
+    // Region filter then hides BARS, never lanes. That keeps both the strip's
+    // height and its label column (hence the axis origin) constant across the
+    // frame step, the type tab and the Region dropdown — which is what the
+    // CLS reservation in styles.css and the "nothing below the legend moved"
+    // contract in test_legend_sits_below_the_map_and_never_moves_the_page need.
+    const lanes = LANE_ORDER.filter((type) => tl.events.some((ev) => ev.type === type && inWindow(ev)));
+    const { pad: LAB, name: laneName } = labelMetrics(svg, W, lanes.map((t) => TYPES[t].short));
+    $('#global-sec').style.setProperty('--gm-lab', LAB + 'px');
+    const H = G_H(lanes.length);
+    svg.setAttribute('width', W); svg.setAttribute('height', H);
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    // the box IS the viewBox: nothing is ever scaled, whatever the lane count
+    svg.style.height = H + 'px'; svg.style.minHeight = H + 'px';
+    const gridBot = Math.max(G_SLOT, lanes.length * G_SLOT + (lanes.length - 1) * G_GAP);
+    const x = (ms) => LAB + Math.min(1, Math.max(0, (ms - t0) / span)) * (W - LAB - G_RIGHT);
+    const pxDay = (W - LAB - G_RIGHT) / (span / 86400e3);
+    // a UTC day stays findable on a narrow column, but the floor must not turn a
+    // 90-day strip into a wall of blocks: scale with the day's own width, cap at 4
+    const BW_MIN = Math.max(2, Math.min(4, pxDay * 0.8));
+    const groups = lanes.map((type) => ({
+      type,
+      rows: 0, h: G_BAR, shared: 0,
+      items: tlEvents().filter((ev) => ev.type === type && inWindow(ev)).map((ev) => {
         const q = qualTs(ev), e = endTs(ev);
-        if (q > raw.frames[raw.frames.length - 1] || e < raw.frames[0]) continue;   // clamped out
-        const bx = x(tsToDate(q).getTime()), be = x(tsToDate(e).getTime());
-        const bw = Math.max(2, be - bx);
+        const bx = x(tsToDate(q).getTime());
+        const bw = Math.max(BW_MIN, x(tsToDate(e).getTime()) - bx);
+        return { ev, q, bx, bw, x1: bx + bw, row: 0, h: G_BAR, sharing: false };
+      }),
+    }));
+
+    /* 2 · how deep is each lane? Greedy interval packing on x — a bar takes the
+     first row whose last bar has already ended — gives the row count the lane
+     NEEDS, and its slot is then split into that many EQUAL rows (1-2 rows keep
+     the full G_BAR height and 2 fill the slot exactly; deeper lanes thin their
+     bars down to ~2 px rather than growing the strip, so the strip's height never
+     depends on how crowded the data is). Same row ⇒ no x overlap, different rows
+     ⇒ no y overlap, so no bar is ever behind another. Past G_ROW_MAX the
+     overflow shares the emptiest row and announces it in its tooltip. */
+    for (const g of groups) {
+      g.items.sort((a, b) => a.bx - b.bx || a.x1 - b.x1);
+      const ends = [];
+      for (const it of g.items) {
+        const free = ends.findIndex((e) => it.bx >= e);
+        if (free >= 0) it.row = free;
+        else if (ends.length < G_ROW_MAX) { it.row = ends.length; ends.push(-Infinity); }
+        else {          // past the cap: the emptiest row, ANNOUNCED rather than
+          it.row = ends.indexOf(Math.min(...ends));   // hidden
+          it.sharing = true; g.shared++;
+        }
+        ends[it.row] = it.x1 + GUT;
+      }
+      g.rows = ends.length;
+      // ONE bar height per lane, so a shared row can never make a short bar look
+      // like it ends where a longer one does — and the lane always fits its slot
+      g.h = g.rows ? Math.min(G_BAR, (G_SLOT - (g.rows - 1) * G_BAND_GAP) / g.rows) : 2;
+      g.items.forEach((it) => { it.h = g.h; });
+    }
+
+    /* 3 · lane chrome, sized to the lane's own rows and CENTRED in its slot (an
+     event-light lane and a packed one keep the same rhythm), on an alternating
+     ground with a hairline between lanes. An empty lane collapses to a 2 px rule
+     with NO label: the chips and the tabs already name every lane, and an
+     unlabelled rule keeps the label column — hence the time axis — as wide as
+     it can be. */
+    groups.forEach((g, i) => {
+      const y = i * (G_SLOT + G_GAP);
+      const h = g.rows ? g.rows * g.h + (g.rows - 1) * G_BAND_GAP : 2;
+      const by = y + (G_SLOT - h) / 2;
+      g.by = by;
+      mk('rect', { class: 'gm-lane' + (i % 2 ? ' gm-lane-alt' : '') + (g.rows ? '' : ' gm-lane-none'),
+                   x: LAB, y: by, width: W - LAB - G_RIGHT, height: h, rx: Math.min(2.5, h / 2) }, svg);
+      if (i) mk('line', { class: 'gm-lane-sep', x1: 0, x2: W - G_RIGHT,
+                          y1: y - G_GAP / 2, y2: y - G_GAP / 2 }, svg);
+      const short = TYPES[g.type].short;   // every lane in the strip is named, as on the chips
+      const t = mk('text', { class: 'gm-lane-lab' + (g.rows ? '' : ' none'),
+                             x: 0, y: y + G_SLOT / 2, dy: '.36em' }, svg);
+      t.textContent = laneName(short);
+      if (t.textContent !== short) mk('title', {}, t).textContent = short;   // ellipsis: full name on hover
+      else if (!g.rows) mk('title', {}, t).textContent = short + ' — nothing in this view';
+    });
+
+    /* 4 · bars. A lane deeper than G_ROW_MAX shares rows, so the sharing bars are
+     painted LAST (on top) with a hairline of the panel ground: geometrically one
+     can sit inside a longer bar, but it is never hidden behind it. */
+    for (const g of groups) {
+      for (const it of g.items.filter((i) => !i.sharing).concat(g.items.filter((i) => i.sharing))) {
+        const ev = it.ev;
         const isSel = sel.has(ev.id) || previewId === ev.id;
         const bar = mk('rect', {
-          class: 'gm-bar', 'data-id': ev.id, x: bx, y, width: bw, height: LANE_H, rx: 2,
-          style: `fill: var(--series-${TYPES[type].css})`,
-          opacity: isSel ? 1 : (anySel ? .18 : (tab !== 'all' && tab !== type ? .18 : .8)),
-          stroke: isSel ? 'var(--canvas)' : 'none', 'stroke-width': isSel ? 1 : 0,
+          class: 'gm-bar', 'data-id': ev.id, x: it.bx,
+          y: g.by + it.row * (g.h + G_BAND_GAP),
+          width: it.bw, height: it.h, rx: Math.min(2.5, it.h / 2),
+          style: `fill: var(--series-${TYPES[g.type].css})`,
+          opacity: isSel ? 1 : (anySel ? .18 : (tab !== 'all' && tab !== g.type ? .18 : .85)),
+          stroke: isSel ? 'var(--canvas)' : (it.sharing ? 'var(--paper)' : 'none'),
+          'stroke-width': isSel ? 1 : (it.sharing ? 0.75 : 0),
           cursor: 'pointer',
         }, svg);
-        mk('title', {}, bar).textContent = `${ev.title} — qualified ${fmtShort(q)}${evSpan(ev)}`;
+        mk('title', {}, bar).textContent = `${ev.title} — qualified ${fmtShort(it.q)}${evSpan(ev)}`
+          + (it.sharing ? ` · shares its row (${g.shared} past the ${G_ROW_MAX} rows this lane fits)` : '');
         bar.addEventListener('click', () => {
           if (!sel.has(ev.id)) sel.add(ev.id); else sel.delete(ev.id);
-          jumpTo(q);
+          jumpTo(it.q);
           writeUrl(true); render();
         });
       }
     }
-    // cursor: the current frame (G-23 lineage), 1px ink line spanning the lanes
+
+    /* 5 · cursor + time axis: the current frame is a 1 px ink line over the lanes
+     (G-23 lineage, still the topmost thing painted); ticks are Mondays when a
+     week is wide enough to tell them apart and month starts when it is not; month
+     names sit under the axis and never closer than 34 px. */
     const cx = x(tsToDate(raw.frames[idx]).getTime());
-    mk('line', { x1: cx, x2: cx, y1: 0, y2: H - AX + 3,
-                 style: 'stroke: var(--matte-black); stroke-width: 1; pointer-events: none' }, svg);
-    let lastLab = -1e9;
+    mk('line', { class: 'gm-cursor', x1: cx, x2: cx, y1: 0, y2: gridBot }, svg);
+    const weekly = pxDay * 7 >= 16;
     const d = new Date(t0);
     d.setUTCDate(d.getUTCDate() + 1); d.setUTCHours(0, 0, 0, 0);
-    for (; d.getTime() <= t1; d.setUTCDate(d.getUTCDate() + 1)) {
-      if (d.getUTCDate() !== 1) continue;
-      mk('line', { class: 'gm-tick', x1: x(d.getTime()), x2: x(d.getTime()), y1: TOP, y2: H - AX + 3 }, svg);
-      if (x(d.getTime()) - lastLab < 34) continue;
-      lastLab = x(d.getTime());
-      const t = mk('text', { x: x(d.getTime()) + 2, y: H - 3 }, svg);
-      t.textContent = d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    if (weekly) while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1);
+    else while (d.getUTCDate() !== 1) d.setUTCDate(d.getUTCDate() + 1);
+    let lastLab = -1e9;
+    for (; d.getTime() <= t1; weekly ? d.setUTCDate(d.getUTCDate() + 7) : d.setUTCMonth(d.getUTCMonth() + 1)) {
+      const tx = x(d.getTime());
+      const named = weekly ? d.getUTCDate() <= 7 : true;    // Mondays: label the first of the month
+      mk('line', { class: 'gm-tick' + (named || !weekly ? '' : ' minor'),
+                   x1: tx, x2: tx, y1: 0, y2: gridBot }, svg);
+      if (!named || tx - lastLab < 34) continue;
+      lastLab = tx;
+      mk('text', { class: 'gm-month', x: tx + 2, y: H - 3 }, svg)
+        .textContent = d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
     }
   }
 
