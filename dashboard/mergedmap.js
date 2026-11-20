@@ -1453,9 +1453,73 @@
     if (html === legHtml) return;              // same legend: no reflow per frame
     legHtml = html;
     leg.innerHTML = html;
-    // never display:none: the strip's height is a CLS reservation (styles.css
-    // #gm-legend:empty), and "all layers off" cannot happen anyway
+    // never display:none: an EMPTY strip keeps its CLS reservation (styles.css
+    // #gm-legend:empty) — a filled one is exactly as large as its rows — and
+    // "all layers off" cannot happen anyway
     leg.classList.remove('hidden');
+    legendHug();
+  }
+
+  /* A compact strip whose WHOLE natural row fits the card hugs its scales in
+     one row (round 1's fit-content promise: a strip that fits must not pad
+     out to the map column); one that does not fits the map column in equal
+     aligned grid columns — its edges are the map's. "wide" is the CSS's call
+     (the --lg-wide custom property, set by the same container query that
+     switches the layout); "fits one row" is arithmetic over the children's
+     NATURAL widths: head and stops are content-sized flex items, so they
+     keep their natural width even while the grid stretches their group box.
+     The inline track list (repeat(<items>, max-content)) only ever lands on
+     the compact wide grid — every other state clears it. Runs on legend
+     rebuilds and on container resizes, never per animation frame. */
+  function legendHug() {
+    const leg = $('#gm-legend');
+    if (!leg) return;
+    const groups = leg.querySelectorAll('.lg-group');
+    let single = false;
+    if (groups.length && leg.classList.contains('compact')
+        && getComputedStyle(leg).getPropertyValue('--lg-wide').trim() === '1') {
+      const cs = getComputedStyle(leg);
+      const px = (v) => parseFloat(v) || 0;
+      const colGap = px(cs.columnGap);           // between the strip's items
+      const headGap = px(getComputedStyle(groups[0]).columnGap);   // head|ramp
+      let need = px(cs.paddingLeft) + px(cs.paddingRight);
+      leg.querySelectorAll(':scope > *').forEach((el) => {
+        const head = el.querySelector('.lg-head');
+        const stops = el.querySelector('.lg-stops');
+        need += head && stops ? head.getBoundingClientRect().width + headGap
+                              + stops.getBoundingClientRect().width
+          : el.getBoundingClientRect().width;
+      });
+      need += colGap * (leg.children.length - 1);
+      single = need <= leg.clientWidth + 1;
+    }
+    leg.classList.toggle('hug', single);
+    // a wrapped compact strip lays its lanes in k PAIRS of `label | swatches`
+    // tracks (each group a subgrid over its pair), so every row's swatches start
+    // at the same x within a column; the toggle rides in the reserved top-right
+    // corner instead of opening a row of its own
+    let cols = 0;
+    const toggle = leg.querySelector(':scope > .lg-toggle');
+    if (!single && groups.length > 1 && leg.classList.contains('compact')
+        && getComputedStyle(leg).getPropertyValue('--lg-wide').trim() === '1') {
+      const px = (v) => parseFloat(v) || 0;
+      const cs = getComputedStyle(leg);
+      const gap = px(cs.columnGap);
+      let head = 0, stops = 0;
+      groups.forEach((g) => {
+        head = Math.max(head, g.querySelector('.lg-head').getBoundingClientRect().width);
+        stops = Math.max(stops, g.querySelector('.lg-stops').getBoundingClientRect().width);
+      });
+      const reserve = toggle ? toggle.getBoundingClientRect().width + 16 : px(cs.paddingRight);
+      const avail = leg.clientWidth - px(cs.paddingLeft) - reserve;
+      cols = Math.max(1, Math.min(groups.length,
+        Math.floor((avail + gap) / (head + stops + 2 * gap))));
+      leg.style.paddingRight = reserve + 'px';
+    } else leg.style.paddingRight = '';
+    leg.classList.toggle('cols', cols > 0);
+    leg.style.gridTemplateColumns = single
+      ? `repeat(${leg.children.length}, max-content)`
+      : (cols ? `repeat(${cols}, max-content minmax(max-content, 1fr))` : '');
   }
 
   /* ---------------- boot ---------------- */
@@ -1606,7 +1670,9 @@
       let raf = 0;
       new ResizeObserver(() => {
         cancelAnimationFrame(raf);
-        raf = requestAnimationFrame(() => { if (mounted) { fitProjection(); render(); } });
+        raf = requestAnimationFrame(() => {
+          if (mounted) { fitProjection(); render(); legendHug(); }
+        });
       }).observe($('#raw-map-wrap'));
     }
   }
