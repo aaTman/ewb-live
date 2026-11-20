@@ -4023,3 +4023,12 @@ EWB_DATA_PREP_DIR: see the DONE entry in the PR (2 known box-dependent failures
 expected). Branch fix/e2e-first-screen-gantt-a11y -> develop; NOT merged, NOT
 deployed. Screenshots: notes/screenshots/firstscreen-{1440,390}-{light,dark}.png
 (gitignored, not committed).
+
+## [scoring-wp0] 2026-11-20 20:58 UTC — WP0 pilot started (scoring design 8.2)
+
+Worktree branch `feat/scoring-pilot` off `origin/develop` (9869d5c). Tracker prototype + smoke test
+committed locally (`ewb_live/tools/track_pilot.py`, `tests/test_track_pilot_smoke.py`, 11 passed).
+Smoke runs on the LXC work (store reads ~1 s per init for 41 leads; `ifs_hres` direct 26-40 s per init).
+Launching the 4-worker pilot (Polo + longest-lived MLC, 8 store models + ifs_hres) under the pilot guard
+(weekly service inactive, not Monday 06-14 UTC), code in `/opt/ewb-pilot/code`, output in `/opt/ewb-pilot/out`;
+live `data/` is read-only, nothing is written to `/opt/ewb-live`.
