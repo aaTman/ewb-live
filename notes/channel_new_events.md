@@ -3746,3 +3746,63 @@ Branch `feat/round3-compress-tracks-freeze` (from `chore/integrate-lane-fixes`).
 - PR: https://github.com/aaTman/ewb-live/pull/4 (base develop, head afc41b8)
 
 ## [visual-tracks] — DONE
+
+## [visual-legend] 2026-11-20 02:10 UTC — the colour-scale card now hugs its scales
+
+Owner 2026-11-19: "the box/card holding the color scales is misaligned and too
+large relative to the color scales". Measured on develop `b652904` against a
+read-only mirror of the box's published data (the before/after A/B below is the
+same code and the same data with only `dashboard/styles.css` swapped):
+
+| state | card before | card after | the hole, before |
+|---|---|---|---|
+| compact, 1440 | 698 x 48 | 537 x 35 | **179 px** dead in front of the `Scales` button, 13.5 px above and below the row |
+| compact, 1024 | 976 x 48 | 537 x 35 | **457 px** in front of the button |
+| expanded, 1024 | 976 x 48 | 764 x 46.5 | **232 px** in front of the button |
+| expanded, 390 | 358 x 161.5 | 259 x 164.5 | **108 px** right of the last swatch |
+| one lane (AR tab), 1440 / 1024 | column-wide | 9/9/7/7 slack | **448 / 726 px** right of the ramp, 8.8/6.8 top/bottom |
+| one lane, 390 / 320 | column-wide | 9/9/7/7 slack | 108/38 px right and **77.5 px** below |
+
+Layout only — colours, stops, labels, units, titles and `renderLegend`'s output
+untouched (`dashboard/styles.css`):
+
+* `width: fit-content; max-width: 100%` — the card is as wide as the row it lays
+  out and never wider than the map column.
+* height = its rows + 6 px padding; no `min-height` on a filled strip. The EMPTY
+  strip keeps the CLS reservation (`#gm-legend:empty`, 35 px in the one-row
+  layout, the stacked height below a 680 px map column), so a lane appearing at
+  first paint still cannot nudge the timeline.
+* `.lg-toggle` is a row item (`order: 99`), not `margin-left: auto`.
+* compact now takes the SAME direction as the labelled strip (one row at
+  >=680 px map columns, one lane per row below) — that is what kills the ragged
+  right hole on phones. Trade, measured: the compact card at 390 is 133 px tall
+  instead of 81 and 184.6 px wide instead of 358; still shorter than the 162 px
+  labelled strip it replaces.
+* compact `.lg-none` -6 -> -4 px: -6 was measured against the 48 px fixed-height
+  card, which pushed the lane row 13.5 px down; with the card hugging its rows
+  -6 would leave the pill 1 px from the top border (it now sits 3 px below it).
+
+After (64 measurements: 320/390/1024/1440 x light/dark x compact/expanded/`none
+in view`/one-lane): left edge = map AND timeline left edge (delta 0 everywhere);
+slack to the union of the children 9/9/7/7 px; 0 px horizontal overflow; every
+lane fully inside; the pill never escapes the card. One state is over the 12 px
+budget: 1440 expanded, 27.8 px right — three labelled ramps plus the toggle need
+745 px in a 698 px column, so the row wraps and the card legitimately fills the
+column (its right edge is then the map's right edge). No CSS can hug the widest
+line of a wrapped flex container, so the test asserts that trade explicitly.
+
+Tests: the "strip height is fixed per layout" assert becomes height = content
+(what sits below rides the strip's own height delta, +/-1 px), and
+`test_legend_card_hugs_its_scales_and_aligns_with_the_map` locks the left-edge
+alignment and the 12 px slack budget in both themes from 320 up. Legend e2e 7/7;
+`test_chips_fe.py` 12 passed / 1 skipped; `test_dashboard_fe.py` 46/50 and
+tracklane+trackviz+trackwind+guardian 96/102 — the 4 and 6 failures are all the
+`#detail-viz` detail-modal family, which fail identically at the base commit on
+this host because the box publishes no `viz.json` (HTTP 204). Units that read
+the dashboard files 23/23; the full 620-test unit suite is pipeline compute this
+checkout has no stores for and this PR changes no Python. Harness (gitignored):
+`tmp/vl_server.py` mirrors the box's published data on :8062 and answers 204 for
+unpublished artefacts the way the box does, `tmp/legend_probe.py` +
+`tmp/legend_hole.py` take the measurements and shots, which are in
+`/home/orca/orca/workspaces/ewb-live/screenshots/visual-legend/` (not in the
+repo, owner 2026-11-20).

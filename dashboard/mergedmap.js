@@ -1158,8 +1158,9 @@
     if (html === legHtml) return;              // same legend: no reflow per frame
     legHtml = html;
     leg.innerHTML = html;
-    // never display:none: the strip's height is a CLS reservation (styles.css
-    // #gm-legend:empty), and "all layers off" cannot happen anyway
+    // never display:none: an EMPTY strip keeps its CLS reservation (styles.css
+    // #gm-legend:empty) — a filled one is exactly as large as its rows — and
+    // "all layers off" cannot happen anyway
     leg.classList.remove('hidden');
   }
 
