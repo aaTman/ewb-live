@@ -20,9 +20,12 @@ Owner rule, 2026-11-10. Supersedes, in order:
 The short version is in SPEC §2. Mechanics, in the order the tracker applies them
 (`ewb_live/events/event_tracker.py`, all thresholds in its `Params` dataclass):
 region grouping (closing + local density) → candidate at 50 k km² → event at 200 k
-km² of footprint → box that grows with the footprint (drift ≤ 8 cells/day, ≥ 50 %
-overlap of the smaller side, older events claim first) → end when the **core** (valid
-every day since the start, measured inside the day-3 **anchor box**) holds < 100 k km².
+km² of footprint → footprint that only ever grows over **valid** cells within
+8 cells/day of what it holds (2026-11-20 rule, below) → end when the **core**
+(valid every day since the start, measured inside the day-3 **anchor box**)
+holds < 100 k km². What a scan *publishes* as the event rectangle is not the
+tracker box but the **persistence box** (bbox of the cells valid on ≥ half the
+event's days, area-weighted 2–98 % trimmed).
 
 The two ideas that actually buy something over the pad rule:
 
@@ -39,6 +42,52 @@ The two ideas that actually buy something over the pad rule:
 own `params` block): seed 50 000 km², qualify 200 000 km², end 100 000 km², min_days 3,
 max_ramp_days 5, region_radius 6, region_min_fraction 0.3, move_cells 8, min_overlap
 0.5, join_area 10 000 km², anchor_day 3, max_box_area None.
+
+## The 2026-11-20 box-size change (strategy `C3_valid_box_persist`)
+
+Owner complaint: heat-wave boxes were far bigger than the cells that qualify —
+the median published box was 3.80 M km² with 1.23 M km² of ever-qualifying
+land inside (fill 0.52, daily fill 0.24, box 4.9× the event's own biggest day;
+`notes/heatwave_box_diagnosis.md` carries the attribution: 52 % whole-region
+claims, 32 % merge box-unions, 11 % drift hops). Three tracking knobs and one
+publish rule (`Params` fields; each stays reachable via explicit params, so
+the old rule is reproducible):
+
+* `claim_valid_only` — a claimed region continues an event only for its valid
+  cells within `move_cells` of the cells the event holds; the rest of the
+  region stays free and may seed its own candidate (the reference port's
+  `share = isin(labels, hits)` became `share = isin(labels, hits) & valid &
+  dilate(footprint, move_cells)`; kills H3/H4/H5 growth).
+* `seed_valid_only` — a candidate's first footprint/box is the region's valid
+  cells, never its closing-filled bridge cells.
+* `merge_keep_box` — the older object keeps its box on a merge; the group's
+  claimed cells are clipped into it. A merge never unions two boxes.
+* `publish_box="persistence"` (+ `publish_min_fraction=0.5`, `publish_trim=0.02`)
+  — the published Event bbox is `persistence_box()`: the bbox of the cells
+  valid on ≥ `max(2, ⌈0.5 × days⌉)` days, trimmed to their area-weighted 2–98 %
+  range (fallback: the ever-valid bbox). The tracker box keeps its
+  follow/claim/anchor role and is reported in `details.tracker_box_area_km2`
+  next to `published_box_area_km2`, `fill` and `daily_fill`.
+
+The flood lane (`FloodParams`) pins the tracking knobs to the shipped rules —
+the change was designed and measured for heat/freeze only.
+
+Measured on the live window (LXC replay, `scripts/review/hb01_box_growth.py`;
+see `notes/heatwave_box_diagnosis.md` §4 and "Implementation result"): heat
+fill median 0.52 → 0.79, daily fill 0.24 → 0.43, box median 3.80 → 1.11 M km²,
+max 61.6 → 19.5 M km²; freeze fill 0.46 → 0.80, box median 2.69 → 0.86 M km².
+Event membership genuinely changes (a continent-wide belt comes back as one
+object per hot region: ~48/162 heat spells get no matched successor), the
+published ids re-hash once (the bbox is in `make_event_id`), and every
+scoring region shrinks — so the release rebuilds `events.json`, the id-keyed
+score cache and the scorecard together.
+
+The re-hash is a one-time cost, not a weekly one: the heat/freeze id now
+hashes the **anchor bbox** (frozen day-3 box) rather than the published box,
+so an ongoing event keeps its id while its persistence box is redrawn
+(`scripts/review/hb04_ongoing_ids.py`: hashing the published box re-keyed
+6/8 ongoing spells per week, the anchor basis keeps them; `select.py`'s
+merged ids and the other lanes are unchanged).
 
 ## Port layout
 
@@ -88,10 +137,12 @@ sides read identical bytes.
 
 * **Region chaining can make one giant object.** `region_radius` = 6 cells closes gaps of
   1.5°, which can chain the Sahara–Arabia–India p85 belt into one event: the window's
-  largest footprint is 8.4 M km² and its box spans 30° of latitude. The knob is
-  `Params.max_box_area_km2` (a cap stops growth and leaves the rest of the region to a
-  neighbour event — covered by `tests/test_event_tracker.py`), or a smaller
-  `region_radius`. Reference-faithful default is no cap.
+  largest footprint is 8.4 M km² and its box spans 30° of latitude. Since 2026-11-20 the
+  claim rule bounds the damage (an event only grows over valid cells it can reach, and a
+  merge cannot paint a partner's box over it), so the belt comes back as several
+  region-sized objects; `Params.max_box_area_km2` (a cap stops growth and leaves the rest
+  of the region to a neighbour event — covered by `tests/test_event_tracker.py`) and a
+  smaller `region_radius` remain as cranks. Reference-faithful default is still no cap.
 * **12 of 15 freeze slots** are now filled by percentile-relative freezes (peak values
   3–19 °C in desert regions, which SPEC §2 already documents as legitimate). If the
   dashboard should not spend a fifth of its cards on those, that is a curation-floor

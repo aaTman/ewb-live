@@ -116,12 +116,34 @@ def score_event(event: Event, models: list[str]) -> pd.DataFrame
      labelled with 8-connectivity.
   2. **Candidate:** a region whose valid area reaches **50 000 km²** (`seed_area_km2`) starts a candidate on its first qualifying day; a candidate must reach the qualify floor within `max_ramp_days`=5 days or it is dropped.
   3. **Qualify:** the candidate becomes an **event** on the first day its *footprint* covers **200 000 km²** (`qualify_area_km2`) — `details.qualified_date`. The event's `start` stays the candidate's first day, so ramp-ups keep early start dates.
-  4. **Box:** the event box is the bbox of everything its footprint has covered, so it grows with the event (no fixed pad, no per-iteration expansion). The footprint may claim new region cells within `move_cells`=8 cells/day of what it already holds, and only where the region is claimed by nobody or overlaps an existing event's box by >= `min_overlap`=0.5 of the smaller side; older events claim first. `max_box_area_km2` (default `None`) caps growth where an owner wants smaller objects.
-  5. **End:** the **core** — the cells valid on *every* day since the event began, counted inside the **anchor box** (the box as it stood on day 3, `anchor_day`) — must hold >= **100 000 km²** (`end_area_km2`). Below that the event closes and that day is not part of it. This is what ends permanent-belt spells physically (longest in the live window: 33 days over central Africa) without a duration cap; `end` is exclusive.
-  An event still open at the end of the scan window is `ongoing` and keeps its start date across runs. `min_days`=3 is a detection floor (a shorter spell is not an event). Because 31-day caps are gone, the publish-gate ceiling is `validate.MAX_DURATION_DAYS = 45` (and `select.MAX_MERGED_DAYS`), above the longest real spell and below nonsense.
+  4. **Footprint (claim rule; revised by owner 2026-11-20, `notes/heatwave_box_diagnosis.md`).**
+     The footprint is a set of *valid* cells — cells that pass the daily rule that day —
+     never closing-filled cells. A labelled region continues an event only for the part
+     of it that is valid **and** within `move_cells`=8 cells of the cells the event
+     already holds; the rest of the region stays free and may seed its own candidate.
+     A new candidate's first box is the bbox of the region's **valid** cells. Follow and
+     order are otherwise unchanged: a region continues an event only where it overlaps
+     the drifted footprint by >= `min_overlap`=0.5 of the smaller side, older events
+     claim first, and when two objects reach the same cells the older keeps them **and
+     its own box** — a merge clips the younger object into the older box and never
+     unions two boxes (`max_box_area_km2`, default `None`, remains an optional cap on
+     box growth). The **tracker box** is still the bbox of everything its footprint has
+     covered, growing and never shrinking: it is the follow/claim/seeding geometry and
+     the anchor's search area, not the published rectangle.
+  5. **Published box (what the dashboard draws and the scorer scores).** The Event
+     `bbox` is the **persistence box**: the bbox of the cells valid on at least
+     `publish_min_days` = max(2, ⌈0.5 × duration⌉) of the event's days
+     (`publish_min_fraction`=0.5), trimmed to the area-weighted 2–98 % latitude/longitude
+     quantiles of that mask (`publish_trim`=0.02; fallback: the bbox of every valid cell
+     the event ever held). The tracker box is reported in `details.tracker_box_area_km2`
+     next to `published_box_area_km2`, `fill` (the share of the published box's land that
+     was a qualifying cell on some event day) and `daily_fill` (that share on a typical
+     single day).
+  6. **End:** the **core** — the cells valid on *every* day since the event began, counted inside the **anchor box** (the box as it stood on day 3, `anchor_day`) — must hold >= **100 000 km²** (`end_area_km2`). Below that the event closes and that day is not part of it. This is what ends permanent-belt spells physically (longest in the live window: 33 days over central Africa) without a duration cap; `end` is exclusive.
+  An event still open at the end of the scan window is `ongoing` and keeps its start date across runs. The published id hashes `(type, start, anchor bbox)` — the tracker box as it stood on day 3, frozen for the event's life — so an ongoing event keeps its id across weekly runs while its start does, even as its persistence box is redrawn (2026-11-20, measured in `scripts/review/hb04_ongoing_ids.py`: hashing the published box instead re-keyed 6/8 ongoing spells per week vs 2/5 shipped; lanes with `anchor_day=None` hash the published bbox, and curation-merged ids in `select.py` keep hashing the merged bbox). `min_days`=3 is a detection floor (a shorter spell is not an event). Because 31-day caps are gone, the publish-gate ceiling is `validate.MAX_DURATION_DAYS = 45` (and `select.MAX_MERGED_DAYS`), above the longest real spell and below nonsense.
   **Mask source:** the daily masks are read from the published `raw_exceedance` frames (four steps ANDed; `ewb_live/events/frame_masks.py`) whenever the lane spans the window and the active clip is the lane's owb p85/p15, so detection cannot drift from what the map paints or from `qualified_at`; otherwise ERA5 ARCO is streamed through the upstream helpers. Daily-mean temperatures for `peak_value` come from the local ERA5 mirror on the same grid (`_mirror_t2m_daily`), per event when the mirror cannot serve the window.
   `qualified_at` scans frames from `details.qualified_date` onwards, so a grown box cannot qualify an event before its own footprint reached the floor.
-  Per-event provenance is published in `details`: `qualified_date`, `duration_days`, `ongoing`, `footprint_area_km2`, `box_area_km2`, `core_area_km2`, `anchor_box`, `mask_source`, `peak_area_km2`, `tracker_params`, `detection`.
+  Per-event provenance is published in `details`: `qualified_date`, `duration_days`, `ongoing`, `footprint_area_km2`, `box_area_km2`, `core_area_km2`, `anchor_box`, `mask_source`, `peak_area_km2`, `tracker_box_area_km2`, `published_box_area_km2`, `fill`, `daily_fill`, `tracker_params`, `detection`.
 
 ### 3. `ewb_live/pipeline.py` (owner: agent `ewb`, integration later)
 `python -m ewb_live.pipeline --days 90` → writes:

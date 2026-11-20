@@ -392,18 +392,50 @@ def replay(w: Window, params: Params, **tweaks: Any) -> list[Spell]:
     return out
 
 
+def _evkey(ev):
+    """Identity of a tracked event for the shipped-vs-tuned comparisons."""
+    return (ev.id, str(ev.start), str(ev.end),
+            (ev.box.i0, ev.box.i1, ev.box.j0, ev.box.j1))
+
+
 def selfcheck(w: Window, params: Params) -> bool:
-    """With all flags off the tuned tracker must equal the shipped tracker."""
+    """With all flags off the tuned tracker must equal the pre-C3 shipped one.
+
+    Production ``Params()`` is C3 since 2026-11-20 (SPEC §2), so the shipped
+    side of the comparison pins those knobs off - exactly how the S0 row
+    replays the old rule.
+    """
     from ewb_live.events.event_tracker import track_events
 
-    key = lambda ev: (ev.id, str(ev.start), str(ev.end),  # noqa: E731
-                      (ev.box.i0, ev.box.i1, ev.box.j0, ev.box.j1))
-    ref = [key(ev) for ev in track_events(w.mask, w.dates, w.cell_area,
-                                          params, w.hazard)]
-    mine = [key(ev) for ev in replay_raw(w, params)]
+    legacy = replace(params, claim_valid_only=False, seed_valid_only=False,
+                     merge_keep_box=False)
+    ref = [_evkey(ev) for ev in track_events(w.mask, w.dates, w.cell_area,
+                                             legacy, w.hazard)]
+    mine = [_evkey(ev) for ev in replay_raw(w, params)]
     ok = ref == mine
     print(f"selfcheck {w.hazard}: {'PASS' if ok else 'FAIL'} "
           f"({len(ref)} shipped vs {len(mine)} tuned events)", flush=True)
+    return ok
+
+
+def prodcheck(w: Window, params: Params) -> bool:
+    """Production defaults (the C3 knobs) must reproduce the tuned C3 tracking.
+
+    The C3 row of the table is the TunedTracker with claim_overlap +
+    seed_valid_only + merge_keeps_older_box; the shipped Tracker now carries
+    the same rules as Params defaults - this asserts they agree event-for-event
+    on the live lane, so the table row *is* what the next production run does.
+    """
+    from ewb_live.events.event_tracker import track_events
+
+    ref = [_evkey(ev) for ev in track_events(w.mask, w.dates, w.cell_area,
+                                             params, w.hazard)]
+    mine = [_evkey(ev) for ev in replay_raw(w, params, claim_overlap=True,
+                                            seed_valid_only=True,
+                                            merge_keeps_older_box=True)]
+    ok = ref == mine
+    print(f"prodcheck {w.hazard}: {'PASS' if ok else 'FAIL'} "
+          f"({len(ref)} production-C3 vs {len(mine)} tuned-C3 events)", flush=True)
     return ok
 
 
@@ -910,7 +942,7 @@ def main() -> int:
               f"land {w.cell_area[w.land].sum() / 1e6:.1f}M km2 "
               f"({100 * w.cell_area[w.land].sum() / w.cell_area.sum():.0f}%)",
               flush=True)
-        if a.selfcheck and not selfcheck(w, params0):
+        if a.selfcheck and not (selfcheck(w, params0) and prodcheck(w, params0)):
             return 1
         t0 = time.perf_counter()
         base_spells = replay(w, params0)

@@ -30,17 +30,19 @@ import datetime as dt
 import sys
 from pathlib import Path
 
-import numpy as np
+_HERE = Path(__file__).resolve()
+sys.path.insert(0, str(_HERE.parents[2]))     # the scratch checkout's ewb_live,
+                                              # not the production one
 
-from ewb_live.events import frame_masks
-from ewb_live.events.event_tracker import (
+from ewb_live.events import frame_masks  # noqa: E402
+from ewb_live.events.event_tracker import (  # noqa: E402
     Params,
     persistence_box,
     persistence_k_days,
     track_events,
 )
-from ewb_live.events.temperature import _cell_area_km2
-from ewb_live.events.types import make_event_id, normalize_lon_180
+from ewb_live.events.temperature import _cell_area_km2  # noqa: E402
+from ewb_live.events.types import make_event_id, normalize_lon_180  # noqa: E402
 
 RULESETS = {
     "shipped": dataclasses.replace(Params(), claim_valid_only=False,
@@ -143,10 +145,10 @@ def main() -> int:
     for win in (win1, win2, win2s):
         assert len(win) >= 14, "lane does not cover both windows"
     for name, params in RULESETS.items():
-        def run(sel):
+        def run(sel, prm=params):
             sel = list(sel)
             return published([dates[i] for i in sel], mask_all[sel],
-                             cell_area, lats, lons, params)
+                             cell_area, lats, lons, prm)
         w1 = run(win1)
         print(f"== {name} | W1 {a.start}..{a.end} ({len(w1)} events) | "
               f"W2 {a.start}..{e2} | W2s {a.start + dt.timedelta(days=7)}..{e2}",

@@ -289,3 +289,37 @@ def test_scan_publishes_the_persistence_box_with_fill(tmp_path, monkeypatch):
     assert det["fill"] == 1.0
     assert det["daily_fill"] == 0.8
     assert validate_event(e) == []
+
+
+def test_scan_id_survives_the_published_box_moving(tmp_path, monkeypatch):
+    """SPEC §2: an ongoing event keeps its id across runs (anchor-bbox basis).
+
+    The same lane scanned twice - W1 through day 2 (spell still open) and W2
+    through day 4 (spell finished). The persistence box is redrawn as the
+    spell lengthens (its k-day threshold grows), but the id hashes the frozen
+    day-3 anchor box, so the spell keeps its id; the published bbox differs.
+    """
+    monkeypatch.setattr(temperature, "_event_temp_stats", _stats)
+    days = {}
+    for k in range(5):
+        d = D0 + dt.timedelta(days=k)
+        m = np.zeros((NY, NX), bool)
+        if k < 4:                       # 6-col patch drifting 1 col/day
+            m[ROWS, slice(3 + k, 9 + k)] = True
+        for h in frame_masks.HOURS:
+            days[(d, h)] = (m, np.zeros((NY, NX), bool))
+    root = _write_lane(tmp_path / "idem", days)
+    w1 = temperature.scan_temperature_events(D0, D0 + dt.timedelta(days=2),
+                                             "heat_wave", frames_dir=root,
+                                             params=PARAMS)
+    w2 = temperature.scan_temperature_events(D0, D0 + dt.timedelta(days=4),
+                                             "heat_wave", frames_dir=root,
+                                             params=PARAMS)
+    assert [e.details["ongoing"] for e in w1] == [True]
+    assert [e.details["ongoing"] for e in w2] == [False]
+    assert w1[0].id == w2[0].id
+    assert w1[0].start == w2[0].start == dt.datetime(2026, 9, 1)
+    assert w1[0].details["anchor_box"] == w2[0].details["anchor_box"]
+    assert w1[0].bbox == pytest.approx((LATS[2], LATS[6], LONS[4], LONS[9]))
+    assert w2[0].bbox == pytest.approx((LATS[2], LATS[6], LONS[4], LONS[10]))
+    assert validate_event(w1[0]) == [] and validate_event(w2[0]) == []

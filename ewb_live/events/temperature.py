@@ -554,9 +554,25 @@ def scan_temperature_events(
         if ev.start == dates[0]:
             # the tracker cannot see before the first day it has masks for
             details["window_start_truncated"] = True
+        # Stable identity (2026-11-20): the id hashes the ANCHOR bbox (the
+        # tracker box as it stood on day 3, frozen for the event's life), not
+        # the published box. The persistence box is redrawn as an ongoing
+        # spell grows - hashing it would re-key ~3/4 of ongoing events every
+        # weekly run (measured 6/8 vs 2/5 shipped,
+        # scripts/review/hb04_ongoing_ids.py) - while start and anchor do not
+        # move, so an ongoing event keeps its id/URL/score-cache lineage while
+        # it is alive. anchor_day=None falls back to hashing the published
+        # box (the pre-2026-11-20 rule).
+        id_box = ev.anchor if ev.anchor is not None else pub_box
+        id_bbox = (
+            float(lats[id_box.i0]),
+            float(lats[id_box.i1]),
+            normalize_lon_180(float(lons[id_box.j0])),
+            normalize_lon_180(float(lons[id_box.j1])),
+        )
         out.append(
             Event(
-                id=make_event_id(event_type, start_dt, bbox),
+                id=make_event_id(event_type, start_dt, id_bbox),
                 event_type=event_type,
                 title=f"{event_type.replace('_', ' ').title()} {ev.start} to {last}",
                 start=start_dt,
