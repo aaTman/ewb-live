@@ -1026,9 +1026,12 @@ nav.controls .dd .dd-body {
 .gm-note[hidden] { display: none; }
 /* Adaptive colour scales (mergedmap.js renderLegend): a slim key strip BELOW
    the map (owner complaint 2026-11-11: the in-map panel hid a quarter of the
-   map). Its height is FIXED for a given width — content changing (layer
-   toggles, the frame under the slider, the Region view) can never move the
-   timeline or the cards below. Wide containers: one row. Narrow containers
+   map). The card HUGS the scales it holds (owner 2026-11-19: "the box/card
+   holding the color scales is misaligned and too large relative to the color
+   scales"): width: fit-content up to the map column, height = its rows + 6px
+   of padding, so there is no dead air to the right of the last swatch or
+   below the last row, and its left edge is the map/timeline left edge.
+   Wide containers: one row. Narrow containers
    (container query on #global-sec, so it follows the MAP column, not the
    viewport): lanes stack one per row — no horizontal scroll at any width
    from 320 up, nothing hidden behind a scrollbar nobody discovers. Every
@@ -1039,12 +1042,16 @@ nav.controls .dd .dd-body {
 #global-sec { container-type: inline-size; }
 #gm-legend { display: flex; flex-direction: column; align-items: flex-start;
   gap: 3px; overflow-x: visible;
-  margin-top: 8px; padding: 5px 8px 4px; min-height: 116px;
+  margin-top: 8px; padding: 6px 8px;
+  width: fit-content; max-width: 100%;
   background: var(--bg-panel); border: 1px solid var(--border);
   border-radius: 6px; }
-/* height is reserved while empty (CLS contract with the reservations below);
-   it only paints chrome once it paints content */
-#gm-legend:empty { visibility: hidden; border-color: transparent; background: none; }
+/* While EMPTY the strip is only a reservation (CLS: nothing below it may
+   jump when the first frame paints); the reservation is the height the
+   settled compact strip measures at that width, so filling it is a no-op.
+   It paints no chrome until it paints content. */
+#gm-legend:empty { visibility: hidden; border-color: transparent; background: none;
+  min-height: 116px; }
 .gm-legend .swatch { width: 20px; height: 10px; border: 1px solid var(--border-strong);
   border-radius: 2px; display: block; }
 /* one group per lane: stacked name+unit, then the ramp of stops to its right */
@@ -1094,11 +1101,12 @@ nav.controls .dd .dd-body {
 .lg-group.none .swatch { opacity: .32; }
 @container (min-width: 680px) {   /* one row when the map column can hold all three lanes */
   #gm-legend { flex-direction: row; align-items: center; gap: 20px;
-    min-height: 48px; padding: 6px 8px 4px;
+    padding: 6px 8px;
     /* a track lane adds a group; the strip still NEVER scrolls horizontally
        (test_legend_never_hides_a_lane_behind_a_scroll), it wraps instead — the
        only promise a fourth lane can keep without hiding a colour */
     flex-wrap: wrap; row-gap: 4px; }
+  #gm-legend:empty { min-height: 35px; }   /* one settled compact row */
   .lg-bin.prov { width: auto; }
   .lg-bin.prov .lg-t { display: none; }   /* the dither texture + its title carry it in one row */
   /* one row has no vertical air between the lanes: a hairline divider keeps
@@ -1109,13 +1117,17 @@ nav.controls .dd .dd-body {
 }
 
 /* COMPACT legend (default whenever 3+ lanes share the strip — owner 2026-11-19,
-   first-screen budget): lane name + its colour swatches on ONE wrapped line,
-   numbers/units hidden (every swatch and group keeps its title; the "Scales"
-   control restores the labelled ramps). Same at every width — it wraps, it
-   never scrolls. */
-#gm-legend.compact { flex-direction: row; flex-wrap: wrap; align-items: center;
-  gap: 4px 18px; min-height: 48px; padding: 5px 8px; }   /* = the one-lane strip's height: a tab switch never moves what is below */
-#gm-legend.compact .lg-group { flex-wrap: nowrap; gap: 6px; }
+   first-screen budget): lane name + its colour swatches on one line, numbers
+   and units hidden (every swatch and group keeps its title; the "Scales"
+   control restores the labelled ramps). Direction comes from the same rule as
+   the labelled strip — one row when the map column can hold it (>=680px), one
+   lane per row below that — so the card hugs its widest row at EVERY width
+   instead of padding out to the map column: at 390 the labelled strip filled
+   the 358px column with 108px of it empty right of the last swatch, and a
+   one-lane strip left 448px (1440) / 726px (1024) of hole. It wraps/stacks,
+   it never scrolls, and the card is exactly as tall as its rows. */
+#gm-legend.compact { gap: 4px 18px; padding: 6px 8px; }
+#gm-legend.compact .lg-group { gap: 6px; }
 #gm-legend.compact .lg-head { display: block; }
 #gm-legend.compact .lg-unit, #gm-legend.compact .lg-t { display: none; }
 #gm-legend.compact .lg-stops { flex-wrap: nowrap; gap: 2px; }
@@ -1125,14 +1137,27 @@ nav.controls .dd .dd-body {
 #gm-legend.compact .lg-group[data-track] .lg-bin.wide { width: auto; margin-left: 0; }
 #gm-legend.compact .swatch { width: 14px; }
 #gm-legend.compact .swatch.lg-line { width: 18px; }
-#gm-legend.compact .lg-none { top: -6px; }
-.lg-toggle { order: 99; margin-left: auto; padding: 1px 8px; border-radius: 999px;
+/* -6px was measured against a card that carried 48px of fixed height, which
+   pushed the lane row 13.5px below the border. With the card hugging its rows
+   the lane row sits at the padding edge, and -6 would leave the pill 1px from
+   the top border — -4 keeps the same relationship to the swatches and clears
+   the border (measured: pill 3px below the card's top edge). */
+#gm-legend.compact .lg-none { top: -4px; }
+/* the "Scales" control is one of the strip's items, not a thing pinned to the
+   card's right edge: `margin-left:auto` left a 179px hole between the last
+   lane and the button at 1440 (457px at 1024), which is what made the card
+   read as half-empty even once the card itself hugged its content. It rides LAST at every width
+   and alignment, so it never jumps position across the compact/expanded and
+   row/stacked states; it sits on the lanes' centre line in a row and flush
+   left when the strip stacks. */
+.lg-toggle { order: 99; align-self: flex-start; padding: 1px 8px; border-radius: 999px;
   font: 400 var(--text-2xs)/1.6 var(--font-sans); letter-spacing: .04em; color: var(--ink-secondary); }
-#gm-legend:not(.compact) .lg-toggle { order: 0; align-self: flex-start; margin-left: 0; }
 @media (pointer: coarse), (max-width: 479px) {
   .lg-toggle { min-height: 44px; min-width: 44px; padding: 0 12px; }
 }
-@container (min-width: 680px) { #gm-legend:not(.compact) .lg-toggle { margin-left: auto; align-self: center; order: 99; } }
+@container (min-width: 680px) {
+  .lg-toggle { align-self: center; }
+}
 
 /* base map primitives live in the canvas paint — see mergedmap.js drawBase */
 

@@ -1836,14 +1836,18 @@ def test_flood_chip_isolates_raw_layers(flood_server, page_ctx):
     assert errs == [], errs
 
 
-def test_legend_sits_below_the_map_and_never_moves_the_page(dur_server, page_ctx):
-    """New contract (2026-11-11 redesign): the colour scales are an in-flow
-    strip BELOW the map — outside #raw-map-wrap, never covering the canvas.
-    Its height is fixed per layout, so content changes (a lane off through
-    the tabs, a Region view) never move what sits below the strip: the map
-    box, the slider and the gantt keep their exact rectangles. (The event
-    list and the scorecard DO reflow on a tab change — that is the tabs'
-    own page-wide filter contract, not the strip's layout.)"""
+def test_legend_sits_below_the_map_and_hugs_its_content(dur_server, page_ctx):
+    """Contract (2026-11-11 redesign + the 2026-11-19 "the card is too large
+    for the colour scales" pass): the colour scales are an in-flow strip BELOW
+    the map — outside #raw-map-wrap, never covering the canvas — and the card
+    is exactly as tall as the rows it holds. So the MAP and the strip's own
+    box never move (the strip hangs under the map; it can only push what is
+    below it), and content changes that keep the same rows (a frame under the
+    slider, a Region view, a lane whose stops dim or light up) keep the strip's
+    exact box: nothing under it stirs while the map animates. A lane-count
+    change is a deliberate tab click — the Explore view reflows anyway — and
+    with height = content what sits below moves by exactly the strip's own
+    height delta, which is what the last two asserts pin down."""
     page = page_ctx
     _mm_goto(page, dur_server)
     _mm_frame(page, RAW_TS[1])
@@ -1863,15 +1867,86 @@ def test_legend_sits_below_the_map_and_never_moves_the_page(dur_server, page_ctx
     page.locator("#type-tabs [data-tab=atmospheric_river]").click()   # 3 -> 1 lane
     page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 1")
     b = page.evaluate(geo)
-    assert b["groups"] == 1 and b["leg"][3] == a["leg"][3], (a, b)   # height is fixed
-    assert b["below"] == a["below"] and b["map"] == a["map"], (a, b)  # nothing moved
+    assert b["groups"] == 1 and b["map"] == a["map"], (a, b)          # the map never moves
+    assert b["leg"][:2] == a["leg"][:2], (a, b)          # nor does the strip's top edge
+    dh = b["leg"][3] - a["leg"][3]                       # height = content: it may change…
+    assert dh != 0, (a, b)                               # …and it really is content-driven
+    for got, want in zip(b["below"], a["below"]):        # below rides the strip's own delta
+        assert abs(got[1] - want[1] - dh) <= 1, (a, b, dh)   # (rects are rounded to integers)
     page.locator("#type-tabs button", has_text="All").click()
     page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 3")
+    a2 = page.evaluate(geo)
+    assert a2["leg"] == a["leg"] and a2["below"] == a["below"], (a, a2)   # back: same box
     page.evaluate("MergedMap.setRegion({key:'europe', label:'Europe', lat:[35,75], lon:[-12.5,42.5]})")
     page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group.none').length === 3")
-    c = page.evaluate(geo)
+    c = page.evaluate(geo)                               # 'none in view' is an overlay:
     assert c["leg"] == a["leg"] and c["map"] == a["map"] and c["below"] == a["below"], (a, c)
     page.evaluate("MergedMap.setRegion(null)")
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"
+
+
+LEGEND_HUG_JS = """() => {
+    const r = (el) => { const b = el.getBoundingClientRect();
+        return {l: b.left, t: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height}; };
+    const leg = document.querySelector('#gm-legend');
+    const L = r(leg), map = r(document.querySelector('#raw-map-wrap'));
+    const kids = [...leg.children].filter((e) => e.getBoundingClientRect().width > 0).map(r);
+    const u = {l: Math.min(...kids.map((k) => k.l)), t: Math.min(...kids.map((k) => k.t)),
+               r: Math.max(...kids.map((k) => k.r)), b: Math.max(...kids.map((k) => k.b))};
+    return {
+      compact: leg.classList.contains('compact'),
+      rows: new Set(kids.map((k) => Math.round(k.t))).size,
+      gapLeft: +(u.l - L.l).toFixed(1), gapRight: +(L.r - u.r).toFixed(1),
+      gapTop: +(u.t - L.t).toFixed(1), gapBottom: +(L.b - u.b).toFixed(1),
+      leftVsMap: +(L.l - map.l).toFixed(1), rightVsMap: +(map.r - L.r).toFixed(1),
+      wider: L.w > map.w + 1,                             // larger than the map column?
+      fits: leg.scrollWidth <= leg.clientWidth + 1,       // nothing behind a scroll
+      inside: kids.every((k) => k.r <= L.r + 1 && k.l >= L.l - 1),
+      pillsOut: [...leg.querySelectorAll('.lg-none')].filter(
+          (p) => p.getBoundingClientRect().top < L.t - 0.5).length,
+      h: +L.h.toFixed(1), w: +L.w.toFixed(1),
+    }; }"""
+
+
+def test_legend_card_hugs_its_scales_and_aligns_with_the_map(dur_server, page_ctx):
+    """Owner 2026-11-19: "the box/card holding the color scales is misaligned
+    and too large relative to the color scales." Locks the tidy-up in: the
+    card's left edge IS the map/timeline left edge, the card never exceeds the
+    map column, and at most one padding (12 px) of air separates the card from
+    the union of its children on every side — no dead band under the swatches,
+    no hole beside the last one. A wrapped multi-row strip may fill the column
+    (its widest row genuinely needs it), which is the single case `gapRight`
+    is allowed to trade against `rightVsMap`. Nothing is hidden and the 'none
+    in view' pill stays inside the card — compact and expanded, light and dark,
+    from 320 up."""
+    page = page_ctx
+    _mm_goto(page, dur_server)
+    _mm_frame(page, RAW_TS[1])
+    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    for theme in ("light", "dark"):
+        page.evaluate(f"document.documentElement.dataset.theme = '{theme}'")
+        for w in (320, 390, 768, 1100, 1440):
+            page.set_viewport_size({"width": w, "height": 900})
+            page.wait_for_timeout(600)          # ResizeObserver refit + legend reflow
+            for state in ("compact", "expanded"):
+                if state == "expanded":
+                    if page.locator("#gm-legend .lg-toggle").count() == 0:
+                        continue                # under three lanes there is nothing to expand
+                    page.click("#gm-legend .lg-toggle")
+                    page.wait_for_timeout(300)
+                p = page.evaluate(LEGEND_HUG_JS)
+                where = (theme, w, state, p)
+                assert abs(p["leftVsMap"]) <= 1, where      # one left edge with map + timeline
+                assert not p["wider"], where                # never larger than the map column
+                assert p["fits"] and p["inside"], where     # nothing hidden behind a scroll
+                assert p["pillsOut"] == 0, where            # 'none in view' stays in the card
+                assert min(p["gapLeft"], 99) <= 12, where
+                assert p["gapTop"] <= 12 and p["gapBottom"] <= 12, where
+                assert p["gapRight"] <= 12 or abs(p["rightVsMap"]) <= 1, where
+                if state == "expanded":
+                    page.click("#gm-legend .lg-toggle")
+                    page.wait_for_timeout(300)
     errs = [e for e in page.errors if "Failed to load resource" not in e]
     assert errs == [], f"unexpected page errors: {errs}"
 
