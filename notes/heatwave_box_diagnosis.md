@@ -383,3 +383,72 @@ area-weighted). `S2c_persist_half_trim` — `TunedTracker` with no flags plus th
 same `persistence_box()` — is the zero-churn fallback and shares the publish
 code, so implementing the primary keeps the fallback reachable behind one
 feature flag.
+
+---
+
+## Implementation result (hb-implement, 2026-11-21)
+
+C3_valid_box_persist is implemented on `fix/heatwave-box-size` (tracker knobs
+in `event_tracker.py`, publish + provenance in `temperature.py`, flood lane
+pinned to the shipped rules, SPEC §2 and notes/footprint_tracker.md updated).
+Re-measured on the LXC with the **production** code
+(`scripts/review/hb01_box_growth.py --selfcheck --strategies
+S2c_persist_half_trim,C3_valid_box_persist --published
+/opt/ewb-live/data/results/events.json --start 2026-08-21 --end 2026-11-13`,
+out/hb05*.json). Correctness gates first: `selfcheck` PASS on both hazards
+(legacy-pinned production reproduces the shipped tracker event-for-event,
+162/162 heat, 35/35 freeze) and `prodcheck` PASS (production C3 reproduces
+the measured C3 event-for-event, 161/161 and 33/33) - the port is faithful.
+
+Before / after (85-day window, heat_wave n and freeze n):
+
+| metric                | heat S0 | heat C3 | freeze S0 | freeze C3 |
+|-----------------------|---------|---------|-----------|-----------|
+| events                | 162     | 161     | 35        | 33        |
+| fill, median          | 0.52    | **0.79**| 0.46      | **0.80**  |
+| fill, 10th pct        | 0.30    | 0.51    | 0.34      | 0.53      |
+| fill, worst event     | 0.11    | 0.27    | 0.16      | 0.34      |
+| daily fill, median    | 0.24    | 0.43    | 0.24      | 0.49      |
+| box, median (km2)     | 3.80M   | **1.11M**| 2.69M    | 0.86M     |
+| box, land-only median | 2.78M   | 0.81M   | 1.97M     | 0.80M     |
+| box, p90              | 16.6M   | 4.7M    | 8.0M      | 3.0M      |
+| box, max              | 61.6M   | 19.5M   | 24.6M     | 11.8M     |
+| box / biggest day, med| 4.9x    | 2.0x    | 4.3x      | 1.7x      |
+| duration med/max (d)  | 4/32    | 4/28    | 3/6       | 3/7       |
+
+Targets met: fill median >= 0.75 (0.79 / 0.80) and box median <= 1.5M km2
+(1.11M / 0.86M), without touching duration medians.
+
+Worst-5 fate (piece-identity matcher, >=70% same-day cell overlap):
+heat_wave-20260821-10, the 61.6M km2 / 31-day pan-American box, is KEPT and
+shrinks to 7.5M km2 at fill 0.95; the two October belt events
+(-20261013-548 at 45.5M km2 fill 0.34 and -20261014-557 at 42.1M km2) and the
+three worst spring-freeze boxes (24.6M/14.4M/8.4M km2, fills 0.37/0.53/0.36)
+are LOST - with the whole-region claim gone their valid-only area never
+reaches the 50k/200k km2 floors. That is C3 working as designed: those events
+were boxes, not weather. Catalogue churn vs the shipped tracker is heat 102
+matched / 60 lost / 59 gained, freeze 22 / 13 / 11 (lost and gained are mostly
+the same regions re-cut at persistence size); no published (curated) event is
+dropped and no new splits appear (published_dropped=0, split_extra=0 on both
+hazards). The 32-day monster ends 4 days earlier under C3 (core collapse
+measured on valid cells), the honest direction.
+
+Ongoing-event ids: hashing the moving persistence box re-keys ongoing events
+every weekly run - measured on the LXC (`scripts/review/hb04_ongoing_ids.py`,
+two overlapping weekly windows, 2026-08-21..09-10 -> +7d): the shipped rule
+re-keys 2/5 ongoing ids, C3-with-published-hash re-keys 6/8. So the
+temperature-lane id now hashes the **frozen day-3 anchor bbox** instead of the
+published box (start unchanged; `anchor_day=None` falls back to the old rule).
+An ongoing event keeps its id, URL, and score-cache lineage across weekly
+runs while its published box is redrawn - covered by
+`test_scan_id_survives_the_published_box_moving`. select.py merged ids and the
+other lanes are unchanged; note `subsume_freeze_overlaps` and curation
+overlap decisions run on the new (smaller) boxes, so curation must be
+re-reviewed in the same release (scores too - same release).
+
+Tests: full `pytest -q` green (599 passed, 2 skipped; the 2 AR-upstream tests
+need the `third_party/ExtremeWeatherBench` clone, environment provisioning
+only). Local lint (`uvx ruff check`): no new findings in any changed file vs
+its branch baseline (the ruff 0.17 default ruleset fails the pre-existing
+repo baseline ~900 findings; my files are flat or -1). Replay runtimes:
+heat 69s, freeze 16s per strategy on the LXC.
