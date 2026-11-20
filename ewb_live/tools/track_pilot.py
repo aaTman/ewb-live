@@ -383,14 +383,21 @@ def read_store_msl(model: str, init: dt.datetime, leads: list[int], win):
         try:
             ds = store.open_init(code, ini)
             da = ds["msl"].sel(init_time=np.datetime64(ini, "ns"))
-            da = da.sel(lead_time=np.array([np.timedelta64(h + offset, "h") for h in leads]))
+            # an older init cannot supply valid times beyond 240 h: those leads stay NaN
+            # ("no data", not a tracker miss)
+            have = [j for j, h in enumerate(leads) if h + offset <= MAX_LEAD_H]
+            if not have:
+                raise KeyError("no lead within the 240 h horizon of the older init")
+            da = da.sel(lead_time=np.array([np.timedelta64(leads[j] + offset, "h") for j in have]))
             li = np.where((da.latitude.values >= lat0) & (da.latitude.values <= lat1))[0]
             oi, lons = _contiguous(da.longitude.values, lon0, width)
             da = da.isel(latitude=li, longitude=oi)
             open_s = time.perf_counter() - t0
             t1 = time.perf_counter()
-            arr = np.asarray(da.compute().values, dtype=np.float32)
+            part = np.asarray(da.compute().values, dtype=np.float32)
             read_s = time.perf_counter() - t1
+            arr = np.full((len(leads),) + part.shape[1:], np.nan, np.float32)
+            arr[have] = part
             lats = np.asarray(da.latitude.values, float)
             order = np.argsort(lats)
             return lats[order], lons, _to_hpa(arr[:, order, :]), offset, open_s, read_s
@@ -607,7 +614,8 @@ def cmd_run(args) -> int:
     results: list[dict] = []
     ctx = mp.get_context("spawn")
     with RssSampler() as rss, jl.open("a") as sink:
-        ex = cf.ProcessPoolExecutor(max_workers=args.workers, mp_context=ctx)
+        ex = cf.ProcessPoolExecutor(max_workers=args.workers, mp_context=ctx,
+                                    max_tasks_per_child=args.recycle or None)
         pending: set = set()
         it = iter(jobs)
         last_guard = 0.0
@@ -655,7 +663,8 @@ def cmd_run(args) -> int:
             ex.shutdown(wait=True)
         wpids = {r.get("pid") for r in results}          # job-running workers (not the spawn tracker)
         wpeaks = [v for k, v in rss.peak_by_pid.items() if k in wpids]
-        pool = {"workers": args.workers, "dask_threads": args.dask_threads,
+        pool = {"workers": args.workers, "dask_threads": args.dask_threads, "recycle": args.recycle,
+                "models": sorted({r.get("model") for r in results}),
                 "peak_total_rss_gb": round(rss.peak_total / 1e9, 2),
                 "peak_worker_rss_gb": round(max(wpeaks, default=0) / 1e9, 3),
                 "worker_peaks_gb": sorted(round(v / 1e9, 3) for v in wpeaks),
@@ -1012,6 +1021,8 @@ def main(argv=None) -> int:
     r.add_argument("--min-avail-gb", type=float, default=60.0)
     r.add_argument("--abort-avail-gb", type=float, default=40.0)
     r.add_argument("--resume", action="store_true")
+    r.add_argument("--recycle", type=int, default=0,
+                   help="restart a worker after this many jobs (bounds per-worker RSS growth)")
     r.set_defaults(fn=cmd_run)
     s = sub.add_parser("sanity")
     common(s)

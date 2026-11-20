@@ -4024,7 +4024,7 @@ expected). Branch fix/e2e-first-screen-gantt-a11y -> develop; NOT merged, NOT
 deployed. Screenshots: notes/screenshots/firstscreen-{1440,390}-{light,dark}.png
 (gitignored, not committed).
 
-## [scoring-wp0] 2026-11-20 20:58 UTC — WP0 pilot started (scoring design 8.2)
+## [scoring-wp0] 2026-11-20 20:53 UTC — WP0 pilot started (scoring design 8.2)
 
 Worktree branch `feat/scoring-pilot` off `origin/develop` (9869d5c). Tracker prototype + smoke test
 committed locally (`ewb_live/tools/track_pilot.py`, `tests/test_track_pilot_smoke.py`, 11 passed).
