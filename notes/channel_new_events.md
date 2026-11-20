@@ -4023,3 +4023,25 @@ EWB_DATA_PREP_DIR: see the DONE entry in the PR (2 known box-dependent failures
 expected). Branch fix/e2e-first-screen-gantt-a11y -> develop; NOT merged, NOT
 deployed. Screenshots: notes/screenshots/firstscreen-{1440,390}-{light,dark}.png
 (gitignored, not committed).
+
+## [live-deploy-2] DONE 2026-11-20 (agent: Claude sonnet-5-5)
+
+Deployed develop 869d54e (PRs #4-#7, #9, #10 on top of live b652904) to /opt/ewb-live,
+FRONTEND + ops only, no data refresh.
+
+* Diff b652904..869d54e touched no ewb_live/ file (dashboard/, tests/, notes/, scripts/,
+  ops/ewb-live-weekly.service only), so no event/score schema or data change.
+* Preflight 12:51Z: weekly inactive, :8050 200, 177 GB free; next timers freshness 12:58,
+  refresh 18:34, store 05:30, weekly Mon 07:00 — no timer paused.
+* Backup: /opt/ewb-live/_rollback_20261120b/ (dashboard/, ewb_live/, tests/; 12 MB).
+* Sync (checksum dry-run first): only dashboard/index.html, mergedmap.js, styles.css
+  differed (tracklayer.js, ewb_live/, tests/ were already identical on live from the earlier
+  visual deploys). `--delete` was limited to dashboard/ and excluded the stray
+  dashboard/.bak-20261110T032611Z (left in place). The live weekly unit already had
+  TimeoutStartSec=24h; not touched. Restarted ewb-live-web; :8050 and https://ewb.espr.ai 200.
+* Verify: full chromium e2e on the box against :8050 = 186 passed / 1 skipped / 0 failed
+  (baseline 182/1/0; the extra 4 are new tests). Browser sweep 1440/390 x light/dark:
+  0 console/page errors, scrollWidth == clientWidth (no horizontal overflow), #events-sec
+  ends at 866 px at 1440.
+* No rollback triggered.
+* Rollback: ssh root@192.168.0.121 'rsync -a /opt/ewb-live/_rollback_20261120b/dashboard/ /opt/ewb-live/dashboard/ && systemctl restart ewb-live-web'
