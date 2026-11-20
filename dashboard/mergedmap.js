@@ -1162,6 +1162,45 @@
     // #gm-legend:empty) — a filled one is exactly as large as its rows — and
     // "all layers off" cannot happen anyway
     leg.classList.remove('hidden');
+    legendHug();
+  }
+
+  /* A compact strip whose WHOLE natural row fits the card hugs its scales in
+     one row (round 1's fit-content promise: a strip that fits must not pad
+     out to the map column); one that does not fits the map column in equal
+     aligned grid columns — its edges are the map's. "wide" is the CSS's call
+     (the --lg-wide custom property, set by the same container query that
+     switches the layout); "fits one row" is arithmetic over the children's
+     NATURAL widths: head and stops are content-sized flex items, so they
+     keep their natural width even while the grid stretches their group box.
+     The inline track list (repeat(<items>, max-content)) only ever lands on
+     the compact wide grid — every other state clears it. Runs on legend
+     rebuilds and on container resizes, never per animation frame. */
+  function legendHug() {
+    const leg = $('#gm-legend');
+    if (!leg) return;
+    const groups = leg.querySelectorAll('.lg-group');
+    let single = false;
+    if (groups.length && leg.classList.contains('compact')
+        && getComputedStyle(leg).getPropertyValue('--lg-wide').trim() === '1') {
+      const cs = getComputedStyle(leg);
+      const px = (v) => parseFloat(v) || 0;
+      const colGap = px(cs.columnGap);           // between the strip's items
+      const headGap = px(getComputedStyle(groups[0]).columnGap);   // head|ramp
+      let need = px(cs.paddingLeft) + px(cs.paddingRight);
+      leg.querySelectorAll(':scope > *').forEach((el) => {
+        const head = el.querySelector('.lg-head');
+        const stops = el.querySelector('.lg-stops');
+        need += head && stops ? head.getBoundingClientRect().width + headGap
+                              + stops.getBoundingClientRect().width
+          : el.getBoundingClientRect().width;
+      });
+      need += colGap * (leg.children.length - 1);
+      single = need <= leg.clientWidth + 1;
+    }
+    leg.classList.toggle('hug', single);
+    leg.style.gridTemplateColumns = single
+      ? `repeat(${leg.children.length}, max-content)` : '';
   }
 
   /* ---------------- boot ---------------- */
@@ -1312,7 +1351,9 @@
       let raf = 0;
       new ResizeObserver(() => {
         cancelAnimationFrame(raf);
-        raf = requestAnimationFrame(() => { if (mounted) { fitProjection(); render(); } });
+        raf = requestAnimationFrame(() => {
+          if (mounted) { fitProjection(); render(); legendHug(); }
+        });
       }).observe($('#raw-map-wrap'));
     }
   }
