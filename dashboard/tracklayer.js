@@ -44,8 +44,16 @@
    after it ends, and its marks (ring, line, dots) leave the map too — a frame
    past the storm's last fix draws nothing for it (owner 2026-11-19;
    an earlier revision kept the track as "history", which read as a live storm).
-   Nothing is held between frames: every payload repaints the canvas from the
-   asset, so a slider jump, play/animate and a jump back all read the same way.
+   A system the archive still lists as open (`life.ongoing`) obeys the same
+   rule to its end: it is drawn only up to its LAST FIX — past it the asset
+   holds no data to reveal, so the ring, the label and the line leave with it
+   (owner 2026-11-19, emphasised: no cyclone may stay on the map after its
+   life; the open flag says only that dissipation is unconfirmed, not that the
+   storm is still on the water at frames the data never reached). The list-hover
+   preview ghost obeys the same gate: a row of a storm the frame has passed
+   draws nothing. Nothing is held between frames: every payload repaints the
+   canvas from the asset, so a slider jump, play/animate and a jump back all
+   read the same way.
 
    Layering: one transparent canvas over the raster canvas (field cells, lines,
    fix dots) under a small SVG with one interactive marker per positioned storm
@@ -235,12 +243,23 @@
      the map). Owner 2026-11-19: the field already dissipated at the storm's
      death but the marks used to linger as "history" for the rest of the window.
      The track runs through the post-tropical tail, so a frame between death and
-     the last fix still shows the tail's ring (without a field). A still-open
-     system (life.ongoing) stays; before its first fix there is nothing to reveal
-     (layoutStorm returns null). */
+     the last fix still shows the tail's ring (without a field). Before its
+     first fix there is nothing to reveal (layoutStorm returns null).
+     A still-open system (life.ongoing) leaves too, at its LAST fix: the flag
+     only says the archive has not confirmed the dissipation, and the layer
+     reveals what EXISTS — past the last fix there is no fix to reveal, so from
+     the first frame beyond it the storm is expired like any other. Measured
+     failure this closes (2026-11-19 build, storm a1d6b391e4d8): the short
+     circuit here kept its ring, label and whole line on the map for 8 frames
+     (30 h) past the last fix — every weekly run ends with one flagged storm,
+     so the residue arrived on schedule, and it is the owner's "the cyclones
+     remain on the map permanently". */
   const expiredAt = (ev, fixes, ms) => {
-    if (ms == null || !fixes.length || lifeOf(ev).ongoing) return false;
-    return ms > fixes[fixes.length - 1].ms && dissipatedAt(ev, ms);
+    if (ms == null || !fixes.length) return false;
+    const lastFixMs = fixes[fixes.length - 1].ms;
+    // ongoing: never extended past the data that exists — the last fix is the edge
+    if (lifeOf(ev).ongoing) return ms > lastFixMs;
+    return ms > lastFixMs && dissipatedAt(ev, ms);
   };
 
   /* ---------------- small helpers ---------------- */
@@ -1001,17 +1020,23 @@
     const storms = [];
     for (const ev of evs) {
       const st = layoutStorm(ev, payload.proj, frameMs, false);
-      // an expired storm stays in the list only for its wind field (the field
-      // has its own life window); nothing of the TRACK is drawn for it
+      // an expired storm still joins the list (the hit test and the debug view
+      // may ask after it) but it draws NOTHING: every paint path checks
+      // st.expired (line, dots, marks) or aliveAt (the field), and a frame
+      // that expired a storm is a frame with no field for it as well
       if (st) { st.expired = expiredAt(ev, st.fixes, frameMs); storms.push(st); }
     }
     // list-hover preview of a storm that is not on the map at this step: outline
-    // its whole life, exactly the ghost an event box draws
+    // its whole life, exactly the ghost an event box draws — but ONLY for a
+    // system the frame has not passed yet (its reveal is still to come). A
+    // storm whose life is over stays off the map at this frame even while its
+    // row is hovered: the ghost re-draws the whole track, which is exactly the
+    // residue the expiry rule forbids (owner 2026-11-19).
     if (payload.previewId && !storms.some((s) => s.ev.id === payload.previewId && !s.expired)) {
       const ev = evs.find((e) => e.id === payload.previewId);
       if (ev) {
         const g = layoutStorm(ev, payload.proj, frameMs, true);
-        if (g) storms.push(g);
+        if (g && !expiredAt(ev, g.fixes, frameMs)) storms.push(g);
       }
     }
     for (const st of storms) {
@@ -1059,13 +1084,15 @@
       return h && { kt: h.kt, cid: h.cid, d: h.d, id: h.st.ev.id, name: stormName(h.st.ev) };
     },
     // the dissipation gate, as the e2e can check it: is this storm's field drawn
-    // at the selected step, and has it dissipated?
+    // at the selected step, has it dissipated, and is the storm EXPIRED (its
+    // marks off the map) — the last is the owner's rule, the others the field's
     _life: (id) => {
       const ev = S && (S.events || []).find((e) => e.id === id);
       if (!ev) return null;
       const L = lifeOf(ev), ms = S.ts ? toMs(S.ts) : null;
       return { birth: L.birth, death: L.death, ongoing: L.ongoing, ts: S.ts,
         alive: aliveAt(ev, ms), dissipated: dissipatedAt(ev, ms),
+        expired: expiredAt(ev, prep(ev).fixes, ms),
         field: !!(WIND.data && aliveAt(ev, ms)
           && pickGrid(fieldEntry(ev, frameDateOf(S.ts)), frameHourOf(S.ts))) };
     },
