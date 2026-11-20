@@ -693,6 +693,7 @@ function restoreState() {
     if (s.tab && (s.tab === 'all' || TYPE_META[s.tab])) state.tab = s.tab;
     if (s.chartMode) state.chartMode = s.chartMode;
     state.railCollapsed = !!s.railCollapsed;
+    state.theater = !!s.theater;
   } catch (e) { /* ignore */ }
 }
 function saveState() {
@@ -700,6 +701,7 @@ function saveState() {
     localStorage.setItem('ewb-live-state', JSON.stringify({
       themePref: state.themePref, tab: state.tab, chartMode: state.chartMode,
       railCollapsed: !!state.railCollapsed,
+      theater: !!state.theater,
     }));
   } catch (e) { /* preference just won't persist */ }
 }
@@ -2746,6 +2748,27 @@ async function boot() {
     if (!narrow()) closeNav();
     setCollapsed(!narrow() && !!state.railCollapsed);
   });
+  /* THEATER MODE: the map takes the whole explore grid and the event list drops
+     below it (the .explore theater rules) — the list is never hidden, so event
+     picking works exactly as before. Same shape as the rail collapse: an html.*
+     class the CSS keys off, one flag in 'ewb-live-state', and nothing in the URL
+     (theater is a view preference, not shareable state). Below 1100px the grid
+     is one column already, so the class is ignored there — but the flag is kept,
+     and widening the window restores it (the rail's rule). */
+  const theaterBtn = $('#theater-btn');
+  const theaterOn = () => document.documentElement.classList.contains('theater');
+  const setTheater = (on, persist = true) => {
+    document.documentElement.classList.toggle('theater', on);
+    if (theaterBtn) theaterBtn.setAttribute('aria-pressed', String(on));
+    if (persist) { state.theater = on; saveState(); }
+  };
+  if (theaterBtn) {
+    theaterBtn.onclick = () => setTheater(!theaterOn());
+    setTheater(!!state.theater && !narrow(), false);   // restore; boot never writes back
+  }
+  matchMedia('(max-width: 1099px)').addEventListener('change', () => {
+    setTheater(!!state.theater && !narrow(), false);
+  });
   document.addEventListener('click', (e) => {   // scrim is a ::before — its clicks land on <body>
     if (e.target === document.body) closeNav();
   });
@@ -2774,6 +2797,26 @@ async function boot() {
     if (document.querySelector('.ev3-fs')) return;
     closeDetail();
   });
+  /* Theater keys: `t` toggles, Esc leaves. Quiet: no modifier, never while
+     typing, and only while the button is actually on screen — below 1100px, or
+     on an archive/detail page that hides the map, it is display:none, and the
+     key does nothing there either. Captured on purpose: Esc belongs to whatever
+     else owns it (a dialog, the drawer, an open event detail) and those handlers
+     clear their own state synchronously, so this one has to see it first. */
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const src = e.target;   // never `el`/`t`: both names are taken in this file
+    const typing = !!src && (src.tagName === 'INPUT' || src.tagName === 'SELECT'
+      || src.tagName === 'TEXTAREA' || src.isContentEditable);
+    if (e.key === 't' && !e.shiftKey && !typing && theaterBtn && theaterBtn.offsetParent !== null) {
+      e.preventDefault();
+      setTheater(!theaterOn());
+    } else if (e.key === 'Escape' && theaterOn() && !state.selectedEvent
+        && !document.body.classList.contains('nav-open')
+        && !document.querySelector('dialog[open]')) {
+      setTheater(false);
+    }
+  }, { capture: true });
   // About dialog: native <dialog>, Esc closes, backdrop click closes, scrim per OWB §6.7
   const dlg = $('#about-dialog');
   const openAbout = () => { renderAboutModels(); dlg.showModal(); };

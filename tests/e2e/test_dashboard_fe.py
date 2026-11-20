@@ -2387,3 +2387,244 @@ def test_merged_event_tooltip_shows_span_days(gd_server, page_ctx):
     assert "· 3 days" in box, box
     assert "· 3 days" in bar, bar
     assert page.errors == [], f"console errors: {page.errors}"
+
+
+# ================================================ theater mode (the map) ====
+# A wide screen splits .explore into map | event list. Theater mode (the map's
+# own corner toggle, key `t`) lets the map borrow the list's column: #global-sec
+# spans the whole grid and the list drops BELOW it, never hidden — picking an
+# event has to keep working. The layout rules are ≥1100px only (below that the
+# grid is one column and the button is display:none), so these are desktop-size
+# tests with one narrow case. The canvas is sized by JS, not CSS
+# (mergedmap.js fitProjection reads the CSS height cap back), so every toggle is
+# also checked for a canvas that lands exactly on its box at the device pixel
+# ratio — a stretched or clipped frame would still pass a plain width test.
+def _theater_window(n_days=14):
+    """A two-week 6-hourly window ENDING TODAY. The shared merged-map fixture is
+    dated 2026-01, which ages out of the event list's last-90-days filter — and
+    theater mode has to be tested with rows in the list."""
+    end = date.today()
+    days = [(end - timedelta(days=n_days - 1 - i)).isoformat() for i in range(n_days)]
+    frames = [d.strftime("%Y%m%d") + h
+              for d in (end - timedelta(days=n_days - 1 - i) for i in range(n_days - 1))
+              for h in ("00", "06", "12", "18")]
+    return days, frames
+
+
+def _build_theater_fixture(tmpdir):
+    days, frames = _theater_window()
+    # cutoff on the last frame: no 'ERA5 lag' badge, same as gd_server
+    root = _build_gd_fixture(tmpdir, with_timeline=False,
+                             raw_frames=frames, raw_cutoff=frames[-1])
+    data_dir = os.path.join(root, "data", "results")
+    # one event per lane around the window; the last one straddles the newest
+    # frame so a box is live on the map at boot (and its row is 'on the map')
+    evs = [
+        {"id": "th-heat", "type": "heat_wave", "title": "Heat Theater (e2e)",
+         "start": days[2], "end": days[6], "bbox": [30.0, 40.0, -120.0, -100.0],
+         "days": days[2:6], "qualified_at": days[2] + "T12:00:00Z"},
+        {"id": "th-freeze", "type": "freeze", "title": "Freeze Theater (e2e)",
+         "start": days[6], "end": days[10], "bbox": [-40.0, -30.0, 140.0, 160.0],
+         "days": days[6:10], "qualified_at": days[6] + "T12:00:00Z"},
+        {"id": "th-ar", "type": "atmospheric_river", "title": "AR Theater (e2e)",
+         "start": days[-3], "end": days[-1], "bbox": [45.0, 55.0, -40.0, -20.0],
+         "days": days[-3:-1], "qualified_at": days[-3] + "T12:00:00Z"},
+    ]
+    json.dump({"schema": 1, "generated": days[-1] + "T00:00:00Z",
+               "window": {"start": days[0], "end": days[-1], "days": len(days)},
+               "events": evs},
+              open(os.path.join(data_dir, "global_timeline.json"), "w"))
+    # the list reads events_selected.json (asRows: a bare list, or {rows: […]})
+    json.dump([{"id": e["id"], "event_type": e["type"], "title": e["title"],
+                "bbox": e["bbox"], "start": e["start"], "end": e["end"],
+                "details": {"region": "e2e"}} for e in evs],
+              open(os.path.join(data_dir, "events_selected.json"), "w"))
+    # A fresh checkout's data/results holds nothing but data/results/sample.
+    # Put the sample score set in the PRIMARY dir so the boot fetches answer on
+    # the first try (the sample fallback costs a 404 per file on the way).
+    sample = os.path.join(ROOT, "data", "results", "sample")
+    for f in ("meta.json", "scores.json", "scorecard.json", "events.json"):
+        p, s = os.path.join(data_dir, f), os.path.join(sample, f)
+        if not os.path.exists(p) and os.path.exists(s):
+            shutil.copy2(s, p)
+    if not os.path.exists(os.path.join(data_dir, "pair_status.json")):
+        json.dump({}, open(os.path.join(data_dir, "pair_status.json"), "w"))
+    return root
+
+
+@pytest.fixture(scope="module")
+def theater_server(tmp_path_factory):
+    root = _build_theater_fixture(str(tmp_path_factory.mktemp("fe-theater")))
+    srv, url = _gd_server(root)
+    yield url
+    srv.shutdown()
+
+
+def _theater_home(page, base):
+    """Open the home view with both halves of the explore grid populated."""
+    _mm_goto(page, base)
+    page.wait_for_selector("#event-table tbody tr[data-id]", timeout=20000)
+    assert page.locator("#gm-boxes .gm-ev").count() >= 1
+
+
+def _theater_geo(page):
+    return page.evaluate("""() => {
+        const R = (s) => { const b = document.querySelector(s).getBoundingClientRect();
+            return {w: Math.round(b.width), h: Math.round(b.height),
+                    top: Math.round(b.top), bottom: Math.round(b.bottom)}; };
+        const cv = document.querySelector('#raw-canvas'), wrap = document.querySelector('#raw-map-wrap');
+        return {theater: document.documentElement.classList.contains('theater'),
+                pressed: document.querySelector('#theater-btn').getAttribute('aria-pressed'),
+                explore: R('#explore'), gsec: R('#global-sec'), wrap: R('#raw-map-wrap'),
+                events: R('#events-sec'),
+                canvas: {w: cv.width, h: cv.height,
+                         cssW: parseFloat(cv.style.width), cssH: parseFloat(cv.style.height)},
+                box: {w: wrap.clientWidth, h: wrap.clientHeight},
+                dpr: window.devicePixelRatio || 1,
+                overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth}; }""")
+
+
+def _assert_canvas_is_its_box(g):
+    assert g["canvas"]["cssH"] == g["box"]["h"], (g["canvas"], g["box"])
+    assert abs(g["canvas"]["cssW"] - g["box"]["w"]) <= 0.5, (g["canvas"], g["box"])
+    assert g["canvas"]["w"] == round(g["canvas"]["cssW"] * g["dpr"]), (g["canvas"], g["dpr"])
+    assert g["canvas"]["h"] == round(g["canvas"]["cssH"] * g["dpr"]), (g["canvas"], g["dpr"])
+
+
+def test_theater_toggle_spans_the_map_and_drops_the_list_below(theater_server, page_ctx):
+    page = page_ctx
+    page.set_viewport_size({"width": 1280, "height": 800})
+    _theater_home(page, theater_server)
+    btn = page.locator("#theater-btn")
+    assert btn.is_visible() and btn.get_attribute("aria-label") == "Theater mode"
+    assert "(t)" in btn.get_attribute("title") and btn.get_attribute("aria-pressed") == "false"
+
+    before = _theater_geo(page)
+    assert not before["theater"] and before["canvas"]["w"] > 0
+    assert before["events"]["top"] < before["wrap"]["bottom"]   # beside the map, not below
+    assert before["gsec"]["w"] < before["explore"]["w"]
+    _assert_canvas_is_its_box(before)
+
+    btn.click()
+    page.wait_for_timeout(400)   # the refit rides one rAF off the ResizeObserver
+    on = _theater_geo(page)
+    assert on["theater"] and on["pressed"] == "true"
+    assert abs(on["gsec"]["w"] - on["explore"]["w"]) <= 1, (on["gsec"], on["explore"])
+    assert on["wrap"]["w"] > before["wrap"]["w"], (on["wrap"], before["wrap"])
+    # the list is not gone: it moved to the row under the map, at full width
+    assert on["events"]["top"] >= on["wrap"]["bottom"] - 1, (on["events"], on["wrap"])
+    assert abs(on["events"]["w"] - on["explore"]["w"]) <= 1, on["events"]
+    assert page.is_visible("#event-table tbody tr[data-id]")
+    assert on["overflowX"] <= 0, on["overflowX"]
+    _assert_canvas_is_its_box(on)
+    # the section (map + legend + timeline) stays on one screen
+    assert on["gsec"]["h"] <= 0.92 * 800, on["gsec"]
+
+    btn.click()
+    page.wait_for_timeout(400)
+    off = _theater_geo(page)
+    assert not off["theater"] and off["pressed"] == "false"
+    assert off["gsec"]["w"] < off["explore"]["w"] and off["events"]["top"] < off["wrap"]["bottom"]
+    _assert_canvas_is_its_box(off)
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"
+
+
+def test_theater_keys_t_and_escape(theater_server, page_ctx):
+    page = page_ctx
+    page.set_viewport_size({"width": 1280, "height": 800})
+    _theater_home(page, theater_server)
+    page.keyboard.press("t")
+    page.wait_for_timeout(350)
+    assert page.evaluate("document.documentElement.classList.contains('theater')")
+    assert page.locator("#theater-btn").get_attribute("aria-pressed") == "true"
+    page.keyboard.press("t")
+    page.wait_for_timeout(350)
+    assert not page.evaluate("document.documentElement.classList.contains('theater')")
+    page.keyboard.press("t")
+    page.wait_for_timeout(350)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(350)
+    assert not page.evaluate("document.documentElement.classList.contains('theater')")
+    # a modifier means the browser's own shortcut, not ours
+    page.keyboard.press("Control+t")
+    page.wait_for_timeout(250)
+    assert not page.evaluate("document.documentElement.classList.contains('theater')")
+    # and a letter typed into a field is just a letter
+    page.click("#event-search")
+    page.keyboard.type("t")
+    page.wait_for_timeout(250)
+    assert not page.evaluate("document.documentElement.classList.contains('theater')")
+    assert page.input_value("#event-search") == "t"
+
+
+def test_theater_state_persists_across_reload(theater_server, page_ctx):
+    page = page_ctx
+    page.set_viewport_size({"width": 1280, "height": 800})
+    _theater_home(page, theater_server)
+    page.click("#theater-btn")
+    page.wait_for_timeout(350)
+    page.reload()
+    _theater_home(page, theater_server)
+    g = _theater_geo(page)
+    assert g["theater"], "theater class must come back from 'ewb-live-state'"
+    assert g["pressed"] == "true", "aria-pressed must be restored with it"
+    assert abs(g["gsec"]["w"] - g["explore"]["w"]) <= 1
+    _assert_canvas_is_its_box(g)
+    # it is a preference, not URL state
+    assert "theater" not in page.evaluate("location.hash")
+    assert "theater" not in page.evaluate("location.search")
+
+
+def test_theater_button_hidden_below_the_two_column_breakpoint(theater_server, page_ctx):
+    page = page_ctx
+    page.set_viewport_size({"width": 800, "height": 900})
+    _theater_home(page, theater_server)
+    assert not page.is_visible("#theater-btn")
+    page.keyboard.press("t")
+    page.wait_for_timeout(250)
+    assert not page.evaluate("document.documentElement.classList.contains('theater')")
+    g = _theater_geo(page)
+    assert abs(g["gsec"]["w"] - g["explore"]["w"]) <= 1   # one column already
+    # widen back past the breakpoint: the toggle is there again
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.wait_for_timeout(400)
+    assert page.is_visible("#theater-btn")
+
+
+def test_theater_keeps_the_list_to_map_linkage(theater_server, page_ctx):
+    """Spec 7: the box ↔ row highlight and pick still work with the map wide."""
+    page = page_ctx
+    page.set_viewport_size({"width": 1280, "height": 800})
+    _theater_home(page, theater_server)
+    page.click("#theater-btn")
+    page.wait_for_timeout(400)
+    # the AR straddles the newest frame, so its row previews as a real box
+    page.hover('#event-table tr[data-id="th-ar"]')
+    page.wait_for_timeout(250)
+    assert page.locator("#gm-boxes .gm-ev.hov").count() == 1
+    page.mouse.move(5, 5)
+    page.wait_for_timeout(250)
+    assert page.locator("#gm-boxes .gm-ev.hov").count() == 0
+    # an event outside this frame answers with the ghost box, as before
+    page.hover('#event-table tr[data-id="th-heat"]')
+    page.wait_for_timeout(250)
+    assert page.locator("#gm-boxes .gm-ghost").count() == 1
+    page.mouse.move(5, 5)
+    page.wait_for_timeout(250)
+    assert page.locator("#gm-boxes .gm-ghost").count() == 0
+    # a box click marks its row and a row click still opens the event
+    page.locator('#gm-boxes .gm-ev[data-id="th-ar"] .gm-hit').click(force=True)
+    page.wait_for_timeout(300)
+    assert page.locator('#event-table tr.picked[data-id="th-ar"]').count() == 1
+    page.click('#event-table tr[data-id="th-ar"]')
+    page.wait_for_selector("#detail-sec:not(.hidden)", timeout=20000)
+    # the detail view hides the map: theater is inert there and its toggle is gone
+    assert page.evaluate("document.documentElement.classList.contains('theater')")
+    assert page.evaluate("document.querySelector('#theater-btn').getBoundingClientRect().width") == 0
+    page.keyboard.press("Escape")     # Esc belongs to the detail, not to theater
+    page.wait_for_timeout(400)
+    assert page.locator("#detail-sec").is_hidden()
+    assert page.evaluate("document.documentElement.classList.contains('theater')")
+    errs = [e for e in page.errors if "Failed to load resource" not in e]
+    assert errs == [], f"unexpected page errors: {errs}"
