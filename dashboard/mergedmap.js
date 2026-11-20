@@ -811,6 +811,7 @@
   const G_BARS_H = (rows) => Math.max(G_BAR, rows * G_BAR + (rows - 1) * G_ROWGAP);
   // a bar's top within its lane (row 0 at the band top)
   const G_BAR_Y = (row) => row * (G_BAR + G_ROWGAP);
+  const G_LANE_MIN = 12;  // wide: a band is never shorter than its centred label
 
   /* Lane labels are the strip's only text that must never be clipped: the old 44 px
      column clipped nothing only because the whole strip was scaled to 56%; at true
@@ -1013,7 +1014,8 @@
       const isDense = dense.has(type);
       const expanded = gExpand.has(type);
       const mode = rows === 0 ? 'empty' : (isDense && !expanded ? 'ribbon' : 'bars');
-      const bh = mode === 'empty' ? 2 : (mode === 'ribbon' ? G_RIB : G_BARS_H(rows));
+      const bh = mode === 'empty' ? 2 : (mode === 'ribbon' ? G_RIB
+        : (narrow ? G_BARS_H(rows) : Math.max(G_LANE_MIN, G_BARS_H(rows))));
       return { type, items, rows, isDense, expanded, mode, bh, lab: labOf(type) };
     });
     let top = 0;
@@ -1069,7 +1071,8 @@
     const drawBar = (g, it, over) => {
       const ev = it.ev;
       const isSel = sel.has(ev.id) || previewId === ev.id;
-      const by = g.mode === 'ribbon' ? g.y + (g.bh - G_BAR) / 2 : g.y + G_BAR_Y(it.row);
+      const by = g.mode === 'ribbon' ? g.y + (g.bh - G_BAR) / 2
+        : g.y + (g.bh - G_BARS_H(g.rows)) / 2 + G_BAR_Y(it.row);   // packed rows centred in the band
       const bar = mk('rect', {
         class: 'gm-bar', 'data-id': ev.id, x: it.bx, y: by,
         width: it.bw, height: G_BAR, rx: Math.min(2.5, G_BAR / 2),
