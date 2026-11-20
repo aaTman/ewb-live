@@ -811,9 +811,42 @@ def synthetic_sign_cases() -> dict:
             for k, (la, lo) in cases.items()} | {"unit_km": d}
 
 
+def recurver_sanity(path: str, min_turn_deg: float = 60.0) -> dict:
+    """Sign check on every published non-wrapped TC that clearly turns: a clockwise
+    turn (NH recurvature) must put the straight-line persistence forecast LEFT of
+    the observed track (cross < 0); an anticlockwise turn (SH) must put it RIGHT."""
+    ev = json.load(open(path))
+    rows, storms = [], []
+    for e in ev:
+        if e["event_type"] != "tropical_cyclone" or e["details"].get("antimeridian_wrap"):
+            continue
+        t, la, lo, pr = _parse_track(e["details"]["track"])
+        st = Storm("tc", e["id"], e["details"].get("name") or e["title"], t, la, lo, pr, TC_PARAMS)
+        ps = persistence_sanity(st)
+        turn = ps["observed_turn_cw_deg"]
+        if abs(turn) < min_turn_deg:
+            continue
+        sh = float(np.mean(la)) < 0
+        sel = [v for L, v in ps["by_lead"].items() if 48 <= L <= 120 and v["n"] >= 1]
+        if not sel:
+            continue
+        expect_neg = turn > 0                              # clockwise turn -> persistence on the left
+        n = sum(v["n"] for v in sel)
+        agree = sum(v["n"] * (v["frac_cross_negative"] if expect_neg else v["frac_cross_positive"]) for v in sel) / n
+        storms.append({"name": st.name, "event_id": st.event_id, "hemisphere": "S" if sh else "N",
+                       "turn_cw_deg": turn, "expected_cross_sign": "negative" if expect_neg else "positive",
+                       "n_samples_48_120h": n, "fraction_matching_expected_sign": round(float(agree), 2)})
+    tot = sum(x["n_samples_48_120h"] for x in storms)
+    return {"min_turn_deg": min_turn_deg, "n_storms": len(storms),
+            "pooled_fraction_matching_expected_sign":
+                round(sum(x["n_samples_48_120h"] * x["fraction_matching_expected_sign"] for x in storms) / tot, 2) if tot else None,
+            "storms": storms}
+
+
 def cmd_sanity(args) -> int:
     storms = load_storms(args.events_json, args.tc_name)
     res = {"synthetic_north_moving": synthetic_sign_cases(),
+           "published_tc_recurvers": recurver_sanity(args.events_json),
            **{k: {"storm": s.name, "event_id": s.event_id, **persistence_sanity(s)} for k, s in storms.items()}}
     print(json.dumps(res, indent=1))
     return 0

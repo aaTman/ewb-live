@@ -113,3 +113,26 @@ def test_guard_blocks_monday_morning_and_allows_other_times(monkeypatch):
     assert tp.guard_status(dt.datetime(2026, 11, 20, 20, 0, tzinfo=dt.timezone.utc))[0]
     R.stdout = "active\n"
     assert not tp.guard_status(dt.datetime(2026, 11, 20, 20, 0, tzinfo=dt.timezone.utc))[0]
+
+
+def _arc_storm(turn_sign):
+    """Observed track on a circle: heading rotates 3 deg / 6 h (clockwise for +1)."""
+    t0 = dt.datetime(2026, 9, 1)
+    lat, lon, hd = [15.0], [-100.0], 300.0
+    for _ in range(60):
+        la, lo = lat[-1], lon[-1]
+        step = 12.0 * 6.0 / 111.195                      # 12 km/h for 6 h in degrees
+        lat.append(la + step * np.cos(np.radians(hd)))
+        lon.append(lo + step * np.sin(np.radians(hd)) / np.cos(np.radians(la)))
+        hd += turn_sign * 3.0
+    times = [t0 + dt.timedelta(hours=6 * i) for i in range(len(lat))]
+    return tp.Storm("tc", "synthetic", "arc", times, np.array(lat), np.array(lon),
+                    np.full(len(lat), np.nan))
+
+
+@pytest.mark.parametrize("turn_sign,frac_key", [(+1, "frac_cross_negative"), (-1, "frac_cross_positive")])
+def test_recurving_track_puts_persistence_on_the_outside(turn_sign, frac_key):
+    # a track turning clockwise (NH recurvature) leaves a straight-line forecast LEFT of it
+    res = tp.persistence_sanity(_arc_storm(turn_sign))
+    for lead in (48, 96):
+        assert res["by_lead"][lead][frac_key] >= 0.9
