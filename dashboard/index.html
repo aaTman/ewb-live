@@ -155,6 +155,12 @@
       <div class="raw-skeleton" id="raw-skel" aria-hidden="true"></div>
       <canvas id="raw-canvas" role="img" aria-label="Equal Earth world map of raw threshold exceedances and event boxes" hidden></canvas>
       <svg id="gm-boxes" hidden></svg>
+      <!-- Theater mode: the map borrows the event list's column and the list
+           drops below it (the .explore theater rules). It is the map's own
+           control, so it sits in the map's corner above the box/track overlays
+           and never covers the legend or the timeline; `t` and Esc in app.js. -->
+      <button type="button" id="theater-btn" title="Theater mode (t)" aria-label="Theater mode"
+              aria-pressed="false"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/></svg></button>
     </div>
     <!-- The colour scales sit BELOW the map (owner complaint 2026-11-11: the
          in-map panel hid a quarter of it). The card is a slim strip that hugs

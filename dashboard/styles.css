@@ -799,6 +799,17 @@ tbody tr:hover td.model-col { background: var(--tint); }
 .evlist-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .evlist-head #event-search { flex: 1 1 140px; width: auto; min-width: 0; }
 .evlist .table-wrap.tall { flex: 1 1 auto; min-height: 0; }
+/* Theater toggle (the map's own expand control): the quiet 28 px box of
+   .rail-toggle, on a paper plate so it stays legible over any lane colour, and
+   above the box (z 1) / track (z 2-3) overlays. Hidden below 1100px, where the
+   grid is already one column and expanding would do nothing (app.js reads the
+   same fact off `offsetParent` before it lets `t` through). */
+#theater-btn { position: absolute; top: 8px; right: 8px; z-index: 4;
+  display: none; width: 28px; height: 28px; padding: 0; place-items: center;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--paper);
+  color: var(--stone-grey); cursor: pointer; line-height: 0; }
+#theater-btn:hover { background: var(--tint); color: var(--matte-black); }
+#theater-btn[aria-pressed="true"] { background: var(--alabaster); color: var(--matte-black); }
 @media (min-width: 1100px) {
   .explore { grid-template-columns: minmax(0, 1fr) minmax(280px, 30%); }
   .explore-head { grid-column: 1 / -1; }
@@ -806,6 +817,27 @@ tbody tr:hover td.model-col { background: var(--tint); }
   .explore:not(:has(#global-sec.hidden)) .evlist { position: absolute; inset: 0; }
   .explore:not(:has(#global-sec.hidden)) .evlist .table-wrap.tall { max-height: none; }
   .explore:has(#global-sec.hidden) { grid-template-columns: minmax(0, 1fr); }
+  #theater-btn { display: grid; }
+  /* THEATER MODE (html.theater, app.js + 'ewb-live-state'): the map takes the
+     whole grid and the event list drops below it as a normal full-width block —
+     never hidden, so picking an event works exactly as before. Both sections
+     span every column, so the list auto-places on the row under the map and
+     goes back to static flow (the absolute-inset list above belongs to the
+     beside-the-map layout only). Keyed off :not(:has(#global-sec.hidden)) so
+     the Region/archive/detail states that hide the map stay single-column and
+     the theater class is inert there. */
+  html.theater .explore:not(:has(#global-sec.hidden)) #global-sec,
+  html.theater .explore:not(:has(#global-sec.hidden)) #events-sec { grid-column: 1 / -1; }
+  html.theater .explore:not(:has(#global-sec.hidden)) #events-sec { position: static; min-height: 0; }
+  html.theater .explore:not(:has(#global-sec.hidden)) .evlist { position: static; }
+  html.theater .explore:not(:has(#global-sec.hidden)) .evlist .table-wrap.tall { max-height: 480px; }
+  /* Cap the map so the whole section stays on one screen: 90vh less the chrome
+     under it (a legend strip + a full timeline ≈ 320px settled), with a floor
+     so a short window still gets a usable map rather than a slit. The canvas
+     is sized by JS, not CSS: mergedmap.js reads this max-height back before it
+     fits the projection, so the map keeps its aspect and letterboxes in ocean
+     instead of overflowing the box (fitExtent never stretches). */
+  html.theater #raw-map-wrap { max-height: max(320px, calc(90vh - 320px)); }
 }
 .leaflet-container { font: inherit; background: var(--bg-inset); }
 .leaflet-bar a { font-weight: 500; }  /* leaflet.css ships bold; §3 caps at 500 */

@@ -295,7 +295,21 @@
     path = d3.geoPath(proj.scale(1).translate([0, 0]));
     const [[x0, y0], [x1, y1]] = path.bounds({ type: 'Sphere' });
     const dw = x1 - x0, dh = y1 - y0;
-    const H = Math.round(Math.min((dh / dw) * (W - 2 * PAD) + 2 * PAD, W * 0.75));
+    let H = Math.round(Math.min((dh / dw) * (W - 2 * PAD) + 2 * PAD, W * 0.75));
+    /* Theater mode caps the map's height in CSS (styles.css: html.theater
+       #raw-map-wrap) so the map and the timeline stay on one screen. The canvas
+       is sized from here, not from CSS, so read the cap back and fit inside it:
+       fitExtent keeps the sphere's aspect and letterboxes it in ocean instead
+       of stretching it, and the wrap's content height lands on H exactly (the
+       #gm-boxes overlay matches the canvas pixel for pixel either way). A
+       border-box max-height is the outer box, so the frame/padding comes off. */
+    const wrapCs = getComputedStyle(wrap);
+    const cap = parseFloat(wrapCs.maxHeight);
+    if (Number.isFinite(cap)) {
+      const frame = parseFloat(wrapCs.borderTopWidth) + parseFloat(wrapCs.borderBottomWidth)
+        + parseFloat(wrapCs.paddingTop) + parseFloat(wrapCs.paddingBottom);
+      H = Math.max(160, Math.min(H, Math.floor(cap - (Number.isFinite(frame) ? frame : 0))));
+    }
     /* Region view (Region dropdown, briefs/regional_breakdowns.md): fit to the
        region's corner bbox — MultiPoint, because Equal Earth is monotone in
        both axes so the corners' bounds ARE the region's bounds. Canvas size
