@@ -3806,3 +3806,36 @@ unpublished artefacts the way the box does, `tmp/legend_probe.py` +
 `tmp/legend_hole.py` take the measurements and shots, which are in
 `/home/orca/orca/workspaces/ewb-live/screenshots/visual-legend/` (not in the
 repo, owner 2026-11-20).
+
+## [visual-legend] 2026-11-20 02:12 UTC — round 2: grid rebuild pushed (first commit)
+Measured the round-1 card on the DEV results (7 lanes) in the T3 worktree —
+reproduced all three complaints: stacked swatch-column spread 182.9 px at 390
+(rows rode the label), card 264 px under a 358 px map (right edge aligned with
+nothing), Scales pill 44 px tall, and at 1440 two ragged rows with 102.6 px of
+trailing slack. Rebuilt the layout: card = CSS grid; stacked = shared
+`label | swatches` columns (label = max-content of the longest label, capped
+42cqi; heads wrap instead of overflowing) and the card spans the map column;
+compact wide = equal auto-fit columns (floor 250 px = the widest compact
+group), wrapped rows under one column grid, one-fit rows still hug via
+`legendHug()` measuring natural widths; pill = one swatch row tall everywhere,
+top-right stacked, end of last row wide. First commit 6ef0f10 pushed.
+
+## [visual-legend] 2026-11-20 02:45 UTC — round 2 DONE
+Measured after (dev + live data, 1440/1024/390/320 × light/dark ×
+compact/expanded): stacked swatch-column spread 0 px; card edges = map edges
+(±0); toggle 20.8 px tall / 64–72 px wide at every width incl. 390 (was 44);
+nothing behind a scroll; live 3-lane strip stays the round-1 single hug row
+(507 px card at 1440/1024). Wide-compact rows share exact column starts
+({323, 667} at 1440, {33, 355, 677} at 1024). e2e: legend set 8/8 —
+`test_legend_card_hugs_its_scales_and_aligns_with_the_map` now injects the
+four dev-only groups through the track-layer legend seam and locks the 7-lane
+grid contract in; `test_legend_never_hides_a_lane_behind_a_scroll` reads the
+same `--lg-wide` switch the container query flips. test_dashboard_fe full: 46
+passed / 4 failed — all four are the `#detail-viz`/live-box family already
+failing at the base commit on this host (box publishes no viz.json mid-weekly
+run); trackwind+tracklane+guardian+chips 103 passed / 3 failed, same family.
+Units 590 passed / 2 failed = missing `third_party/ExtremeWeatherBench` clone
+in this worktree (pre-existing env, no Python touched here). PR #6 body
+rewritten for both rounds (screenshots live in
+`/home/orca/orca/workspaces/ewb-live/screenshots/visual-legend/round2-*/`,
+none in the repo). Commits: 6ef0f10 (fix), 067bc44 (tests); head 067bc44.
