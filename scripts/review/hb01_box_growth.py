@@ -150,6 +150,9 @@ class TunedTracker(Tracker):
         claim_overlap: claim only the region cells that are valid today AND
             within ``move_cells`` of the current footprint (S3), instead of
             every cell of a claimed region, closing-filled cells included.
+        seed_valid_only: a new candidate's box/footprint is the region's *valid*
+            cells, not the whole labelled region (S3's other half: a seed box
+            that spans a closing-filled gap is born too big).
         merge_keeps_older_box: on a merge keep the surviving (older) event's box
             and clip the partner's cells to it (S5) instead of unioning boxes.
         rolling_days: re-derive the box each day from the footprints of the last
@@ -157,11 +160,12 @@ class TunedTracker(Tracker):
     """
 
     def __init__(self, cell_area: np.ndarray, params: Params, hazard: str,
-                 claim_overlap: bool = False,
+                 claim_overlap: bool = False, seed_valid_only: bool = False,
                  merge_keeps_older_box: bool = False,
                  rolling_days: int | None = None) -> None:
         super().__init__(cell_area, params, hazard)
         self.claim_overlap = claim_overlap
+        self.seed_valid_only = seed_valid_only
         self.merge_keeps_older_box = merge_keeps_older_box
         self.rolling_days = rolling_days
         self.box_hist: dict[str, list[Box]] = {}
@@ -246,6 +250,10 @@ class TunedTracker(Tracker):
         free_area[0] = 0.0
         for label in np.flatnonzero(free_area >= p.seed_area_km2):
             region = (labels == label) & ~taken
+            if self.seed_valid_only:
+                region &= valid
+                if not region.any():
+                    continue
             if (occupied & region).any():
                 continue
             box = Box.from_mask(region)
@@ -337,13 +345,17 @@ class LoggingTracker(TunedTracker):
                 "H0_geometry": ext & ~merged & ~valid & ~region,
             }
             areas = {k: float(self.cell_area[m].sum()) for k, m in cats.items()}
+            causal = {k: v for k, v in areas.items() if k != "H0_geometry"}
             self.growth.append({
                 "day": str(day), "id": ev.id,
                 "added_km2": round(sum(areas.values())),
                 "added_land_km2": round(float(
                     self.cell_area[ext & self.land].sum())),
                 "cats": {k: round(v) for k, v in areas.items()},
-                "driver": max(cats, key=lambda k: areas[k]),
+                # the bbox rectangle's interior is never a cause of its own: it
+                # is charged to the cells that made the box grow today
+                "driver": max(causal, key=lambda k: causal[k]) if causal
+                else "H0_geometry",
                 "wrapped": ev.box.j0 > ev.box.j1 and old_box.j0 <= old_box.j1,
             })
         for ev in self.active:
@@ -574,8 +586,7 @@ def attribute(w: Window, params: Params) -> dict:
         by_driver[g["driver"]] = by_driver.get(g["driver"], 0.0) + g["added_km2"]
         # the bbox rectangle's interior follows from the day's driving cells
         geo = cats.pop("H0_geometry", 0.0)
-        top = max(cats, key=lambda k: cats[k]) if cats else g["driver"]
-        attributed[top] += geo
+        attributed[g["driver"]] += geo
         for k, v in cats.items():
             attributed[k] += v
     return {"growth_days": len(tracker.growth),
@@ -610,7 +621,7 @@ def _per_event(growth: list[dict], seed_of: dict[str, float]) -> list[dict]:
         r = out.setdefault(g["id"], {"id": g["id"], "start": g["day"],
                                      "added_km2": 0.0, "growth_days": 0,
                                      "by_cat": {k: 0.0 for k in CAUSES},
-                                     "by_driver": {k: 0.0 for k in CAUSES[:-1]}})
+                                     "by_driver": {k: 0.0 for k in CAUSES}})
         r["added_km2"] += g["added_km2"]
         r["growth_days"] += 1
         r["start"] = min(r["start"], g["day"])
@@ -711,6 +722,8 @@ STRATEGIES: list[Strategy] = [
              note="S2b plus 2-98% area-weighted quantile trim"),
     Strategy("S3_claim_overlap", tweaks={"claim_overlap": True},
              note="claim only valid cells within move_cells of the footprint"),
+    Strategy("S3v_seed_valid", tweaks={"seed_valid_only": True},
+             note="a seed box covers the region's valid cells, not the closed region"),
     Strategy("S3p_overlap_persist",
              tweaks={"claim_overlap": True},
              post=post_persist(persist_k(0.5)),
@@ -739,6 +752,16 @@ STRATEGIES: list[Strategy] = [
              tweaks={"claim_overlap": True, "merge_keeps_older_box": True},
              post=post_persist(persist_k(0.5), 0.02),
              note="C1 plus region_radius=4, region_min_fraction=0.40"),
+    Strategy("C3_valid_box_persist",
+             tweaks={"claim_overlap": True, "seed_valid_only": True,
+                     "merge_keeps_older_box": True},
+             post=post_persist(persist_k(0.5), 0.02),
+             note="S3+S3v+S5 tracking (footprint/box = valid cells only), "
+                  "published box = S2c persistence"),
+    Strategy("C4_valid_box_only",
+             tweaks={"claim_overlap": True, "seed_valid_only": True,
+                     "merge_keeps_older_box": True},
+             note="C3 tracking with the tracker's own box (no persistence rule)"),
 ]
 
 
@@ -799,13 +822,23 @@ def run_strategies(w: Window, base_spells: list[Spell], base_rows: list[dict],
                   else replay(w, params, **st.tweaks))
         published = ([p for s in spells for p in st.post(w, s)] if st.post
                      else [Published(s, s.box) for s in spells])
+        rows_pre = [score_one(w, Published(s, s.box)) for s in spells]
         rows = [score_one(w, p) for p in published]
         agg = aggregate(rows, time.perf_counter() - t0)
         agg.update({"note": st.note, "params": st.params,
                     "tweaks": {k: v for k, v in st.tweaks.items() if v}})
         if st.name != "S0_current":
-            agg.update(identity_delta(rows, base_rows) if not st.params
-                       and not st.tweaks else geom_delta(w, rows, base_rows))
+            # event identity is compared on the TRACKER's own boxes (that is
+            # what start dates and `ongoing` depend on); the post rule's own
+            # effect is reported separately as splits / drops
+            ident = not st.params and not st.tweaks
+            agg.update(identity_delta(rows_pre, base_rows) if ident
+                       else geom_delta(w, rows_pre, base_rows))
+            if st.post is not None:
+                agg["published_split_extra"] = identity_delta(
+                    rows, rows_pre)["split_into_extra"]
+                agg["published_dropped"] = identity_delta(
+                    rows, rows_pre)["lost_vs_current"]
             agg["worst3_paired"] = paired_worst(rows, base_rows)
         out[st.name] = {"summary": agg, "rows": rows}
         print(f"  {w.hazard:<10} {st.name:<31} n={agg['n']:<4} "
@@ -814,7 +847,8 @@ def run_strategies(w: Window, base_spells: list[Spell], base_rows: list[dict],
               f"box_p90={agg.get('box_km2_p90', 0) / 1e6:6.2f}M "
               f"box_max={agg.get('box_km2_max', 0) / 1e6:6.2f}M "
               f"lost={agg.get('lost_vs_current', '-'):<3} "
-              f"gained={agg.get('gained_vs_current', agg.get('split_into_extra', '-')):<3} "
+              f"gained={agg.get('gained_vs_current', '-'):<3} "
+              f"split+={agg.get('published_split_extra', 0):<3} "
               f"({agg['runtime_s']}s)", flush=True)
     return out
 
