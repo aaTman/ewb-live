@@ -77,32 +77,33 @@
   const runBin = (count, bins) => Math.min(count - 1, bins - 1);   // bins: 1..bins
   const isTrack = (e) => !!(e && e.track);   // TRACK lane → tracklayer.js draws it
   const TYPES = {
-    heat_wave:          { css: 'heat',      short: 'Heat' },
-    freeze:             { css: 'freeze',    short: 'Freeze' },
+    heat_wave:          { css: 'heat',      short: 'Heat',            narrow: 'Heat' },
+    freeze:             { css: 'freeze',    short: 'Freeze',          narrow: 'Freeze' },
     // cold snap = the freeze rule without the 0 °C cap: its own colour, but it
     // shares the P15 raw layer, which IS its mask (no third temperature lane)
-    cold_snap:          { css: 'cold-snap', short: 'Cold snap' },
-    atmospheric_river:  { css: 'ar',        short: 'AR' },
+    cold_snap:          { css: 'cold-snap', short: 'Cold snap',       narrow: 'Cold' },
+    atmospheric_river:  { css: 'ar',        short: 'AR',              narrow: 'AR' },
     // flood rides BOTH: the daily class raster below (LAYERS key l) and the
     // event boxes — the raster is the evidence field, the boxes the events
-    flood:              { css: 'flood',     short: 'Flood' },
+    flood:              { css: 'flood',     short: 'Flood',           narrow: 'Flood' },
     /* TRACK lanes (tc-map 2026-11-18): a cyclone entry carries its own `track`
        geometry, so it is drawn by the additive tracklayer.js layer (polyline,
        intensity fixes, position at the selected step) and NEVER as a bbox box —
        a rectangle around a 3,000 km track is not information. These entries give
        that layer the lane colour and the Gantt short label. */
-    tropical_cyclone:   { css: 'tc',        short: 'Tropical cyclone', track: true },
-    midlat_cyclone:     { css: 'mlc',       short: 'Midlat. cyclone', track: true },
+    tropical_cyclone:   { css: 'tc',        short: 'Tropical cyclone', narrow: 'TC', track: true },
+    midlat_cyclone:     { css: 'mlc',       short: 'Midlat. cyclone',  narrow: 'MLC', track: true },
   };
-  // Gantt lanes. midlat_cyclone stays out until its lane publishes events (an
-  // always-empty lane would be its own small lie); a track lane gets bars like
+  // Gantt lanes: EVERY lane with events in the window shows, midlat_cyclone
+  // included (its lane now publishes events — round 2 was filed because it was
+  // silently missing while holding 80 storms). A track lane gets bars/ribbon like
   // every other lane, from qualified_at → end, which is how a storm becomes
   // findable on the time strip at all.
   // Grouped in the chips' order (Temperature | Water | Storms): the lane adjacency is
   // part of what the identity palette was validated against — if this order
   // changes, re-run the palette check (notes/chips_design.md).
   const LANE_ORDER = ['heat_wave', 'cold_snap', 'freeze', 'atmospheric_river',
-    'flood', 'tropical_cyclone'];
+    'flood', 'tropical_cyclone', 'midlat_cyclone'];
   const SPEEDS = [2, 5, 10];               // fps choices
 
   let raw = null;                          // raw_exceedance index.json
@@ -111,6 +112,10 @@
   let on = { h: true, f: true, a: true, l: true };  // layer toggles
   const sel = new Set();                   // selected event ids (multi-highlight)
   let previewId = null;                    // event pointed at in the page's event list (outline only)
+  // Dense lanes a reader expanded to packed rows (label click). IN MEMORY ONLY:
+  // the strip's height rides on it, so it never persists to the URL and never
+  // changes on hover or a frame step (only on the toggle itself).
+  const gExpand = new Set();
   let mounted = false;
   let playing = null, speedI = 1;
   let land = null, graticule = null, proj = null, path = null;
@@ -770,63 +775,353 @@
     for (const L of LAYERS) on[L.key] = tab === 'all' || (!!key && L.key === key);
   }
 
-  /* ---------------- Gantt strip (qualified → end, shared time scale) ---------------- */
+  /* ---------------- Gantt strip (qualified → end, shared time scale) ----------------
+     Round 1 (2026-11-19) made the strip FIT its box (1 user unit = 1 CSS px, height
+     a function of the LANE COUNT only) and stop bars HIDING each other (greedy
+     sub-row packing). Round 2 (2026-11-20) makes it survive DENSE lanes: the live
+     window has heat/AR/freeze, but a new-event run adds midlat cyclone (80),
+     tropical cyclone (44) and flood (40), and a packed 7-deep lane in a fixed slot
+     thinned its bars to 2.2 px hairlines. The strip now:
+       · shows EVERY lane with events in the window, midlat_cyclone included;
+       · keeps ONE bar height (G_BAR) everywhere — it never thins a bar below G_BAR;
+       · lets a SPARSE lane (max concurrency <= G_DENSE) grow its slot to fit its
+         sub-rows (bar + gap each), and
+       · draws a DENSITY RIBBON for a DENSE lane instead of hairlines: a step area
+         whose height is how many events are active at that moment, in the lane
+         colour, clickable to jump the slider and labelled with a hover readout.
+         Selected / list-previewed events of a dense lane are ALWAYS drawn as a
+         full bar over the ribbon, so selection never disappears; the lane label
+         toggles a dense lane between ribbon and fully-expanded packed rows.
+     The height is still content-driven and depends ONLY on the data window and the
+     expand toggles — never on hover or the frame — so the CLS reservation in
+     styles.css (min-height) stays exact for the collapsed default view. */
+  const G_BAR = 6;        // ONE uniform bar height (>= 5 px), every lane, never thinned
+  const G_ROWGAP = 2;     // gap between sub-rows inside a lane
+  const G_DENSE = 3;      // max concurrency <= this packs as sub-rows; more is a ribbon
+  const G_RIB = 16;       // density-ribbon lane height (~2.7 bar heights)
+  const G_GAP = 3;        // vertical gap between lane bands
+  const G_AX = 14;        // month-label band under the lanes (3px clear of the last band)
+  const G_RIGHT = 12;     // trailing inset = slider thumb half-width (see styles.css)
+  const G_MIN_W = 240;    // never shrink the axis below this
+  const GUT = 2;          // x gutter between bars in one sub-row
+  const NARROW_W = 600;   // below this container width, labels move ABOVE their lane
+  const G_CAP = 11;       // the caption row a narrow strip puts each lane name on
+  const G_LAB_MIN = 40, G_LAB_MAX = 150, G_LAB_FRAC = 0.34;   // label column limits
+  // a lane's band height from its packed row count (>= 1) in bars-mode
+  const G_BARS_H = (rows) => Math.max(G_BAR, rows * G_BAR + (rows - 1) * G_ROWGAP);
+  // a bar's top within its lane (row 0 at the band top)
+  const G_BAR_Y = (row) => row * (G_BAR + G_ROWGAP);
+
+  /* Lane labels are the strip's only text that must never be clipped: the old 44 px
+     column clipped nothing only because the whole strip was scaled to 56%; at true
+     size `Tropical cyclone` needs ~101 px of --text-2xs mono. Widths are measured
+     once per font and cached — required for correctness, not just speed, because
+     getComputedTextLength() returns 0 while the section is hidden (detail view
+     open), and caching a 0 would collapse the column under the slider's margin and
+     misalign the axis. Below G_LAB_FRAC of the width the names are ellipsised by
+     CHARACTER (the label font is mono, so one advance is exact) and the full name
+     moves to the label's tooltip. */
+  const gLab = { font: '', ch: 0, w: new Map(), pad: G_LAB_MIN };
+  function labelMetrics(svg, W, names) {
+    const root = getComputedStyle(document.documentElement);
+    const font = root.getPropertyValue('--text-2xs').trim() + '|'
+      + root.getPropertyValue('--font-mono').trim();
+    if (gLab.font !== font) { gLab.font = font; gLab.ch = 0; gLab.w.clear(); }
+    let max = 0, ch = gLab.ch, ok = gLab.ch > 0;
+    const probe = mk('text', { class: 'gm-lane-lab', x: 0, y: -9999 }, svg);
+    for (const n of names) {
+      let w = gLab.w.get(n);
+      if (w === undefined) {
+        probe.textContent = n;
+        w = probe.getComputedTextLength();
+        if (w > 0) gLab.w.set(n, w); else ok = false;   // hidden: measure nothing
+      }
+      if (w > 0) { max = Math.max(max, w); ch = Math.max(ch, w / n.length); }
+    }
+    probe.textContent = 'M';
+    const em = probe.getComputedTextLength();
+    probe.remove();
+    if (em > 0) { ch = Math.max(ch, em); ok = true; }
+    if (!ok) return { pad: gLab.w.size ? gLab.pad : G_LAB_MIN, name: (n) => n };
+    // The label column is never allowed to eat more than 20 % of the strip, so the
+    // time axis keeps >= 80 % of the width even on a phone (round 2: a clipped or
+    // 30 %-wide label column made the axis unreadable at 390 px). If the widest
+    // name still will not fit the column it is ellipsised (below), never clipped.
+    const axisCap = Math.max(30, Math.floor(0.2 * W - G_RIGHT));
+    const pad = Math.min(axisCap, Math.min(Math.max(G_LAB_MIN, Math.round(max) + 9), G_LAB_MAX,
+      Math.max(G_LAB_MIN + 12, Math.round(W * G_LAB_FRAC))));
+    gLab.pad = pad;
+    const name = (short) => {
+      if ((gLab.w.get(short) || 0) <= pad - 8) return short;
+      const fits = Math.floor((pad - 8) / ch);
+      return fits < 3 ? short.slice(0, 1) + '…'
+        : short.slice(0, fits - 1).replace(/[\s.]+$/, '') + '…';
+    };
+    return { pad, name };
+  }
+
+  /* Two pieces of the strip are pure geometry, so they live apart from the SVG:
+   they take numbers and return numbers, which means the rules that decide what
+   the reader can and cannot see can be read — and argued with — without a
+   browser. */
+
+  /* Greedy interval packing on x, UNCAPPLIED: a bar takes the first row whose last
+   bar has already ended, so a lane gets EXACTLY as many rows as its own overlap
+   depth — no cap, no thinning, one G_BAR height on every row. The caller decides
+   whether those rows are drawn (a sparse lane, or a dense lane the reader expanded)
+   or replaced by a density ribbon. Bars in one row never overlap in x and rows never
+   overlap in y, so a drawn bar is always visible and clickable. Returns the row
+   count (the lane's max concurrency), which also picks sparse vs dense. */
+  function packLane(items) {
+    items.sort((a, b) => a.bx - b.bx || a.x1 - b.x1);   // left to right, ties: early end first
+    const ends = [];
+    for (const it of items) {
+      const free = ends.findIndex((e) => it.bx >= e);
+      it.row = free >= 0 ? free : ends.length;
+      if (it.row === ends.length) ends.push(-Infinity);
+      ends[it.row] = it.x1 + GUT;
+    }
+    return { rows: ends.length };
+  }
+
+  /* A dense lane's DENSITY RIBBON: one rectangle per constant-activity span, whose
+   height is how many of the lane's events are active in that span, scaled to the
+   lane's peak. It is a step area, not bars: the reader sees WHERE the lane crowds
+   without a smear of hairlines, each span answers hover with "N active, <date>", and
+   clicking a span jumps the slider to it. Returns spans [{xa, xb, n, h}] sized inside
+   a lane band of `h` pixels (a single active event clamps to >= 2 px, so it stays visible). */
+  function ribbonSpans(items, h) {
+    if (!items.length) return { spans: [], peak: 0 };
+    const lo = items[0].bx, hi = items[items.length - 1].x1;
+    const cl = (v) => Math.max(lo, Math.min(hi, v));
+    const bounds = [...new Set([lo, hi, ...items.map((it) => cl(it.bx)), ...items.map((it) => cl(it.x1))])]   // sorted after clamping
+      .sort((a, b) => a - b).filter((v, i, a) => !i || v > a[i - 1] + 0.01);
+    const active = (mid) => items.reduce((n, it) => n + (it.bx <= mid && it.x1 > mid ? 1 : 0), 0);
+    let peak = 1;
+    const spans = [];
+    for (let i = 0; i < bounds.length - 1; i++) {
+      const xa = bounds[i], xb = bounds[i + 1];
+      const n = active((xa + xb) / 2);
+      if (n <= 0) continue;                                  // gap: leave the lane ground bare
+      peak = Math.max(peak, n);
+      spans.push({ xa, xb, n, h: n });                        // height filled after peak is known
+    }
+    for (const s of spans) s.h = Math.max(2, Math.round((s.n / peak) * h));
+    return { spans, peak };
+  }
+
+  /* The axis's own calendar: Mondays once a week is wide enough to tell them
+   apart (16 px), month starts when it is not. `named` marks the tick that carries
+   a month label — the first Monday of a month in week mode, every month start in
+   month mode — and the caller drops labels closer together than the text is wide. */
+  function timeTicks(t0, t1, pxDay) {
+    const weekly = pxDay * 7 >= 16;
+    const d = new Date(t0);
+    d.setUTCDate(d.getUTCDate() + 1); d.setUTCHours(0, 0, 0, 0);
+    if (weekly) while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1);
+    else while (d.getUTCDate() !== 1) d.setUTCDate(d.getUTCDate() + 1);
+    const out = [];
+    for (; d.getTime() <= t1; weekly ? d.setUTCDate(d.getUTCDate() + 7) : d.setUTCMonth(d.getUTCMonth() + 1))
+      out.push({ ms: d.getTime(), named: weekly ? d.getUTCDate() <= 7 : true,
+                 label: d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }) });
+    return out;
+  }
+
   function renderGantt() {
     const svg = $('#gm-gantt');
     svg.innerHTML = '';
-    if (!tl) return;
-    const W = Math.max(320, $('#raw-map-wrap').clientWidth);
-    const LANE_H = 12, GAP = 4, LAB = 44, TOP = 2, AX = 16;
-    const H = TOP + LANE_H * LANE_ORDER.length + GAP * (LANE_ORDER.length - 1) + AX;
-    svg.setAttribute('width', W); svg.setAttribute('height', H);
-    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    if (!tl) { svg.removeAttribute('viewBox'); return; }
+    // The strip's OWN content box is the geometry: `width: 100%` makes it the
+    // card's content width, and the slider sits in that same box (same origin x,
+    // same width), so [LAB, W - G_RIGHT] is exactly the thumb's travel and 1 user
+    // unit is 1 CSS px. Hidden (detail view open) it measures 0 — fall back to the
+    // map column's width minus the card's gutters rather than paint a 0-wide axis.
+    const own = svg.clientWidth || $('#raw-map-wrap').clientWidth - 26;
+    const W = Math.max(G_MIN_W, own);
+    // below NARROW_W there is no room for a label column that is ALSO >= 80 % axis,
+    // so the names move to a caption row above each lane and the axis gets the full
+    // width (round 2: a 30 %-wide column clipped "Tropical cyclone" at 390 px)
+    const narrow = W < NARROW_W;
+    let shortNames = narrow;
+    const labOf = (type) => (shortNames ? (TYPES[type].narrow || TYPES[type].short) : TYPES[type].short);
     const t0 = tsToDate(raw.frames[0]).getTime();
     const t1 = tsToDate(raw.frames[raw.frames.length - 1]).getTime();
-    const x = (ms) => LAB + Math.min(1, Math.max(0, (ms - t0) / (t1 - t0))) * (W - LAB - 12);  // trailing 12 = slider thumb inset
+    const span = Math.max(1, t1 - t0);
     const anySel = sel.size > 0;
     const tab = pageTab();
-    for (const type of LANE_ORDER) {
-      const li = LANE_ORDER.indexOf(type);
-      const y = TOP + li * (LANE_H + GAP);
-      const lab = mk('text', { x: 0, y: y + LANE_H - 3, class: 'gm-lane-lab' }, svg);
-      lab.textContent = TYPES[type].short;
-      mk('rect', { class: 'gm-lane', x: LAB, y, width: W - LAB - 12, height: LANE_H, rx: 2, opacity: .35 }, svg);
-      for (const ev of tlEvents()) {
-        if (ev.type !== type) continue;
-        const q = qualTs(ev), e = endTs(ev);
-        if (q > raw.frames[raw.frames.length - 1] || e < raw.frames[0]) continue;   // clamped out
-        const bx = x(tsToDate(q).getTime()), be = x(tsToDate(e).getTime());
-        const bw = Math.max(2, be - bx);
-        const isSel = sel.has(ev.id) || previewId === ev.id;
-        const bar = mk('rect', {
-          class: 'gm-bar', 'data-id': ev.id, x: bx, y, width: bw, height: LANE_H, rx: 2,
-          style: `fill: var(--series-${TYPES[type].css})`,
-          opacity: isSel ? 1 : (anySel ? .18 : (tab !== 'all' && tab !== type ? .18 : .8)),
-          stroke: isSel ? 'var(--canvas)' : 'none', 'stroke-width': isSel ? 1 : 0,
-          cursor: 'pointer',
-        }, svg);
-        mk('title', {}, bar).textContent = `${ev.title} — qualified ${fmtShort(q)}${evSpan(ev)}`;
-        bar.addEventListener('click', () => {
-          if (!sel.has(ev.id)) sel.add(ev.id); else sel.delete(ev.id);
-          jumpTo(q);
-          writeUrl(true); render();
-        });
+
+    /* 1 · filter first — the region view and the frame-window clamp behave exactly
+     as before, because the label column is sized to the names this strip will
+     actually DRAW. A LANE belongs to the strip when its type has any event in the
+     window (Region then hides BARS, never lanes), so the strip's height and its
+     label column — hence the axis origin — stay constant across the frame step,
+     the type tab and the Region dropdown: that is what the CLS reservation in
+     styles.css and the "nothing below the legend moved" contract need. */
+    const inWindow = (ev) => qualTs(ev) <= raw.frames[raw.frames.length - 1] && endTs(ev) >= raw.frames[0];
+    const lanes = LANE_ORDER.filter((type) => tl.events.some((ev) => ev.type === type && inWindow(ev)));
+
+    /* Which lanes are DENSE is decided from the overlap DEPTH, which a greedy
+     packing count gives the same way at any width — so it can be known before the
+     label column (which needs it to reserve ▸/▾ room for the expand toggle). */
+    const depthOf = (items) => {
+      const iv = items.map((ev) => [tsToDate(qualTs(ev)).getTime(), tsToDate(endTs(ev)).getTime()])
+        .sort((a, b) => a[0] - b[0]);
+      const ends = []; let rows = 0;
+      for (const [a, b] of iv) {
+        const f = ends.findIndex((e) => a >= e); const r = f >= 0 ? f : ends.length;
+        if (r === ends.length) ends.push(0); ends[r] = b; rows = Math.max(rows, ends.length);
+      }
+      return rows;
+    };
+    const laneItems = new Map(lanes.map((type) =>
+      [type, tlEvents().filter((ev) => ev.type === type && inWindow(ev))]));
+    const dense = new Set(lanes.filter((type) => depthOf(laneItems.get(type)) > G_DENSE));
+    // WIDE: names sit in a left column sized to them (caret reserved for dense lanes).
+    // NARROW: the column would eat the axis, so LAB collapses to 0, the axis runs the
+    // full width, and each lane is named on a caption row above its band instead.
+    let LAB, laneName;
+    if (narrow) { LAB = 0; laneName = (s) => s; }
+    else {
+      const names = () => lanes.map((type) => (dense.has(type) ? '▸ ' : '') + labOf(type));
+      ({ pad: LAB, name: laneName } = labelMetrics(svg, W, names()));
+      // a column too narrow for a full name takes the short forms (TC, MLC), not an ellipsis
+      if (names().some((n) => laneName(n) !== n)) {
+        shortNames = true;
+        ({ pad: LAB, name: laneName } = labelMetrics(svg, W, names()));
       }
     }
-    // cursor: the current frame (G-23 lineage), 1px ink line spanning the lanes
+    $('#global-sec').style.setProperty('--gm-lab', LAB + 'px');
+
+    const x = (ms) => LAB + Math.min(1, Math.max(0, (ms - t0) / span)) * (W - LAB - G_RIGHT);
+    const xInv = (px) => t0 + ((px - LAB) / (W - LAB - G_RIGHT)) * span;   // px → ms (ribbon click)
+    const pxDay = (W - LAB - G_RIGHT) / (span / 86400e3);
+    const BW_MIN = Math.max(2, Math.min(4, pxDay * 0.8));   // a day stays findable, capped at 4 px
+
+    /* 2 · pack each lane (rows = its own concurrency), then choose a mode: a lane
+     with nothing to draw is an empty rule; a DENSE lane collapsed is a ribbon; a
+     dense lane the reader expanded, or any SPARSE lane, draws packed sub-rows at
+     ONE uniform bar height. Band height follows from the mode, and bands are then
+     stacked — so the strip grows for content, never for crowding-in-a-slot. */
+    const groups = lanes.map((type) => {
+      const items = laneItems.get(type).map((ev) => {
+        const q = qualTs(ev), e = endTs(ev);
+        const bx = x(tsToDate(q).getTime());
+        const bw = Math.max(BW_MIN, x(tsToDate(e).getTime()) - bx);
+        return { ev, q, bx, bw, x1: bx + bw, row: 0 };
+      });
+      const { rows } = packLane(items);
+      const isDense = dense.has(type);
+      const expanded = gExpand.has(type);
+      const mode = rows === 0 ? 'empty' : (isDense && !expanded ? 'ribbon' : 'bars');
+      const bh = mode === 'empty' ? 2 : (mode === 'ribbon' ? G_RIB : G_BARS_H(rows));
+      return { type, items, rows, isDense, expanded, mode, bh, lab: labOf(type) };
+    });
+    let top = 0;
+    for (const g of groups) {
+      // narrow: a caption row (G_CAP) sits ABOVE the band for a named lane, so the
+      // axis can run the full width with no left column; g.y stays the BAND top.
+      g.capH = (narrow && g.rows) ? G_CAP : 0;
+      g.capY = top;
+      g.y = top + g.capH;
+      top += g.capH + g.bh + G_GAP;
+    }
+    const gridBot = groups.length ? groups[groups.length - 1].y + groups[groups.length - 1].bh : 0;
+    const H = gridBot + G_AX;
+    svg.setAttribute('width', W); svg.setAttribute('height', H);
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    // the box IS the viewBox: nothing is ever scaled, whatever the lane count
+    svg.style.height = H + 'px'; svg.style.minHeight = H + 'px';
+
+    const msLabel = (ms) => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+    /* 3 · lane chrome + labels. Every non-empty lane is named (as on the chips); a
+     DENSE lane's label is a button that toggles it between ribbon and expanded rows
+     (aria-expanded, ▸/▾ affordance, keyboard). An empty lane collapses to a 2 px
+     rule with NO label, handing its column back to the axis. */
+    groups.forEach((g, i) => {
+      mk('rect', { class: 'gm-lane' + (i % 2 ? ' gm-lane-alt' : '') + (g.rows ? '' : ' gm-lane-none'),
+                   x: LAB, y: g.y, width: W - LAB - G_RIGHT, height: g.bh, rx: Math.min(2.5, g.bh / 2) }, svg);
+      if (i) mk('line', { class: 'gm-lane-sep', x1: 0, x2: W - G_RIGHT,
+                          y1: g.capY - G_GAP / 2, y2: g.capY - G_GAP / 2 }, svg);
+      if (!g.rows) return;
+      const caret = g.isDense ? (g.expanded ? '▾ ' : '▸ ') : '';
+      const full = caret + g.lab;
+      const labY = narrow ? g.capY + G_CAP - 2 : g.y + g.bh / 2;   // above the band, or centred in it
+      const t = mk('text', { class: 'gm-lane-lab' + (g.isDense ? ' toggle' : ''),
+                             x: 0, y: labY, dy: narrow ? '0' : '.36em' }, svg);
+      t.textContent = laneName(full);
+      if (g.isDense) {
+        t.setAttribute('role', 'button'); t.setAttribute('tabindex', '0');
+        t.setAttribute('aria-expanded', String(g.expanded));
+        mk('title', {}, t).textContent = g.lab + ' — ' + g.rows + ' at once: click to '
+          + (g.expanded ? 'collapse to a density ribbon' : 'expand every bar');
+        const toggle = (e) => { e.stopPropagation();
+          if (gExpand.has(g.type)) gExpand.delete(g.type); else gExpand.add(g.type); render(); };
+        t.addEventListener('click', toggle);
+        t.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(e); } });
+      } else if (t.textContent !== full) mk('title', {}, t).textContent = g.lab;   // ellipsis: full name on hover
+    });
+
+    /* 4 · event marks. A bars lane paints every item at G_BAR height, one row per
+     sub-row. A ribbon lane paints its density spans (click jumps the slider) and
+     then ALWAYS re-paints a selected / list-previewed event as a full bar on top,
+     so a selection is never lost inside the ribbon. */
+    const drawBar = (g, it, over) => {
+      const ev = it.ev;
+      const isSel = sel.has(ev.id) || previewId === ev.id;
+      const by = g.mode === 'ribbon' ? g.y + (g.bh - G_BAR) / 2 : g.y + G_BAR_Y(it.row);
+      const bar = mk('rect', {
+        class: 'gm-bar', 'data-id': ev.id, x: it.bx, y: by,
+        width: it.bw, height: G_BAR, rx: Math.min(2.5, G_BAR / 2),
+        style: `fill: var(--series-${TYPES[g.type].css})`,
+        opacity: isSel ? 1 : (anySel ? .18 : (tab !== 'all' && tab !== g.type ? .18 : .85)),
+        stroke: isSel ? 'var(--canvas)' : 'none', 'stroke-width': isSel ? 1 : 0,
+        cursor: 'pointer',
+      }, svg);
+      mk('title', {}, bar).textContent = `${ev.title} — qualified ${fmtShort(it.q)}${evSpan(ev)}`;
+      bar.addEventListener('click', () => {
+        if (!sel.has(ev.id)) sel.add(ev.id); else sel.delete(ev.id);
+        jumpTo(it.q); writeUrl(true); render();
+      });
+    };
+    for (const g of groups) {
+      if (g.mode === 'bars') {
+        for (const it of g.items) drawBar(g, it, false);
+      } else if (g.mode === 'ribbon') {
+        const { spans } = ribbonSpans(g.items, g.bh);
+        const dim = anySel ? .3 : (tab !== 'all' && tab !== g.type ? .28 : .8);
+        const grp = mk('g', { class: 'gm-ribbon' }, svg);
+        for (const s of spans) {
+          const r = mk('rect', { class: 'gm-rib-seg', x: s.xa, y: g.y + g.bh - s.h,
+                                 width: Math.max(0.6, s.xb - s.xa), height: s.h,
+                                 style: `fill: var(--series-${TYPES[g.type].css})`,
+                                 opacity: dim, cursor: 'pointer' }, grp);
+          mk('title', {}, r).textContent = `${g.lab} — ${s.n} active, ${msLabel(xInv(s.xa))}`;
+          r.addEventListener('click', () => {
+            const ts = tsToStr(new Date(xInv(s.xa)));
+            jumpTo(ts); writeUrl(true); render();
+          });
+        }
+        for (const it of g.items) {                 // selection always on top of the ribbon
+          if (sel.has(it.ev.id) || previewId === it.ev.id) drawBar(g, it, true);
+        }
+      }
+    }
+
+    /* 5 · cursor + time axis: the current frame is a 1 px ink line over the lanes
+     (G-23 lineage, still the topmost thing painted); ticks are Mondays when a
+     week is wide enough to tell them apart and month starts when it is not; month
+     names sit under the axis and never closer than 34 px. */
     const cx = x(tsToDate(raw.frames[idx]).getTime());
-    mk('line', { x1: cx, x2: cx, y1: 0, y2: H - AX + 3,
-                 style: 'stroke: var(--matte-black); stroke-width: 1; pointer-events: none' }, svg);
+    mk('line', { class: 'gm-cursor', x1: cx, x2: cx, y1: 0, y2: gridBot }, svg);
     let lastLab = -1e9;
-    const d = new Date(t0);
-    d.setUTCDate(d.getUTCDate() + 1); d.setUTCHours(0, 0, 0, 0);
-    for (; d.getTime() <= t1; d.setUTCDate(d.getUTCDate() + 1)) {
-      if (d.getUTCDate() !== 1) continue;
-      mk('line', { class: 'gm-tick', x1: x(d.getTime()), x2: x(d.getTime()), y1: TOP, y2: H - AX + 3 }, svg);
-      if (x(d.getTime()) - lastLab < 34) continue;
-      lastLab = x(d.getTime());
-      const t = mk('text', { x: x(d.getTime()) + 2, y: H - 3 }, svg);
-      t.textContent = d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    for (const tk of timeTicks(t0, t1, pxDay)) {
+      const tx = x(tk.ms);
+      mk('line', { class: 'gm-tick' + (tk.named ? '' : ' minor'),
+                   x1: tx, x2: tx, y1: 0, y2: gridBot }, svg);
+      if (!tk.named || tx - lastLab < 34) continue;   // 34 px: a month name plus a gap
+      lastLab = tx;
+      mk('text', { class: 'gm-month', x: tx + 2, y: H - 3 }, svg).textContent = tk.label;
     }
   }
 

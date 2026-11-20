@@ -1232,6 +1232,204 @@ def test_merged_gantt_bar_click_jumps_and_selects(gd_server, page_ctx):
     assert "sel=gf1" in page.evaluate("decodeURIComponent(location.hash)")
 
 
+def _dense_timeline():
+    """A lane that overlaps ITSELF: 7 heat waves in an 11-day window (4-5 of them
+    live at once), the shape the owner's 'the time bar … has become a mess' report
+    is about. Keys are [start, end) ISO days; every entry gets qualified_at = start.
+    """
+    days = _GD_DAYS
+    # peak concurrency 8 on 2026-01-05: deeper than the dense-lane cutoff, so the
+    # strip renders this lane as a density RIBBON (not 8 stacked bars) by default
+    heat = [("2026-01-01", "2026-01-05"), ("2026-01-02", "2026-01-06"),
+            ("2026-01-02", "2026-01-07"), ("2026-01-03", "2026-01-08"),
+            ("2026-01-04", "2026-01-08"), ("2026-01-05", "2026-01-09"),
+            ("2026-01-05", "2026-01-07"), ("2026-01-05", "2026-01-11"),
+            ("2026-01-06", "2026-01-10"), ("2026-01-06", "2026-01-08"),
+            ("2026-01-07", "2026-01-09"), ("2026-01-08", "2026-01-11")]
+    evs = []
+    for i, (a, b) in enumerate(heat):
+        evs.append({"id": f"dn{i}", "type": "heat_wave", "title": f"Heat Dense {i} (e2e)",
+                    "start": a, "end": b, "bbox": [30.0, 45.0, -100.0, -80.0],
+                    "days": [d for d in days if a <= d < b],
+                    "qualified_at": a.replace("-", "") + "00"})
+    evs.append({"id": "dfr", "type": "freeze", "title": "Freeze Sparse (e2e)",
+                "start": "2026-01-03", "end": "2026-01-06", "bbox": [40.0, 50.0, 10.0, 20.0],
+                "days": _GD_DAYS[2:5], "qualified_at": "2026010300"})
+    return {"schema": 1, "generated": "2026-01-11T00:00:00Z",
+            "window": {"start": "2026-01-01", "end": "2026-01-11", "days": 11},
+            "events": evs}
+
+
+@pytest.fixture(scope="module")
+def dense_server(tmp_path_factory):
+    """The merged-map fixture with the dense single-lane timeline swapped in."""
+    root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-dense")), raw_frames=GD_RAW_TS)
+    p = os.path.join(root, "data", "results", "global_timeline.json")
+    tl = _dense_timeline()
+    json.dump(tl, open(p, "w"))
+    sel_p = os.path.join(root, "data", "results", "events_selected.json")
+    sel = json.load(open(sel_p))
+    lst = sel["events"] if isinstance(sel, dict) else sel
+    for e in tl["events"]:
+        lst.append({"id": e["id"], "event_type": e["type"], "title": e["title"],
+                    "bbox": e["bbox"], "start": e["start"], "end": e["end"],
+                    "details": {"region": "e2e"}})
+    json.dump(sel, open(sel_p, "w"))
+    srv, url = _gd_server(root)
+    yield url
+    srv.shutdown()
+
+
+# THE DENSE-LANE MODEL (visual-gantt round 2, 2026-11-20): a lane whose events
+# overlap more than G_DENSE (3) deep is a DENSITY RIBBON — a step area whose height
+# is the active-event count — NOT a smear of 2px hairlines; its label is a button
+# that expands it to packed rows, and a SELECTED event is ALWAYS redrawn as a full
+# bar over the ribbon. Every DRAWN bar keeps ONE height (>= 5px), nothing is scaled.
+def _gantt_bars(page):
+    """Geometry of the DRAWN bars + the overlap check: two bars in the strip must
+    never be fully inside one another (that is a bar the reader cannot click)."""
+    return page.evaluate("""() => {
+        const svg = document.querySelector('#gm-gantt');
+        const R = (n) => n.getBoundingClientRect();
+        const bars = [...svg.querySelectorAll('.gm-bar')];
+        const heights = [...new Set(bars.map((b) => +R(b).height.toFixed(2)))];
+        let covers = 0;
+        for (let i = 0; i < bars.length; i++) for (let j = i + 1; j < bars.length; j++) {
+            const a = R(bars[i]), b = R(bars[j]);
+            if (a.left >= b.left - 0.5 && a.right <= b.right + 0.5
+                && a.top >= b.top - 0.5 && a.bottom <= b.bottom + 0.5) covers++;
+        }
+        const box = svg.getBoundingClientRect(), vb = svg.viewBox.baseVal;
+        const card = document.querySelector('.timeline').getBoundingClientRect();
+        return { ids: bars.map((b) => b.dataset.id).sort(), nBars: bars.length,
+                 heights, covers, minH: bars.length ? Math.min(...heights) : null,
+                 ribbons: svg.querySelectorAll('.gm-ribbon').length,
+                 scale: Math.min(box.width / vb.width, box.height / vb.height),
+                 inCard: box.bottom <= card.bottom + 1,
+                 overflowDoc: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    }""")
+
+
+def _expand_first_collapsed(page):
+    """Click the first dense lane label still collapsed (aria-expanded=false) via a
+    real MouseEvent (an SVG <text> has no .click()); a toggle click re-renders the SVG."""
+    return page.evaluate("""() => {
+        const t = [...document.querySelectorAll('#gm-gantt .gm-lane-lab.toggle')]
+            .find((e) => e.getAttribute('aria-expanded') === 'false');
+        if (!t) return null;
+        t.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        return t.textContent;
+    }""")
+
+
+def test_dense_lane_renders_a_ribbon_not_hairlines(dense_server, page_ctx):
+    """The dense heat lane (12 events, ~8 deep) must be a density RIBBON with NO
+    hairline bars; the sparse freeze lane stays a single bar. Nothing scaled/hidden."""
+    page = page_ctx
+    _mm_goto(page, dense_server)
+    m = _gantt_bars(page)
+    assert m["ribbons"] >= 1, "the dense lane drew no density ribbon"
+    assert set(m["ids"]) == {"dfr"}, m["ids"]   # heat lives in the ribbon; only freeze is a bar
+    assert m["minH"] is None or m["minH"] >= 5, m
+    assert abs(m["scale"] - 1) <= 0.01, f"strip is SCALED: {m}"
+    assert m["covers"] == 0 and m["inCard"] and m["overflowDoc"] <= 0, m
+    assert page.errors == [], page.errors
+
+
+def test_dense_label_expands_to_all_bars_none_hidden(dense_server, page_ctx):
+    """The lane label is a button. Expanding the dense lane paints every event as a
+    uniform full-height bar with none hidden; the sparse lane's bar is always there.
+    Re-loaded per width so the in-memory expand toggle starts collapsed."""
+    page = page_ctx
+    for w, h in ((1024, 768), (390, 844)):
+        _mm_goto(page, dense_server)
+        page.set_viewport_size({"width": w, "height": h}); page.wait_for_timeout(500)
+        lab = _expand_first_collapsed(page); page.wait_for_timeout(350)
+        assert lab, "no dense lane to expand"
+        m = _gantt_bars(page)
+        assert m["nBars"] >= 12, f"{w}px: expanding a dense lane drew few bars: {m}"
+        assert m["minH"] is not None and m["minH"] >= 5, f"{w}px: a bar under 5px: {m}"
+        assert m["covers"] == 0, f"{w}px: an expanded lane hides a bar: {m}"
+        assert abs(m["scale"] - 1) <= 0.01 and m["inCard"] and m["overflowDoc"] <= 0, m
+    assert page.errors == [], page.errors
+
+
+def test_selected_event_draws_over_ribbon(dense_server, page_ctx):
+    """A selected event of a RIBBON lane is always redrawn as a full bar on top, so
+    the selection never disappears into the ribbon; clicking it toggles it back off."""
+    page = page_ctx
+    _mm_goto(page, dense_server)
+    assert page.locator("#gm-gantt .gm-bar[data-id=dn3]").count() == 0   # collapsed: in the ribbon
+    page.evaluate("MergedMap.select('dn3')"); page.wait_for_timeout(250)
+    assert page.locator("#gm-gantt .gm-bar[data-id=dn3]").count() == 1, "selection vanished in the ribbon"
+    page.locator("#gm-gantt .gm-bar[data-id=dn3]").click(); page.wait_for_timeout(250)
+    assert "dn3" not in page.evaluate("MergedMap._dbg().sel"), "bar click did not toggle selection"
+    assert page.errors == [], page.errors
+
+
+# MIDLAT LANE (round 2): midlat_cyclone was dropped from LANE_ORDER while empty;
+# it now publishes storms and MUST appear whenever the window has MLC events.
+def _mlc_timeline():
+    grid = {"ny": 2, "nx": 2, "lat0": 40.0, "lat1": 42.0, "lon0": -100.0, "lon1": -98.0,
+            "step_deg": 1.0, "step_lon": 1.0}
+    def ev(i, typ, a, b):
+        return {"id": f"ml{i}", "type": typ, "title": f"{typ} {i} (e2e)",
+                "start": a, "end": b, "bbox": [40.0, 42.0, -100.0, -98.0], "grid": grid,
+                "days": [a, b], "qualified_at": a.replace("-", "") + "00"}
+    evs = [ev(0, "midlat_cyclone", "2026-01-02", "2026-01-05"),
+           ev(1, "midlat_cyclone", "2026-01-04", "2026-01-07"),
+           ev(2, "heat_wave", "2026-01-06", "2026-01-09")]
+    return {"schema": 1, "generated": "2026-01-11T00:00:00Z",
+            "window": {"start": "2026-01-01", "end": "2026-01-11", "days": 10},
+            "events": evs}
+
+
+@pytest.fixture(scope="module")
+def mlc_server(tmp_path_factory):
+    """A timeline that contains midlat_cyclone events — the lane the old code hid."""
+    root = _build_gd_fixture(str(tmp_path_factory.mktemp("fe-mlc")), raw_frames=GD_RAW_TS)
+    p = os.path.join(root, "data", "results", "global_timeline.json")
+    tl = _mlc_timeline()
+    json.dump(tl, open(p, "w"))
+    sel_p = os.path.join(root, "data", "results", "events_selected.json")
+    sel = json.load(open(sel_p)); lst = sel["events"] if isinstance(sel, dict) else sel
+    for e in tl["events"]:
+        lst.append({"id": e["id"], "event_type": e["type"], "title": e["title"],
+                    "bbox": e["bbox"], "start": e["start"], "end": e["end"],
+                    "details": {"region": "e2e"}})
+    json.dump(sel, open(sel_p, "w"))
+    srv, url = _gd_server(root); yield url; srv.shutdown()
+
+
+def test_midlat_cyclone_lane_shows_when_data_has_it(mlc_server, page_ctx):
+    page = page_ctx
+    _mm_goto(page, mlc_server)
+    labs = page.eval_on_selector_all("#gm-gantt .gm-lane-lab", "e=>e.map((t)=>t.textContent)")
+    assert any("Midlat" in t for t in labs), f"no midlat lane among {labs}"
+    ids = page.eval_on_selector_all("#gm-gantt .gm-bar", "e=>e.map((b)=>b.dataset.id)")
+    assert "ml0" in ids and "ml1" in ids, ids   # both MLC events drawn on the strip
+
+
+def test_narrow_strip_keeps_the_axis_wide(dense_server, page_ctx):
+    """At phone width the label column collapses (names move ABOVE their lanes) so
+    the time axis keeps >= 80% of the strip and no label is clipped."""
+    page = page_ctx
+    _mm_goto(page, dense_server)
+    page.set_viewport_size({"width": 390, "height": 844}); page.wait_for_timeout(500)
+    m = page.evaluate("""() => {
+        const svg = document.querySelector('#gm-gantt'); const R = (n) => n.getBoundingClientRect();
+        const r = R(svg); const lane = document.querySelector('#gm-gantt .gm-lane');
+        const labs = [...svg.querySelectorAll('.gm-lane-lab')];
+        const axisFrac = lane ? (R(lane).right - R(lane).left) / r.width : 0;
+        return { axisFrac, clip: labs.filter((t) => R(t).right > r.right + 1).length,
+                 gmLab: getComputedStyle(document.querySelector('#global-sec')).getPropertyValue('--gm-lab').trim() };
+    }""")
+    assert m["axisFrac"] >= 0.8, m
+    assert m["clip"] == 0, m
+    assert m["gmLab"] in ("0px", "0"), f"narrow must collapse the label column: {m}"
+    assert page.errors == [], page.errors
+
+
 def test_merged_old_links_redirect(gd_server, page_ctx):
     page = page_ctx
     page.goto(gd_server + "/#raw=2026010200&layers=h,f")
@@ -1337,21 +1535,30 @@ _HEAT_PIXEL_JS = """(() => {
 
 
 def test_merged_slider_spans_gantt_axis(gd_server, page_ctx):
-    """Slider thumb travel == gantt time axis [LAB(44), W-12] so a thumb
-    position lands on the same date in the strip below (orchestrator polish
-    08 Nov: full-width track, readout above, aligned scrubbing)."""
+    """Slider thumb travel == the gantt time axis [LAB, W - 12] so a thumb position
+    lands on the same date in the strip below (orchestrator polish 08 Nov: full-width
+    track, readout above, aligned scrubbing). LAB is no longer the hardcoded 44 the
+    strip used to assume: it is MEASURED from the lane names so a long one can never
+    be clipped (visual-gantt 2026-11-19), and mergedmap hands it to the slider's CSS
+    margins as --gm-lab. The contract is unchanged — read the axis from the strip and
+    check the thumb lands on it.
+    """
     page = page_ctx
     _mm_goto(page, gd_server)
     m = page.evaluate("""() => {
         const s = document.querySelector('#raw-slider').getBoundingClientRect();
         const g = document.querySelector('#gm-gantt').getBoundingClientRect();
         const r = document.querySelector('#raw-readout').getBoundingClientRect();
+        const lab = parseFloat(getComputedStyle(
+            document.querySelector('#global-sec')).getPropertyValue('--gm-lab')) || 44;
+        const lane = document.querySelector('#gm-gantt .gm-lane');
         return {thumbL: s.x + 8, thumbR: s.right - 8,
-                axisL: g.x + 44, axisR: g.right - 12,
-                readoutBottom: r.bottom, sliderTop: s.top, sw: s.width, gw: g.width};
-    }""")
+                axisL: g.x + lab, axisR: g.right - 12, lab,
+                laneX: lane ? lane.getBoundingClientRect().x - g.x : null,
+                readoutBottom: r.bottom, sliderTop: s.top, sw: s.width, gw: g.width}; }""")
     assert abs(m["thumbL"] - m["axisL"]) <= 2, m
     assert abs(m["thumbR"] - m["axisR"]) <= 2, m
+    assert m["laneX"] is not None and abs(m["laneX"] - m["lab"]) <= 2, m   # axis == lane ground start
     assert m["sw"] >= 0.85 * m["gw"], m          # full-width, not a 130px stub
     assert m["readoutBottom"] <= m["sliderTop"], m  # readout sits above the track
 

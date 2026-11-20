@@ -3746,6 +3746,122 @@ Branch `feat/round3-compress-tracks-freeze` (from `chore/integrate-lane-fixes`).
 - PR: https://github.com/aaTman/ewb-live/pull/4 (base develop, head afc41b8)
 
 ## [visual-tracks] — DONE
+## [visual-gantt] 2026-11-19 22:58 UTC — started: rebased onto origin/develop, local preview on :8061
+
+Branch `fix/ui-gantt-strip` created from `origin/develop` (b652904). Scope: the Gantt
+time strip under the map (`dashboard/mergedmap.js` `renderGantt()` + `dashboard/styles.css`
+`.timeline` / `#gm-gantt`). Frontend only; no ewb_live/, no ops/, nothing on the box.
+Real results copied READ-ONLY from the box into `data/results/` (gitignored) for the
+local preview; `.venv` synced. Measured the overlap problem on the live snapshot: the
+strip draws all events of a lane on ONE 12 px row, so heat_wave has 7 overlapping pairs
+and atmospheric_river 4 out of 15/12 events — the later bar simply covers the earlier one.
+Next: greedy sub-row packing (cap 3), content-driven SVG height (drop the fixed 62 px),
+measured lane-label column so `Midlat. cyclone`-length labels never clip.
+
+## [visual-gantt] 2026-11-20 01:40 UTC — PR #5 open: the strip fits the page, stacks overlapping events, and the slider points at the date it names
+
+`fix/ui-gantt-strip` → **PR https://github.com/aaTman/ewb-live/pull/5** (base `develop`,
+head `6fd1b37`). Two commits: the fix, then a behaviour-identical refactor that pulls
+`packLane()` / `timeTicks()` out of the SVG code.
+
+**What was actually wrong** (measured, not assumed — `scripts/gantt_visual_qa.py`, which
+reads geometry rather than pixels, so it fails on a cause and not on anti-aliasing):
+
+- `#gm-gantt { height: 62px }` while `renderGantt()` set a 110-unit viewBox → the WHOLE
+  strip was scaled to **0.56**: bars rendered 6.76 px instead of 12, the axis was laid out
+  for 1100 px in a 622 px box, and the slider thumb sat ~22 px from the cursor line it
+  claims to follow. This is the same class of bug the timeline round already documented
+  once ("svg 110 vs box 62 -> scale 0.56") — the CSS reservation and the JS viewBox were
+  written by different hands and nothing tied them together.
+- one row per lane ⇒ **7 of 15 heat pairs and 4 of 12 AR pairs** overlapped in the live
+  90-day window, and the bar underneath could be neither seen nor clicked.
+- the label column was a fixed 44 px = `min(44, W*0.28)`, about half of what
+  `Midlat. cyclone` needs: 3 labels clipped at 1440 px.
+- below 767 px `#page-global` was not a flex column, so the tracklane's `min-width: 760px`
+  made the *document* scroll sideways at 1024/390/320 and the strip left its card by 21 px.
+
+**Design, and the two calls worth reviewing:**
+
+1. **A lane joins the strip when its type has an event in the window; the Region filter
+   hides bars, never lanes.** That is what lets the height be content-driven *and* keep
+   the "nothing under the legend moves" contract: the height depends on the data window
+   only, never on a click. `#gm-gantt` keeps a `min-height: 62px` pre-JS reservation —
+   which is exactly what the fixed height used to reserve, and exactly what the live
+   3-lane window (heat / freeze / AR) settles at, so the CLS block's purpose survives.
+   Six lanes would render 116 px.
+2. **Sub-rows are equal within a lane and one bar height per lane.** A lane's slot (15 px)
+   is split into as many equal rows as its own overlap depth needs: 1-2 rows keep the full
+   7 px bar, deeper lanes thin (4.3 / 3 / 2.2 px) instead of growing the strip. Past
+   `G_ROW_MAX = 5` a bar takes the emptiest row, paints last with a hairline and its
+   tooltip says `shares its row (n past the 5 rows this lane fits)` — the alternative,
+   halving a shared bar, makes a short bar sit *inside* a long one, which is the failure
+   mode the whole change exists to kill. A uniform height is what makes "no bar is ever
+   fully behind another" provable rather than probable.
+3. The label column is **measured** (`labelMetrics`) from the names the strip will draw,
+   and handed to the slider through the `--gm-lab` custom property, so thumb travel and
+   time axis cannot drift apart again. When a viewport cannot afford both a name and an
+   axis, the name is ellipsised at 60 % of the width and its full text moves to the
+   label's tooltip; the axis never drops under 40 % of the strip.
+
+**Evidence.** 8 runs (1440x900 / 1024x768 / 390x844 / 320x640, light + dark) against the
+box's own results served read-only from a local copy: before `scale 0.56, 2 covered bars,
+doc overflow 760>390/320, strip +21 px past its card, 3 clipped labels`; after `scale
+1.00, 0 covered, 0 overflow, 0 clipped, thumb and cursor on the same x, 0 console errors`.
+Tests: `-m e2e tests/e2e/test_dashboard_fe.py -k "gantt or slider or legend or region"` →
+12 passed (incl. the existing CLS/"legend never moves" contracts); `test_tracklane_fe.py`
+→ 7 passed; `tests/test_global_timeline.py` → 3 passed. New
+`test_gantt_no_bar_is_hidden_behind_another` feeds a synthetic 12-event heat lane (peak
+concurrency 8, deeper than the cap) through a fixture server and asserts at three widths
+that no two bars in a lane share both axes unless the tooltip says so.
+
+**Corrections to the first commit message** (pushed, so not amended): `tests/test_render_
+nudge.py` does not exist — ignore that line. The unit evidence above is the real one.
+
+**Pre-existing, not from this branch:** `test_open_then_esc` and
+`test_list_row_previews_event_on_map_and_box_marks_its_row` fail on this data with
+develop's own code (`git stash`, same run — the EV3 panel never appears for the event they
+open), and `pytest -m "not e2e and not network"` hangs at
+`test_ar_tc_screen.py::test_tc_track_near_component_is_dropped` in this checkout. The
+branch touches no Python.
+
+**Not touched on purpose:** the tracklane's `TL_W_MIN = 760` and its fixed `height: 232px`
+(that is `fix/ui-tracklane`; this PR only stops it making the document wider), bar height,
+the 4 px gap, the 160 px minimum window, and everything on the box.
+
+**Follow-up worth filing:** the strip and the tracklane each size a timeline column in
+their own way (`--gm-lab` vs `TL_LAB`); a shared measure would stop the two drifting again
+the way the 62 px box and the 110-unit viewBox did.
+
+## [visual-gantt] 2026-11-20 02:20 UTC — round 2: dense-lane time strip
+Round 1 was only exercised on the 3-lane live window. On the new-event window
+(205 events) the flood/TC lanes became 2.2px hairlines, the midlat lane was
+missing, and labels clipped at 390px. Changed `renderGantt`: every lane with
+events shows (midlat_cyclone added to LANE_ORDER); one uniform 6px bar height,
+lanes GROW for sub-rows instead of thinning; dense lanes (concurrency > 3) draw a
+clickable DENSITY RIBBON with a hover "N active, <date>" readout and selected/
+previewed events redrawn on top; the dense lane's label is a keyboard/aria button
+that toggles ribbon↔expanded (in-memory only); below 600px the label column
+collapses and names move above each lane so the time axis keeps >= 80% width.
+CLS reservation (styles.css min-height) updated to the collapsed new-event height.
+QA (`scripts/gantt_visual_qa.py`, updated for ribbons) FAILS:0 on BOTH the live 3-lane
+and the dev 7-lane windows at 1440/1024/390/320 light+dark. New e2e: dense lane =
+ribbon (no hairlines), expand shows all bars none hidden, selected bar over ribbon,
+midlat lane appears with MLC data, narrow axis stays wide — all pass. The 4 e2e
+failures in test_dashboard_fe.py (open/EV3-panel, live-row↔box sync, heat-detail)
+and the 2 test_events_unit.py detector failures reproduce on origin/develop's own
+files — pre-existing, unrelated to this JS/CSS-only change.
+
+## [visual-gantt] 2026-11-20 02:40 UTC — round 2 DONE
+PR #5 (base develop, head fix/ui-gantt-strip @ a3222ff) updated with round-2 body.
+The time strip now survives the dense new-event window: midlat lane present, one
+6px bar height, density ribbons for concurrency>3 (click-to-jump + selected-on-top),
+a keyboard/aria label toggle to expand, full labels above the lane below 600px with
+the axis kept >=80%, CLS reservation re-synced. QA FAILS:0 on live+dev at 4 widths x
+2 themes; ribbon/expand/selection/MLC/narrow e2e added and green, existing gantt
+e2e green. The 4 detail-panel/row-sync e2e failures + 2 detector unit failures are
+pre-existing (reproduce on origin/develop's own files). Screenshots kept OUTSIDE the
+repo per owner rule (no PNG in the diff). No CI check-runs reported: the repo's
+ci.yml is not on this branch's base merge, so GitHub reports none for the PR.
 
 ## [visual-legend] 2026-11-20 02:10 UTC — the colour-scale card now hugs its scales
 
