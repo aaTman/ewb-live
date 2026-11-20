@@ -856,6 +856,52 @@
     return { pad, name };
   }
 
+  /* Two pieces of the strip are pure geometry, so they live apart from the SVG:
+   they take numbers and return numbers, which means the rules that decide what
+   the reader can and cannot see can be read — and argued with — without a
+   browser. */
+
+  /* Greedy interval packing on x. A bar takes the first row whose last bar has
+   already ended, so the number of rows a lane needs is exactly its own overlap
+   depth. Past G_ROW_MAX the overflow joins the emptiest row and is flagged,
+   because a bar that quietly reappears underneath another one is a bar the reader
+   cannot click. One bar height for the whole lane: the rows stay EQUAL and the
+   lane always fits its slot, so the strip's height never depends on how crowded
+   the data is. */
+  function packLane(items) {
+    items.sort((a, b) => a.bx - b.bx || a.x1 - b.x1);   // left to right, ties: early end first
+    const ends = [];
+    let shared = 0;
+    for (const it of items) {
+      const free = ends.findIndex((e) => it.bx >= e);
+      if (free >= 0) it.row = free;
+      else if (ends.length < G_ROW_MAX) { it.row = ends.length; ends.push(-Infinity); }
+      else { it.row = ends.indexOf(Math.min(...ends)); it.sharing = true; shared++; }
+      ends[it.row] = it.x1 + GUT;
+    }
+    const rows = ends.length;
+    const h = rows ? Math.min(G_BAR, (G_SLOT - (rows - 1) * G_BAND_GAP) / rows) : 2;
+    items.forEach((it) => { it.h = h; });
+    return { rows, h, shared };
+  }
+
+  /* The axis's own calendar: Mondays once a week is wide enough to tell them
+   apart (16 px), month starts when it is not. `named` marks the tick that carries
+   a month label — the first Monday of a month in week mode, every month start in
+   month mode — and the caller drops labels closer together than the text is wide. */
+  function timeTicks(t0, t1, pxDay) {
+    const weekly = pxDay * 7 >= 16;
+    const d = new Date(t0);
+    d.setUTCDate(d.getUTCDate() + 1); d.setUTCHours(0, 0, 0, 0);
+    if (weekly) while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1);
+    else while (d.getUTCDate() !== 1) d.setUTCDate(d.getUTCDate() + 1);
+    const out = [];
+    for (; d.getTime() <= t1; weekly ? d.setUTCDate(d.getUTCDate() + 7) : d.setUTCMonth(d.getUTCMonth() + 1))
+      out.push({ ms: d.getTime(), named: weekly ? d.getUTCDate() <= 7 : true,
+                 label: d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }) });
+    return out;
+  }
+
   function renderGantt() {
     const svg = $('#gm-gantt');
     svg.innerHTML = '';
@@ -912,33 +958,12 @@
       }),
     }));
 
-    /* 2 · how deep is each lane? Greedy interval packing on x — a bar takes the
-     first row whose last bar has already ended — gives the row count the lane
-     NEEDS, and its slot is then split into that many EQUAL rows (1-2 rows keep
-     the full G_BAR height and 2 fill the slot exactly; deeper lanes thin their
-     bars down to ~2 px rather than growing the strip, so the strip's height never
-     depends on how crowded the data is). Same row ⇒ no x overlap, different rows
-     ⇒ no y overlap, so no bar is ever behind another. Past G_ROW_MAX the
-     overflow shares the emptiest row and announces it in its tooltip. */
-    for (const g of groups) {
-      g.items.sort((a, b) => a.bx - b.bx || a.x1 - b.x1);
-      const ends = [];
-      for (const it of g.items) {
-        const free = ends.findIndex((e) => it.bx >= e);
-        if (free >= 0) it.row = free;
-        else if (ends.length < G_ROW_MAX) { it.row = ends.length; ends.push(-Infinity); }
-        else {          // past the cap: the emptiest row, ANNOUNCED rather than
-          it.row = ends.indexOf(Math.min(...ends));   // hidden
-          it.sharing = true; g.shared++;
-        }
-        ends[it.row] = it.x1 + GUT;
-      }
-      g.rows = ends.length;
-      // ONE bar height per lane, so a shared row can never make a short bar look
-      // like it ends where a longer one does — and the lane always fits its slot
-      g.h = g.rows ? Math.min(G_BAR, (G_SLOT - (g.rows - 1) * G_BAND_GAP) / g.rows) : 2;
-      g.items.forEach((it) => { it.h = g.h; });
-    }
+    /* 2 · how deep is each lane? packLane() answers that, and the slot is then
+     split into that many EQUAL rows (1-2 rows keep the full G_BAR height, deeper
+     lanes thin their bars to ~2 px rather than growing the strip). Same row means
+     no x overlap, different rows mean no y overlap, so no bar is ever behind
+     another; past the cap a bar shares a row and says so in its tooltip. */
+    for (const g of groups) Object.assign(g, packLane(g.items));
 
     /* 3 · lane chrome, sized to the lane's own rows and CENTRED in its slot (an
      event-light lane and a packed one keep the same rhythm), on an alternating
@@ -996,21 +1021,14 @@
      names sit under the axis and never closer than 34 px. */
     const cx = x(tsToDate(raw.frames[idx]).getTime());
     mk('line', { class: 'gm-cursor', x1: cx, x2: cx, y1: 0, y2: gridBot }, svg);
-    const weekly = pxDay * 7 >= 16;
-    const d = new Date(t0);
-    d.setUTCDate(d.getUTCDate() + 1); d.setUTCHours(0, 0, 0, 0);
-    if (weekly) while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1);
-    else while (d.getUTCDate() !== 1) d.setUTCDate(d.getUTCDate() + 1);
     let lastLab = -1e9;
-    for (; d.getTime() <= t1; weekly ? d.setUTCDate(d.getUTCDate() + 7) : d.setUTCMonth(d.getUTCMonth() + 1)) {
-      const tx = x(d.getTime());
-      const named = weekly ? d.getUTCDate() <= 7 : true;    // Mondays: label the first of the month
-      mk('line', { class: 'gm-tick' + (named || !weekly ? '' : ' minor'),
+    for (const tk of timeTicks(t0, t1, pxDay)) {
+      const tx = x(tk.ms);
+      mk('line', { class: 'gm-tick' + (tk.named ? '' : ' minor'),
                    x1: tx, x2: tx, y1: 0, y2: gridBot }, svg);
-      if (!named || tx - lastLab < 34) continue;
+      if (!tk.named || tx - lastLab < 34) continue;   // 34 px: a month name plus a gap
       lastLab = tx;
-      mk('text', { class: 'gm-month', x: tx + 2, y: H - 3 }, svg)
-        .textContent = d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+      mk('text', { class: 'gm-month', x: tx + 2, y: H - 3 }, svg).textContent = tk.label;
     }
   }
 
