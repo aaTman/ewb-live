@@ -1199,8 +1199,32 @@
       single = need <= leg.clientWidth + 1;
     }
     leg.classList.toggle('hug', single);
+    // a wrapped compact strip lays its lanes in k PAIRS of `label | swatches`
+    // tracks (each group a subgrid over its pair), so every row's swatches start
+    // at the same x within a column; the toggle rides in the reserved top-right
+    // corner instead of opening a row of its own
+    let cols = 0;
+    const toggle = leg.querySelector(':scope > .lg-toggle');
+    if (!single && groups.length > 1 && leg.classList.contains('compact')
+        && getComputedStyle(leg).getPropertyValue('--lg-wide').trim() === '1') {
+      const px = (v) => parseFloat(v) || 0;
+      const cs = getComputedStyle(leg);
+      const gap = px(cs.columnGap);
+      let head = 0, stops = 0;
+      groups.forEach((g) => {
+        head = Math.max(head, g.querySelector('.lg-head').getBoundingClientRect().width);
+        stops = Math.max(stops, g.querySelector('.lg-stops').getBoundingClientRect().width);
+      });
+      const reserve = toggle ? toggle.getBoundingClientRect().width + 16 : px(cs.paddingRight);
+      const avail = leg.clientWidth - px(cs.paddingLeft) - reserve;
+      cols = Math.max(1, Math.min(groups.length,
+        Math.floor((avail + gap) / (head + stops + 2 * gap))));
+      leg.style.paddingRight = reserve + 'px';
+    } else leg.style.paddingRight = '';
+    leg.classList.toggle('cols', cols > 0);
     leg.style.gridTemplateColumns = single
-      ? `repeat(${leg.children.length}, max-content)` : '';
+      ? `repeat(${leg.children.length}, max-content)`
+      : (cols ? `repeat(${cols}, max-content minmax(max-content, 1fr))` : '');
   }
 
   /* ---------------- boot ---------------- */

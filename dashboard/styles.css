@@ -1144,6 +1144,15 @@ nav.controls .dd .dd-body {
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: 4px 18px; width: 100%; }
   #gm-legend.compact.hug { width: fit-content; }
+  /* wrapped compact strip (legendHug adds .cols + the paired track list): each
+     lane is a subgrid over one `label | swatches` pair, so the swatches of every
+     row start at the same x in their column; the toggle sits in the top-right
+     corner the inline padding-right reserves, never on a row of its own */
+  #gm-legend.compact.cols { position: relative; gap: 4px 10px; }
+  #gm-legend.compact.cols .lg-group { display: grid; grid-template-columns: subgrid;
+    grid-column: span 2; }
+  #gm-legend.compact.cols .lg-head, #gm-legend.compact.cols .lg-stops { justify-self: start; }
+  #gm-legend.compact.cols .lg-toggle { position: absolute; top: 6px; right: 8px; }
   #gm-legend.compact .lg-stops { flex-wrap: nowrap; }
   /* the aligned columns carry the separation; the flex-row hairline would
      float 3 px outside the card on each row's first column */
