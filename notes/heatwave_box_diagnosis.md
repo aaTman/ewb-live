@@ -404,6 +404,13 @@ feature flag.
 same day after the round-1 review found the measuring script diverging from
 production - see the correction note under §4)
 
+> Round-3 correction (hb-fix3): this section and round 2 below were replayed
+> at an Antarctica-inclusive globe while production clamps the scan to
+> `lat >= -60`, so every count in them is on the wrong population. The
+> production-population numbers are in the round-3 addendum at the end of this
+> file and in the `footprint_tracker.md` three-stage table; the conclusions
+> are unchanged.
+
 C3_valid_box_persist is implemented on `fix/heatwave-box-size` (tracker knobs
 in `event_tracker.py`, publish + provenance in `temperature.py`, flood lane
 pinned to the shipped rules, SPEC §2 and notes/footprint_tracker.md updated).
@@ -503,12 +510,16 @@ the cold-snap lane carries 3 more). `qualification.py` scans frames from
 published sub-daily qualification time is a guess for 19 % of the heat waves in
 the catalogue. `hb05_qualify_fallbacks.py` on the live catalogue: 131 qualify,
 **31 empty-window, 0 below-floor**, and every empty-window event is one of the
-31. Re-run on the C5 replay of the same window: **206 qualify, 0 empty-window,
-6 below-floor** — the failure mode is gone, replaced by six events (2.8 %) whose
+31 (round-3 re-measure with the cold-snap lane included: 152 qualify, **34
+empty-window, 0 below-floor**). Re-run on the C5 replay of the same window:
+**206 qualify, 0 empty-window, 6 below-floor** — the failure mode is gone,
+replaced by six events (2.8 %) whose
 *persistence* box is smaller than the footprint that qualified them, so no
 single frame inside the published rectangle reaches the 200 k km² floor
 (`max_frame_px` within 6 % of the floor in five of the six). That is a
 publish-box question, not a tracking one, and it predates this change.
+(Round-3 re-measure on production's population: 199 qualify, **0 empty-window,
+3 below-floor** — all three re-derived in the addendum below.)
 
 **The split is real.** Of the 31, 16 have a live event that starts exactly on
 the closing day and overlaps the closed spell's box (15 heat waves, 1 freeze),
@@ -516,7 +527,11 @@ i.e. in half the cases the region really did seed a successor the same day. Unde
 C3 only 2 of those 16 pairs are covered by a single replay object; under the
 qualification clock 11 of 16 are (10 heat, 1 freeze) - the other five are
 genuinely separate systems, and the remaining 15 of the 31 events never had a
-successor: they were simply cut short on their best day.
+successor: they were simply cut short on their best day. (Round-3 re-measure:
+**15 heat + 1 freeze + 2 cold-snap** spells have a live same-day overlapping
+successor; one replay object covers both halves of the pair for C3 in 2/15 and
+for C5 in **9/15** heat pairs, 1/1 freeze and 1/2 cold-snap — the 11-of-16 did
+not survive the population fix.)
 
 **Ongoing ids stay stable.** `scripts/review/hb04_ongoing_ids.py` (W1
 2026-08-21..11-02, then the two things a weekly run does - extend +7 d at the
@@ -537,6 +552,10 @@ box, and over +7 d its far edge moved more than the 3-cell pairing tolerance in
 `hb04` (the same single loss appears in the C3-from-start ruleset, so this is the
 pairing rule's tolerance, not the clock's). Worth a look if the owner wants
 ongoing continuity to be total; not retuned here.
+(Round-3 re-measure after the merge-survivor fix supersedes this table — see
+the addendum. The stated cause of the one unpaired spell was wrong: it is
+absorption/re-seeding under a start more than 1 d away, not the anchor box
+moving out of the pairing tolerance.)
 
 **Freeze was being measured on the wrong population** (round-2 review item): the
 replay scripts fed the lane's p15 bits to the tracker for both freeze and
@@ -545,26 +564,138 @@ production's ceiling with production's rule and source (`t2m` daily max
 `<= 0 degC`, `temperature._mirror_t2m_daily` over the ERA5 truth mirror, opened
 read-only): the ceiling keeps 81 % of the p15 cells (801 638 → 647 912 cell-days)
 and the shipped replay drops from 35 events to 22, against 11 published freezes
-after curation. Every freeze number in the round-1 write-up (fill 0.46 → 0.78,
+after curation. (Round-3 re-measure at the production latitude band: the ceiling
+keeps **45 %** — 281 294 → 127 568 cell-days — and the S0 replay is **11 freeze
+events, matching the 11 published freezes** exactly; "22 against 11" was the
+Antarctica population.) Every freeze number in the round-1 write-up (fill 0.46 → 0.78,
 box median 2.69 → 0.98 M km²) is a cold-snap number; the true-freeze numbers are
 in the `footprint_tracker.md` table (fill 0.42 → 0.83, box median 2.78 → 0.58 M
-km², max 24.6 → 4.03 M km²) and they are better, not worse.
+km², max 24.6 → 4.03 M km²) and they are better, not worse. (Production-
+population values: fill 0.42 → 0.85, box median 2.41 → 0.55 M km², max 5.90 →
+3.14 M km².)
 
 **Nothing breaks a gate.** No event in any stage exceeds `validate.MAX_DURATION_DAYS`
 (45 d); the longest heat spell is 31 d under C5 against 32 d as shipped, and
-freeze/cold_snap top out at 7 d. Curation's merge exposure barely moves: 20
-mergeable heat pairs under C5 against 18 under C3 and 46 under the shipped rule,
-largest merged window 42 d, 3 pairs over the 16-day `select.MERGE_CAP_DAYS`
-envelope (3 under C3 as well), none over the 45-day hard cap. Freeze and
-cold_snap: 1 mergeable pair each.
+freeze/cold_snap top out at 7 d. Curation's merge exposure barely moves: 21
+mergeable heat pairs under C5 against 22 under C3 and 45 under the shipped rule,
+largest merged window 42 d, 2 pairs over the 16-day `select.MERGE_CAP_DAYS`
+envelope under C5 (4 under C3 and 4 as shipped), none over the 45-day hard cap. Freeze and
+cold_snap: 1 mergeable pair each under C5 (2 / 3 as shipped).
 
-**The cost is membership churn, not workload.** The raw replay goes 162 → 163 →
-**189** heat events: spells that used to be ended at their qualifying day either
-survive past `min_days` or no longer re-seed a successor, and the churn against
-the shipped rule is 48 lost / 75 gained (C3 was 45 / 46). What the dashboard and
-the scorecard see is capped by curation - `select.rank_and_cap` keeps 15 heat
-waves per window (`DEFAULT_TOP_N`; the live selection is 15 heat / 5 freeze /
-8 cold snaps) - so weekly scoring volume does not change; which events occupy
-those slots does, and the release re-hashes ids once on top of the C3 re-hash.
-Boxes and fills all improve at the same time (fill median 0.83, box median 1.05
-M km², box p90 3.11 M km²).
+**The cost is membership churn, plus a real curation growth.** The raw replay
+goes 149 → 148 → **159** heat events on production's population: spells that
+used to be ended at their qualifying day either survive past `min_days` or no
+longer re-seed a successor, and the churn against the shipped rule is 49 lost /
+59 gained (C3 was 40 / 39). What the dashboard and the scorecard see is capped
+by curation — `select.rank_and_cap` keeps 15 heat waves per window
+(`DEFAULT_TOP_N`; the live selection is 15 heat / 5 freeze / 8 cold snaps) —
+but with the smaller boxes curation *fills more slots*: re-running the real
+curation path over the fresh scan ships **15 / 12 / 15** (heat / freeze /
+cold-snap), i.e. **+14 temperature score jobs per weekly run (28 → 42)**, on
+top of the one-off id re-hash the release already carries. Boxes and fills all
+improve at the same time (fill median 0.83, box median 1.12 M km², box p90
+3.89 M km²). The first weekly run after release rebuilds 42 viz assets; see the
+addendum for the step-budget arithmetic.
+
+## Round 3 (2026-11-21, hb-fix3): re-measured on production's population
+
+The round-2 review found that every replay above ran at the whole globe while
+the production scan clamps `lat >= -60`: the replay's Antarctica p85/p15 belt
+inflated heat counts (S0 162 vs production 151) and turned the freeze-cap
+measurement into a lie about cell retention. `hb01_box_growth.load_window` now
+applies production's clamp, and the whole re-measure below was produced by the
+committed scripts (`hb01` incl. its new `prod_match` section, `hb04` with
+`--slides` window-head re-keying and a LOST-cause probe, `hb05` extended to
+cold_snap, the new `hb06` curation/ship replay and `hb07` sub-floor gate), all
+against read-only production data on the LXC.
+
+**Production-match (the population fix's proof).** S0 replay vs production
+`events.json`: **freeze 11/11 and cold_snap 24/24 paired with every
+(start, end) exact; heat 149 replay vs 151 production, all 149 paired, 148
+exactly equal.** The residue is mask-source, not rule: all 151 production rows
+carry `details.mask_source = era5_arco` (the lane's rolling window does not
+reach the live window's start), ARCO ends `heat_wave-20260915-240` one day
+earlier than the lane replay (09-17 vs 09-18), and splits two spells the lane
+keeps single (`2230575b4bb8`, `ba6e076fce14`) - which is why 2 production rows
+have no replay twin and 6 replay rows pair with two production events each.
+Gates re-run at the new population: `selfcheck` 149/149 heat, 11/11 freeze,
+24/24 cold_snap; `prodcheck` 159/13/30; both PASS.
+
+**The three-stage table** moved to production's population in
+`notes/footprint_tracker.md`: heat 149 → 148 → **159** events, fill median
+0.52 → 0.83, box median 3.23 → 1.12 M km², churn 49/59 (C3 40/39); freeze
+11 → 10 → 13; cold_snap 24 → 23 → 30. Every count above measured at the
+Antarctica population is superseded by that table; the C3/C5 conclusions and
+all ratios stand.
+
+**Merge-survivor fix.** With `merge_keep_box=True` the surviving object is now
+the **oldest qualified member** (qualification is never inherited; the
+core-clock merge-day special case is gone), which is what the qualification
+clock implicitly promised - see SPEC §2 and the rewritten merge paragraph in
+`notes/footprint_tracker.md`. LEGACY and FLOOD replays are byte-identical to
+before the fix (golden digests over 11 315 fuzz events in
+`tests/test_event_tracker.py`); `hb07_subfloor.py` gates every event of the
+C5-replay production-population scan - qualifying-day footprint, peak area and
+`start <= qualified < end` against the 200 k km² floor - with **0 violations**
+(202 events; minima 201 k / 210 k / 201 k km² for heat/freeze/cold-snap).
+
+**Qualification fallbacks, re-derived.** Live catalogue: 152 events qualify
+frame-wise, **34 fall to the empty-window fallback (29 heat + 2 freeze + 3
+cold-snap - the cold-snap lane now qualifies on the p15 bit via
+`frame_masks.MASK_ALIAS` instead of skipping to the raw start), 0 below-floor**;
+the 34 are exactly the `qualified_date == end` set. C5 replay: 199 qualify, **0
+empty-window** (the clock starts at qualification, so the window cannot be
+empty) and **3 below-floor** - not 6; the other 3 were Antarctica-population
+events. The 3 are re-derived event by event, and all are the persistence
+publish-box trimmed below the just-qualifying footprint: `heat_wave-20260910-233`
+has a persistence box of 0.19 M km² - below the 0.2 M km² floor, so no frame
+inside it can ever pass - and the freeze/cold-snap twins (`freeze-20260901-2`,
+`cold_snap-20260901-22`; one 210 k km² storm counted on both masks) hold
+1 284/1 296 frame px inside their trimmed box, 0.9 % short, because the trim cut
+qualifying cells out of the box. So it *is* a publish-box effect, now with the
+per-event evidence the round-2 write-up lacked; it trades 34 unmeasurable
+fallbacks for 3 events (1.5 %) published under their qualifying footprint, and
+the persistence trim is the knob if the owner wants it gone. `core_area_km2` is
+now published as `null` before the qualification day, so nothing on the card
+misstates the core.
+
+**Ongoing ids, re-measured after the merge fix** (`hb04_ongoing_ids.py`;
+extend = the +7 d weekly run, slid start = the same run with the 90-day window
+head also moved; anchor basis = shipped id rule, published basis = the old one):
+
+| ruleset | ongoing | extend +7 d: same id anchor / published | slid +7 d: anchor / published | cut 10-23: slid +14 / +21 d anchor (of ongoing) |
+| --- | --- | --- | --- | --- |
+| shipped | 5 | **5 / 3** | 4 / 3 | 3, 3 of 5 (2 absorbed) |
+| C3, core from start | 7 | 6 / 2 (1 absorbed) | 5 / 2 | 2, 2 of 3 |
+| C3 + qualification clock | 9 | **8 / 3** (1 absorbed) | 7 / 3 | **6, 6 of 7** |
+
+Under production rules an ordinary weekly extend keeps the ids of **every**
+pairable ongoing spell (8/8 at the 11-02 cut, 7/7 at 10-23); only the +14/+21 d
+head slides re-key one of 7 (the anchor day is re-seeded when the window head
+passes it). Round 2's stated cause for the unpaired spell was wrong: the new
+LOST-cause probe shows every unpairable ongoing spell's box *and* window are
+covered in the following week by objects whose start is 2-6 d away - a merge
+survivor 2 d older or a later re-seed - so the spell was **absorbed or re-seeded
+under another start, not re-keyed because its anchor box moved**. The published
+basis keeps 3/8 at best - the anchor basis exists precisely to avoid that.
+
+**What ships and what it costs** (`hb06_ship.py`, the real
+`select.rank_and_cap` path with the live exclusions applied to both
+catalogues): ships **15 heat / 5 freeze / 8 cold-snap → 15 / 12 / 15** - the
+freeze/cold-snap quotas fill up because the smaller boxes subsume/merge less;
+heat unchanged. That is **+14 temperature score jobs per weekly run (28 → 42)**;
+AR/flood job counts unchanged. The first weekly run after release rebuilds
+**42 viz assets** (41 new ids + 1 stale stamp). Real per-asset temperature build
+times from the production viz logs (n = 50): median **55 s**, p90 **525 s**, max
+1 042 s (cold-cache network reads dominate). At median cost the rebuild fits the
+step's 5 400 s budget (~2 300 s); at p90-style cold-cache cost (≈ 22 000 s) it
+does not - the viz step is best-effort and the tail finishes in the following
+weeks, so shipping needs no change, but pre-building the 42 assets (one
+`viz --all` pass before the release) removes the tail entirely.
+
+Tests at the round-3 tip: `pytest -q` **630 passed, 29 skipped, 188 deselected**
+(the skips are environment-gated, the deselection is the e2e suite); `ruff check`
+clean on all changed files. Commits: `cfdd348` (merge survivor + tests +
+goldens + SPEC §2), `9b60e69` (cold-snap qualification + `core_area_km2` null),
+`28dc79e` (hb01 clamp + prod_match), plus the hb04/hb05/hb06/hb07 tooling and
+this note pass.

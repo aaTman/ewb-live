@@ -261,6 +261,12 @@ def test_qualification_clamps_to_the_qualify_day(tmp_path, monkeypatch):
     assert len(core) == len(ev.details["footprint_area_km2"])
     assert core[0] is None
     assert all(isinstance(a, float) for a in core[1:])
+    # nothing downstream trips on the nulls: the publish validator and the
+    # JSON round-trip (the dashboard reads no core series)
+    import json as _json
+    assert validate_event(evs[0]) == []
+    assert _json.loads(_json.dumps(evs[0].to_dict()))["details"][
+        "core_area_km2"][0] is None
 
 
 def test_scan_publishes_the_persistence_box_with_fill(tmp_path, monkeypatch):

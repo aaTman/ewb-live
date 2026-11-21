@@ -53,9 +53,10 @@ a spell that grew into qualification had a core of only its small seed area:
 the day it reached 200 k km² it also fell under the 100 k km² end floor and was
 closed in the same pass. Its `end` (exclusive) sat on the qualifying day, so
 the qualifying day was not one of the event's days and the region was free to
-seed a new object the same day — the live catalogue carries **31** events that
-end the day they qualify (29 heat waves + 2 freezes). `Params.core_clock`
-makes the clock explicit:
+seed a new object the same day — the live catalogue carries **34** events that
+end the day they qualify (29 heat waves + 2 freezes + 3 cold snaps;
+`scripts/review/hb05_qualify_fallbacks.py` attributes all 34 to empty
+qualification-frame windows). `Params.core_clock` makes the clock explicit:
 
 * `"qualified"` (default, the owner's rule): the core counts cells valid every
   day **since `qualified_date`**, and the **anchor** freezes on the later of
@@ -68,52 +69,88 @@ makes the clock explicit:
   flood lane (`FLOOD_PARAMS`, which is not re-measured against this decision)
   and the LEGACY knobs of the tracker tests.
 
-A merge that hands an unqualified candidate the qualification of a younger
-object adopts the earlier `qualified_date` for publication but starts the core
-clock and the anchor on the **merge day**: the survivor cannot be ended by a
-past it never held (`test_merge_inherited_qualification_does_not_end_the_survivor`).
+A merge never hands qualification to a spell that never reached the floor on
+its own footprint (round-3 review fix, 2026-11-21): under `merge_keep_box`
+the survivor is the merge's **oldest qualified member** — only a merge of
+pure candidates keeps the oldest candidate — `qualified_date` is always a day
+the survivor's OWN footprint reached `qualify_area_km2`, and an absorbed
+unqualified candidate disappears like any younger member (its leftover region
+cells stay free to seed). The pre-fix rule let the OLDEST member survive even
+when it was an unqualified candidate: it inherited a younger member's
+qualification, the merge then clipped the qualified cells into the
+candidate's small box, and the tracker published "valid" events whose peak
+footprint sat below the qualify floor (second adversarial review: 10 of 174
+replayed heat events published with a 63k-195k km2 peak, 28 heat and 1 freeze
+merge groups where an unqualified survivor absorbed a qualified member; the
+real 469k km² spell it swallowed re-seeded a day late). `test_merge_survivor_is_the_oldest_qualified_member` pins the repro,
+`test_fuzz_default_params_never_publish_a_sub_floor_event` fuzzes the
+invariant, and `test_legacy_and_flood_results_are_unchanged_by_the_survivor_rule`
+goldens that the LEGACY/flood parameter paths (their pinned
+`core_clock="start"`) are byte-identical to the pre-fix code. With the
+survivor rule there is no merge-day core clock any more: a survivor's clock
+and anchor always start on its own qualifying day.
 Everything else is untouched — start dates, the ramp rules, `max_ramp_days`, the
 claim/seed/merge geometry and the persistence publish box — and
 `TRACK_RULE_REV` moved `c3-v1 → c3-v2`, so the event cache and the frames-derived
 detection are rebuilt together with the release.
 
-Measured on the live lane (`scripts/review/hb01_box_growth.py`, stages
-`S0_current` shipped → `C3_valid_box_persist` (core from start) →
-`C5_core_from_qualification` = production now), 85 days 2026-08-21..11-13,
-freeze measured with production's `<= 0 degC` ceiling (the p15 lane bits
-uncapped are the cold-snap population — 81 % of them survive the ceiling).
-Selfcheck (legacy-pinned replay == shipped tracker, 162/162 heat, 22/22 freeze,
-35/35 cold_snap) and prodcheck (C5-tuned replay == production `Params()`,
-189/23/40) both PASS, so the measurement is the product:
+Measured on the live lane (`scripts/review/hb01_box_growth.py`), **on
+production's population** — round 3 replayed at the production scan's
+`lat >= -60` clamp and with the merge-survivor fix, so the replay and the
+catalogue now count the same world; round 2's tables (162 heat / 22 freeze /
+35 cold on an Antarctica-inclusive globe) are superseded. Stages: `S0_current`
+shipped → `C3_valid_box_persist` (core from start) → `C5_core_from_qualification`
+= production now; 85 days 2026-08-21..11-13, freeze measured with production's
+`<= 0 degC` ceiling (the p15 lane bits uncapped are the cold-snap population —
+45 % of them survive the ceiling at lat >= -60). Gates all PASS: selfcheck
+(legacy-pinned replay == shipped tracker, 149/149 heat, 11/11 freeze, 24/24
+cold_snap), prodcheck (C5-tuned replay == production `Params()`, 159/13/30)
+and `prod_match` (the S0 replay vs the PRODUCTION catalogue: freeze 11/11 and
+cold_snap 24/24 paired with every (start, end) exact; heat 149 replay vs 151
+production, 149 paired, 148 exactly equal — all 151 production events read
+`details.mask_source = era5_arco` because the lane does not span the live
+90-day window, and the ARCO lookback/boundary pixels account for the
+residue: `heat_wave-20260915-240` ends 09-18 in the lane but 09-17 under
+ARCO, and the ARCO path split two spells the lane keeps single
+(`2230575b4bb8` 09-05..09-10, `ba6e076fce14` 10-27..11-01)):
 
-| metric | heat S0 | heat C3 | **heat C5** | freeze S0 | freeze C3 | **freeze C5** | cold_snap S0 | **cold_snap C5** |
+| metric | heat S0 | heat C3 | **heat C5** | freeze S0 | freeze C3 | **freeze C5** | cold_snap S0 | **cold_snap C3** | **cold_snap C5** |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| events | 162 | 163 | **189** | 22 | 19 | **23** | 35 | **40** |
-| fill, median | 0.52 | 0.76 | **0.83** | 0.42 | 0.70 | **0.83** | 0.46 | **0.81** |
-| daily fill, median | 0.24 | 0.43 | **0.43** | 0.21 | 0.47 | **0.47** | 0.24 | **0.51** |
-| box, median km² | 3.80M | 1.14M | **1.05M** | 2.78M | 0.82M | **0.58M** | 2.69M | **0.59M** |
-| box, p90 km² | 16.6M | 4.70M | **3.11M** | 8.35M | 3.32M | **2.02M** | 7.98M | **2.59M** |
-| box, max km² | 61.6M | 22.15M | **22.15M** | 24.6M | 11.8M | **4.03M** | 24.6M | **4.55M** |
-| box / biggest day | 4.94× | 2.20× | **1.93×** | 4.79× | 1.94× | **1.67×** | 4.26× | **1.47×** |
-| duration med/p90/max d | 4/7/32 | 4/7/28 | 4/8/31 | 3/4.9/6 | 3/4.2/7 | 4/5.8/7 | 3/4.6/6 | 3/5/7 |
-| events with `qualified == end` | 29 | 32 | **0** | 4 | 3 | **0** | 5 | **0** |
-| events over 45 d | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| merge pairs / max merged window | 46 / 28 d | 18 / 33 d | 20 / **42 d** | 6 / 9 d | 1 / 7 d | 1 / 8 d | 7 / 9 d | 1 / 8 d |
-| lost / gained vs S0 | — | 45 / 46 | 48 / 75 | — | 12 / 9 | 8 / 9 | — | 10 / 15 |
+| events | 149 | 148 | **159** | 11 | 10 | **13** | 24 | 23 | **30** |
+| fill, median | 0.52 | 0.74 | **0.83** | 0.42 | 0.69 | **0.85** | 0.48 | 0.78 | **0.81** |
+| daily fill, median | 0.23 | 0.42 | **0.43** | 0.24 | 0.45 | **0.47** | 0.25 | 0.47 | **0.52** |
+| box, median km² | 3.23M | 1.17M | **1.12M** | 2.41M | 0.83M | **0.55M** | 2.49M | 1.09M | **0.58M** |
+| box, p90 km² | 16.45M | 4.26M | **3.89M** | 4.02M | 1.92M | **1.11M** | 5.57M | 2.60M | **2.59M** |
+| box, max km² | 61.6M | 22.15M | **22.15M** | 5.90M | 3.14M | **3.14M** | 8.06M | 4.55M | **4.55M** |
+| box / biggest day | 5.02× | 2.22× | **1.96×** | 4.59× | 1.86× | **1.67×** | 3.71× | 1.55× | **1.47×** |
+| duration med/p90/max d | 4/7/32 | 4/7/28 | 4/8/31 | 3/4/6 | 3/4.1/5 | 4/5/6 | 3/4/6 | 3/4/7 | 3/5/7 |
+| events with `qualified == end` | 29 | 31 | **0** | 2 | 2 | **0** | 3 | 3 | **0** |
+| events over 45 d | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| merge pairs / max merged window | 45 / 28 d | 22 / 33 d | 21 / **42 d** | 2 / 5 d | 1 / 7 d | 1 / 8 d | 3 / 8 d | 1 / 7 d | 1 / 8 d |
+| lost / gained vs S0 | — | 40 / 39 | 49 / 59 | — | 5 / 4 | 2 / 4 | — | 7 / 6 | 4 / 10 |
 
 The qualification clock is not a box-size change — C3 already fixed the boxes —
 it is a *spell-continuity* change, and it makes every metric above better or
 level: the events that used to be cut off at their own qualifying day now live
-long enough to be valid at all, which is where the +26 heat waves come from
-(163 → 189, churn 48 lost / 75 gained against the shipped rule, C3 was 45 / 46).
+long enough to be valid at all, which is where the +11 heat waves come from
+(148 → 159 on production's population, churn 49 lost / 59 gained against the
+shipped rule, C3 was 40 / 39).
 Curation caps what ships — `select.rank_and_cap` keeps 15 heat waves per window
-(`DEFAULT_TOP_N`; the live selection is 15 heat / 5 freeze / 8 cold snaps) — so
-this changes which events are scored, not how many, on top of the one-off id
-re-hash the release already carries. Nothing breaks a duration gate: the longest
+(`DEFAULT_TOP_N`; the live selection is 15 heat / 5 freeze / 8 cold snaps, and
+re-running the real curation path over the fresh scan — `hb06_ship.py`,
+exclusions included — ships 15 heat / 12 freeze / 15 cold snaps after the
+release), so this changes which events are scored and grows the weekly
+temperature score jobs from 28 to 42 (+14) on top of the one-off id re-hash the
+release already carries (42 viz assets to rebuild on the first weekly run: 41
+new ids + 1 stale stamp; measured per-asset temperature build times from
+production viz logs are median 55 s / p90 525 s, so the step fits the 5,400 s
+budget at median cost (~2,300 s) but not at cold-cache p90 cost — the step is
+best-effort and finishes in later weeks, or can be pre-warmed before release).
+Nothing breaks a duration gate: the longest
 heat spell is 31 days against the 45-day publish ceiling
 (`validate.MAX_DURATION_DAYS`), and no replayed event exceeds it. Curation merge
-pressure barely moves (20 mergeable heat pairs, largest merged window 42 d, 3
-over the 16-day `select.MERGE_CAP_DAYS` envelope — three in the C3 replay too,
+pressure barely moves (21 mergeable heat pairs, largest merged window 42 d, 2
+over the 16-day `select.MERGE_CAP_DAYS` envelope — four in the C3 replay too,
 and still under the 45-day hard cap).
 
 ## The 2026-11-20 box-size change (strategy `C3_valid_box_persist`)
@@ -133,11 +170,12 @@ the old rule is reproducible):
   dilate(footprint, move_cells)`; kills H3/H4/H5 growth).
 * `seed_valid_only` — a candidate's first footprint/box is the region's valid
   cells, never its closing-filled bridge cells.
-* `merge_keep_box` — the older object keeps its box on a merge; each YOUNGER
-  member's claim is clipped into it, while the survivor keeps growing by its
-  own valid claims within `move_cells` (round-1 fix — clipping the survivor's
-  own drift cells too split drifting spells in two). A merge never unions
-  two boxes.
+* `merge_keep_box` — the merge's survivor (its oldest qualified member, or
+  the oldest candidate when nothing in the merge qualified — round-3 fix,
+  above) keeps its box; every other member's claim is clipped into it, while
+  the survivor keeps growing by its own valid claims within `move_cells`
+  (round-1 fix — clipping the survivor's own drift cells too split drifting
+  spells in two). A merge never unions two boxes.
 * `publish_box="persistence"` (+ `publish_min_fraction=0.5`, `publish_trim=0.02`)
   — the published Event bbox is `persistence_box()`: the bbox of the cells
   valid on ≥ `max(2, ⌈0.5 × days⌉)` days, trimmed to their area-weighted 2–98 %
@@ -162,28 +200,36 @@ differs from the LEGACY-pinned one; the publish rule has the
 
 Measured on the live window 2026-08-21..11-13 (LXC replay with the shipped
 code — the review scripts replay through the production `Tracker.step()` and
-both gates pass: `selfcheck` reproduces the shipped tracker 162/162 heat,
-35/35 freeze/cold_snap, `prodcheck` reproduces the production-C3 run
-163/163 heat, 33/33 freeze/cold_snap; see
-`notes/heatwave_box_diagnosis.md` "Implementation result" for the full
-table): heat fill median 0.52 → 0.76, daily fill 0.24 → 0.43, box median
-3.80 → 1.14 M km², max 61.6 → 22.2 M km²; freeze fill 0.46 → 0.78, box median
-2.69 → 0.98 M km²; cold_snap is re-scanned on the freeze mask, so it moves
+both gates pass on production's population (the scan's `lat >= -60` clamp):
+`selfcheck` reproduces the shipped tracker 149/149 heat, 11/11 freeze, 24/24
+cold_snap, `prodcheck` reproduces the production-C5 run 159/13/30; see the
+round-3 addendum in `notes/heatwave_box_diagnosis.md` for the full table):
+heat fill median 0.52 → 0.74, daily fill 0.23 → 0.42, box median
+3.23 → 1.17 M km², max 61.6 → 22.2 M km²; freeze fill 0.42 → 0.69, box median
+2.41 → 0.83 M km²; cold_snap is re-scanned on the freeze mask, so it moves
 with freeze (the published cold_snap catalogue today sits at fill 0.48, box
 median 2.49 M km²). Event membership genuinely changes (a continent-wide
-belt comes back as one object per hot region: 45/162 heat spells lose their
-successor and 46 new ones appear under C3), the published ids re-hash once
+belt comes back as one object per hot region: 40/149 heat spells lose their
+successor and 39 new ones appear under C3), the published ids re-hash once
 (the bbox is in `make_event_id`), and every scoring region shrinks — so the
 release rebuilds `events.json`, the id-keyed score cache and the scorecard
 together.
 
 The re-hash is a one-time cost, not a weekly one: the heat/freeze id now
 hashes the **anchor bbox** (frozen day-3 box) rather than the published box,
-so an ongoing event keeps its id while its persistence box is redrawn
-(`scripts/review/hb04_ongoing_ids.py`: hashing the published box re-keys 2 of
-5 ongoing heat spells across one weekly extend (+7d) and keeps only 3/5 ids
-when the 90-day window start also slides +7d; the anchor basis keeps 5/5 in
-both; `select.py`'s merged ids and the other lanes are unchanged).
+so an ongoing event keeps its id while its persistence box is redrawn. Re-measured
+by `scripts/review/hb04_ongoing_ids.py` on production's population after the
+merge-survivor fix: one weekly extend (+7 d) keeps **5 of 5** ids of ongoing
+heat spells on the anchor basis and 3/5 on the old published-box basis; sliding
+the 90-day window start +7 d keeps 4/5 anchor vs 3/5 published; head slides of
++14/+21 d keep 3/5 anchor vs 1/5 published. Under the production qualification
+clock the extend keeps **8 of 8** pairable ids (published basis 3/8 of 9);
+the ninth ongoing spell (`db4e3331c5b6`, started 10-30) pairs with nothing
+within the ±1 d pairing tolerance — its region is held the following week by
+objects with different starts (a −2 d merge survivor in other rulesets, a +6 d
+later seed here), i.e. the spell was absorbed or re-seeded under another start,
+not re-keyed because its anchor box moved (`select.py`'s merged ids and the
+other lanes are unchanged).
 
 ## Port layout
 
@@ -243,6 +289,15 @@ sides read identical bytes.
   3–19 °C in desert regions, which SPEC §2 already documents as legitimate). If the
   dashboard should not spend a fifth of its cards on those, that is a curation-floor
   decision (`select._passes_floor`), not a detection one.
+* **126 of 738 flood events qualify on their last day.** The flood lane keeps its
+  own legacy qualification clock; the `core_clock` knob lives in the temperature
+  tracker and cannot reach it. Out of scope for this change, listed for the owner.
+* **The 22.15 M km² Africa/Middle East spell** survives every C3/C5 rule — it is a
+  valid single object, not a bug; whether one card should score that much area is
+  the same curation question as the quotas above (`Params.max_box_area_km2` is the
+  detection-side crank if it is ever wanted).
+* **Extra flood `details.tracker_params` keys are harmless** — neither the flood
+  score-cache key nor `pipeline.fingerprint` reads them; no action needed.
 * **Window-head truncation.** The lane is a rolling 84-day window; when it starts after
   the scan window, the scan falls back to ERA5 (and says so). Events cannot start before
   the lane's first day, hence `details.window_start_truncated`.
@@ -274,6 +329,18 @@ cd /opt/ewb-heatbox && EWB_LIVE_CACHE=/opt/ewb-heatbox/data/cache \
   /opt/ewb-live/.venv/bin/python scripts/review/hb05_qualify_fallbacks.py \
     --events /opt/ewb-live/data/results/events.json \
     --lane /opt/ewb-live/data/results/raw_exceedance
-#   attributes every qualified_at fallback (all 31: qualified_date sits on
-#   the exclusive end date, so the frame window is empty by construction)
+#   attributes every qualified_at fallback (all 34 in the live catalogue sit on
+#   the exclusive end date, so the frame window is empty by construction; the
+#   C5 replay shows 0 empty windows and 3 below-floor — see the round-3 addendum)
+  /opt/ewb-live/.venv/bin/python scripts/review/hb06_ship.py \
+    --fresh events_c5.json --published /opt/ewb-live/data/results/events.json \
+    --score-cache /opt/ewb-live/data/results/score_cache \
+    --viz-cache /opt/ewb-live/data/results/viz_cache \
+    --viz-log /opt/ewb-live/logs/weekly-2026-11-19T17:00:00Z.log --out out/hb06_ship.json
+#   replays the real curation path (exclusions included) for both catalogues;
+#   reports what ships before/after, score-job delta and viz rebuild cost
+  /opt/ewb-live/.venv/bin/python scripts/review/hb07_subfloor.py \
+    --lane /opt/ewb-live/data/results/raw_exceedance \
+    --start 2026-08-21 --end 2026-11-13
+#   the every-published-event-passes-the-frame-floor gate (0 violations)
 ```
