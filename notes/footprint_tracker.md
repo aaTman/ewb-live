@@ -90,10 +90,13 @@ first (ties: oldest) - the claim step keeps every cell in exactly one event
 regardless of rule; unqualified candidates are still absorbed by qualified
 events, with their claim clipped into the survivor's box; qualification is
 never inherited (round-3 invariant kept). `TRACK_RULE_REV` c3-v2 -> c3-v3
-(temperature score cache re-scores once on deploy; the flood lane pins
-`merge_survivor="oldest_qualified"` in `FLOOD_PARAMS` so its cache key is
-unmoved). G6 on real data: the current AND legacy rule digests of the
-new code match the 8b3b152 tree for all three hazards (six digests), the
+tags the temperature SCAN cache (scans re-run under the new rule; per-event
+scores are keyed by `start|end|bbox` in `pipeline.fingerprint`, so only
+events whose geometry actually moved re-score), while the flood lane pins
+`merge_survivor="oldest_qualified"` in `FLOOD_PARAMS` so its published
+`details.tracker_params` keeps naming the rule it actually runs. G6 on real
+data: the current AND legacy rule digests of the new code match the 8b3b152
+tree for all three hazards (six digests), the
 flood fuzz golden (`61288b41...`) is byte-identical, and the pre-knob
 `oldest_qualified` fuzz digest (`e588d54c...`, 323 events) is pinned in
 `tests/test_event_tracker.py::test_merge_survivor_rule_fuzz_digests_are_pinned`
@@ -357,6 +360,21 @@ sides read identical bytes.
 * **Window-head truncation.** The lane is a rolling 84-day window; when it starts after
   the scan window, the scan falls back to ERA5 (and says so). Events cannot start before
   the lane's first day, hence `details.window_start_truncated`.
+* **The published persistence box can be smaller than the qualifying footprint, and
+  below the 200 k km² floor.** It keeps only cells valid on >= `publish_min_days` event
+  days, so a spell that qualified in one push and then collapses publishes a rectangle
+  under the qualify floor that qualified it - no single frame inside the published box
+  reaches 200 k km² (measured on the C5 replay of the live window: 32 of 202 published
+  events; re-derived in the round-4 re-measure). Behaviour left as is; whether the
+  published box should never be smaller than the qualify-day footprint (or such events
+  be flagged/curated) is the owner's call.
+* **`separate` lets two qualified objects run side by side.** Round 4's merge rule
+  never absorbs a qualified event, so a blob whose region welds to a qualified event's
+  region keeps its own object: overlapping published boxes for physically adjacent
+  spells, +13 heat events vs the round-3 rule (see the round-4 section). If the
+  product prefers one row per storm system, `Params.merge_survivor="largest_close"`
+  is the measured alternative (all gates pass; truncates the smaller spell at the
+  merge day instead of duplicating it).
 
 ## Release checklist (merge day, one-time)
 

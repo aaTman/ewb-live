@@ -197,10 +197,11 @@ class FloodParams(Params):
     claim_valid_only: bool = False
     seed_valid_only: bool = False
     merge_keep_box: bool = False
-    # inert (merge_keep_box=False ignores it) but PINNED: the lane's cache
-    # fingerprint hashes every Params field, and the base default moved to
-    # "separate" in round 4 - an unpinned inherit would churn the flood
-    # cache key with zero behaviour change
+    # inert here (merge_keep_box=False ignores it) but PINNED: the value is
+    # published in every flood event's details.tracker_params, so inheriting
+    # the base default (round 4 moved it to "separate") would claim a rule
+    # this lane does not run - the pre-2026-11-21 merge is what the flood
+    # digest is pinned to
     merge_survivor: Literal["oldest_qualified", "largest", "largest_close",
                             "separate"] = "oldest_qualified"
     publish_box: Literal["persistence", "tracker"] = "tracker"
