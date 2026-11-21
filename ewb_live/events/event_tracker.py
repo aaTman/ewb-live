@@ -220,8 +220,11 @@ def persistence_box(daily_mask: np.ndarray, box: Box, cell_area: np.ndarray,
         col_w = (sub * area).sum(axis=0)
         i0 = int(np.floor(_weighted_quantile(row_idx, row_w, trim)))
         i1 = int(np.ceil(_weighted_quantile(row_idx, row_w, 1.0 - trim)))
-        c0 = int(np.floor(_weighted_quantile(col_idx, col_w, trim)))
-        c1 = int(np.ceil(_weighted_quantile(col_idx, col_w, 1.0 - trim)))
+        if cols.size < nx:
+            c0 = int(np.floor(_weighted_quantile(col_idx, col_w, trim)))
+            c1 = int(np.ceil(_weighted_quantile(col_idx, col_w, 1.0 - trim)))
+        else:            # a full ring has no seam-free edge to trim from
+            c0, c1 = 0, cols.size - 1
         sub = sub[max(0, i0):i1 + 1, max(0, c0):c1 + 1]
         i_lo = max(0, i0)
         c_lo = max(0, c0)

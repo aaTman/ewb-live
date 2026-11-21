@@ -473,6 +473,13 @@ def test_persistence_box_wraps_the_seam():
     assert not mask[3, 2] and not mask[3, 57]
 
 
+def test_persistence_box_keeps_a_full_ring_whole():
+    m = np.zeros((4, 30, 60), bool)
+    m[:, 12:17, :] = True                      # a band valid in every column
+    pb = persistence_box(m, Box(0, 29, 0, 59), np.full((30, 60), 1e4), 2, trim=0.02)
+    assert pb is not None and pb.mask(30, 60)[14].all()
+
+
 def test_event_crossing_the_seam_keeps_a_wrapped_box():
     """C3 claim/dilate follow the wrap; the box stays the short arc."""
     def wrap(t: int) -> np.ndarray:      # 9-col block drifting 2 cols/day

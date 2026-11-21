@@ -34,15 +34,15 @@ _HERE = Path(__file__).resolve()
 sys.path.insert(0, str(_HERE.parents[2]))     # the scratch checkout's ewb_live,
                                               # not the production one
 
-from ewb_live.events import frame_masks  # noqa: E402
-from ewb_live.events.event_tracker import (  # noqa: E402
+from ewb_live.events import frame_masks
+from ewb_live.events.event_tracker import (
     Params,
     persistence_box,
     persistence_k_days,
     track_events,
 )
-from ewb_live.events.temperature import _cell_area_km2  # noqa: E402
-from ewb_live.events.types import make_event_id, normalize_lon_180  # noqa: E402
+from ewb_live.events.temperature import _cell_area_km2
+from ewb_live.events.types import make_event_id, normalize_lon_180
 
 RULESETS = {
     "shipped": dataclasses.replace(Params(), claim_valid_only=False,

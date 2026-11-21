@@ -50,15 +50,21 @@ _HERE = Path(__file__).resolve()
 sys.path.insert(0, str(_HERE.parents[2]))     # the repo root
 sys.path.insert(0, str(_HERE.parent))         # scripts/review, for evt02
 
-import numpy as np  # noqa: E402
-from scipy import ndimage as ndi  # noqa: E402
+import numpy as np
+from scipy import ndimage as ndi
 
-from ewb_live.events import frame_masks  # noqa: E402
-from ewb_live.events.event_tracker import (  # noqa: E402
-    Box, Params, TrackedEvent, Tracker, circular_span, dilate, label_regions,
+from ewb_live.events import frame_masks
+from ewb_live.events.event_tracker import (
+    Box,
+    Params,
+    TrackedEvent,
+    Tracker,
+    circular_span,
+    dilate,
+    label_regions,
     merge_groups,
 )
-from ewb_live.events.temperature import _cell_area_km2  # noqa: E402
+from ewb_live.events.temperature import _cell_area_km2
 
 # the greedy bbox/day matcher from the tracker-port review, reused verbatim
 _evt02 = importlib.import_module("evt02_tracker_port_compare")
@@ -521,8 +527,8 @@ def box_from_bbox(w: Window, bbox: tuple[float, float, float,
     i1 = int(np.argmin(abs(w.lats - bbox[1])))
     step = float(abs(w.lons[1] - w.lons[0]))
     nx = w.lons.size
-    return Box(i0, i1, int(round((bbox[2] - w.lons[0]) / step)) % nx,
-               int(round((bbox[3] - w.lons[0]) / step)) % nx)
+    return Box(i0, i1, round((bbox[2] - w.lons[0]) / step) % nx,
+               round((bbox[3] - w.lons[0]) / step) % nx)
 
 
 def score_one(w: Window, p: Published) -> dict:
