@@ -28,7 +28,7 @@ from ewb_live.events.event_tracker import (
 
 NY, NX = 40, 80
 AREA = np.full((NY, NX), 1e4)
-PARAMS = Params(region_radius=1, region_min_fraction=0.3, move_cells=2,
+PARAMS = Params(merge_survivor="separate", region_radius=1, region_min_fraction=0.3, move_cells=2,
                 max_ramp_days=4, end_area_km2=1e4)
 # The shipped tracker claims whole labelled regions, seeds candidates from
 # them, and unions the boxes of merged objects. The 2026-11-20 box-size rule
@@ -573,7 +573,7 @@ def test_claim_takes_only_valid_cells_inside_the_drift_window():
     member with its claim clipped into the survivor's own box. The shipped
     default (``separate``) instead lets the belt seed its own event; its
     guard - the small survivor also never swallows the belt - is pinned in
-    :func:`test_separate_default_splits_the_belt_instead_of_clipping_it`.
+    :func:`test_separate_rule_splits_the_belt_instead_of_clipping_it`.
     """
     c3 = rule(survivor="oldest_qualified")
     event = block(slice(13, 18), slice(8, 13))                  # 25 cells, qualifies
@@ -613,7 +613,7 @@ def test_drift_window_clips_a_touching_blob_to_its_near_edge():
     assert ev_old.box == Box(8, 16, 10, 40)                     # blob taken whole
 
 
-def test_separate_default_splits_the_belt_instead_of_clipping_it():
+def test_separate_rule_splits_the_belt_instead_of_clipping_it():
     """The shipped default (``separate``): a qualifying region next to a
     qualified event seeds its OWN event; the small survivor's box stays
     strictly inside its own drift reach - less box, not more, than the clip
@@ -1132,12 +1132,12 @@ def test_merge_survivor_rule_fuzz_digests_are_pinned():
         return (sum(len(s) for s in per_seed),
                 hashlib.sha256(json.dumps(per_seed).encode()).hexdigest())
 
-    assert Params().merge_survivor == "separate"      # the shipped default
+    assert Params().merge_survivor == "largest_close"  # the shipped default
     assert digest_of(dataclasses.replace(Params(),
                                          merge_survivor="oldest_qualified")) == (
         323, "e588d54c78885e403989075b50f3038390457b320d4a7205b9791d249e9d188f")
     assert digest_of(Params()) == (
-        409, "b72440c19aeb5ea5cf470abb7b16e9dcb5817369876e823547ba4bb1deba5f1c")
+        320, "63e2f305ab58c2f910cd4b5e57d5a09a815fa68a85fc3fceb70684c9e687e662")
 
 
 def test_persistence_box_stays_inside_a_wide_unwrapped_box():
@@ -1156,3 +1156,28 @@ def test_persistence_box_stays_inside_a_wide_unwrapped_box():
     pb = persistence_box(m, box, np.full((8, 60), 1e4), 2)
     assert pb == Box(2, 5, 0, 40)
     assert not (pb.mask(8, 60) & ~box.mask(8, 60)).any()
+
+
+def test_missing_truth_day_keeps_only_cells_valid_on_both_sides():
+    from ewb_live.events.temperature import _bridge_missing_days
+
+    mask = np.zeros((4, 3, 3), bool)
+    mask[0, 0:2, :] = True
+    mask[2, 1:3, :] = True
+    t2m = np.full((4, 3, 3), 300.0)
+    t2m[1] = np.nan
+    out = _bridge_missing_days(mask, t2m)
+    assert out[1, 1].all() and not out[1, 0].any() and not out[1, 2].any()
+    assert (out[[0, 2, 3]] == mask[[0, 2, 3]]).all()
+    assert not mask[1].any()                        # the input is not modified
+
+
+def test_missing_truth_at_the_window_edge_stays_empty():
+    from ewb_live.events.temperature import _bridge_missing_days
+
+    mask = np.ones((3, 2, 2), bool)
+    mask[0] = mask[2] = False
+    t2m = np.full((3, 2, 2), 300.0)
+    t2m[0] = t2m[2] = np.nan
+    assert (_bridge_missing_days(mask, t2m) == mask).all()
+    assert _bridge_missing_days(mask, None) is mask

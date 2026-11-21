@@ -262,7 +262,18 @@ def _mirror_t2m_daily(dates, lats, lons, reduce: str = "mean") -> np.ndarray | N
     return out - 273.15
 
 
-TRACK_RULE_REV = "c3-v3"  # bump when the heat/freeze/cold_snap tracking rule changes (cache key); c3-v3 = merge survivor "separate" (round 4)
+def _bridge_missing_days(mask: np.ndarray, t2m: np.ndarray | None) -> np.ndarray:
+    """A day with no truth keeps only the cells valid on both neighbouring days."""
+    if t2m is None:
+        return mask
+    out = mask.copy()
+    for i in np.flatnonzero(np.isnan(t2m).all(axis=(1, 2))):
+        if 0 < i < len(mask) - 1:
+            out[i] = mask[i - 1] & mask[i + 1]
+    return out
+
+
+TRACK_RULE_REV = "c3-v4"  # bump when the heat/freeze/cold_snap tracking rule changes (cache key); c3-v4 = merge survivor "largest_close" + missing-truth days bridged
 
 FREEZE_MAX_C = 0.0   # freeze cells: t2m <= this (degC) at all four 6-hourly steps
 
@@ -422,6 +433,7 @@ def scan_temperature_events(
                                "the <=0C rule; truth mirror unavailable")
         mask = mask & (t2m_dmax <= max_c)
 
+    mask = _bridge_missing_days(mask, t2m_dmax)
     raw = track_events(mask, dates, cell_area, p, event_type)
     logger.info("  tracked %s: %d valid events (%d cells-days valid)",
                 event_type, len(raw), int(mask.sum()))

@@ -124,18 +124,17 @@ def score_event(event: Event, models: list[str]) -> pd.DataFrame
      A new candidate's first box is the bbox of the region's **valid** cells. Follow and
      order are otherwise unchanged: a region continues an event only where it overlaps
      the drifted footprint by >= `min_overlap`=0.5 of the smaller side, older events
-     claim first. **Two qualified events never merge** (`Params.merge_survivor`
-     =`"separate"`, round-4 rule): when objects reach the same cells, each qualified
-     member is carried on as its own object, contested cells go to the **larger**
-     event's claim first (ties: older), and only a qualified event's *unqualified*
-     candidates are absorbed into it — the merge clips such an absorbed candidate into
-     the survivor's box and never unions two boxes (`max_box_area_km2`, default `None`,
-     remains an optional cap on box growth). A merge therefore never deletes an aged
-     qualified event: the round-3 rule that let the oldest qualified survivor absorb a
-     larger healthy spell (deleting it unpublished) is retired, and with it the
-     same-day re-seed that followed (`Params.merge_survivor` keeps the older rules as
-     `"oldest_qualified"`/`"largest"`/`"largest_close"`; the flood/legacy lanes pin
-     `"oldest_qualified"` and are byte-unchanged — round-4 note `notes/footprint_tracker.md`).
+     claim first. **Merge rule (`Params.merge_survivor`=`"largest_close"`, owner decision
+     2026-11-21):** when objects reach the same cells, the qualified member holding the
+     largest claim that day carries the group on (ties: older). Any other qualified
+     member already `min_days` old is closed and published with `end` = the merge day;
+     younger members and unqualified candidates are absorbed. Their claims are clipped
+     into the survivor's box and two boxes are never unioned (`max_box_area_km2`, default
+     `None`, remains an optional cap on box growth). `Params.merge_survivor` keeps the
+     other rules as `"oldest_qualified"`/`"largest"`/`"separate"`; the flood/legacy lanes
+     pin `"oldest_qualified"` and are byte-unchanged (`notes/footprint_tracker.md`).
+     **Missing truth:** a day whose ERA5 field is entirely NaN keeps only the cells valid
+     on both neighbouring days, so one missing day cannot end an event by itself.
      Qualification is never inherited: an event's `qualified_date` is a
      day *its own* footprint reached the floor, so a candidate that never reached it
      is absorbed like any younger member and leaves no event (round-3 review fix,

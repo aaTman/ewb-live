@@ -81,7 +81,7 @@ qualifying blob beside a qualified event is its own event instead of being
 clipped into the neighbour, and heat box median moves 1.12M -> 1.21M km2
 (fill 0.83 unchanged; G5's medians pass with margin). Two qualified objects
 whose regions weld can now run side by side with overlapping boxes (see
-`test_separate_default_splits_the_belt_instead_of_clipping_it`) - the owner
+`test_separate_rule_splits_the_belt_instead_of_clipping_it`) - the owner
 can flip to `largest_close` in one line if the product prefers fewer rows
 over never truncating a spell.
 
@@ -385,6 +385,13 @@ sides read identical bytes.
   product prefers one row per storm system, `Params.merge_survivor="largest_close"`
   is the measured alternative (all gates pass; truncates the smaller spell at the
   merge day instead of duplicating it).
+
+## Owner decision 2026-11-21: `largest_close` (M2) ships
+
+The owner compared 90-day videos of M2 and M3 on repaired data and chose M2: fewer
+duplicate rows, no empty-footprint open events, and a readable timeline. Today's core
+rule stays; capped core-age variants (3, 4, 5 and 7 days) chained events up to 59 days.
+`TRACK_RULE_REV` c3-v3 -> c3-v4 re-runs the temperature scans.
 
 ## Release checklist (merge day, one-time)
 

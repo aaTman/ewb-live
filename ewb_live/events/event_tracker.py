@@ -321,12 +321,11 @@ class Params:
             ``"largest"`` the qualified member holding the largest footprint
             that day (ties: oldest); ``"largest_close"`` as ``"largest"``, but
             a qualified member already ``min_days`` old is closed and published
-            (``end`` = merge day) instead of vanishing unpublished; ``"separate"``
-            never merges qualified events - each keeps its own claim, contested
-            cells go to the larger event (ties: oldest), and only unqualified
-            candidates are absorbed (the shipped rule from round 4: the only
-            candidate with 0 aged qualified events lost AND 0 same-day re-seeds
-            on the real replay). Ignored when ``merge_keep_box=False``
+            (``end`` = merge day) instead of vanishing unpublished (the shipped
+            rule, owner 2026-11-21); ``"separate"`` never merges qualified
+            events - each keeps its own claim, contested cells go to the larger
+            event (ties: oldest), and only unqualified candidates are absorbed.
+            Ignored when ``merge_keep_box=False``
             (legacy: always the oldest member).
         publish_box: The rectangle a scan publishes for the event:
             ``"persistence"`` = :func:`persistence_box` over the event's days,
@@ -355,7 +354,7 @@ class Params:
     seed_valid_only: bool = True
     merge_keep_box: bool = True
     merge_survivor: Literal["oldest_qualified", "largest", "largest_close",
-                            "separate"] = "separate"
+                            "separate"] = "largest_close"
     publish_box: Literal["persistence", "tracker"] = "persistence"
     publish_min_fraction: float = 0.5
     publish_trim: float | None = 0.02

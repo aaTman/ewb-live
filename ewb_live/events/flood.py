@@ -199,7 +199,7 @@ class FloodParams(Params):
     merge_keep_box: bool = False
     # inert here (merge_keep_box=False ignores it) but PINNED: the value is
     # published in every flood event's details.tracker_params, so inheriting
-    # the base default (round 4 moved it to "separate") would claim a rule
+    # the base default (now "largest_close") would claim a rule
     # this lane does not run - the pre-2026-11-21 merge is what the flood
     # digest is pinned to
     merge_survivor: Literal["oldest_qualified", "largest", "largest_close",
