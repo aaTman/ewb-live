@@ -126,9 +126,13 @@ def main() -> int:
     ap.add_argument("--prod-assets", type=Path, default=None,
                     help="production data/results/events dir for the viz "
                          "staleness check")
-    ap.add_argument("--viz-log", type=Path, default=None,
-                    help="a production weekly log with the ewb_live.viz "
-                         "per-asset 'ok ... Xs' lines")
+    ap.add_argument("--viz-log", type=Path, action="append", default=[],
+                    help="production log(s) with the ewb_live.viz per-asset "
+                         "'ok ... KB ...s' lines; repeatable. Round-3 timing "
+                         "was read from the wrong file - these lines go to "
+                         "the viz stdout logs (viz*.log), NOT the "
+                         "weekly-*.log, so a single weekly path matched "
+                         "nothing. Pass every viz*.log.")
     ap.add_argument("--start", required=True)
     ap.add_argument("--end", required=True)
     ap.add_argument("--after-events-out", type=Path, default=None)
@@ -175,18 +179,35 @@ def main() -> int:
         est: dict = {"rebuild_missing": len(missing),
                      "rebuild_stale_stamp": len(stale),
                      "total_rebuild": len(missing) + len(stale)}
-        if a.viz_log and a.viz_log.exists():
+        if a.viz_log:
             times = [float(m.group(1))
-                     for line in a.viz_log.read_text(errors="replace").splitlines()
+                     for path in a.viz_log if path.exists()
+                     for line in path.read_text(errors="replace").splitlines()
                      if (m := _OK_S.search(line))]
             if times:
+                srt = sorted(times)
+
+                def pct(q: float) -> float:
+                    return srt[min(len(srt) - 1, int(round(q * (len(srt) - 1))))]
+
                 med = statistics.median(times)
                 mean = statistics.fmean(times)
-                est.update({"asset_s_n": len(times), "asset_s_med": round(med, 1),
+                p90 = pct(0.90)
+                est.update({"asset_s_n": len(times),
+                            "asset_s_med": round(med, 1),
                             "asset_s_mean": round(mean, 1),
+                            "asset_s_p90": round(p90, 1),
+                            "asset_s_max": round(srt[-1], 1),
                             "rebuild_s_med_est": round(med * est["total_rebuild"]),
                             "rebuild_s_mean_est": round(mean * est["total_rebuild"]),
-                            "step_timeout_s": VIZ_STEP_TIMEOUT_S})
+                            "rebuild_s_p90_est": round(p90 * est["total_rebuild"]),
+                            "step_timeout_s": VIZ_STEP_TIMEOUT_S,
+                            "fits_median": round(med * est["total_rebuild"]) < VIZ_STEP_TIMEOUT_S,
+                            "fits_p90": round(p90 * est["total_rebuild"]) < VIZ_STEP_TIMEOUT_S})
+            else:
+                est["viz_log_note"] = (
+                    "no 'ok ... KB ...s' lines in the given logs - the viz "
+                    "per-asset timing is in viz*.log, not weekly-*.log")
         res["viz_first_weekly_run"] = est
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(res, indent=1))

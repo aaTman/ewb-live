@@ -892,15 +892,26 @@ def test_legacy_and_flood_results_are_unchanged_by_the_survivor_rule():
     assert hashlib.sha256(json.dumps(per_seed).encode()).hexdigest() == \
         "c7f5b1fb9da5407b765c5be2ff07c807d950297b19b5ef657e6156504bdf2929"
     # flood keeps its own pinned knobs (claim/seed/merge legacy, start clock,
-    # day-2 anchor) - same seeds, run through FloodParams at HEAD
+    # day-2 anchor) - same seeds, run through FloodParams. Round 4: assert the
+    # FULL output digest, not just an event count (a count can hide shifted
+    # dates/boxes); digest computed with the 8b3b152 code over the same fuzz.
     from ewb_live.events.flood import FloodParams
     flood = []
     for seed in range(30):
         frames = fuzz_frames(seed)
         dates = [DAY0 + dt.timedelta(days=k) for k in range(frames.shape[0])]
-        flood.append(len(track_events(frames, dates, AREA, FloodParams(),
-                                      "flood")))
-    assert sum(flood) == 11083   # flood event count at HEAD over the fuzz set
+        flood.append([
+            [ev.id, str(ev.start), str(ev.qualified), str(ev.end),
+             bx(ev.box), bx(ev.anchor),
+             [round(a, 1) for a in ev.footprint_area_km2],
+             [round(a, 1) for a in ev.box_area_km2],
+             [round(a, 1) for a in ev.core_area_km2]]
+            for ev in track_events(frames, dates, AREA, FloodParams(),
+                                   "flood")])
+    assert sum(len(s) for s in flood) == 11083   # flood event count at HEAD
+    assert hashlib.sha256(json.dumps(flood).encode()).hexdigest() == \
+        "61288b41c7ee93073b76735ff22f4e77d62e87aaa28c8a6b894330e28d51573c"
+
 
 # ------------------------- round 4: which member of a merge group survives ---
 # Brief fix_round4.md item 1: a merge must not delete a larger, healthy

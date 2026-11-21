@@ -163,8 +163,17 @@ def measure(w: h1.Window, valid: list[TrackedEvent],
                          i0, i1, ev.box, ev.peak_area_km2, ev.end is None)
         row = h1.score_one(w, h1.Published(spell=spell, box=pub))
         row["tracker_box"] = [ev.box.i0, ev.box.i1, ev.box.j0, ev.box.j1]
-        day = (ev.qualified - ev.start).days
-        row["qual_day_footprint_km2"] = ev.footprint_area_km2[day]
+        # score_one's "end" is the last RECORDED day (inclusive); G4 and the
+        # digest need the tracker's exclusive end (None = ongoing)
+        row["end_exclusive"] = str(ev.end) if ev.end else None
+        q_idx = (ev.qualified - ev.start).days if ev.qualified else None
+        row["qual_day_footprint_km2"] = (
+            ev.footprint_area_km2[q_idx]
+            if q_idx is not None and 0 <= q_idx < len(ev.footprint_area_km2)
+            # no in-series qualifying day: the LEGACY merge could inherit a
+            # qualification dated BEFORE the survivor's own start (the
+            # round-3 finding) - a violation to report, not a crash
+            else None)
         rows.append(row)
     return rows
 
@@ -204,13 +213,15 @@ def g2_violations(rows_pub: list[dict], absorbed: list[dict], p: Params,
 def g4_violations(rows_pub: list[dict], p: Params) -> list[dict]:
     out = []
     for r in rows_pub:
-        ok = (r["qual_day_footprint_km2"] >= p.qualify_area_km2
+        fp = r["qual_day_footprint_km2"]
+        ok = (fp is not None and fp >= p.qualify_area_km2
               and r["peak_km2"] >= p.qualify_area_km2
               and r["qualified"] is not None and r["qualified"] >= r["start"]
-              and (r["end"] is None or r["qualified"] < r["end"]))
+              and (r["end_exclusive"] is None
+                   or r["qualified"] < r["end_exclusive"]))
         if not ok:
             out.append({k: r[k] for k in
-                        ("id", "start", "qualified", "end",
+                        ("id", "start", "qualified", "end_exclusive",
                          "qual_day_footprint_km2", "peak_km2")})
     return out
 
@@ -319,7 +330,7 @@ def main() -> int:
                       r["tracker_box"], r["peak_km2"],
                       r["qual_day_footprint_km2"]] for r in
                     sorted(rows_pub, key=lambda r: (r["start"], r["id"]))
-                ], sort_keys=True).hexdigest()),
+                ]).encode()).hexdigest(),
             }
             if hazard == "heat_wave":
                 row["g1"] = g1_dome(w, rows_pub)
