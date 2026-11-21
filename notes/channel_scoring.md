@@ -74,3 +74,32 @@ Owner review of the preview (:8062) raised three points.
    fixture (`tests/fixtures/tc_scorecard_real_shape.json`, cut from the real 44-storm scorecard, one model's 96/120 h miss rate forced above
    50 %) at 1440 px and 390 px light + dark, no JS errors, no overflow. Screenshots in `notes/screenshots/` (gitignored).
    Observation, not changed: the skill-vs-lead charts run to 10 d where TC miss rates climb to 1.0 on a handful of samples.
+
+## [wp4] 2026-11-21 14:39 UTC — WP4 flood lane DONE (GraphCast only, vs AI-estimated precipitation)
+
+Branch feat/scoring-flood-lane -> develop. Built: `scoring/flood.py` (PARDIG truth on the ERA5 lattice, apcp daily totals, contingency/FSS/areal metrics),
+lane_pool/pipeline/select/truth wiring, dashboard + About. Not deployed, not merged, nothing under /opt/ewb-live or /opt/ewb-live-dev touched.
+
+**Rows.** 36,388 flood rows in scores.parquet over 40 events x {graphcast 20,360; graphcast_gfs 16,028}: CriticalSuccessIndex 5,427, ProbabilityOfDetection
+5,388, FalseAlarmRatio 3,109, FractionsSkillScore 5,427, FractionsSkillScore5 5,427, PrecipAreaBias 5,805, PeakPrecipError 5,805. 80 pairs `scored`,
+360 `unsupported` (9 models x 40), `full_run_complete` true, other lanes' rows per (type, metric) identical to the pre-flood tree.
+Headline (all 40 events, 3 d): graphcast CSI 0.09, POD 0.14, FAR 0.65, FSS(3x3) 0.18, area bias -1.9 mm, peak error -36 mm (too dry): the usual GraphCast
+under-forecast of extremes. 1 d CSI 0.11 for graphcast_gfs (graphcast has no 24 h cell).
+
+**Backfill.** `ops/lane_backfill.sh flood` from the private tree /opt/ewb-preview-flood-lane (guard ok every time, weekly service inactive): 1458 jobs,
+12 workers, recycle 30; pool 340-355 s, total 10 min 18 s (first run) - 10 min 59 s (forced rerun), ~5 min of that is serial planning of the 40 events
+(land mask + climatology, ~5-8 s each; not parallelised); peak pool RSS 16.1 GB, 1.39 GB/worker, 1.8-1.9 s per store job, 0 errors, 0-2 retries.
+Single-event serial smoke before: 2 models x 17 inits 29 s, 2.1 GB.
+
+**Tests.** New: test_score_flood_kernels 19, test_score_flood_pipeline_units 10, test_flood_pipeline 16 (wiring incl. run()), e2e/test_floodlane_fe 36
+(1440/390 px x light/dark). Box unit suite (preview tree, excl. test_fcn_humidity and network): 741 passed, 2 failed (the 2 known box failures). Full e2e on the
+preview server (:8066): 251 passed, 1 skipped, 0 failed. Real-data browser check of the flood tab at 1440 and 390 px light+dark: no console/page errors, no
+horizontal overflow, truth label "PARDIG (AI-estimated precip)", verdict "GraphCast only - not ranked". One existing TC test (`test_pool_survives_one_killed_worker_by_rebuilding`
+and its sibling) was made independent of the pytest process RSS (rss_cap_gb=1e6): its forked children carry the whole suite's RSS and the larger suite crossed the 40 GB cap.
+
+**Found on the way.** (1) apcp fill is 9.97e36 and only on some IFS inits; (2) the dashboard folds off-grid leads into its 1 d/3 d bins, so a 12Z
+nearest-earlier-init rescue showed 36 h skill under "1d": the rescue is off for flood (graphcast_gfs then has 21 % of planned inits as no_data: the upstream
+GFS-initialised store lacks 00Z on about a third of days); (3) `--force` rewrites the part files but publish-only keeps cached rows/statuses for pairs already done,
+so a forced re-merge needs those dropped (done by hand on the preview). Honest caveats: single model family (two members), no ifs_hres baseline (so no skill colour),
+truth is an AI estimate that also defines the events, daily lane scored although every event's lane of record is the 72 h accumulation.
+Pi (fleet/agent) children did tests, wiring and dashboard; the first tests child died after ~2 min with nothing written (context compressed), re-split into two smaller briefs.
