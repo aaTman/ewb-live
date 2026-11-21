@@ -217,11 +217,12 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
         # the event's window/box (the ongoing-event rebuild, review #1). A
         # soft time budget (margin under the step timeout) stops starting new
         # event builds so the global steps still run this pass; the skipped
-        # ids are logged and the next weekly run resumes them (round-4).
+        # ids are logged and the next weekly run resumes them (round-4). The
+        # margin must outlast one in-flight build (longest logged: 1,042 s).
         try:
             proc = subprocess.run(
                 [sys.executable, "-m", "ewb_live.viz", "--all",
-                 "--time-budget-s", "5100"],
+                 "--time-budget-s", "3900"],
                 timeout=5400,
             )
             logger.info("ewb_live.viz --all exited %d", proc.returncode)

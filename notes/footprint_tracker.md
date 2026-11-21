@@ -210,7 +210,7 @@ per-asset build times from the production viz logs: temperature assets
 median 55 s / mean 181 s / p90 489 s, all assets median 37 s / p90 344 s, so
 42 rebuilds cost ~2,300 s at median, ~7,600 s at mean — over the weekly step's
 budget at mean cost. The viz step now stops at a soft time budget
-(`--time-budget-s`, 5,100 s from the weekly cycle) and still runs the global
+(`--time-budget-s`, 3,900 s from the weekly cycle, leaving room for one in-flight build (longest logged 1,042 s)) and still runs the global
 scorecard steps, so an over-budget first run simply resumes later (assets are
 id-keyed and skipped when current) — or is pre-warmed before release per the
 checklist below).
