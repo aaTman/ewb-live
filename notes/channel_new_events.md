@@ -4157,3 +4157,18 @@ Dashboard wiring (Pi, cherry-picked 0859a53) and offline tests (Pi, `tests/test_
 resolved its reader/lane at import time (the serial `_score_job` fallback ignored a patched reader); fixed at call time (41f64ac), strict xfail dropped.
 Offline on the box (preview tree): `test_score_mlc` + `test_score_tc` + `test_track_verif` + `test_lane_guard` = 116 passed. Guard ok (weekly inactive, Saturday 13:43 UTC).
 Full MLC backfill launched in `/opt/ewb-preview-mlc` as systemd unit `ewb-preview-mlc-backfill` through `ops/lane_backfill.sh mlc` (12 workers, recycle 30, cap 40 GB).
+
+## [scoring-wp2] 2026-11-21 14:10 UTC — WP2: full MLC backfill DONE (80 lows x 9 models), suites + browser check running (Pi)
+
+Launched through `ops/lane_backfill.sh mlc` (systemd unit, preview tree `/opt/ewb-preview-mlc`, weekly inactive, Saturday): 711 pairs without a part file (9 already
+done by the smoke run), **5355 jobs, wall 954 s (15.9 min; pilot estimate ~10 min), 12 workers, recycle 30, peak pool RSS 16.09 GB** (peak worker 1.59 GB, 182 worker
+processes; the 40 GB cap was never near), 3 transient S3 retries, 0 failed jobs, 120 no-data inits (the `_gfs` store gaps, never misses). Per `(model, init)` job: store
+0.93 s, `ifs_hres` 3.9 s (warm cache from the smoke run: not comparable to the 21 s of the pilot), tracker 0.035 s.
+Rows: **MLC scored rows 247,567** (80 events x 9 models = 720 pairs `scored`; 160 `unsupported` = `aifs_single`, `aigfs`) = TrackPositionError 31,923; AlongTrackError 31,697;
+CrossTrackError 31,697; CentralPressureError 31,923; TrackMiss 44,853; PeakDepthError 44,835; BombDetected 1,130; BombFalseAlarm 29,509. Truth tag `era5_arco` on all. TC rows (291,778)
+and the four EWB lanes unchanged. `meta.full_run_complete` true; 600 00/12Z inits verified.
+Miss rate (honesty check, "looks pathological?" = no): 24 / 48 / 72 / 96 h `ifs_hres` 12.5 / 20.4 / 32.4 / 50.6 %, MLWP models 15-20 / 26-35 / 42-55 / 59-78 %. Matches the pilot's single low
+(18 / 19 / 32 %). Not an end-of-life artefact: split by hours before the observed track ends the miss rate is flat 16-24 % (ifs) vs 22-34 % (MLWP) even 24-96+ h before the end.
+Same pattern as TC (the AI models' shallower lows fail the 3 hPa closed contour first). Cells above 50 % are greyed by the dashboard rule (most of 96 h, incl. `ifs_hres` at 50.6 %).
+Headline (mean km, 24 h): aurora 87, graphcast 88, pangu 100, ifs_hres 106, fcn 107, `_gfs` twins 119-129. PeakDepthError (24 h): ifs_hres -1.2 hPa (deeper), MLWP -0.1..+1.6 (shallower).
+Bomb: detected 24 h ifs 83 % vs 59-73 % MLWP (n 27-35 windows; n = 3-4 at 72 h, tiny), false-alarm rate <= 1-2 %. GraphCast (IFS-init) has no 24 h bomb window (lead 0 is fill; first at 30 h).
