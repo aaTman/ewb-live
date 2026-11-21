@@ -14,9 +14,7 @@ const TYPE_META = {
   atmospheric_river:  { label: 'Atmospheric rivers', short: 'Atmospheric river',
                         rule: 'IVT peaking at ≥400 kg m⁻¹ s⁻¹ with a ridge criterion; starts over ocean and makes landfall.' },
   tropical_cyclone:   { label: 'Tropical cyclones',  short: 'Tropical cyclone',
-                        rule: 'One IBTrACS storm: ≥3 fixes at tropical-storm force (≥34 kt) spanning ≥12 h. Published, not scored.',
-                        noScores: true,      // observation lane: published, not benchmarked
-                        noScoresNote: (n) => tcNotScoredNote(n) },
+                        rule: 'One IBTrACS storm: ≥3 fixes at tropical-storm force (≥34 kt) spanning ≥12 h. Scored on track error against the best track, from the first ≥34 kt fix.' },
   flood:              { label: 'Floods',             short: 'Flood',
                         rule: 'AI-estimated daily or 72 h rain (Google PARDIG, CC BY 4.0) past the ERA5 p95 wet-day climatology AND ≥20 mm/day. Published, not scored. (IMERG rain is the fallback source.)',
                         noScores: true,      // observation lane (PARDIG/IMERG): published, not benchmarked
@@ -152,28 +150,39 @@ function tcEmptyNote() {
   return `No qualifying storm in the IBTrACS archive through ${d} — best-track publication lags real time (the archive runs ~${ib.lag_days} days behind today).`;
 }
 
-/* TC lane, non-empty (ne-fix-tc 2026-11-19, audit TC-3/4). The old line printed
-   the published count and called it "storms tracked" — those are different
-   numbers: the archive's storm universe, the published events and the systems
-   still live at the archive's edge (too new for the ≥3-fix/≥12-h rule to be
-   judged) are three things, and meta.ibtracs now carries all three. `n` is the
-   published count IN THE CURRENT VIEW, so it is quoted as events here. */
-function tcNotScoredNote(n) {
+/* TC lane, scored (WP1, notes/scoring_design.md 8.3). The IBTrACS archive lags real time by
+   days, so the note still says how many storms it holds and which systems are too new to
+   judge (ne-fix-tc 2026-11-19, audit TC-3/4), and now also states what is verified: inits are
+   scored from the first >=34 kt fix, earlier ones are shown as not verified (owner decision
+   2026-11-21), and a lost track is a miss, never an imputed error. `n` is the published count
+   IN THE CURRENT VIEW, so it is quoted as events here. */
+function trackLaneNote(etype, n) {
+  const p = el('p', 'lane-note');
+  const tv = ((state.meta || {}).track_verification || {})[etype];
   const ib = (state.meta || {}).ibtracs;
-  const here = `${n} tropical cyclone${n === 1 ? '' : 's'} here`;
-  if (!ib || !Number.isFinite(ib.storms_in_window)) {
-    return `Not scored — ${here}; no EWB benchmark for IBTrACS best-track events yet.`;
+  let s = `Scored against the IBTrACS best track (provisional until the archive catches up)`
+    + `${n ? ` \u00b7 ${n} storm${n === 1 ? '' : 's'} in this view` : ''}. `
+    + 'Track error is the great-circle distance to the best-track position; along-track is positive when '
+    + 'the forecast is ahead of the storm, cross-track positive to its right. A forecast that loses the '
+    + 'storm counts toward the miss rate and gets no error; cells above 50% misses are greyed. '
+    + 'Central pressure is a signed bias at 0.25\u00b0 resolution, not a skill ranking.';
+  if (tv && Number.isFinite(tv.n_inits_not_verified)) {
+    s += ` Verification starts at each storm\u2019s first \u2265${tv.min_wind_kt} kt fix: `
+      + `${tv.n_inits_verified} 00/12 UTC inits verified, ${tv.n_inits_not_verified} earlier ones not verified `
+      + '(a pre-storm disturbance is not a missed forecast).';
   }
-  const d = String(ib.latest_fix || '').slice(0, 10);
-  let s = `Not scored — ${here}; the IBTrACS archive holds ${ib.storms_in_window} storm`
-    + `${ib.storms_in_window === 1 ? '' : 's'} for this window through ${d}`
-    + ` (~${ib.lag_days} days behind today). No EWB benchmark for best-track events yet.`;
-  if (Number.isFinite(ib.pending) && ib.pending > 0) {
-    const who = (ib.pending_names || []).filter(Boolean).join(', ');
-    s += ` ${ib.pending} system${ib.pending === 1 ? '' : 's'} still live at the archive's edge`
-      + `${who ? ` (${who})` : ''} cannot be judged until the next publication.`;
+  if (ib && Number.isFinite(ib.storms_in_window)) {
+    const d = String(ib.latest_fix || '').slice(0, 10);
+    s += ` The archive holds ${ib.storms_in_window} storm${ib.storms_in_window === 1 ? '' : 's'} for this window through ${d}`
+      + ` (~${ib.lag_days} days behind today).`;
+    if (Number.isFinite(ib.pending) && ib.pending > 0) {
+      const who = (ib.pending_names || []).filter(Boolean).join(', ');
+      s += ` ${ib.pending} system${ib.pending === 1 ? '' : 's'} still live at the archive\u2019s edge`
+        + `${who ? ` (${who})` : ''} cannot be judged until the next publication.`;
+    }
   }
-  return s;
+  p.textContent = s;
+  return p;
 }
 
 const MODEL_COLORS = {
@@ -207,7 +216,24 @@ const FALLBACK_METRICS = {
   spatial_displacement:            { label: 'Spatial displacement', units: 'km', higher_is_better: false },
   EarlySignal:                     { label: 'Early signal', units: '', higher_is_better: true },
   Accuracy:                        { label: 'Accuracy', units: '', higher_is_better: true },
+  /* track lanes (notes/scoring_design.md section 6): signed components are bias-to-zero */
+  TrackPositionError:              { label: 'Track error', units: 'km', higher_is_better: false },
+  AlongTrackError:                 { label: 'Along-track', units: 'km', higher_is_better: false, dir: 'zero' },
+  CrossTrackError:                 { label: 'Cross-track', units: 'km', higher_is_better: false, dir: 'zero' },
+  CentralPressureError:            { label: 'Central pressure', units: 'hPa', higher_is_better: false, dir: 'zero' },
+  TrackMiss:                       { label: 'Miss rate', units: '', higher_is_better: false },
 };
+/* leads shown per track lane (D8): the store keeps every 6-hourly lead */
+const TYPE_LEADS = { tropical_cyclone: [24, 48, 72, 96, 120] };
+function leadsForType(etype, leads) {
+  const want = TYPE_LEADS[etype];
+  if (!want) return leads;
+  const have = want.filter((h) => state.allLeads.includes(h));
+  return have.length ? have : leads;
+}
+/* D5: a cell whose miss rate is above this is greyed (its error rests on the storms the model kept) */
+const MISS_GREY = 0.5;
+const TRACK_METRIC_ORDER = ['TrackPositionError', 'TrackMiss', 'AlongTrackError', 'CrossTrackError', 'CentralPressureError'];
 const BINARY_METRICS = new Set(['csi', 'CriticalSuccessIndex', 'Accuracy', 'EarlySignal']);
 
 /* ------------------------------------------------------------------ */
@@ -323,6 +349,7 @@ function fmtVal(metricId, v) {
   if (v === null || v === undefined || !Number.isFinite(v)) return '—';
   const u = metricMeta(metricId).units;
   if (BINARY_METRICS.has(metricId)) return v.toFixed(2).replace('-', '\u2212');
+  if (metricId === 'TrackMiss') return Math.round(v * 100) + '%';
   const a = Math.abs(v);
   let s;
   if (a >= 100) s = v.toFixed(0);
@@ -1005,7 +1032,7 @@ function scIndex() {
     const key = `${r.event_type}|${r.metric}|${r.lead_time_hours}`;
     let g = idx.get(key);
     if (!g) { g = {}; idx.set(key, g); }
-    g[r.model] = { mean: r.mean_value, rel: r.rel, n: r.n_events, lo: r.ci_lo, hi: r.ci_hi };
+    g[r.model] = { mean: r.mean_value, rel: r.rel, n: r.n_events, ns: r.n_samples, lo: r.ci_lo, hi: r.ci_hi };
   }
   for (const [key, g] of idx) {
     const met = key.split('|')[1];
@@ -1033,6 +1060,12 @@ function metricsFor(etype) {
   const pref = { heat_wave: 'RootMeanSquaredError', freeze: 'RootMeanSquaredError',
     cold_snap: 'RootMeanSquaredError',
     atmospheric_river: 'CriticalSuccessIndex' }[etype];
+  if (TYPE_LEADS[etype]) {
+    /* track lane: the miss rate always sits beside the headline error (D5) */
+    const ord = TRACK_METRIC_ORDER.filter((m) => all.includes(m))
+      .concat(all.filter((m) => !TRACK_METRIC_ORDER.includes(m)));
+    return state.scMore ? ord : ord.slice(0, 2);
+  }
   if (!state.scMore && all.length > 1) return [all.includes(pref) ? pref : all[0]];
   return all;
 }
@@ -1064,7 +1097,7 @@ function renderVerdictStrip(idx) {
     // metric × lead cells that actually have data for this lane
     const cols = [];
     for (const met of metricsFor(etype)) {
-      const c = metricColumns(idx, etype, met, leads);
+      const c = metricColumns(idx, etype, met, leadsForType(etype, leads));
       if (c) cols.push({ met, columns: c });
     }
     if (!cols.length) continue;
@@ -1160,7 +1193,7 @@ function renderScorecard() {
   for (const etype of activeTypes()) {
     const cols = new Map();
     for (const met of metricsFor(etype)) {
-      const c = metricColumns(idx, etype, met, leads);
+      const c = metricColumns(idx, etype, met, leadsForType(etype, leads));
       if (c) cols.set(met, c);
     }
     if (cols.size) etypeCols.set(etype, cols);
@@ -1287,8 +1320,8 @@ function renderScorecard() {
         let s = 0, n = 0, any = false;
         for (const c of columns) {
           if (c.kind === 'mean') {
-            const mv = meanVisible(idx, etype, met, model, leads);
-            const mN = meanSample(idx, etype, met, model, leads);
+            const mv = meanVisible(idx, etype, met, model, leadsForType(etype, leads));
+            const mN = meanSample(idx, etype, met, model, leadsForType(etype, leads));
             const mSmall = mN !== null && mN < minSample();
             const meanTd = el('td', 'cell mean' + (mSmall ? ' small-n' : ''),
               mv === null ? '—' : fmtVal(met, mv));
@@ -1311,12 +1344,16 @@ function renderScorecard() {
           if (Number.isFinite(cell.rel)) { s += cell.rel; n += 1; }
           const small = Number.isFinite(cell.n) && cell.n < minSample();
           if (small) anySmallN = true;
+          /* D5: a track-error cell whose miss rate is above 50 % is greyed, not coloured by skill */
+          const missCell = TYPE_LEADS[etype] && met !== 'TrackMiss'
+            ? (idx.get(`${etype}|TrackMiss|${lead}`) || {})[model] : null;
+          const greyed = !!(missCell && Number.isFinite(missCell.mean) && missCell.mean > MISS_GREY);
           const td = el('td', 'cell' + (model === B ? ' baseline' : '')
-            + (small ? ' small-n' : ''), fmtVal(met, cell.mean));
+            + (small ? ' small-n' : '') + (greyed ? ' miss-grey' : ''), fmtVal(met, cell.mean));
           td.dataset.model = model;
-          td.style.background = model === B ? '' : cellColor(cell.rel);
+          td.style.background = model === B || greyed ? '' : cellColor(cell.rel);
           attachTip(td, etype, met, { kind: c.kind, lead, mean: cell.mean, rel: cell.rel,
-            n: cell.n, lo: cell.lo, hi: cell.hi, small });
+            n: cell.n, ns: cell.ns, lo: cell.lo, hi: cell.hi, small, greyed });
           tr.appendChild(td);
         }
         void any;
@@ -1356,6 +1393,7 @@ function renderScorecard() {
     });
     wrap.appendChild(table);
     block.appendChild(wrap);
+    if (TYPE_LEADS[etype]) block.appendChild(trackLaneNote(etype, nEv));
     host.appendChild(block);
     // horizontal-scroll affordance: fade hint while the table is wider than its box
     const updScroll = () => {
@@ -1437,6 +1475,18 @@ function attachTip(td, etype, met, c) {
     }
     if (c.kind !== 'mean' && Number.isFinite(c.n)) {
       rows.push(`<div class="t-row"><span>n events</span><b>${c.n}</b></div>`);
+    }
+    /* track lanes: how many verified samples the error rests on vs the samples tried */
+    if (TYPE_LEADS[etype] && c.kind === 'lead') {
+      const mc = (idx0(etype, 'TrackMiss', c.lead) || {})[model || state.baseline];
+      if (met === 'TrackMiss' && Number.isFinite(c.ns)) {
+        rows.push(`<div class="t-row"><span>samples</span><b>${c.ns}</b></div>`);
+      } else if (mc && Number.isFinite(mc.ns) && Number.isFinite(c.ns)) {
+        rows.push(`<div class="t-row"><span>tracked</span><b>${c.ns} of ${mc.ns} samples</b></div>`);
+      }
+      if (c.greyed) {
+        rows.push(`<div class="t-row t-small"><span>miss rate</span><b class="t-warn">above ${Math.round(MISS_GREY * 100)}% \u00b7 greyed</b></div>`);
+      }
     }
     /* small-sample cue (owner 2026-11-10): say it in the tooltip too, so the
        red edge never reads as a performance colour */
@@ -2836,6 +2886,17 @@ async function boot() {
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((src) => { pre.textContent = src; pre.dataset.loaded = '1'; })
       .catch(() => { pre.textContent = 'Could not load detection.py — it ships with the dashboard (dashboard/detection.py).'; });
+  });
+  /* "How the track errors are computed": same arrangement (dashboard/track_scoring.py,
+     checked against the shipped scorer by the test suite). */
+  const trackFold = $('.repro-track');
+  trackFold?.addEventListener('toggle', (e) => {
+    const pre = $('#track-scoring-code');
+    if (!e.target.open || !pre || pre.dataset.loaded) return;
+    fetch('track_scoring.py')
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((src) => { pre.textContent = src; pre.dataset.loaded = '1'; })
+      .catch(() => { pre.textContent = 'Could not load track_scoring.py — it ships with the dashboard (dashboard/track_scoring.py).'; });
   });
   // lazy Plotly builds for collapsed folds (measuring inside display:none breaks width)
   $('#skill-details').addEventListener('toggle', (e) => {

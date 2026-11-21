@@ -696,6 +696,11 @@ table { border-collapse: separate; border-spacing: 0; width: 100%;
   vertical-align: 1px; cursor: help; }
 .lane-empty-row td { padding: 20px 10px; text-align: center; }
 .lane-empty-row .lane-empty { margin: 0; }
+/* track lane (WP1): the scoring note under the table, and a greyed cell (miss rate > 50 %) */
+.lane-note { color: var(--ink-secondary); font-size: var(--text-sm); margin: 10px 2px 4px; line-height: 1.45;
+  max-width: 78ch; }
+td.cell.miss-grey { color: var(--ink-muted); background: transparent;
+  background-image: repeating-linear-gradient(135deg, transparent 0 5px, rgba(128, 128, 128, 0.16) 5px 6px); }
 /* DR2 M7: tap targets — chips ≥36px, pills ≥40px, both ≥44px on phones */
 #kv-line .chip { min-height: 36px; }
 .pill { min-height: 40px; }
