@@ -15,7 +15,10 @@ tracker (``ewb_live/events/event_tracker.py``, SPEC §2) on the same lane frames
   plus a rolling-box ``Tracker`` subclass that lives only in this file —
   nothing in ``ewb_live/`` is changed) on identical inputs so they can be
   compared on one table.``--selfcheck``/``--prodcheck`` prove the legacy and
-  C3 rows run the same ``Tracker`` code production runs.
+  C3 rows run the same ``Tracker`` code production runs, and every hazard also
+reports ``prod_match``: the legacy replay paired against the PRODUCTION raw
+catalogue (start/end exactness, pairing, and the mask-source split that
+explains the residue - the lane and ARCO paths are not the same bytes).
 
 The daily mask is the tracker's own input: the published ``raw_exceedance``
 frames ANDed over the four 00/06/12/18Z steps, land only (SPEC §2 "Mask
@@ -79,6 +82,10 @@ from ewb_live.events.validate import MAX_DURATION_DAYS as MAX_PUBLISH_DAYS
 _evt02 = importlib.import_module("evt02_tracker_port_compare")
 
 HAZARDS = ("heat_wave", "freeze", "cold_snap")
+# the production scan's latitude window (scan_temperature_events defaults):
+# the replay must track the SAME population the product publishes, no
+# Antarctica (round-3 review item 2)
+LAT_MIN, LAT_MAX = -60.0, 90.0
 # growth hypotheses the attribution can charge area to (H6 = downstream
 # curation, H7 = seam; both audited outside the per-day log)
 CAUSES = ("H1_contiguous", "H2_merge", "H3_region_claim", "H4_closing_fill",
@@ -114,6 +121,11 @@ def load_window(lane: Path, start: dt.date, end: dt.date, hazard: str,
     "max")`` over the ERA5 truth mirror, opened read-only - exactly as
     ``scan_temperature_events`` does. Without it every freeze number in this
     script would be a cold-snap number wearing a freeze label.
+
+    Round-3 fix: the tracker input is clamped to ``lat >= -60`` exactly like
+    ``scan_temperature_events`` (``lat_min=-60``). Without the clamp the
+    replay tracked Antarctica - a different event population from anything
+    the product publishes, and every published count it was compared to.
     """
     dates, lats, lons, masks = frame_masks.daily_masks(lane)
     sel = [i for i, d in enumerate(dates) if start <= d <= end]
@@ -121,11 +133,13 @@ def load_window(lane: Path, start: dt.date, end: dt.date, hazard: str,
         raise SystemExit(f"lane {lane} has no complete days in {start}..{end}")
     dates = [dates[i] for i in sel]
     step = float(abs(lons[1] - lons[0]))
+    keep = (lats >= LAT_MIN) & (lats <= LAT_MAX)   # production scan clamp
+    lats = lats[keep]
+    mask = masks[frame_masks.MASK_ALIAS.get(hazard, hazard)][sel][:, keep]
     if land is None:
         from ewb_live.viz.build import land_mask
 
         land = land_mask(lats, lons)
-    mask = masks[frame_masks.MASK_ALIAS.get(hazard, hazard)][sel]
     from ewb_live.events import temperature as T
 
     max_c = T.MAX_C_BY_TYPE.get(hazard)
@@ -401,6 +415,58 @@ def prodcheck(w: Window, params: Params) -> bool:
     print(f"prodcheck {w.hazard}: {'PASS' if ok else 'FAIL'} "
           f"({len(ref)} production-C3 vs {len(mine)} tuned-C3 events)", flush=True)
     return ok
+
+
+def prodmatch(path: Path, w: Window, base_spells: list[Spell]) -> dict:
+    """Compare the legacy (S0) replay with the PRODUCTION raw scan.
+
+    selfcheck/prodcheck only prove the harness runs the tracker correctly;
+    they agree with the tracker by construction. This is the check against
+    the product: the shipped-rule replay of the lane window versus the
+    production catalogue (``events.json``, the raw scan, uncured), paired by
+    date+location (:func:`pairable`) and counted on (start, end) equality.
+    Differences are expected where the two runs read different bytes or
+    windows: production scanned to a later cutoff and fell back to ERA5
+    ARCO when the lane did not span its window (``details.mask_source``) -
+    the replay only sees the lane days.
+    """
+    live = [d for d in json.loads(path.read_text())
+            if d["event_type"] == w.hazard]
+    prod = [{"id": d["id"], "start": d["start"][:10], "end": d["end"][:10],
+             "bbox": list(d["bbox"]),
+             "mask_source": str((d.get("details") or {}).get("mask_source")),
+             "outside_window": d["end"][:10] <= str(w.dates[0])
+             or d["start"][:10] > str(w.dates[-1])}
+            for d in live]
+    mine = [{"id": s.id, "start": str(s.start),
+             "end": str((s.end or (w.dates[-1] + dt.timedelta(days=1)))),
+             "bbox": [float(w.lats[s.box.i0]), float(w.lats[s.box.i1]),
+                      float(w.lons[s.box.j0]), float(w.lons[s.box.j1])]}
+            for s in base_spells]
+    exact = [m for m in mine if any(pairable(m, p) and p["start"] == m["start"]
+                                    and p["end"] == m["end"] for p in prod)]
+    paired = [m for m in mine if any(pairable(m, p) for p in prod)]
+    unmatched_prod = [p for p in prod if not p["outside_window"]
+                      and not any(pairable(m, p) for m in mine)]
+    unmatched_mine = [m for m in mine
+                      if not any(pairable(m, p) for p in prod)]
+    res = {"n_replay": len(mine), "n_production": len(prod),
+           "n_paired": len(paired), "n_exact_start_end": len(exact),
+           "n_prod_outside_replay_window": sum(
+               1 for p in prod if p["outside_window"]),
+           "prod_mask_sources": {k: sum(1 for p in prod
+                                        if p["mask_source"] == k)
+                                 for k in sorted({p["mask_source"]
+                                                  for p in prod})},
+           "unmatched_production": sorted(unmatched_prod,
+                                          key=lambda p: p["start"]),
+           "unmatched_replay": sorted(unmatched_mine, key=lambda m: m["start"])}
+    print(f"prodmatch {w.hazard}: replay {res['n_replay']} vs production "
+          f"{res['n_production']} ({res['n_paired']} paired, "
+          f"{res['n_exact_start_end']} exact start+end; "
+          f"{res['n_prod_outside_replay_window']} production events outside "
+          f"the replay window)", flush=True)
+    return res
 
 
 # ------------------------------------------------------------- box arithmetic
@@ -1099,6 +1165,8 @@ def main() -> int:
         entry.update(run_strategies(w, base_spells, base_rows, params0, only))
         rows_by_stage.update({k: v["rows"] for k, v in entry.items()
                               if isinstance(v, dict) and "rows" in v})
+        if a.published and Path(a.published).exists():
+            entry["prod_match"] = prodmatch(Path(a.published), w, base_spells)
         if a.published and Path(a.published).exists():
             entry["successor_audit"] = successor_audit(Path(a.published), w,
                                                        rows_by_stage)
