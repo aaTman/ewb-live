@@ -1107,6 +1107,7 @@ function renderVerdictStrip(idx) {
     for (const m of visible) if (m !== B) acc[m] = { s: 0, n: 0, wins: 0 };
     let cellN = 0;
     for (const { met, columns } of cols) {
+      if (!skillRanked(etype, met)) continue;   // track lanes: only the track error ranks models
       for (const c of columns) {
         if (c.kind === 'mean') continue;   // mean duplicates lead data
         const lead = c.kind === 'lead' ? c.lead : null;
@@ -1207,7 +1208,7 @@ function renderScorecard() {
   for (const [key, g] of idx) {
     const [e2, met, hStr] = key.split('|');
     const cols = etypeCols.get(e2);
-    if (!cols || !cols.has(met)) continue;
+    if (!cols || !cols.has(met) || !skillRanked(e2, met)) continue;
     const h = hStr === 'null' ? null : +hStr;
     if (h !== null && !cols.get(met).some((c) => c.kind === 'lead' && c.lead === h)) continue;
     for (const m of Object.keys(g)) {
@@ -1345,7 +1346,10 @@ function renderScorecard() {
           if (Number.isFinite(cell.rel)) { s += cell.rel; n += 1; }
           const small = Number.isFinite(cell.n) && cell.n < minSample();
           if (small) anySmallN = true;
-          /* D5: a track-error cell whose miss rate is above 50 % is greyed, not coloured by skill */
+          /* Track lanes rank models on the track error only: the signed components are bias-to-zero
+   (a ratio of tiny biases is not a skill) and the miss rate is read beside the error (D5). */
+function skillRanked(etype, met) { return !TYPE_LEADS[etype] || met === 'TrackPositionError'; }
+/* D5: a track-error cell whose miss rate is above 50 % is greyed, not coloured by skill */
           const missCell = TYPE_LEADS[etype] && met !== 'TrackMiss'
             ? (idx.get(`${etype}|TrackMiss|${lead}`) || {})[model] : null;
           const greyed = !!(missCell && Number.isFinite(missCell.mean) && missCell.mean > MISS_GREY);

@@ -316,3 +316,13 @@ def test_tc_more_metrics_shows_signed_components(scored_page):
 def test_tc_no_horizontal_page_scroll(scored_page):
     over = scored_page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
     assert over <= 0, over
+
+
+def test_tc_verdict_ranks_on_track_error_only(scored_page):
+    """The signed components and the miss rate must not feed the verdict strip: graphcast's
+    track error is 20 % better than the baseline in the fixture, and that is the number quoted."""
+    pg = scored_page
+    pg.get_by_role("button", name="more metrics").click()       # signed metrics now in the table
+    pg.wait_for_timeout(400)
+    strip = pg.inner_text("#verdict-strip")
+    assert "graphcast" in strip and "+20.0%" in strip and "won 5/5 cells" in strip, strip
