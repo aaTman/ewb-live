@@ -4113,3 +4113,68 @@ Finding: `calc.find_landfalls` de-duplicates forecast landfalls within 50 km ACR
 Unit: 4 failures fixed (truth-tag literal), 2 known box failures left; e2e on the preview 215 passed / 1 skipped; browser check at 1440 and 390 px (no page overflow, grey cells, honest note).
 **Deploy note:** `TRUTH_TAG` is now `ibtracs+landfall1`, so the first run after deploy invalidates the cached TC rows/parts and rescores the TC lane (~50 min at 12 workers, via `ops/lane_backfill.sh tc`).
 Details: notes/landfall_validation.md. Landfall time errors are quantised by the 6-h / 0.25 degree tracks (Nolo: -2.44 h for all 9 models).
+
+
+Branch `fix/first-screen-midwidth` off develop (b7ed93d). Private preview tree `/opt/ewb-preview-fs`
+(code rsynced, `data`/`.venv`/`third_party` symlinked read-only to /opt/ewb-live), ephemeral unit
+`ewb-preview-fs-web` on :8065; /opt/ewb-live and /opt/ewb-live-dev untouched. A Pi child is running the
+before-sweep (events-section end at 390..1920 x 768/800/900); design to follow from its numbers.
+
+## [first-screen-midwidth] 2026-11-21 11:09 UTC — cause found, fix prototyped, numbers
+
+Before sweep (Pi child, 24 viewports, real 7-lane data, preview :8065): events section ends 970 (1100) / 1006 (1200)
+/ **1009.5 (1280)** / 922 (1366) / 866 (1440) / 934 (1920); viewport height is irrelevant. Three things stack at 1280
+(map column 608 px): gantt narrow cliff (svg 582 < NARROW_W 600: +77), legend one column (its fit test needs ~630 px
+of the 606 it has: +75; the container query at 680 only decides stacked vs grid), and the type chips wrap to 2 rows
+(shell is 75vw, Show row ~912 px, chips need ~965: +36). Fix (no content removed): NARROW_W 600->440; legendHug measures
+the REAL per-column widths (not k x widest) and tries the short lane names TC/MLC (full name kept for AT) and keeps
+them only when they buy a column; legend container query 680->450; chips padding/gap tighter 1100-1399.
+After (same data): 1100: 818 / 1200: 854 / 1240: 808 / **1280x800: 796.5** / 1366: 822.5 / **1440x900: 840.5** (was 865.5) /
+1920: 908.5; 820 and 390 unchanged or shorter (390 stacks as before). Pending: e2e test (Pi), CLS reservations (Pi measuring),
+browser verification light+dark, full e2e + units.
+
+## [first-screen-midwidth] 2026-11-21 13:28 UTC — DONE (PR to develop; not merged, not deployed)
+
+Events-section end (page px, real 7-lane data, preview :8065; viewport height is irrelevant, 768/800/900 identical):
+390: 1600.8 -> 1600.8 | 820: 1518.3 -> 1493.3 | 1100: 970.3 -> 818.3 | 1200: 1006.3 -> 854.3 | **1280: 1009.5 -> 796.5** |
+1366: 922.5 -> 822.5 | **1440: 865.5 -> 840.5** | 1920: 933.5 -> 908.5. No width got worse, no overflowX, 0 console errors in 24 combos.
+Not reached: 1366x768 cannot end inside 768 with 7 lanes (822); its section HEIGHT (642) fits below the 48 px header (720).
+1280x800 has only ~3.5 px of headroom under 800 (the test asserts <= 800): a week whose gantt grows a sub-row will trip it, by design.
+
+Changes: NARROW_W 600->440; legendHug measures real per-column widths and tries the short lane names TC/MLC (tracklayer.js
+emits both, full name kept for AT) and keeps them only when they buy a column; legend container query 680->450; chips tighter
+1100-1399 (one row from ~1240). CLS reservations re-measured (empty legend 116/35 -> 160 stacked / 85 at 450-599 / 60 from 600
+container px; gantt +232 under 466 px). CLS after (fresh load): 390 0.127->0.096, 1100 0.053->0.044, 1280 0.020->0.015,
+1440 0.033->0.025, 1920 0.029->0.025; 820 0.45 is an existing below-the-fold scorecard shift (not touched).
+Tests: new e2e test_first_screen_budget_at_laptop_widths (1280x800, 1366x768). Full chromium e2e on the preview with live data:
+217 passed / 1 skipped / 0 failed (incl. trackexpiry). Units (EWB_DATA_PREP_DIR set): 700 passed / 25 failed / 4 skipped; 23 are
+tests/test_lane_guard.py refusing because the preview tree's data/ symlinks to the live tree (36/36 pass from a tree with its own
+data/), 2 are the known box-dependent test_cold_snap severity + test_imerg s3_credentials. Browser check 1280/1440/390 light+dark
+(+1100, 1366): no clipped labels, no overflow, no console errors. Screenshots: notes/screenshots/firstscreen-midwidth/ (gitignored).
+Preview :8065 unit stopped and /opt/ewb-preview-fs* removed.
+## [scoring-wp4] 2026-11-21 11:04 UTC — WP4 flood lane started (branch feat/scoring-flood-lane, base develop)
+
+Scope decided with the owner: GraphCast only (graphcast, graphcast_gfs; the only store family with `apcp`), truth = PARDIG daily on the
+ERA5 0.25 lattice ("vs AI-estimated precip", not observed rain), metrics = daily exceedance contingency (CSI, POD, FAR) + FSS (3x3, 5x5) +
+areal bias / peak error over the event footprint. ifs_hres `tp` baseline is NOT built (not in this brief), so no skill colour for flood.
+Done so far: `ewb_live/scoring/flood.py` (commit f1789e1). Measured on the LXC with real data: all 40 events build a verification plan
+(5-9 s each, mostly land mask + climatology), event ee4e843948f1 x {graphcast, graphcast_gfs} x 17 inits scores in 29 s serial, 983 rows, 2.1 GB parent RSS.
+Data facts found (design note had them wrong): apcp fill is 9.97e36 (not NaN) and only on some IFS-initialised inits; ~15-30 % of cells are small
+negatives (clipped); ALL 40 events have lane_of_record 3day, so the 72 h lane defines the event but the table scores the daily lane (documented).
+Pi children (fleet/agent) are doing tests, pipeline wiring and dashboard+e2e in parallel; I review their diffs before merging. Private preview tree:
+/opt/ewb-preview-flood-lane (port 8066, not live/dev). Nothing deployed, nothing merged.
+
+## [scoring-wp4] 2026-11-21 13:33 UTC — WP4 flood: code merged on the branch, backfill running on the private preview tree
+
+Merged into feat/scoring-flood-lane: flood.py + 29 kernel/unit tests (Pi), pipeline/lane_pool wiring + 16 tests (Pi; reviewed, I shortened
+UNSUPPORTED_REASON below the 120-char public_reason cap), dashboard + e2e (Pi; the About paragraph lives in index.html, detection.py holds none).
+Pi note: the first tests child ended after ~2 min with nothing written (its context was compressed right after reading); re-split into two small
+briefs with the signatures inline, both passed. Local run: 81 passed (flood suites + lane guard) on the box.
+Backfill: `ops/lane_backfill.sh flood` from /opt/ewb-preview-flood-lane (guard ok, weekly inactive) started 13:27 UTC, 80 pairs (40 events x graphcast,
+graphcast_gfs); 39 part files in the first 6 min. Not live, not dev, nothing deployed or merged.
+
+## [scoring-wp4] 2026-11-21 14:39 UTC — WP4 flood DONE, PR to develop opening
+
+See notes/channel_scoring.md [wp4] for the numbers: 36,388 flood rows (graphcast + graphcast_gfs, 40 events), backfill 10-11 min / 16.1 GB pool peak on the
+private tree /opt/ewb-preview-flood-lane (port 8066; the unit ewb-preview-fl-web is left running for the owner's review), units 741 passed / 2 known failures,
+full e2e 251 passed / 1 skipped. Not merged, not deployed.

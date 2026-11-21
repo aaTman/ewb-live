@@ -343,8 +343,9 @@
       products, so an exceedance means &ldquo;this source measured more rain than ERA5&rsquo;s
       p95 for this cell and day of year&rdquo;. Cells whose ERA5 percentile is undefined
       (hyper-arid) can never exceed, the ocean is excluded, and a day with incomplete sampling
-      is dropped rather than read as dry. EWB has no flood benchmark, so floods are published
-      and mapped but <b>no model is scored on them</b>.</li>
+      is dropped rather than read as dry. EWB has no ERA5 flood benchmark: the lane is scored
+      against that same rain product, from <b>GraphCast</b> only (see <b>Scoring
+      floods</b> below).</li>
       <li>The raw detector map shades each cell by its consecutive <b>completed</b> UTC days
       meeting the daily rule. Heat shades only cells reaching the detector’s 3-day minimum
       (heat ramp 3–7+) — below that a cell can never become a heat wave, so it stays blank —
@@ -408,8 +409,9 @@
 
     <h3>Scoring</h3>
     <p>Models are scored from daily 00&nbsp;UTC runs at leads of 0–240&nbsp;h (the scorecard shows
-    1, 3, 5, 7 and 10 days; tropical cyclones 1&ndash;5 days). Truth is ERA5 (tropical
-    cyclones: the IBTrACS best track). ERA5 trails real time by about six days; an event
+    1, 3, 5, 7 and 10 days; tropical cyclones and floods 1&ndash;5 days). Truth is ERA5 (tropical
+    cyclones: the IBTrACS best track; floods: AI-estimated precipitation, Google PARDIG). ERA5
+    trails real time by about six days; an event
     ending after that point would be scored against the IFS&nbsp;HRES 0-h analysis, which favours
     IFS.</p>
     <p id="about-models">—</p>
@@ -449,6 +451,36 @@
       listing against the scorer that produces the numbers on this site.</p>
       <pre id="track-scoring-code">loading&hellip;</pre>
     </details>
+
+    <h3>Scoring floods</h3>
+    <p>Floods are not scored with ERA5 fields either: the rain truth is <b>Google PARDIG</b>, an
+    AI-estimated precipitation product &mdash; provisional, and the very product the events are
+    defined from, so a skill number here is always conditional on a truth exceedance existing.
+    Only <b>GraphCast</b> is scored: its two members (the ECMWF-initialised <code>graphcast</code>
+    and the GFS-initialised <code>graphcast_gfs</code>) are the only models in the store that carry
+    precipitation &mdash; every other model has no flood rows, and ECMWF <code>tp</code> is not
+    wired. No baseline model scores flood, so flood cells carry no skill colour and nothing is
+    ranked against IFS&nbsp;HRES on this lane.</p>
+    <p>An exceedance is PARDIG rain past the ERA5 1990&ndash;2019 wet-day p95 climatology for that
+    day of year, with a floor of 20&nbsp;mm/day. Verification runs over the land cells of the
+    event&rsquo;s bounding box grown by 2&deg;, on days start&minus;2&hellip;end+2. The lead is the
+    end of the verified UTC day measured from the 00Z start (24, 48 &hellip; 240&nbsp;h). The
+    forecast is GraphCast&rsquo;s <code>apcp</code> 6-hour accumulations summed over the UTC day
+    (negatives clipped); the IFS-initialised member has no usable first 6&nbsp;h, so its day-1
+    total is not scored.</p>
+    <ul>
+      <li><b>Critical success index</b> &mdash; from the daily exceedance contingency per land cell
+      and day: CSI = hits/(hits+misses+false alarms). <b>Hit rate (POD)</b> = hits/(hits+misses);
+      <b>false alarm ratio</b> = false alarms/(hits+false alarms). Higher / lower is better,
+      respectively.</li>
+      <li><b>Fractions skill score (3x3, 5x5)</b> &mdash; compares exceedance fractions in 3x3 and
+      5x5 cell neighbourhoods: pattern skill with a little spatial tolerance. Higher is better.</li>
+      <li><b>Area rain bias</b> and <b>peak rain error</b> (mm, signed) &mdash; forecast minus truth
+      in mm over the event footprint: <b>negative = forecast drier than the truth</b>; 0 is ideal.</li>
+    </ul>
+    <p class="dlg-note">Read POD and CSI as conditional on the AI truth: PARDIG is provisional,
+    GraphCast was trained on ERA5, whose rain is low-biased, and a truth the events are defined
+    from cannot be treated as an independent observation.</p>
 
     <h3>Reading the scorecard</h3>
     <p>Each cell prints the mean metric over events. Its colour is the relative skill against

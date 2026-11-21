@@ -95,6 +95,7 @@
     tropical_cyclone: {
       css: 'tc',
       name: 'Tropical cyclone',
+      abbr: 'TC',
       unit: 'kt',
       binTokens: ['--tc-bin-1', '--tc-bin-2', '--tc-bin-3', '--tc-bin-4', '--tc-bin-5'],
       // Saffir-Simpson bands, merged exactly as dashboard/trackviz.js (BINS)
@@ -117,6 +118,7 @@
     midlat_cyclone: {
       css: 'mlc',
       name: 'Midlatitude cyclone',
+      abbr: 'MLC',
       unit: 'hPa',
       // The lane publishes no --mlc-bin-* tokens yet, so the ramp falls back to
       // the lane hue at stepped strength — no new hue is invented. Publish the
@@ -266,6 +268,10 @@
   const esc = (s) => String(s == null ? '' : s)
     .replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;',
       '"': '&quot;', "'": '&#39;' }[c]));
+  // a legend lane name that has a short form carries both; the strip shows one (styles.css .abbr)
+  const laneName = (lane) => (lane.abbr
+    ? `<span class="lg-full">${esc(lane.name)}</span><span class="lg-abbr" aria-hidden="true">${esc(lane.abbr)}</span>`
+    : esc(lane.name));
   const cssVar = (name, dflt) => {
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || dflt;
@@ -1003,7 +1009,7 @@
         : `${lane.unit} · ${n} published`;
       groups.push(`<span class="lg-group${seen === 0 ? ' none' : ''}" data-track="${type}" `
         + `title="${esc(tip)}">`
-        + `<span class="lg-head"><span class="lg-name">${esc(lane.name)}</span>`
+        + `<span class="lg-head"><span class="lg-name">${laneName(lane)}</span>`
         + `<span class="lg-unit">${esc(unit)}</span>`
         + (seen === 0 ? '<span class="lg-none">none at this step</span>' : '') + '</span>'
         + `<span class="lg-stops">${stops.join('')}</span></span>`);

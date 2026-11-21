@@ -307,7 +307,7 @@ def results_tree(tmp_path, monkeypatch):
 
 def test_tc_left_the_unscored_set_and_has_its_own_truth_tag():
     assert "tropical_cyclone" not in select.UNSCORED_TYPES
-    assert {"midlat_cyclone", "flood"} <= select.UNSCORED_TYPES
+    assert "midlat_cyclone" in select.UNSCORED_TYPES and "flood" not in select.UNSCORED_TYPES
     ev = _event()
     assert truth.truth_source_for_event(ev, dt.datetime(2030, 1, 1)) == tc.TRUTH_TAG
     assert truth.truth_source_for_event(ev, dt.datetime(1999, 1, 1)) == tc.TRUTH_TAG   # not ARCO-dependent
@@ -647,7 +647,8 @@ def test_pool_survives_one_killed_worker_by_rebuilding(dying_lane):
     holder["mode"] = "once"
     done = {}
     stats = lane_pool.run_pairs("tc", [(ev, m) for m in MODELS], lambda e, m, df, st: done.update({m: st}),
-                                workers=2, executor_factory=_fork_pool(), poll_s=0.05)
+                                workers=2, executor_factory=_fork_pool(), poll_s=0.05,
+                                    rss_cap_gb=1e6)     # forked children carry the whole pytest RSS: not what this test is about
     assert stats["pool_rebuilds"] == 1 and stats["errors"] >= 1 and stats["abort"] is None
     assert set(done) == set(MODELS) and all(s["status"] == "scored" for s in done.values())   # nothing lost
 
@@ -656,7 +657,8 @@ def test_pool_that_keeps_dying_stops_cleanly_marks_abort_and_keeps_completed_pai
     ev, _ = dying_lane
     done = {}
     stats = lane_pool.run_pairs("tc", [(ev, "graphcast"), (ev, "aurora")], lambda e, m, df, st: done.update({m: st}),
-                                workers=1, executor_factory=_fork_pool(1), poll_s=0.05)
+                                workers=1, executor_factory=_fork_pool(1), poll_s=0.05,
+                                    rss_cap_gb=1e6)
     assert stats["abort"] and "worker pool broken" in stats["abort"] and stats["stopped"]
     assert stats["pool_rebuilds"] == lane_pool.MAX_POOL_REBUILDS
     assert "aurora" not in done                         # never half-written: the pair stays pending for the next run

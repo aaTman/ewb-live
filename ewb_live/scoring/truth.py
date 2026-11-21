@@ -48,6 +48,8 @@ def truth_source_for_event(event, cutoff: dt.datetime) -> str:
     if getattr(event, "event_type", None) == "tropical_cyclone":
         from .tc import TRUTH_TAG      # track lane: truth is the IBTrACS best track, not an ERA5 field
         return TRUTH_TAG
+    if getattr(event, "event_type", None) == "flood":
+        return "pardig"       # flood lane: truth is Google PARDIG, not an ERA5 field
     return "era5_arco" if event.end - dt.timedelta(hours=1) <= cutoff else "ifs_hres_analysis"
 
 
