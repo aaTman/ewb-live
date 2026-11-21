@@ -271,8 +271,9 @@ class Params:
             labelled region's valid cells only, never its closing-filled
             bridge cells. False keeps the original whole-region seeding.
         merge_keep_box: When objects claim the same cells the older one keeps
-            its own box and the group's claimed cells are clipped into it; a
-            merge never unions two boxes. False keeps the original box-union.
+            its own box and each YOUNGER member's claim is clipped into it;
+            the survivor keeps growing its box by its own claims. A merge
+            never unions two boxes. False keeps the original box-union.
         publish_box: The rectangle a scan publishes for the event:
             ``"persistence"`` = :func:`persistence_box` over the event's days,
             ``"tracker"`` = the cumulative tracker box.
@@ -398,7 +399,7 @@ class Tracker:
 
         hits = [self.follow(ev, labels, region_area) for ev in self.active]
         for k, ev in enumerate(self.active):
-            if ev.qualified is not None and self.ending(ev, hits[k], labels, weighted, day):
+            if ev.qualified is not None and self.ending(ev, hits[k], labels, valid, weighted, day):
                 hits[k] = set()  # release its regions so they cannot block a neighbour
         groups = merge_groups(hits, [ev.box for ev in self.active], self.fits, nx)
         groups.sort(key=lambda g: (self.active[g[0]].qualified is None, g[0]))
@@ -407,23 +408,22 @@ class Tracker:
         ended: list[TrackedEvent] = []
         for group in groups:
             ev = self.active[group[0]]
-            group_hits = set().union(*(hits[k] for k in group))
-            merged_in = False
+            # the survivor keeps its own claim of its own regions ...
+            share = self.claim(ev, hits[group[0]], labels, valid) & ~taken
             for k in group[1:]:
                 other = self.active[k]
-                if p.merge_keep_box:
-                    merged_in = True
-                else:
-                    ev.box = ev.box.union(other.box, nx)
                 if other.qualified is not None and (
                         ev.qualified is None or other.qualified < ev.qualified):
                     ev.qualified = other.qualified
-            share = np.isin(labels, list(group_hits)) & ~taken if group_hits \
-                else np.zeros((ny, nx), bool)
-            if p.claim_valid_only and ev.footprint.any():
-                share &= valid & dilate(ev.footprint, p.move_cells)
-            if merged_in:
-                share &= ev.box.mask(ny, nx)
+                if p.merge_keep_box:
+                    # ... a merge only clips the YOUNGER member's claim into
+                    # the older box; the survivor's own drift cells stay free
+                    # to grow it (SPEC §2 step 4, review round 1 #2)
+                    share |= (self.claim(other, hits[k], labels, valid)
+                              & ev.box.mask(ny, nx) & ~taken)
+                else:
+                    ev.box = ev.box.union(other.box, nx)
+                    share |= self.claim(other, hits[k], labels, valid) & ~taken
             if share.any():
                 grown = ev.box.union(Box.from_mask(share), nx)
                 if self.fits(grown):
@@ -486,14 +486,31 @@ class Tracker:
         self.active = sorted(kept, key=lambda e: (e.start, e.id))
         return ended
 
+    def claim(self, ev: TrackedEvent, hits: set[int], labels: np.ndarray,
+              valid: np.ndarray) -> np.ndarray:
+        """The cells of today's regions that continue ``ev`` (the claim rule).
+
+        Under ``claim_valid_only`` only the **valid** cells within
+        ``move_cells`` of what the event already holds; otherwise the whole
+        claimed regions (SPEC §2 step 4). :meth:`step` and :meth:`ending`
+        must grow the box over exactly these cells, never more.
+        """
+        share = np.isin(labels, list(hits)) if hits else np.zeros(labels.shape, bool)
+        if self.params.claim_valid_only and ev.footprint.any():
+            share &= valid & dilate(ev.footprint, self.params.move_cells)
+        return share
+
     def ending(self, ev: TrackedEvent, hits: set[int], labels: np.ndarray,
-               weighted: np.ndarray, day: dt.date) -> bool:
+               valid: np.ndarray, weighted: np.ndarray, day: dt.date) -> bool:
         """True when the event ends today even after growing its box to today's footprint."""
         box = ev.anchor or ev.box
         if hits and ev.anchor is None:
-            grown = box.union(Box.from_mask(np.isin(labels, list(hits))), labels.shape[1])
-            if self.fits(grown):
-                box = grown
+            # grow exactly as far as step's claim rule will, no further
+            share = self.claim(ev, hits, labels, valid)
+            if share.any():
+                grown = box.union(Box.from_mask(share), labels.shape[1])
+                if self.fits(grown):
+                    box = grown
         return self.core_area(ev, box, day, weighted) < self.params.end_area_km2
 
     def core_area(self, ev: TrackedEvent, box: Box, day: dt.date,

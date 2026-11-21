@@ -189,7 +189,7 @@ class TunedTracker(Tracker):
         hits = [self.follow(ev, labels, region_area) for ev in self.active]
         for k, ev in enumerate(self.active):
             if ev.qualified is not None and self.ending(ev, hits[k], labels,
-                                                        weighted, day):
+                                                        valid, weighted, day):
                 hits[k] = set()   # release its regions, as the stock step does
         groups = merge_groups(hits, [ev.box for ev in self.active],
                               self.fits, nx)

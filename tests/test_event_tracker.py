@@ -16,6 +16,7 @@ import pytest
 from ewb_live.events.event_tracker import (
     Box,
     Params,
+    TrackedEvent,
     Tracker,
     circular_span,
     dilate,
@@ -381,8 +382,10 @@ def test_claim_takes_only_valid_cells_inside_the_drift_window():
     ev = evs[0]
     assert ev.duration_days == 4
     # C3: the box only ever grows over valid cells within move_cells=2/day of
-    # what the event holds - it never reaches past the belt's near edge
-    assert ev.box == Box(11, 19, 8, 14)
+    # what the event holds - it never teleports to the belt's far edge; the
+    # survivor does creep east at its own 2-cell/day drift reach, which is the
+    # claim rule working, not the region being swallowed
+    assert ev.box == Box(10, 20, 8, 18)
     # legacy: the day-1 claim takes the ENTIRE region -> a 5.8 M km2 box
     ev_old = run(frames, LEGACY)[0]
     assert ev_old.box == Box(10, 20, 8, 60)
@@ -394,9 +397,11 @@ def test_drift_window_clips_a_touching_blob_to_its_near_edge():
     blob = here | block(slice(8, 17), slice(16, 41))            # touches at col 16
     frames = [here, blob, blob, blob, cells(0)]
     ev = run(frames)[0]
-    # the blob past the drift window never enters the box; its body seeds a
-    # candidate of its own, which the next merge absorbs without its box
-    assert ev.box == Box(8, 16, 10, 16)
+    # the blob past the drift window never enters the box at once; the
+    # survivor grows only at its own claim reach (2 cells/day), so by the
+    # third day the box covers columns up to 16 + 2 x 2, never the blob's
+    # far edge at 40
+    assert ev.box == Box(8, 16, 10, 20)
     ev_old = run(frames, LEGACY)[0]
     assert ev_old.box == Box(8, 16, 10, 40)                     # blob taken whole
 
@@ -409,9 +414,10 @@ def test_merge_keeps_the_older_box():
     frames = [a | b, region, region, cells(0)]
     evs = run(frames)
     assert len(evs) == 1                                       # still one event
-    # the older object keeps its own box; B's block (and the daily re-seeded
-    # candidate from the region's body) never stretches it
-    assert evs[0].box == Box(10, 14, 5, 10)
+    # the older object keeps its own box - B's block (and the daily re-seeded
+    # candidate from the region's body) never stretches it to 30; the survivor
+    # only creeps over the bridge at its own 2-cell/day claim reach
+    assert evs[0].box == Box(10, 14, 5, 14)
     ev_old = run(frames, LEGACY)[0]
     assert ev_old.box == Box(10, 14, 5, 30)   # the partner's block unioned in
 
@@ -434,6 +440,68 @@ def test_footprint_and_seed_box_hold_only_valid_cells():
     # one event either way; the valid footprint (24 cells = 240k km2) is the same
     evs = run(frames, p3)
     assert [ev.footprint_area_km2 for ev in evs] == [[24e4, 24e4, 24e4]]
+
+
+def test_drifting_event_keeps_its_own_cells_when_a_merge_is_clipped():
+    """Review #2: the survivor of a merge must not lose its own drift cells.
+
+    A 30-cell block drifts east 2 cols/day and runs into a static blob; on the
+    merge day the whole blob joins one labelled region. Legacy claims the whole
+    region so A simply absorbs it; C3 keeps the older box, but must clip only
+    the YOUNGER member's claim - clipping A's own drifted cells (the bug) shrank
+    its footprint 30 -> 20 cells, re-seeded the lost columns as a rival object
+    and split the spell in two (A ending 09-04, a twin running 09-03..09-06).
+    With the fix C3 returns one event, exactly like legacy.
+    """
+    frames = []
+    for t in range(6):
+        frame = block(slice(10, 15), slice(10 + 2 * t, 16 + 2 * t))
+        frame |= block(slice(10, 15), slice(19, 24))   # the static blob, 09-01..
+        frames.append(frame)
+    frames.append(cells(0))
+    evs = run(frames)
+    assert [(ev.start, ev.end) for ev in evs] == [(DAY0, DAY0 + dt.timedelta(days=6))]
+    ev_old = run(frames, LEGACY)[0]
+    assert (ev_old.start, ev_old.end) == (DAY0, DAY0 + dt.timedelta(days=6))
+    # day 3 (09-03), the merge day: the survivor still holds its own 30 cells
+    tracker = Tracker(AREA, PARAMS, "heat_wave")
+    for k, frame in enumerate(frames[:4]):
+        tracker.step(DAY0 + dt.timedelta(days=k), frame)
+    assert max(ev.footprint.sum() for ev in tracker.active) == 30
+
+
+def test_ending_grows_only_over_the_claim_rule():
+    """Review #9: ending() must not grow the box past what step can claim.
+
+    A young (pre-anchor) event whose own claim covers only low-streak cells,
+    while a high-streak blob sits inside the same labelled region beyond the
+    drift window. The whole-region growth ending() used to try reaches the
+    blob and keeps the event alive for a box step() could never claim; the
+    claim-rule growth reaches only the near cells, the core stays below the
+    floor, and the event ends - as `step` will actually do.
+    """
+    day = DAY0 + dt.timedelta(days=2)
+    labels = np.zeros((NY, NX), int)
+    labels[10:15, 16:18] = 1       # claimable today (within move_cells=2)
+    labels[10:15, 30:35] = 1       # same region, but 13 cols out of reach
+    valid = labels > 0
+    streak = np.where(valid, 1, 0)
+    streak[10:15, 30:35] = 3      # the blob was valid every day since start
+    ev = TrackedEvent("heat_wave-x", "heat_wave", DAY0,
+                      Box(10, 14, 10, 15), qualified=DAY0,
+                      footprint=block(slice(10, 15), slice(10, 16)))
+    weighted = valid * AREA
+
+    def tracker_with(params: Params) -> Tracker:
+        tr = Tracker(AREA, params, "heat_wave")
+        tr.streak = streak.copy()
+        return tr
+
+    assert tracker_with(PARAMS).ending(ev, {1}, labels, valid, weighted, day)
+    # legacy claims the whole region everywhere, so the blob is inside the
+    # grown box and keeps the event alive - unchanged behaviour there
+    old = dataclasses.replace(PARAMS, claim_valid_only=False)
+    assert not tracker_with(old).ending(ev, {1}, labels, valid, weighted, day)
 
 
 def test_persistence_box_keeps_the_persistent_cells_and_trims_outliers():
