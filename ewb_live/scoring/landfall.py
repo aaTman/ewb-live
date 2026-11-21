@@ -53,16 +53,14 @@ def storm_id(event) -> dict:
 def scorable(event) -> tuple[bool, str]:
     """``(ok, reason)``: can EWB's landfall detector read this storm's tracks?
 
-    * no ``sid`` / track: nothing to key the target on;
-    * a track that crosses the antimeridian: EWB's detector works on straight segments in
-      [-180, 180) longitude, a 179 -> -179 jump is drawn across the whole map and would
-      invent landfalls, so such storms are not scored (documented, no rows).
+    Antimeridian-crossing tracks are scorable: EWB's own IBTrACS path hands the same wrapped
+    longitudes to ``find_landfalls`` and the detector is not fooled by the 179 -> -179 jump
+    (checked on Nolo and Olana, notes/landfall_validation.md: landfall time and position identical
+    to EWB's target). Storms without a sid / track (nothing to key the target on) are not.
     """
     d = event.details or {}
     if not d.get("sid") or not d.get("track"):
         return False, "no IBTrACS sid / track in the event details"
-    if d.get("track_crosses_antimeridian") or d.get("antimeridian_wrap"):
-        return False, "track crosses the antimeridian (EWB landfall detector reads straight segments in [-180, 180))"
     return True, ""
 
 
