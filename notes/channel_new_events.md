@@ -4138,3 +4138,15 @@ tests/test_lane_guard.py refusing because the preview tree's data/ symlinks to t
 data/), 2 are the known box-dependent test_cold_snap severity + test_imerg s3_credentials. Browser check 1280/1440/390 light+dark
 (+1100, 1366): no clipped labels, no overflow, no console errors. Screenshots: notes/screenshots/firstscreen-midwidth/ (gitignored).
 Preview :8065 unit stopped and /opt/ewb-preview-fs* removed.
+## [scoring-wp2] 2026-11-21 11:00 UTC — WP2 (MLC lane) started: scorer + dispatch committed, 3-event smoke run clean
+
+Branch `feat/scoring-mlc-lane` off develop (b7ed93d). `ewb_live/scoring/mlc.py` committed (fe507bd): MLC-A on the shared core
+(`track_verif` + `MLC_PARAMS`, readers/statuses of `scoring/tc.py`) and MLC-B in the same read: `PeakDepthError` (hPa, signed, forecast
+lowest MSLP within +/-8 deg of the observed centre minus ERA5 central pressure; no tracker so no misses), `BombDetected` /
+`BombFalseAlarm` (0/1; observed and forecast 24 h fall of the central pressure scaled to 60 deg as `mlc_track.bomb_ratio`; windows that
+are observed bombs emit Detected, the rest emit FalseAlarm). Lane registered in `lane_pool.LANES["mlc"]`, truth tag `era5_arco`
+(constant for MLC), `midlat_cyclone` left `UNSCORED_TYPES`, pipeline lane block is now per lane. Private preview tree
+`/opt/ewb-preview-mlc` (port 8063 planned; not /opt/ewb-live, not /opt/ewb-live-dev). Smoke run through `ops/lane_backfill.sh mlc`
+(3 events x graphcast/aurora/ifs_hres, 45 jobs, 33.8 s, peak 11.5 GB): 9 pairs scored, 0 errors. Dashboard wiring and offline tests are with
+two Pi (fleet/agent) children; the full MLC backfill waits for their review. Note: that smoke run was launched with `nohup ... &` inside
+the ssh command (breaks the "no bare & in a foreground ssh" rule); the full backfill goes through `systemd-run`.
