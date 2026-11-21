@@ -131,6 +131,20 @@ def overlaps(a, b) -> bool:
     return False
 
 
+def bbox_intersects(a, b) -> bool:
+    """Plain bbox intersection (wrap-aware), no start-tolerance test."""
+    lat = min(a["bbox"][1], b["bbox"][1]) - max(a["bbox"][0], b["bbox"][0])
+    if lat <= 0:
+        return False
+    for l0, l1 in ([(a["bbox"][2], a["bbox"][3])] if a["bbox"][2] <= a["bbox"][3]
+                   else [(a["bbox"][2], 180.0), (-180.0, a["bbox"][3])]):
+        for m0, m1 in ([(b["bbox"][2], b["bbox"][3])] if b["bbox"][2] <= b["bbox"][3]
+                       else [(b["bbox"][2], 180.0), (-180.0, b["bbox"][3])]):
+            if min(l1, m1) - max(l0, m0) > 0:
+                return True
+    return False
+
+
 def report(name: str, w1: list[dict], w2: list[dict]) -> None:
     ongoing = [e for e in w1 if e["ongoing"]]
     same_id = same_pub = same_start = same_bbox = matched = lost = 0
@@ -158,6 +172,18 @@ def report(name: str, w1: list[dict], w2: list[dict]) -> None:
               + (f"-> {sorted({f['ids']['anchor'] for f in succ})} "
                  f"box {sorted(round(f['box_km2'] / 1e6, 2) for f in succ)}M"
                  if succ else ""), flush=True)
+        if not succ:
+            # why lost: a pairable-in-space object that starts further than
+            # the +-1 d pairing tolerance is the spell living on under another
+            # start (absorbed by a merge / re-seeded), not an id re-key
+            near = [f for f in w2 if bbox_intersects(e, f)
+                    and (e["end"] is None or f["start"] <= e["end"])
+                    and (f["end"] is None or f["end"] >= e["start"])]
+            for f in sorted(near, key=lambda f: abs((f["start"] - e["start"]).days))[:3]:
+                print(f"      near: {f['ids']['anchor']} start {f['start']} "
+                      f"({(f['start'] - e['start']).days:+d} d) "
+                      f"end {f['end'] or 'open'} box "
+                      f"{f['box_km2'] / 1e6:6.2f}M", flush=True)
 
 
 def main() -> int:
