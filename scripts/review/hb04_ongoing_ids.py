@@ -4,10 +4,11 @@ The weekly pipeline re-detects the whole 90-day window and rebuilds
 `data/results/events.json` from scratch; `make_event_id` hashes
 (type, start, ID BOX) and an ongoing event's id lives exactly as long as its
 id box and start do not move. This script measures that, per ruleset, on the
-real lane: replay window W1 = start..E and the "next weekly run" W2 =
-start..E+7 (plus the start-sliding variant W2s = start+7d..E+7, which is what
-the real 90-day slid window does), and for the events that are `ongoing` at
-W1's end reports how many survive W2 with the same id / start / bbox.
+real lane: replay window W1 = start..E, the "next weekly run" W2 =
+start..E+7 (extend at the same head), and the window-HEAD SLIDES start+k..
+E+k for k in --slides (7/14/21 d - one per weekly run; the slid head is what
+re-keys window-edge events), and for the events that are `ongoing` at
+W1's end reports how many survive each window with the same id / start / bbox.
 
 Two ID bases are measured, because the shipped code (temperature.py,
 2026-11-20) hashes the ANCHOR bbox (the tracker box on day 3, frozen) for
@@ -164,8 +165,13 @@ def main() -> int:
     ap.add_argument("--lane", type=Path, required=True)
     ap.add_argument("--start", type=dt.date.fromisoformat, required=True)
     ap.add_argument("--end", type=dt.date.fromisoformat, required=True,
-                    help="W1 end; W2 = start..end+7d and (start+7d)..end+7d")
+                    help="W1 end; W2 = start..end+7d and each slide k in "
+                         "--slides: start+k..end+k (the real weekly move)")
+    ap.add_argument("--slides", default="7,14,21",
+                    help="window-head slide offsets (days) to measure the "
+                         "re-key rate at - one per weekly run")
     a = ap.parse_args()
+    slides = [int(k) for k in a.slides.split(",") if k.strip()]
     dates, lats, lons, masks = frame_masks.daily_masks(a.lane)
     mask_all = masks["heat_wave"]
     keep = (lats >= -60.0) & (lats <= 90.0)      # production lat clamp
@@ -174,9 +180,12 @@ def main() -> int:
     e2 = a.end + dt.timedelta(days=7)
     win1 = [i for i, d in enumerate(dates) if a.start <= d <= a.end]
     win2 = [i for i, d in enumerate(dates) if a.start <= d <= e2]
-    win2s = [i for i, d in enumerate(dates) if a.start + dt.timedelta(days=7) <= d <= e2]
-    for win in (win1, win2, win2s):
-        assert len(win) >= 14, "lane does not cover both windows"
+    winsl: dict[int, list[int]] = {
+        k: [i for i, d in enumerate(dates)
+            if a.start + dt.timedelta(days=k) <= d <= a.end + dt.timedelta(days=k)]
+        for k in slides}
+    for win in [win1, win2, *winsl.values()]:
+        assert len(win) >= 14, "lane does not cover a window"
     for name, params in RULESETS.items():
         def run(sel, prm=params):
             sel = list(sel)
@@ -184,10 +193,14 @@ def main() -> int:
                              cell_area, lats, lons, prm)
         w1 = run(win1)
         print(f"== {name} | W1 {a.start}..{a.end} ({len(w1)} events) | "
-              f"W2 {a.start}..{e2} | W2s {a.start + dt.timedelta(days=7)}..{e2}",
+              f"W2 {a.start}..{e2} | "
+              + " | ".join(
+                  f"slide+{k} {a.start + dt.timedelta(days=k)}.."
+                  f"{a.end + dt.timedelta(days=k)}" for k in slides),
               flush=True)
         report(" same-start W2 ", w1, run(win2))
-        report(" slid-start  W2s", w1, run(win2s))
+        for k, win in winsl.items():
+            report(f" slid-start +{k}d", w1, run(win))
     return 0
 
 

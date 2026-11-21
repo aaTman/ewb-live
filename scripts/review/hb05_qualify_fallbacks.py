@@ -53,7 +53,7 @@ def main() -> int:
     counts: dict[str, int] = {}
     detail = []
     for e in rows:
-        if e["event_type"] not in ("heat_wave", "freeze"):
+        if e["event_type"] not in ("heat_wave", "freeze", "cold_snap"):
             continue
         det = e.get("details") or {}
         start = dt.datetime.fromisoformat(e["start"])
@@ -66,6 +66,8 @@ def main() -> int:
         cell_km2 = (111.32 * grid["step_lat"]) * (
             111.32 * grid["step_lon"] * max(0.15, abs(np.cos(mid))))
         floor_px = max(1, int(np.ceil(SEED_AREA_KM2 / cell_km2)))
+        # cold_snap qualifies on the p15 freeze bit (frame_masks.MASK_ALIAS,
+        # the same layer qualified_at reads - round-3 item 3)
         layer = 0 if e["event_type"] == "heat_wave" else 1
         if not frames:
             reason = "empty-window"
