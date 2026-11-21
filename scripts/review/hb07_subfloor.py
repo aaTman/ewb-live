@@ -36,9 +36,9 @@ _HERE = Path(__file__).resolve()
 sys.path.insert(0, str(_HERE.parents[2]))
 sys.path.insert(0, str(_HERE.parent))
 
-import hb01_box_growth as h1  # noqa: E402  (load_window: the replay window, production population)
+import hb01_box_growth as h1  # load_window: the replay window, production population
 
-from ewb_live.events.event_tracker import Params, track_events  # noqa: E402
+from ewb_live.events.event_tracker import Params, track_events
 
 
 def main() -> int:
