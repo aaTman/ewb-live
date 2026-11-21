@@ -4115,6 +4115,8 @@ Unit: 4 failures fixed (truth-tag literal), 2 known box failures left; e2e on th
 Details: notes/landfall_validation.md. Landfall time errors are quantised by the 6-h / 0.25 degree tracks (Nolo: -2.44 h for all 9 models).
 
 
+## [first-screen-midwidth] 2026-11-21 10:53 UTC — started: preview on LXC :8065, measuring
+
 Branch `fix/first-screen-midwidth` off develop (b7ed93d). Private preview tree `/opt/ewb-preview-fs`
 (code rsynced, `data`/`.venv`/`third_party` symlinked read-only to /opt/ewb-live), ephemeral unit
 `ewb-preview-fs-web` on :8065; /opt/ewb-live and /opt/ewb-live-dev untouched. A Pi child is running the
