@@ -79,7 +79,39 @@ detection are rebuilt together with the release.
 
 Measured on the live lane (`scripts/review/hb01_box_growth.py`, stages
 `S0_current` shipped → `C3_valid_box_persist` (core from start) →
-`C5_core_from_qualification` = production now), 85 days 2026-08-21..11-13:
+`C5_core_from_qualification` = production now), 85 days 2026-08-21..11-13,
+freeze measured with production's `<= 0 degC` ceiling (the p15 lane bits
+uncapped are the cold-snap population — 81 % of them survive the ceiling).
+Selfcheck (legacy-pinned replay == shipped tracker, 162/162 heat, 22/22 freeze,
+35/35 cold_snap) and prodcheck (C5-tuned replay == production `Params()`,
+189/23/40) both PASS, so the measurement is the product:
+
+| metric | heat S0 | heat C3 | **heat C5** | freeze S0 | freeze C3 | **freeze C5** | cold_snap S0 | **cold_snap C5** |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| events | 162 | 163 | **189** | 22 | 19 | **23** | 35 | **40** |
+| fill, median | 0.52 | 0.76 | **0.83** | 0.42 | 0.70 | **0.83** | 0.46 | **0.81** |
+| daily fill, median | 0.24 | 0.43 | **0.43** | 0.21 | 0.47 | **0.47** | 0.24 | **0.51** |
+| box, median km² | 3.80M | 1.14M | **1.05M** | 2.78M | 0.82M | **0.58M** | 2.69M | **0.59M** |
+| box, p90 km² | 16.6M | 4.70M | **3.11M** | 8.35M | 3.32M | **2.02M** | 7.98M | **2.59M** |
+| box, max km² | 61.6M | 22.15M | **22.15M** | 24.6M | 11.8M | **4.03M** | 24.6M | **4.55M** |
+| box / biggest day | 4.94× | 2.20× | **1.93×** | 4.79× | 1.94× | **1.67×** | 4.26× | **1.47×** |
+| duration med/p90/max d | 4/7/32 | 4/7/28 | 4/8/31 | 3/4.9/6 | 3/4.2/7 | 4/5.8/7 | 3/4.6/6 | 3/5/7 |
+| events with `qualified == end` | 29 | 32 | **0** | 4 | 3 | **0** | 5 | **0** |
+| events over 45 d | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| merge pairs / max merged window | 46 / 28 d | 18 / 33 d | 20 / **42 d** | 6 / 9 d | 1 / 7 d | 1 / 8 d | 7 / 9 d | 1 / 8 d |
+| lost / gained vs S0 | — | 45 / 46 | 48 / 75 | — | 12 / 9 | 8 / 9 | — | 10 / 15 |
+
+The qualification clock is not a box-size change — C3 already fixed the boxes —
+it is a *spell-continuity* change, and it makes every metric above better or
+level: the events that used to be cut off at their own qualifying day now live
+long enough to be valid at all, which is where the +26 heat waves come from
+(163 → 189; the published catalogue would carry 151 → ~189 heat events, more
+scoring jobs per week, and 48/75 lost/gained membership vs the shipped rule).
+Nothing breaks a duration gate: the longest heat spell is 31 days against the
+45-day publish ceiling (`validate.MAX_DURATION_DAYS`), and no replayed event
+exceeds it. Curation merge pressure barely moves (20 mergeable heat pairs,
+largest merged window 42 d, 3 over the 16-day `select.MERGE_CAP_DAYS` envelope
+— three in the C3 replay too, and still under the 45-day hard cap).
 
 ## The 2026-11-20 box-size change (strategy `C3_valid_box_persist`)
 

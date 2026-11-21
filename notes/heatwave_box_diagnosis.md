@@ -481,3 +481,70 @@ provisioning only). Local lint (`uvx ruff check`): no new findings in any
 changed file vs its branch baseline (the ruff 0.17 default ruleset fails the
 pre-existing repo baseline ~900 findings; my files are flat or -1). Replay
 runtimes: heat 70s, freeze 17s per strategy on the LXC.
+
+## Round 2 (2026-11-21, hb-fix2): the core clock starts at qualification
+
+Owner decision, taken after reviewing this branch's C3 result: the end check
+counts the cells valid on *every day since the event began*, so a spell that
+grows into its qualifying day has a core of only its seed area and is closed by
+its own qualification. Re-measured, replayed and written up in
+`notes/footprint_tracker.md` ("The 2026-11-21 core clock"): rule, three-stage
+table (shipped `S0_current` → C3 with the core from the start → C5 = production
+now), duration/gate and curation-merge exposure, and the ongoing-id table. The
+numbers below are the ones that motivated the decision; all of them come from
+`scripts/review/hb01_box_growth.py` and `hb05_qualify_fallbacks.py` on the LXC,
+production `/opt/ewb-live` read-only, window 2026-08-21..11-13.
+
+**What the bug costs the product.** 31 of the 162 heat/freeze events in the live
+`events.json` have `details.qualified_date == end` (29 heat waves, 2 freezes;
+the cold-snap lane carries 3 more). `qualification.py` scans frames from
+`max(start, qualified_date)` to `end`, so for those 31 the window is empty and
+`qualified_at` silently falls back to 00:00 UTC of the *start* day — the
+published sub-daily qualification time is a guess for 19 % of the heat waves in
+the catalogue. `hb05_qualify_fallbacks.py` on the live catalogue: 131 qualify,
+**31 empty-window, 0 below-floor**, and every empty-window event is one of the
+31. Re-run on the C5 replay of the same window: **206 qualify, 0 empty-window,
+6 below-floor** — the failure mode is gone, replaced by six events (2.8 %) whose
+*persistence* box is smaller than the footprint that qualified them, so no
+single frame inside the published rectangle reaches the 200 k km² floor
+(`max_frame_px` within 6 % of the floor in five of the six). That is a
+publish-box question, not a tracking one, and it predates this change.
+
+**The split is real.** Of the 31, 16 have a live event that starts exactly on
+the closing day and overlaps the closed spell's box (15 heat, 1 freeze), i.e. in
+half the cases the region really did seed a successor the same day. Under C3
+only 2 of those 15 pairs are covered by a single replay object; under the
+qualification clock 11 of 15 are (10 heat, 1 freeze) — the other five are
+genuinely separate systems, and the remaining 15 of the 31 events never had a
+successor: they were simply cut short on their best day.
+
+**Freeze was being measured on the wrong population** (round-2 review item): the
+replay scripts fed the lane's p15 bits to the tracker for both freeze and
+cold_snap, so the freeze columns above were cold-snap numbers. `hb01` now applies
+production's ceiling with production's rule and source (`t2m` daily max
+`<= 0 degC`, `temperature._mirror_t2m_daily` over the ERA5 truth mirror, opened
+read-only): the ceiling keeps 81 % of the p15 cells (801 638 → 647 912 cell-days)
+and the shipped replay drops from 35 events to 22, against 11 published freezes
+after curation. Every freeze number in the round-1 write-up (fill 0.46 → 0.78,
+box median 2.69 → 0.98 M km²) is a cold-snap number; the true-freeze numbers are
+in the `footprint_tracker.md` table (fill 0.42 → 0.83, box median 2.78 → 0.58 M
+km², max 24.6 → 4.03 M km²) and they are better, not worse.
+
+**Nothing breaks a gate.** No event in any stage exceeds `validate.MAX_DURATION_DAYS`
+(45 d); the longest heat spell is 31 d under C5 against 32 d as shipped, and
+freeze/cold_snap top out at 7 d. Curation's merge exposure barely moves: 20
+mergeable heat pairs under C5 against 18 under C3 and 46 under the shipped rule,
+largest merged window 42 d, 3 pairs over the 16-day `select.MERGE_CAP_DAYS`
+envelope (3 under C3 as well), none over the 45-day hard cap. Freeze and
+cold_snap: 1 mergeable pair each.
+
+**The cost is catalogue size.** The heat replay goes 162 → 163 → **189** events:
+spells that used to be ended at their qualifying day either survive past
+`min_days` or no longer re-seed a successor, so the published catalogue grows
+about 17 % and the churn against the shipped rule is 48 lost / 75 gained (C3 was
+45 / 46). More events means more scoring jobs per weekly run and a one-off id
+re-hash on top of the C3 re-hash; boxes and fills all improve at the same time
+(fill median 0.83, box median 1.05 M km², box p90 3.11 M km²). If +38 heat waves
+is not wanted, the lever is the publish side (`min_days`, or the per-type curation
+top-N), not a threshold in the core rule — reported for the owner's call rather
+than tuned here.
