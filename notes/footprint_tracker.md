@@ -161,9 +161,13 @@ catalogue now count the same world; round 2's tables (162 heat / 22 freeze /
 shipped → `C3_valid_box_persist` (core from start) → `C5_core_from_qualification`
 = production now; 85 days 2026-08-21..11-13, freeze measured with production's
 `<= 0 degC` ceiling (the p15 lane bits uncapped are the cold-snap population —
-45 % of them survive the ceiling at lat >= -60). Gates all PASS: selfcheck
+45 % of them survive the ceiling at lat >= -60). Re-measured 2026-11-21 with
+the round-4 merge rule (`separate`) in the replay — the C3 and C5 columns and
+the churn figures below are from that run (`out/hb01r4_*.json`); the round-3
+figures for the superseded `oldest_qualified` replay were 148 heat events at
+C3 and 159 at C5. Gates all PASS: selfcheck
 (legacy-pinned replay == shipped tracker, 149/149 heat, 11/11 freeze, 24/24
-cold_snap), prodcheck (C5-tuned replay == production `Params()`, 159/13/30)
+cold_snap), prodcheck (C5-tuned replay == production `Params()`, 172/13/30)
 and `prod_match` (the S0 replay vs the PRODUCTION catalogue: freeze 11/11 and
 cold_snap 24/24 paired with every (start, end) exact; heat 149 replay vs 151
 production, 149 paired, 148 exactly equal — all 151 production events read
@@ -175,25 +179,25 @@ ARCO, and the ARCO path split two spells the lane keeps single
 
 | metric | heat S0 | heat C3 | **heat C5** | freeze S0 | freeze C3 | **freeze C5** | cold_snap S0 | **cold_snap C3** | **cold_snap C5** |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| events | 149 | 148 | **159** | 11 | 10 | **13** | 24 | 23 | **30** |
-| fill, median | 0.52 | 0.74 | **0.83** | 0.42 | 0.69 | **0.85** | 0.48 | 0.78 | **0.81** |
+| events | 149 | 159 | **172** | 11 | 10 | **13** | 24 | 23 | **30** |
+| fill, median | 0.52 | 0.75 | **0.83** | 0.42 | 0.69 | **0.85** | 0.48 | 0.78 | **0.81** |
 | daily fill, median | 0.23 | 0.42 | **0.43** | 0.24 | 0.45 | **0.47** | 0.25 | 0.47 | **0.52** |
-| box, median km² | 3.23M | 1.17M | **1.12M** | 2.41M | 0.83M | **0.55M** | 2.49M | 1.09M | **0.58M** |
-| box, p90 km² | 16.45M | 4.26M | **3.89M** | 4.02M | 1.92M | **1.11M** | 5.57M | 2.60M | **2.59M** |
+| box, median km² | 3.23M | 1.26M | **1.21M** | 2.41M | 0.83M | **0.55M** | 2.49M | 1.09M | **0.58M** |
+| box, p90 km² | 16.45M | 4.13M | **3.23M** | 4.02M | 1.92M | **1.11M** | 5.57M | 2.60M | **2.59M** |
 | box, max km² | 61.6M | 22.15M | **22.15M** | 5.90M | 3.14M | **3.14M** | 8.06M | 4.55M | **4.55M** |
-| box / biggest day | 5.02× | 2.22× | **1.96×** | 4.59× | 1.86× | **1.67×** | 3.71× | 1.55× | **1.47×** |
-| duration med/p90/max d | 4/7/32 | 4/7/28 | 4/8/31 | 3/4/6 | 3/4.1/5 | 4/5/6 | 3/4/6 | 3/4/7 | 3/5/7 |
-| events with `qualified == end` | 29 | 31 | **0** | 2 | 2 | **0** | 3 | 3 | **0** |
+| box / biggest day | 5.02× | 2.23× | **1.96×** | 4.59× | 1.86× | **1.67×** | 3.71× | 1.55× | **1.47×** |
+| duration med/p90/max d | 4/7/32 | 4/7/28 | 4/8/28 | 3/4/6 | 3/4.1/5 | 4/5/6 | 3/4/6 | 3/4/7 | 3/5/7 |
+| events with `qualified == end` | 29 | 30 | **0** | 2 | 2 | **0** | 3 | 3 | **0** |
 | events over 45 d | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| merge pairs / max merged window | 45 / 28 d | 22 / 33 d | 21 / **42 d** | 2 / 5 d | 1 / 7 d | 1 / 8 d | 3 / 8 d | 1 / 7 d | 1 / 8 d |
-| lost / gained vs S0 | — | 40 / 39 | 49 / 59 | — | 5 / 4 | 2 / 4 | — | 7 / 6 | 4 / 10 |
+| merge pairs / max merged window | 45 / 28 d | 26 / 33 d | 27 / **33 d** | 2 / 5 d | 1 / 7 d | 1 / 8 d | 3 / 8 d | 1 / 7 d | 1 / 8 d |
+| lost / gained vs S0 | — | 40 / 50 | 44 / 67 | — | 5 / 4 | 2 / 4 | — | 7 / 6 | 4 / 10 |
 
 The qualification clock is not a box-size change — C3 already fixed the boxes —
 it is a *spell-continuity* change, and it makes every metric above better or
 level: the events that used to be cut off at their own qualifying day now live
-long enough to be valid at all, which is where the +11 heat waves come from
-(148 → 159 on production's population, churn 49 lost / 59 gained against the
-shipped rule, C3 was 40 / 39).
+long enough to be valid at all, which is where the +13 heat waves come from
+(159 → 172 on the replay, churn 44 lost / 67 gained against the shipped rule,
+C3 was 40 / 50).
 Curation caps what ships — `select.rank_and_cap` keeps 15 heat waves per window
 (`DEFAULT_TOP_N`; the live selection is 15 heat / 5 freeze / 8 cold snaps, and
 re-running the real curation path over the fresh scan — `hb06_ship.py`,
@@ -206,11 +210,11 @@ production viz logs are median 55 s / p90 525 s, so the step fits the 5,400 s
 budget at median cost (~2,300 s) but not at cold-cache p90 cost — the step is
 best-effort and finishes in later weeks, or can be pre-warmed before release).
 Nothing breaks a duration gate: the longest
-heat spell is 31 days against the 45-day publish ceiling
+heat spell is 28 days against the 45-day publish ceiling
 (`validate.MAX_DURATION_DAYS`), and no replayed event exceeds it. Curation merge
-pressure barely moves (21 mergeable heat pairs, largest merged window 42 d, 2
-over the 16-day `select.MERGE_CAP_DAYS` envelope — four in the C3 replay too,
-and still under the 45-day hard cap).
+pressure barely moves (27 mergeable heat pairs, largest merged window 33 d, 5
+over the 16-day `select.MERGE_CAP_DAYS` envelope — same 5 in the C3 replay,
+and all still under the 45-day hard cap).
 
 ## The 2026-11-20 box-size change (strategy `C3_valid_box_persist`)
 
@@ -277,18 +281,18 @@ together.
 The re-hash is a one-time cost, not a weekly one: the heat/freeze id now
 hashes the **anchor bbox** (frozen day-3 box) rather than the published box,
 so an ongoing event keeps its id while its persistence box is redrawn. Re-measured
-by `scripts/review/hb04_ongoing_ids.py` on production's population after the
-merge-survivor fix: one weekly extend (+7 d) keeps **5 of 5** ids of ongoing
-heat spells on the anchor basis and 3/5 on the old published-box basis; sliding
-the 90-day window start +7 d keeps 4/5 anchor vs 3/5 published; head slides of
-+14/+21 d keep 3/5 anchor vs 1/5 published. Under the production qualification
-clock the extend keeps **8 of 8** pairable ids (published basis 3/8 of 9);
-the ninth ongoing spell (`db4e3331c5b6`, started 10-30) pairs with nothing
-within the ±1 d pairing tolerance — its region is held the following week by
-objects with different starts (a −2 d merge survivor in other rulesets, a +6 d
-later seed here), i.e. the spell was absorbed or re-seeded under another start,
-not re-keyed because its anchor box moved (`select.py`'s merged ids and the
-other lanes are unchanged).
+by `scripts/review/hb04_ongoing_ids.py` on the shipped rule (`c3_qualify`, i.e.
+`Params()` with the round-4 `separate` merge) after the merge-survivor fix: one
+weekly extend (+7 d) keeps **all 10** ongoing heat-wave ids on the anchor basis
+and only 4/10 on the old published-box basis; sliding the 90-day window start
++7/+14 d matches 8 of the 10 on the same-start basis and keeps **all 8**
+matched ids on the anchor basis vs 3/8 published; the two that do not pair
+(65f9f5758c55, 60dee55ef1cb) re-seed under shifted starts once the window head
+moves — not id re-keys and not absorptions. The absorb/re-seed split that the old `oldest_qualified`
+rule produced (the round-3 note had `db4e3331c5b6`, started 10-30, pairing with
+nothing because the merge had folded it into a −2 d survivor) is gone: under
+`separate` that spell keeps its own object and its id. `select.py`'s merged ids
+and the other lanes are unchanged.
 
 ## Port layout
 
@@ -364,10 +368,11 @@ sides read identical bytes.
   below the 200 k km² floor.** It keeps only cells valid on >= `publish_min_days` event
   days, so a spell that qualified in one push and then collapses publishes a rectangle
   under the qualify floor that qualified it - no single frame inside the published box
-  reaches 200 k km² (measured on the C5 replay of the live window: 32 of 202 published
-  events; re-derived in the round-4 re-measure). Behaviour left as is; whether the
-  published box should never be smaller than the qualify-day footprint (or such events
-  be flagged/curated) is the owner's call.
+  reaches 200 k km² (C5 replay of the live window: 15 of 215 published events hold less
+  than their largest qualifying-day footprint, 1 of 215 publishes a box below the
+  200 k km² floor; per-event numbers `out/hb01r4_*.json`). Behaviour left as is;
+  whether the published box should never be smaller than the qualify-day footprint (or
+  such events be flagged/curated) is the owner's call.
 * **`separate` lets two qualified objects run side by side.** Round 4's merge rule
   never absorbs a qualified event, so a blob whose region welds to a qualified event's
   region keeps its own object: overlapping published boxes for physically adjacent
