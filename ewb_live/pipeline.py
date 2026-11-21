@@ -858,6 +858,14 @@ def run(
             eid = sc.name.removesuffix(".status.json")
             eid = re.sub(r"_c\d+$", "", eid)  # model-chunk tag, not part of id
             for model, st in json.loads(sc.read_text()).items():
+                prev = pair_status.get(f"{eid}|{model}")
+                if ("fp" not in st and isinstance(prev, dict) and prev.get("fp")
+                        and prev.get("status") == st.get("status")):
+                    # EWB-job sidecars carry no fp (the parent stamps it at collect time):
+                    # a publish-only fold-in must not strip the stamp it already proved,
+                    # or every documented zero-row pair turns into a blocker. A changed
+                    # fingerprint still mismatches the carried stamp, so it rescores.
+                    st = {**st, "fp": prev["fp"]}
                 pair_status[f"{eid}|{model}"] = st
         except Exception:  # noqa: BLE001
             pass

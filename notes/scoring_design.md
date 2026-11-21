@@ -515,15 +515,35 @@ the specification; the sections above are written to match them.
 | # | Decision | Accepted answer |
 |---|---|---|
 | D1 | TC forecast-track method | **Hybrid (TC-A).** Our own storm-following tracker on the store's MSLP gives forecast positions, along/cross-track, central pressure and misses; EWB's landfall classes are fed the same tracks. The pure EWB pipeline (TC-B) is kept only as a validation reference for the landfall numbers. |
-| D2 | Which inits are verified | Only inits at or after the storm's first IBTrACS (TC) or ERA5-tracker (MLC) fix, i.e. the storm exists at init. **Pre-genesis inits are excluded** (genesis forecasting is a separate future lane). |
+| D2 | Which inits are verified | Only inits at or after the storm's first ERA5-tracker (MLC) fix, i.e. the storm exists at init. **TC: amended 2026-11-21 (below): verification starts at the first observed fix with wind >= 34 kt, not the first IBTrACS fix.** Pre-genesis inits are excluded (genesis forecasting is a separate future lane). |
 | D3 | TC intensity | **Central-pressure error (MSLP) only**, published as a signed bias with the 0.25 degree resolution warning. **No 10 m wind error is published.** |
 | D4 | Model set and baseline for TC/MLC | The 8 virtual-store models **plus `ifs_hres` read through the existing ECMWF-direct path as the baseline**, so skill colouring works. This is the one non-virtual read and is approved for TC and MLC. |
 | D5 | Row granularity and misses | **One row per `(event, model, init, lead)`** (same granularity as AR/heat); the miss rate is shown beside every error metric; a cell whose miss rate exceeds **50 %** is greyed. Misses are never imputed and never dropped silently. |
 | D6 | Flood scope | **GraphCast only** (`graphcast`, `graphcast_gfs`) from the store, plus **ECMWF-direct `tp` for `ifs_hres` as the baseline**. The six models without precipitation are documented `unsupported`. Copy says "vs AI-estimated precipitation (PARDIG)", never "observed rain". |
 | D7 | MLC metrics | **MLC-A** (track position, along/cross-track, central pressure, miss) with the published ERA5 (ARCO) track as truth, **plus MLC-B** (peak-depth error, deepening/bomb hit-miss) as a cheap add-on. |
 | D8 | Leads shown in tables | All 6-hourly leads are stored; the dashboard columns are 24/48/72/96/120 h for TC, 24/48/72/96 h for MLC, 24-120 h (daily) for flood. |
-| D9 | Compute window | A 2.5-3 h TC backfill on the LXC is approved, 12 workers, own pool, **<= 40 GB total RSS**, **never overlapping the weekly run** (section 8, rule R1), after the pilot's measured memory number. |
+| D9 | Compute window | A TC backfill on the LXC is approved, 12 workers, own pool, **<= 40 GB total RSS**, **never overlapping the weekly run** (section 8, rule R1), after the pilot's measured memory number. **Pool design amended 2026-11-21 (below): one pool with worker recycling.** (The 2.5-3 h estimate was replaced by the WP0 pilot's ~25 min, `notes/scoring_pilot.md`.) |
 | D10 | Sign convention and motion | **Along-track > 0 = forecast ahead of the observed storm; cross-track > 0 = right of the observed track** (Leonardo & Colle 2017), observed motion from the centered 6 h + 6 h difference of observed positions, one-sided at the first/last fix, 2 km/h stationary cutoff, exactly as section 3.4. |
+
+**Amendments (owner, 2026-11-21, after the WP0 pilot, `notes/scoring_pilot.md`).** Both are in force for WP1
+and are implemented in this PR.
+
+* **D9 (pool): ONE worker pool with worker recycling every 30 jobs, no split pool.** The pilot's 4-worker run of the
+  full 9-model job mix projected 40.66 GB at 12 workers (3.347 GB per worker), marginally over the 40 GB cap; the cause
+  is slow per-worker growth with the number of jobs a worker has run, and `max_tasks_per_child=30` measured 2.433 GB per
+  worker, **29.7 GB projected at 12 workers**, at no wall-clock cost (338 s vs 405 s). The alternative (a 12-worker store
+  pool plus a separate 2-worker `ifs_hres` pool) is not built: `ifs_hres` stays in the same pool as the eight store models.
+  `scoring/lane_pool.py` asserts the cap (stops and drains above `EWB_LIVE_SCORING_RSS_CAP_GB`, default 40; exit 6).
+* **D2 (TC only): verification starts at the FIRST observed fix with wind >= 34 kt, not at the first IBTrACS fix.** 00/12Z
+  inits before that fix are excluded from scoring and reported as *not verified* (`meta.track_verification`, and the
+  note under the TC table); pre-genesis misses are never counted. Reason (pilot 3.1): for inits issued while the storm is
+  still a < 34 kt disturbance the miss rate is 80 % (7 % from hurricane-stage inits), because no 0.25 degree model
+  carries a closed low yet, so those inits measured genesis, not track skill. The MLC lane keeps D2 as written (first
+  ERA5-tracker fix). Inits with a fix at the init time and one 6 h later remain the other conditions.
+
+Implementation notes that follow from the pilot (WP1): store gaps (4 `_gfs` models at 5 inits) are `no_data` inits, never
+misses; S3 reads are retried (4 attempts, linear backoff; ~4 % of reads fail once); the sample records the TRUE init and
+TRUE lead when the nearest-earlier-init rule supplied the forecast.
 
 ---------------------------------------------------------------------------------------------
 

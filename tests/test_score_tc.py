@@ -387,3 +387,27 @@ def test_publish_only_pair_coverage_is_decidable_for_the_tc_lane(results_tree, f
     assert ps[f"{ev.id}|graphcast"]["status"] == "scored"
     card = json.loads((res / "scorecard.json").read_text())["rows"]
     assert {r["metric"] for r in card} == set(tv.TRACK_METRICS)
+
+
+def test_sidecar_foldin_keeps_a_proven_fp_for_the_same_status(results_tree, monkeypatch):
+    """EWB-job sidecars have no fp; a publish-only fold-in must not strip the stamp (pair_coverage)."""
+    ev = _event()
+    res = results_tree / "results"
+    (res / "events_selected.json").write_text(json.dumps([ev.to_dict()]))
+    fp = f"{pipeline.fingerprint(ev)}|ibtracs"
+    (res / "pair_status.json").write_text(json.dumps(
+        {f"{ev.id}|aigfs": {"status": "unsupported", "rows": 0, "reason": "x", "fp": fp}}))
+    (res / "pair_sidecar").mkdir()
+    (res / "pair_sidecar" / f"{ev.id}.status.json").write_text(json.dumps(
+        {"aigfs": {"status": "unsupported", "rows": 0, "reason": "x"}}))     # no fp, like an EWB job's
+    from ewb_live import sources
+    from ewb_live.scoring import truth as truth_mod
+
+    monkeypatch.setattr(sources, "list_models", lambda: ["aigfs"])
+    monkeypatch.setattr(truth_mod, "probe_arco_cutoff", lambda: dt.datetime(2026, 11, 1))
+    for name, val in (("_ibtracs_meta", lambda *a, **k: None), ("_lane_status_meta", lambda: {}),
+                      ("_clim_meta", lambda: {}), ("_sel_thresholds", lambda: {})):
+        monkeypatch.setattr(pipeline, name, val)
+    assert pipeline.run(days=90, publish_only=True) == 0
+    ps = json.loads((res / "pair_status.json").read_text())
+    assert ps[f"{ev.id}|aigfs"]["fp"] == fp
