@@ -220,7 +220,7 @@ def fake_lane(monkeypatch):
     def init_job(track, model, init, leads, reader=None):
         return tc.score_init(track, model, init, leads, holder["reader"])
 
-    lane = lane_pool.Lane(event_type="tropical_cyclone", truth="ibtracs", models=lane_pool.tc_models,
+    lane = lane_pool.Lane(event_type="tropical_cyclone", truth=tc.TRUTH_TAG, models=lane_pool.tc_models,
                           plan=tc.plan_for, init_job=init_job, finalize=tc.finalize_pair, label="tc")
     monkeypatch.setitem(lane_pool.LANES, "tc", lane)
     return ev, holder
@@ -318,23 +318,23 @@ def test_score_job_dispatches_tc_to_the_track_scorer(monkeypatch):
     ev = _event()
     monkeypatch.setattr(tc, "default_reader", make_reader(ev))
     status = {}
-    eid, df = pipeline._score_job(ev.to_dict(), ["graphcast"], "ibtracs", status_out=status)
+    eid, df = pipeline._score_job(ev.to_dict(), ["graphcast"], tc.TRUTH_TAG, status_out=status)
     assert eid == ev.id and df is not None and "TrackMiss" in set(df["metric"])
     assert status["graphcast"]["status"] == "scored"
 
 
 def test_run_lanes_writes_part_and_sidecar_and_a_rerun_resumes(results_tree, fake_lane):
     ev, _ = fake_lane
-    truth_of = lambda e: "ibtracs"  # noqa: E731
+    truth_of = lambda e: tc.TRUTH_TAG  # noqa: E731
     pairs = pipeline.lane_pairs([ev], MODELS, truth_of)
     assert len(pairs) == 2
     stats = pipeline.run_lanes(pairs, lane_key="tc", truth_of=truth_of, workers=2,
                                executor_factory=_threads(2), poll_s=0.05)
     assert stats["pairs_done"] == 2
-    part = pd.read_parquet(pipeline._part_path(ev, "graphcast", "ibtracs"))
-    assert part["fingerprint"].iloc[0] == pipeline.fingerprint(ev) and (part["truth_source"] == "ibtracs").all()
+    part = pd.read_parquet(pipeline._part_path(ev, "graphcast", tc.TRUTH_TAG))
+    assert part["fingerprint"].iloc[0] == pipeline.fingerprint(ev) and (part["truth_source"] == tc.TRUTH_TAG).all()
     side = json.loads((results_tree / "results" / "pair_sidecar" / f"{ev.id}.status.json").read_text())
-    assert set(side) == set(MODELS) and side["graphcast"]["fp"] == f"{pipeline.fingerprint(ev)}|ibtracs"
+    assert set(side) == set(MODELS) and side["graphcast"]["fp"] == f"{pipeline.fingerprint(ev)}|{tc.TRUTH_TAG}"
     assert pipeline.lane_pairs([ev], MODELS, truth_of) == []                          # resumable: all parts exist
     assert len(pipeline.lane_pairs([ev], MODELS, truth_of, force=True)) == 2
 
@@ -359,7 +359,7 @@ def test_publish_only_pair_coverage_is_decidable_for_the_tc_lane(results_tree, f
     ev, _ = fake_lane
     res = results_tree / "results"
     (res / "events_selected.json").write_text(json.dumps([ev.to_dict()]))
-    truth_of = lambda e: "ibtracs"  # noqa: E731
+    truth_of = lambda e: tc.TRUTH_TAG  # noqa: E731
     pipeline.run_lanes(pipeline.lane_pairs([ev], MODELS, truth_of), lane_key="tc", truth_of=truth_of,
                        workers=2, executor_factory=_threads(2), poll_s=0.05)
     from ewb_live import sources
@@ -380,7 +380,7 @@ def test_publish_only_pair_coverage_is_decidable_for_the_tc_lane(results_tree, f
     assert meta["full_run_complete"] is True
     assert meta["track_verification"]["tropical_cyclone"]["n_events"] == 1
     sc = pd.read_parquet(res / "scores.parquet")
-    assert set(sc["metric"]) == set(tv.TRACK_METRICS) and set(sc["truth_source"]) == {"ibtracs"}
+    assert set(sc["metric"]) == set(tv.TRACK_METRICS) and set(sc["truth_source"]) == {tc.TRUTH_TAG}
     pj = json.loads((res / "scores.json").read_text())
     assert len(pj) < len(sc)                                      # scores.json is the compacted payload
     ps = json.loads((res / "pair_status.json").read_text())
@@ -513,7 +513,7 @@ def test_full_run_scores_the_tc_lane_through_the_pool_block(results_tree, fake_l
     assert meta["full_run_complete"] is True and meta["pair_coverage"]["scored"] == 2
     assert meta["pair_coverage"]["documented_zero_rows"] == 1            # aigfs: not a lane model
     sc = pd.read_parquet(res / "scores.parquet")
-    assert set(sc["model"]) == set(MODELS) and set(sc["truth_source"]) == {"ibtracs"}
+    assert set(sc["model"]) == set(MODELS) and set(sc["truth_source"]) == {tc.TRUTH_TAG}
     assert set(sc["metric"]) == set(tv.TRACK_METRICS)
     perf = json.loads((results_tree / "perf.json").read_text())["perf"]
     assert perf["lane_tc"]["pairs_done"] == 2 and perf["lane_tc"]["jobs"] > 0
@@ -546,26 +546,26 @@ def test_transient_matching_uses_status_codes_not_bare_numbers():
 
 def test_lane_terminal_pairs_are_final_only_for_the_same_fingerprint(results_tree):
     ev = _event()
-    fp = f"{pipeline.fingerprint(ev)}|ibtracs"
-    assert pipeline.lane_terminal({"status": "no_data", "fp": fp}, ev, "ibtracs")
-    assert pipeline.lane_terminal({"status": "empty", "fp": fp}, ev, "ibtracs")
-    assert not pipeline.lane_terminal({"status": "read_error", "fp": fp}, ev, "ibtracs")      # retriable
-    assert not pipeline.lane_terminal({"status": "no_data", "fp": "old|ibtracs"}, ev, "ibtracs")
-    assert not pipeline.lane_terminal({"status": "no_data"}, ev, "ibtracs")
-    assert not pipeline.lane_terminal(None, ev, "ibtracs")
+    fp = f"{pipeline.fingerprint(ev)}|{tc.TRUTH_TAG}"
+    assert pipeline.lane_terminal({"status": "no_data", "fp": fp}, ev, tc.TRUTH_TAG)
+    assert pipeline.lane_terminal({"status": "empty", "fp": fp}, ev, tc.TRUTH_TAG)
+    assert not pipeline.lane_terminal({"status": "read_error", "fp": fp}, ev, tc.TRUTH_TAG)      # retriable
+    assert not pipeline.lane_terminal({"status": "no_data", "fp": "old|ibtracs"}, ev, tc.TRUTH_TAG)
+    assert not pipeline.lane_terminal({"status": "no_data"}, ev, tc.TRUTH_TAG)
+    assert not pipeline.lane_terminal(None, ev, tc.TRUTH_TAG)
     # lane_pairs (the backfill CLI) skips them too, from the sidecar
     (results_tree / "results" / "pair_sidecar").mkdir()
     (results_tree / "results" / "pair_sidecar" / f"{ev.id}.status.json").write_text(
         json.dumps({"graphcast": {"status": "no_data", "rows": 0, "fp": fp}}))
-    pairs = pipeline.lane_pairs([ev], MODELS, lambda e: "ibtracs")
+    pairs = pipeline.lane_pairs([ev], MODELS, lambda e: tc.TRUTH_TAG)
     assert [m for _, m in pairs] == ["aurora"]
-    assert len(pipeline.lane_pairs([ev], MODELS, lambda e: "ibtracs", force=True)) == 2
+    assert len(pipeline.lane_pairs([ev], MODELS, lambda e: tc.TRUTH_TAG, force=True)) == 2
 
 
 def test_normal_run_does_not_respawn_the_pool_for_terminal_lane_pairs(results_tree, fake_lane, monkeypatch):
     ev, _ = fake_lane
     res = results_tree / "results"
-    fp = f"{pipeline.fingerprint(ev)}|ibtracs"
+    fp = f"{pipeline.fingerprint(ev)}|{tc.TRUTH_TAG}"
     (res / "pair_status.json").write_text(json.dumps(
         {f"{ev.id}|{m}": {"status": "no_data", "rows": 0, "reason": "x", "fp": fp} for m in MODELS}))
     from ewb_live import events as events_pkg, sources
@@ -630,7 +630,7 @@ def dying_lane(monkeypatch, tmp_path):
             os._exit(137)                                # what the OOM killer does to a worker
         return tc.score_init(track, model, init, leads, make_reader(ev))
 
-    lane = lane_pool.Lane(event_type="tropical_cyclone", truth="ibtracs", models=lane_pool.tc_models,
+    lane = lane_pool.Lane(event_type="tropical_cyclone", truth=tc.TRUTH_TAG, models=lane_pool.tc_models,
                           plan=tc.plan_for, init_job=init_job, finalize=tc.finalize_pair, label="tc")
     monkeypatch.setitem(lane_pool.LANES, "tc", lane)
     return ev, holder
