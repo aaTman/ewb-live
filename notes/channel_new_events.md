@@ -4099,3 +4099,42 @@ rsync -a --delete $R/results/ data/results/ && systemctl restart ewb-live-web
 4. MLC (WP2), landfall classes (WP3) and flood (WP4) scoring still unscored.
 5. `/opt/ewb-live/_rollback_20261121_tc` (154 MB) can be deleted after the Monday weekly has run clean.
 6. Dev/preview trees (`/opt/ewb-preview-tc` :8062 etc.) untouched.
+## [first-screen-midwidth] 2026-11-21 10:53 UTC — started: preview on LXC :8065, measuring
+
+Branch `fix/first-screen-midwidth` off develop (b7ed93d). Private preview tree `/opt/ewb-preview-fs`
+(code rsynced, `data`/`.venv`/`third_party` symlinked read-only to /opt/ewb-live), ephemeral unit
+`ewb-preview-fs-web` on :8065; /opt/ewb-live and /opt/ewb-live-dev untouched. A Pi child is running the
+before-sweep (events-section end at 390..1920 x 768/800/900); design to follow from its numbers.
+
+## [first-screen-midwidth] 2026-11-21 11:09 UTC — cause found, fix prototyped, numbers
+
+Before sweep (Pi child, 24 viewports, real 7-lane data, preview :8065): events section ends 970 (1100) / 1006 (1200)
+/ **1009.5 (1280)** / 922 (1366) / 866 (1440) / 934 (1920); viewport height is irrelevant. Three things stack at 1280
+(map column 608 px): gantt narrow cliff (svg 582 < NARROW_W 600: +77), legend one column (its fit test needs ~630 px
+of the 606 it has: +75; the container query at 680 only decides stacked vs grid), and the type chips wrap to 2 rows
+(shell is 75vw, Show row ~912 px, chips need ~965: +36). Fix (no content removed): NARROW_W 600->440; legendHug measures
+the REAL per-column widths (not k x widest) and tries the short lane names TC/MLC (full name kept for AT) and keeps
+them only when they buy a column; legend container query 680->450; chips padding/gap tighter 1100-1399.
+After (same data): 1100: 818 / 1200: 854 / 1240: 808 / **1280x800: 796.5** / 1366: 822.5 / **1440x900: 840.5** (was 865.5) /
+1920: 908.5; 820 and 390 unchanged or shorter (390 stacks as before). Pending: e2e test (Pi), CLS reservations (Pi measuring),
+browser verification light+dark, full e2e + units.
+
+## [first-screen-midwidth] 2026-11-21 13:28 UTC — DONE (PR to develop; not merged, not deployed)
+
+Events-section end (page px, real 7-lane data, preview :8065; viewport height is irrelevant, 768/800/900 identical):
+390: 1600.8 -> 1600.8 | 820: 1518.3 -> 1493.3 | 1100: 970.3 -> 818.3 | 1200: 1006.3 -> 854.3 | **1280: 1009.5 -> 796.5** |
+1366: 922.5 -> 822.5 | **1440: 865.5 -> 840.5** | 1920: 933.5 -> 908.5. No width got worse, no overflowX, 0 console errors in 24 combos.
+Not reached: 1366x768 cannot end inside 768 with 7 lanes (822); its section HEIGHT (642) fits below the 48 px header (720).
+1280x800 has only ~3.5 px of headroom under 800 (the test asserts <= 800): a week whose gantt grows a sub-row will trip it, by design.
+
+Changes: NARROW_W 600->440; legendHug measures real per-column widths and tries the short lane names TC/MLC (tracklayer.js
+emits both, full name kept for AT) and keeps them only when they buy a column; legend container query 680->450; chips tighter
+1100-1399 (one row from ~1240). CLS reservations re-measured (empty legend 116/35 -> 160 stacked / 85 at 450-599 / 60 from 600
+container px; gantt +232 under 466 px). CLS after (fresh load): 390 0.127->0.096, 1100 0.053->0.044, 1280 0.020->0.015,
+1440 0.033->0.025, 1920 0.029->0.025; 820 0.45 is an existing below-the-fold scorecard shift (not touched).
+Tests: new e2e test_first_screen_budget_at_laptop_widths (1280x800, 1366x768). Full chromium e2e on the preview with live data:
+217 passed / 1 skipped / 0 failed (incl. trackexpiry). Units (EWB_DATA_PREP_DIR set): 700 passed / 25 failed / 4 skipped; 23 are
+tests/test_lane_guard.py refusing because the preview tree's data/ symlinks to the live tree (36/36 pass from a tree with its own
+data/), 2 are the known box-dependent test_cold_snap severity + test_imerg s3_credentials. Browser check 1280/1440/390 light+dark
+(+1100, 1366): no clipped labels, no overflow, no console errors. Screenshots: notes/screenshots/firstscreen-midwidth/ (gitignored).
+Preview :8065 unit stopped and /opt/ewb-preview-fs* removed.
