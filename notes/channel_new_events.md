@@ -4158,3 +4158,9 @@ Pi note: the first tests child ended after ~2 min with nothing written (its cont
 briefs with the signatures inline, both passed. Local run: 81 passed (flood suites + lane guard) on the box.
 Backfill: `ops/lane_backfill.sh flood` from /opt/ewb-preview-flood-lane (guard ok, weekly inactive) started 13:27 UTC, 80 pairs (40 events x graphcast,
 graphcast_gfs); 39 part files in the first 6 min. Not live, not dev, nothing deployed or merged.
+
+## [scoring-wp4] 2026-11-21 14:39 UTC — WP4 flood DONE, PR to develop opening
+
+See notes/channel_scoring.md [wp4] for the numbers: 36,388 flood rows (graphcast + graphcast_gfs, 40 events), backfill 10-11 min / 16.1 GB pool peak on the
+private tree /opt/ewb-preview-flood-lane (port 8066; the unit ewb-preview-fl-web is left running for the owner's review), units 741 passed / 2 known failures,
+full e2e 251 passed / 1 skipped. Not merged, not deployed.

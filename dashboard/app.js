@@ -203,7 +203,9 @@ function floodLaneNote(etype, n) {
     + 'FSS compares exceedance fractions in 3x3 / 5x5 cell neighbourhoods; area bias and '
     + 'peak error are forecast minus truth in mm over the event footprint (negative = '
     + 'forecast too dry); scores are conditional on a truth exceedance existing. '
-    + 'No baseline model scores flood, so cells carry no skill colour. ';
+    + 'No baseline model scores flood, so cells carry no skill colour. '
+    + 'The ECMWF-initialised graphcast has no 1 d cell (its first 6 h of precipitation are fill); '
+    + 'graphcast_gfs inits missing from the store are counted as no data, not rescued from a 12Z run. ';
   s += (Array.isArray(fs.unsupported_models) && fs.unsupported_models.length)
     ? `No flood rows for ${fs.unsupported_models.join(', ')}.`
     : 'Every other model carries no precipitation in the store.';
