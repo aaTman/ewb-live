@@ -482,7 +482,9 @@ def score_one(w: Window, p: Published) -> dict:
     grid_km2 = float(w.cell_area[boxmask].sum())
     return {
         "id": p.id, "parent": p.spell.id, "start": str(p.spell.start),
-        "end": str(w.dates[p.spell.i1]), "days": p.spell.i1 - p.spell.i0 + 1,
+        "end": str(w.dates[p.spell.i1]),
+        "qualified": str(p.spell.qualified) if p.spell.qualified else None,
+        "days": p.spell.i1 - p.spell.i0 + 1,
         "ongoing": p.spell.ongoing,
         "bbox": [float(w.lats[p.box.i0]), float(w.lats[p.box.i1]),
                  float(w.lons[p.box.j0]), float(w.lons[p.box.j1])],
@@ -955,19 +957,22 @@ def published_metrics(path: Path, w: Window) -> dict:
     for d in json.loads(path.read_text()):
         if d["event_type"] != w.hazard:
             continue
+        det = d.get("details") or {}
         st = dt.date.fromisoformat(d["start"][:10])
         en = dt.date.fromisoformat(d["end"][:10]) - dt.timedelta(days=1)
         if en < w.dates[0] or st > w.dates[-1]:
             continue
         i0 = max(0, next(i for i, x in enumerate(w.dates) if x >= st))
         i1 = next((i for i, x in enumerate(w.dates) if x >= en), len(w.dates) - 1)
-        spell = Spell(w.hazard, d["id"], st, en + dt.timedelta(days=1), i0, i1,
+        spell = Spell(w.hazard, d["id"], st, en + dt.timedelta(days=1),
+                      dt.date.fromisoformat(str(det.get("qualified_date")
+                                                or st)), i0, i1,
                       box_from_bbox(w, tuple(d["bbox"])),
                       float(d["details"].get("peak_area_km2", 0.0)),
                       bool(d["details"].get("ongoing")))
         m = score_one(w, Published(spell, spell.box))
         m["days_clamped"] = st < w.dates[0] or en > w.dates[-1]
-        m["merged_at_curation"] = bool(d["details"].get("merged_from"))
+        m["merged_at_curation"] = bool(det.get("merged_from"))
         rows.append(m)
     agg = aggregate(rows, 0.0)
     agg["n_merged_events"] = sum(1 for r in rows if r["merged_at_curation"])
@@ -987,6 +992,9 @@ def main() -> int:
     ap.add_argument("--strategies", default="",
                     help="comma list of strategy names (default: all)")
     ap.add_argument("--selfcheck", action="store_true")
+    ap.add_argument("--emit-events", default="",
+                    help="write the C5 stage as an events.json-shaped file "
+                         "(for scripts/review/hb05_qualify_fallbacks.py)")
     a = ap.parse_args()
 
     params0 = Params()
@@ -1035,6 +1043,22 @@ def main() -> int:
                   f"fill_med={p['fill_med']:.2f} "
                   f"box_med={p['box_km2_med'] / 1e6:6.2f}M "
                   f"box_max={p['box_km2_max'] / 1e6:6.2f}M", flush=True)
+        if a.emit_events and "C5_core_from_qualification" in entry:
+            # the qualification scan only needs id/type/dates/bbox/qualified_date,
+            # so the C5 rows can be replayed through hb05 without a full scan
+            emitted = [{"id": r["id"], "event_type": hazard,
+                        "start": f"{r['start']}T00:00:00Z",
+                        "end": f"{(dt.date.fromisoformat(r['end']) + dt.timedelta(days=1)):%Y-%m-%dT00:00:00Z}",
+                        "bbox": r["bbox"],
+                        "details": {"qualified_date": r["qualified"],
+                                    "peak_area_km2": r["peak_km2"],
+                                    "ongoing": r["ongoing"]}}
+                       for r in entry["C5_core_from_qualification"]["rows"]]
+            out = Path(a.emit_events).with_name(
+                f"{Path(a.emit_events).name}_{hazard}.json")
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(emitted, indent=1))
+            print(f"  wrote {out} ({len(emitted)} events)", flush=True)
         path = out_prefix.with_name(f"{out_prefix.name}_{hazard}.json")
         path.write_text(json.dumps(entry, indent=1, default=str))
         summary["hazards"][hazard] = {
