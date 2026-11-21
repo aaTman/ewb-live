@@ -324,20 +324,20 @@ def test_about_listing_agrees_with_the_scorer():
 
 
 def test_page_copy_matches_the_rules():
+    import re
     from pathlib import Path
 
     from ewb_live.scoring import tc
 
     root = Path(__file__).resolve().parents[1] / "dashboard"
-    html = (root / "index.html").read_text()
+    html = re.sub(r"\s+", " ", (root / "index.html").read_text().replace("&nbsp;", " "))
     js = (root / "app.js").read_text()
-    assert f"{tc.MIN_WIND_KT:.0f}&nbsp;kt" in html and "ahead" in html and "right" in html
-    assert "2&nbsp;km/h" in html and tv.STATIONARY_KMH == 2.0
-    assert "tropical_cyclone:   { label" in js
-    tc_meta = js[js.index("tropical_cyclone:   { label"):js.index("flood:              { label")]
-    assert "noScores" not in tc_meta                       # the lane stops showing 'Not scored'
-    assert "tropical_cyclone: [24, 48, 72, 96, 120]" in js  # D8 lead columns
-    assert "MISS_GREY = 0.5" in js
-    import re
-
-    assert re.search(r"^function skillRanked\(", js, re.M)           # top level, not inside a block
+    # copy: the rules the scorer implements, tolerant of wording / whitespace changes
+    assert re.search(rf"{tc.MIN_WIND_KT:.0f} ?kt", html) and re.search(r"\bahead\b", html) and re.search(r"\bright\b", html)
+    assert re.search(rf"{tv.STATIONARY_KMH:.0f} ?km/h", html)
+    # the TC lane is registered without noScores, with the D8 leads and the 50 % grey rule
+    m = re.search(r"tropical_cyclone:\s*\{\s*label.*?\},\s*\n\s*flood:", js, re.S)
+    assert m and "noScores" not in m.group(0)
+    assert re.search(r"TYPE_LEADS\s*=\s*\{\s*tropical_cyclone:\s*\[24,\s*48,\s*72,\s*96,\s*120\]", js)
+    assert re.search(r"MISS_GREY\s*=\s*0\.5", js)
+    assert re.search(r"^function skillRanked\(", js, re.M) and re.search(r"^function missGreyed\(", js, re.M)

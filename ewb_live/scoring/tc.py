@@ -21,6 +21,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import os
+import re
 import time
 from typing import Callable
 
@@ -106,7 +107,8 @@ class NoData(FileNotFoundError):
 
 _TRANSIENT = ("StorageError", "InternalError", "SlowDown", "Timeout", "timed out", "Connection",
               "Throttl", "ServiceUnavailable", "temporarily", "Too many open files", "reset by peer",
-              "RequestTimeout", "BadDigest", "IncompleteRead", "503", "500")
+              "RequestTimeout", "BadDigest", "IncompleteRead")
+_TRANSIENT_STATUS = re.compile(r"\b(?:HTTP|status(?: code)?|code)[ :=]*5\d\d\b", re.I)   # a 5xx, not any "500" in a message
 
 
 def is_transient(exc: BaseException) -> bool:
@@ -116,7 +118,7 @@ def is_transient(exc: BaseException) -> bool:
     if isinstance(exc, (TimeoutError, ConnectionError)):
         return True
     text = f"{type(exc).__name__} {exc}"
-    return any(t in text for t in _TRANSIENT)
+    return any(t in text for t in _TRANSIENT) or bool(_TRANSIENT_STATUS.search(text))
 
 
 def retry_transient(fn: Callable, *, tries: int = 4, base_s: float = 2.0,
@@ -247,7 +249,7 @@ def score_init(track: tv.ObservedTrack, model: str, init: dt.datetime, leads: li
             fld, lat, lon, float(track.lat[i0]), float(track.lon[i0]), PARAMS)
         rec["samples"] = tv.verify_init(track, init, leads, offset, flat, flon, fp, ok, nod)
         rec.update(offset_h=offset, read_s=round(t1 - t0, 3), track_s=round(time.perf_counter() - t1, 3))
-    except FileNotFoundError as exc:           # NoData and its stdlib parent
+    except (NoData, KeyError) as exc:          # a store gap; any other FileNotFoundError is a read error
         rec.update(status="no_data", reason=str(exc)[:160])
     except Exception as exc:  # noqa: BLE001 - a read failure is a measured outcome, not a crash
         rec.update(status="error", reason=f"{type(exc).__name__}: {str(exc)[:160]}")

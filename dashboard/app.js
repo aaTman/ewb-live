@@ -234,6 +234,13 @@ function leadsForType(etype, leads) {
 /* Track lanes rank models on the track error only: the signed components are bias-to-zero
    (a ratio of tiny biases is not a skill) and the miss rate is read beside the error (D5). */
 function skillRanked(etype, met) { return !TYPE_LEADS[etype] || met === 'TrackPositionError'; }
+/* D5: a track-error cell whose model lost more than half its samples at that lead is greyed, and a
+   greyed cell feeds neither the verdict banner, the model order nor the Mean colour. */
+function missGreyed(idx, etype, met, lead, model) {
+  if (!TYPE_LEADS[etype] || met === 'TrackMiss') return false;
+  const mc = (idx.get(`${etype}|TrackMiss|${lead}`) || {})[model];
+  return !!(mc && Number.isFinite(mc.mean) && mc.mean > MISS_GREY);
+}
 /* D5: a cell whose miss rate is above this is greyed (its error rests on the storms the model kept) */
 const MISS_GREY = 0.5;
 const TRACK_METRIC_ORDER = ['TrackPositionError', 'TrackMiss', 'AlongTrackError', 'CrossTrackError', 'CentralPressureError'];
@@ -1139,6 +1146,7 @@ function renderVerdictStrip(idx) {
           if (m === B) continue;
           const cell = g[m];
           if (!cell || !Number.isFinite(cell.rel)) continue;
+          if (missGreyed(idx, etype, met, lead, m)) continue;   // >50% misses: not a ranking input
           rels[m] = cell.rel;
           acc[m].s += cell.rel; acc[m].n += 1;
         }
@@ -1163,7 +1171,8 @@ function renderVerdictStrip(idx) {
       const mm = (m) => meanVisible(idx, etype, 'TrackMiss', m, lds);
       const a = mm(leader), b = mm(B);
       if (a !== null && b !== null) {
-        missNote = ` \u00b7 ranks track error only \u00b7 misses ${Math.round(a * 100)}% vs ${Math.round(b * 100)}%`;
+        missNote = ` \u00b7 ranks track error only \u00b7 misses ${Math.round(a * 100)}% vs ${Math.round(b * 100)}%`
+          + (a > MISS_GREY ? ` (>${Math.round(MISS_GREY * 100)}% misses)` : '');
       } else missNote = ' \u00b7 ranks track error only';
     }
     parts.push({
@@ -1244,6 +1253,7 @@ function renderScorecard() {
     const h = hStr === 'null' ? null : +hStr;
     if (h !== null && !cols.get(met).some((c) => c.kind === 'lead' && c.lead === h)) continue;
     for (const m of Object.keys(g)) {
+      if (missGreyed(idx, e2, met, h, m)) continue;
       if (m !== B && Number.isFinite(g[m].rel)) { relSums[m].s += g[m].rel; relSums[m].n += 1; }
     }
   }
@@ -1351,19 +1361,23 @@ function renderScorecard() {
       tr.appendChild(el('td', 'model-col',
         `<span class="dot" style="--c:${modelColor(model, colorIdx)}"></span>${esc(model)}`));
       for (const [met, columns] of cols) {
-        let s = 0, n = 0, any = false;
+        let s = 0, n = 0, any = false, nCells = 0, nGrey = 0;
         for (const c of columns) {
           if (c.kind === 'mean') {
             const mv = meanVisible(idx, etype, met, model, leadsForType(etype, leads));
             const mN = meanSample(idx, etype, met, model, leadsForType(etype, leads));
             const mSmall = mN !== null && mN < minSample();
-            const meanTd = el('td', 'cell mean' + (mSmall ? ' small-n' : ''),
+            const allGrey = nCells > 0 && nGrey === nCells;       // every contributing lead is >50% misses
+            const meanTd = el('td', 'cell mean' + (mSmall ? ' small-n' : '') + (allGrey ? ' miss-grey' : ''),
               mv === null ? '—' : fmtVal(met, mv));
             meanTd.dataset.model = model;
-            if (n) meanTd.style.background = model === B ? '' : cellColor(s / n);
+            if (n && !allGrey) meanTd.style.background = model === B ? '' : cellColor(s / n);
+            if (allGrey) {
+              meanTd.title = 'miss rate > 50% at every lead';
+            }
             if (mSmall) anySmallN = true;
             attachTip(meanTd, etype, met, { kind: 'mean', mean: mv, rel: n ? s / n : null,
-              nLeads: n, n: mN, small: mSmall });
+              nLeads: n, n: mN, small: mSmall, greyed: allGrey });
             tr.appendChild(meanTd);
             continue;
           }
@@ -1375,17 +1389,20 @@ function renderScorecard() {
             continue;
           }
           any = true;
-          if (Number.isFinite(cell.rel)) { s += cell.rel; n += 1; }
+          /* D5: a track-error cell whose miss rate is above 50 % is greyed, not coloured by skill,
+             and does not feed the Mean colour */
+          const greyed = missGreyed(idx, etype, met, lead, model);
+          nCells += 1; nGrey += greyed ? 1 : 0;
+          if (Number.isFinite(cell.rel) && !greyed) { s += cell.rel; n += 1; }
           const small = Number.isFinite(cell.n) && cell.n < minSample();
           if (small) anySmallN = true;
-          /* D5: a track-error cell whose miss rate is above 50 % is greyed, not coloured by skill */
-          const missCell = TYPE_LEADS[etype] && met !== 'TrackMiss'
-            ? (idx.get(`${etype}|TrackMiss|${lead}`) || {})[model] : null;
-          const greyed = !!(missCell && Number.isFinite(missCell.mean) && missCell.mean > MISS_GREY);
           const td = el('td', 'cell' + (model === B ? ' baseline' : '')
             + (small ? ' small-n' : '') + (greyed ? ' miss-grey' : ''), fmtVal(met, cell.mean));
           td.dataset.model = model;
           td.style.background = model === B || greyed ? '' : cellColor(cell.rel);
+          if (greyed) {
+            td.title = 'miss rate > 50%';
+          }
           attachTip(td, etype, met, { kind: c.kind, lead, mean: cell.mean, rel: cell.rel,
             n: cell.n, ns: cell.ns, lo: cell.lo, hi: cell.hi, small, greyed });
           tr.appendChild(td);
@@ -1591,6 +1608,7 @@ function attachTip(td, etype, met, c) {
   const parts = [td.dataset.model || TYPE_META[etype].short, mm.label,
     `${fmtVal(met, c.mean)}${mm.units ? ' ' + mm.units : ''}`];
   if (Number.isFinite(c.n) && c.kind !== 'mean') parts.push('n ' + c.n);
+  if (c.greyed) parts.push('miss rate > 50%');
   td.setAttribute('aria-label', parts.join(', '));
   if (!touchTipGuard) {
     touchTipGuard = true;   // tap outside any cell dismisses (touch)

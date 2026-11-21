@@ -678,6 +678,21 @@ rows exist on the box).
   `notes/scoring_design.md` sections 3 and 6 (formulas in 3.4, D1-D10 are decided), wire the pipeline and
   dashboard, add `ops/lane_backfill.sh` with the R1 weekly-overlap guard, test as listed, backfill via the
   guard, PR to develop."
+* **Known limitations of the WP1 TC lane** (independent review of PR #16; documented, not changed):
+  * *Fingerprint.* A part file is keyed by `(event, model, fingerprint, truth)` and the fingerprint is
+    `start|end|bbox`. A best-track revision inside the same window (changed fixes, same start / end / bbox)
+    reuses the old part files until the storm's window changes or `--force`. IBTrACS revisions after the
+    first days are rare but not zero.
+  * *Search window.* The MSLP read window is the observed track +/- 15 degrees from the init. A forecast low further
+    away than that is clipped out of the field and shows up as a miss, not as a large position error, so the largest
+    errors are truncated (as EWB's 5 degree mask truncates them, at a larger radius).
+  * *ECMWF lead drop.* `ecmwf.open_forecast` drops a lead whose index or object cannot be fetched without an error
+    (`_read_lead` returns None). Such leads become "no data" samples of `ifs_hres`, so the baseline's sample count can
+    shrink silently (8563 `ifs_hres` samples vs 8504 graphcast in the first backfill); the common-set numbers in
+    `notes/scoring_tc_miss_rate.md` are unaffected, the per-cell `n` is.
+  * *10-day skill-vs-lead.* The "Skill vs lead" charts show every stored lead out to 240 h; beyond about 120 h few storms
+    have a verifying fix, so the curves are sparse (miss rates reach 1.0 on a handful of samples). The table is limited to
+    24-120 h (D8).
 
 ### 8.4 WP2: MLC lane
 

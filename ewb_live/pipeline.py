@@ -587,11 +587,34 @@ def _write_sidecar(event_id: str, model: str, status: dict) -> None:
     _atomic_write(path, lambda f: json.dump(cur, f))
 
 
+LANE_TERMINAL_STATUSES = ("no_data", "empty", "unsupported")
+
+
+def lane_terminal(status: dict, event, truth: str) -> bool:
+    """A lane pair that is documented zero-row for THIS fingerprint + truth is final: normal runs
+    must not respawn the pool for it (an extended / revised storm changes the fingerprint)."""
+    return (isinstance(status, dict) and status.get("status") in LANE_TERMINAL_STATUSES
+            and status.get("fp") == f"{fingerprint(event)}|{truth}")
+
+
 def lane_pairs(events, models, truth_of, force: bool = False) -> list:
     """``[(event, model)]`` of a track lane that have no part file for the current
-    fingerprint / truth (so a rerun after a SIGTERM resumes where it stopped)."""
-    return [(e, m) for e in events for m in models
-            if force or not _part_path(e, m, truth_of(e)).exists()]
+    fingerprint / truth and are not final documented zero-row pairs (so a rerun after a
+    SIGTERM resumes where it stopped)."""
+    out = []
+    for e in events:
+        side: dict = {}
+        sp = RESULTS / "pair_sidecar" / f"{e.id}.status.json"
+        if sp.exists() and not force:
+            try:
+                side = json.loads(sp.read_text())
+            except Exception:  # noqa: BLE001 - torn sidecar: treat as unknown
+                side = {}
+        for m in models:
+            if force or not (_part_path(e, m, truth_of(e)).exists()
+                             or lane_terminal(side.get(m), e, truth_of(e))):
+                out.append((e, m))
+    return out
 
 
 def run_lanes(pairs: list, *, lane_key: str, truth_of, on_pair=None, **pool_kw) -> dict:
@@ -859,12 +882,14 @@ def run(
             eid = re.sub(r"_c\d+$", "", eid)  # model-chunk tag, not part of id
             for model, st in json.loads(sc.read_text()).items():
                 prev = pair_status.get(f"{eid}|{model}")
-                if ("fp" not in st and isinstance(prev, dict) and prev.get("fp")
+                if (publish_only and "fp" not in st and isinstance(prev, dict) and prev.get("fp")
                         and prev.get("status") == st.get("status")):
                     # EWB-job sidecars carry no fp (the parent stamps it at collect time):
                     # a publish-only fold-in must not strip the stamp it already proved,
                     # or every documented zero-row pair turns into a blocker. A changed
-                    # fingerprint still mismatches the carried stamp, so it rescores.
+                    # fingerprint still mismatches the carried stamp. Publish-only runs
+                    # ONLY: a normal run keeps the old behaviour (fp-less entries rescore
+                    # once and re-stamp).
                     st = {**st, "fp": prev["fp"]}
                 pair_status[f"{eid}|{model}"] = st
         except Exception:  # noqa: BLE001
@@ -1306,6 +1331,8 @@ def run(
                 if p.exists():                         # interim part: reuse, do not rescore
                     new_frames.append(pd.read_parquet(p))
                     continue
+                if lane_terminal(_pair(e.id, m), e, truths[e.id]):
+                    continue                           # documented no_data / empty for this fingerprint
                 pairs.append((e, m))
         if pairs:
             last_pub = [_t.monotonic()]

@@ -6,6 +6,7 @@ position plus a fixed east offset, so position / along / cross errors are known.
 import concurrent.futures as cf
 import datetime as dt
 import json
+import os
 import threading
 
 import numpy as np
@@ -389,28 +390,94 @@ def test_publish_only_pair_coverage_is_decidable_for_the_tc_lane(results_tree, f
     assert {r["metric"] for r in card} == set(tv.TRACK_METRICS)
 
 
-def test_sidecar_foldin_keeps_a_proven_fp_for_the_same_status(results_tree, monkeypatch):
-    """EWB-job sidecars have no fp; a publish-only fold-in must not strip the stamp (pair_coverage)."""
-    ev = _event()
+def _heat_event():
+    """An EWB-lane event (NOT a lane-pool type): its pairs are never restamped by the lane block."""
+    return Event(id="heat0000001", event_type="heat_wave", title="Heat 2026-09-01 to 2026-09-04",
+                 start=T0, end=T0 + dt.timedelta(days=3), bbox=(10.0, 20.0, 0.0, 10.0), peak_value=5.0, details={})
+
+
+def _fold_setup(results_tree, monkeypatch, *, prev, sidecar):
+    """heat_wave + model aigfs, one documented pair: pair_status.json says ``prev``, the EWB-job
+    sidecar says ``sidecar`` (no fp, as the workers write it)."""
+    ev = _heat_event()
     res = results_tree / "results"
     (res / "events_selected.json").write_text(json.dumps([ev.to_dict()]))
-    fp = f"{pipeline.fingerprint(ev)}|ibtracs"
-    (res / "pair_status.json").write_text(json.dumps(
-        {f"{ev.id}|aigfs": {"status": "unsupported", "rows": 0, "reason": "x", "fp": fp}}))
-    (res / "pair_sidecar").mkdir()
-    (res / "pair_sidecar" / f"{ev.id}.status.json").write_text(json.dumps(
-        {"aigfs": {"status": "unsupported", "rows": 0, "reason": "x"}}))     # no fp, like an EWB job's
+    fp = f"{pipeline.fingerprint(ev)}|era5_arco"
+    if prev is not None:
+        (res / "pair_status.json").write_text(json.dumps(
+            {f"{ev.id}|aigfs": {**prev, "fp": fp if prev.get("fp") == "OK" else prev.get("fp")}
+             if "fp" in prev else prev}))
+    (res / "pair_sidecar").mkdir(exist_ok=True)
+    (res / "pair_sidecar" / f"{ev.id}.status.json").write_text(json.dumps({"aigfs": sidecar}))
     from ewb_live import sources
     from ewb_live.scoring import truth as truth_mod
 
     monkeypatch.setattr(sources, "list_models", lambda: ["aigfs"])
-    monkeypatch.setattr(truth_mod, "probe_arco_cutoff", lambda: dt.datetime(2026, 11, 1))
+    monkeypatch.setattr(truth_mod, "probe_arco_cutoff", lambda: dt.datetime(2030, 1, 1))
     for name, val in (("_ibtracs_meta", lambda *a, **k: None), ("_lane_status_meta", lambda: {}),
                       ("_clim_meta", lambda: {}), ("_sel_thresholds", lambda: {})):
         monkeypatch.setattr(pipeline, name, val)
+    return ev, res, fp
+
+
+DOC = {"status": "unsupported", "rows": 0, "reason": "no 2 m temperature"}
+
+
+def _publish_only_blockers(res):
     assert pipeline.run(days=90, publish_only=True) == 0
-    ps = json.loads((res / "pair_status.json").read_text())
-    assert ps[f"{ev.id}|aigfs"]["fp"] == fp
+    return json.loads((res / "meta.json").read_text())["pair_coverage"]
+
+
+def test_publish_only_foldin_keeps_a_proven_fp_for_the_same_status(results_tree, monkeypatch):
+    """Positive: an EWB-job sidecar has no fp; the publish-only fold-in carries the stamp the pair already
+    proved, so the documented zero-row pair is NOT a blocker (full_run_complete stays decidable)."""
+    ev, res, fp = _fold_setup(results_tree, monkeypatch, prev={**DOC, "fp": "OK"}, sidecar=DOC)
+    cov = _publish_only_blockers(res)
+    assert cov["unattempted_or_failed"] == [] and cov["documented_zero_rows"] == 1
+    assert json.loads((res / "pair_status.json").read_text())[f"{ev.id}|aigfs"]["fp"] == fp
+
+
+def test_publish_only_foldin_negatives_stay_blockers(results_tree, monkeypatch):
+    # stale fp: the event changed since the stamp was proven -> must still be a blocker
+    _, res, _ = _fold_setup(results_tree, monkeypatch, prev={**DOC, "fp": "2020-01-01T00|old|era5_arco"}, sidecar=DOC)
+    assert len(_publish_only_blockers(res)["unattempted_or_failed"]) == 1
+
+
+def test_publish_only_foldin_negative_status_differs(results_tree, monkeypatch):
+    _, res, _ = _fold_setup(results_tree, monkeypatch, prev={**DOC, "fp": "OK"},
+                            sidecar={"status": "no_data", "rows": 0, "reason": "no init"})
+    assert len(_publish_only_blockers(res)["unattempted_or_failed"]) == 1
+
+
+def test_publish_only_foldin_negative_previous_entry_has_no_fp(results_tree, monkeypatch):
+    _, res, _ = _fold_setup(results_tree, monkeypatch, prev=dict(DOC), sidecar=DOC)
+    assert len(_publish_only_blockers(res)["unattempted_or_failed"]) == 1
+    _, res2, _ = _fold_setup(results_tree, monkeypatch, prev=None, sidecar=DOC)      # no previous entry at all
+    (res2 / "pair_status.json").unlink(missing_ok=True)
+    assert len(_publish_only_blockers(res2)["unattempted_or_failed"]) == 1
+
+
+def test_normal_run_still_reschedules_fp_less_documented_pairs(results_tree, monkeypatch):
+    """The carry-over is publish-only: a normal run behaves as before (an fp-less unsupported pair
+    re-enters scoring once and re-stamps), even though pair_status.json holds a proven fp."""
+    ev, res, fp = _fold_setup(results_tree, monkeypatch, prev={**DOC, "fp": "OK"}, sidecar=DOC)
+    from ewb_live import events as events_pkg
+    from ewb_live.events import qualification, validate
+    from ewb_live.scoring import truth_mirror
+
+    monkeypatch.setattr(truth_mirror, "ensure_mirror", lambda **k: None)
+    monkeypatch.setattr(events_pkg, "detect_events", lambda *a, **k: [ev])
+    monkeypatch.setattr(validate, "validate_event", lambda e: [])
+    monkeypatch.setattr(qualification, "qualify_events", lambda evs: None)
+    spawned = []
+
+    def fake_worker(jobfile, logfile, timeout):
+        spawned.append(json.loads(jobfile.read_text())["models"])
+        raise RuntimeError("stop here")
+
+    monkeypatch.setattr(pipeline, "_run_worker", fake_worker)
+    pipeline.run(days=90, top_n=15)
+    assert spawned and spawned[0] == ["aigfs"], spawned
 
 
 def test_full_run_scores_the_tc_lane_through_the_pool_block(results_tree, fake_lane, monkeypatch):
@@ -453,3 +520,144 @@ def test_full_run_scores_the_tc_lane_through_the_pool_block(results_tree, fake_l
     # second run: nothing left to score (parts + cached rows), still complete
     monkeypatch.setattr(pipeline, "run_lanes", lambda pairs, **kw: pytest.fail("rescored a finished pair"))
     assert pipeline.run(days=90, top_n=15) == 0
+
+
+# ------------------------------------------------- review follow-ups (PR #16)
+def test_only_nodata_and_keyerror_are_store_gaps_other_filenotfound_is_a_read_error():
+    ev = _event()
+    plan = tc.plan_for(ev)
+    init, leads = plan["verified"][0]
+
+    def raiser(exc):
+        def reader(model, init, leads, win, counter=None):
+            raise exc
+        return reader
+
+    assert tc.score_init(plan["track"], "graphcast", init, leads, raiser(tc.NoData("gap")))["status"] == "no_data"
+    assert tc.score_init(plan["track"], "graphcast", init, leads, raiser(KeyError("x")))["status"] == "no_data"
+    rec = tc.score_init(plan["track"], "graphcast", init, leads, raiser(FileNotFoundError("/cache/x gone")))
+    assert rec["status"] == "error" and "FileNotFoundError" in rec["reason"]        # retried, never silently no_data
+
+
+def test_transient_matching_uses_status_codes_not_bare_numbers():
+    assert tc.is_transient(OSError("HTTP 503 Service Unavailable")) and tc.is_transient(OSError("status code: 500"))
+    assert not tc.is_transient(ValueError("window of 500 points exceeds 503 cells"))
+
+
+def test_lane_terminal_pairs_are_final_only_for_the_same_fingerprint(results_tree):
+    ev = _event()
+    fp = f"{pipeline.fingerprint(ev)}|ibtracs"
+    assert pipeline.lane_terminal({"status": "no_data", "fp": fp}, ev, "ibtracs")
+    assert pipeline.lane_terminal({"status": "empty", "fp": fp}, ev, "ibtracs")
+    assert not pipeline.lane_terminal({"status": "read_error", "fp": fp}, ev, "ibtracs")      # retriable
+    assert not pipeline.lane_terminal({"status": "no_data", "fp": "old|ibtracs"}, ev, "ibtracs")
+    assert not pipeline.lane_terminal({"status": "no_data"}, ev, "ibtracs")
+    assert not pipeline.lane_terminal(None, ev, "ibtracs")
+    # lane_pairs (the backfill CLI) skips them too, from the sidecar
+    (results_tree / "results" / "pair_sidecar").mkdir()
+    (results_tree / "results" / "pair_sidecar" / f"{ev.id}.status.json").write_text(
+        json.dumps({"graphcast": {"status": "no_data", "rows": 0, "fp": fp}}))
+    pairs = pipeline.lane_pairs([ev], MODELS, lambda e: "ibtracs")
+    assert [m for _, m in pairs] == ["aurora"]
+    assert len(pipeline.lane_pairs([ev], MODELS, lambda e: "ibtracs", force=True)) == 2
+
+
+def test_normal_run_does_not_respawn_the_pool_for_terminal_lane_pairs(results_tree, fake_lane, monkeypatch):
+    ev, _ = fake_lane
+    res = results_tree / "results"
+    fp = f"{pipeline.fingerprint(ev)}|ibtracs"
+    (res / "pair_status.json").write_text(json.dumps(
+        {f"{ev.id}|{m}": {"status": "no_data", "rows": 0, "reason": "x", "fp": fp} for m in MODELS}))
+    from ewb_live import events as events_pkg, sources
+    from ewb_live.events import qualification, validate
+    from ewb_live.scoring import truth as truth_mod, truth_mirror
+
+    monkeypatch.setattr(sources, "list_models", lambda: MODELS)
+    monkeypatch.setattr(truth_mod, "probe_arco_cutoff", lambda: dt.datetime(2026, 11, 1))
+    monkeypatch.setattr(truth_mirror, "ensure_mirror", lambda **k: None)
+    monkeypatch.setattr(events_pkg, "detect_events", lambda *a, **k: [ev])
+    monkeypatch.setattr(validate, "validate_event", lambda e: [])
+    monkeypatch.setattr(qualification, "qualify_events", lambda evs: None)
+    for name, val in (("_ibtracs_meta", lambda *a, **k: None), ("_lane_status_meta", lambda: {}),
+                      ("_clim_meta", lambda: {}), ("_sel_thresholds", lambda: {})):
+        monkeypatch.setattr(pipeline, name, val)
+    monkeypatch.setattr(pipeline, "run_lanes", lambda pairs, **kw: pytest.fail("pool respawned for terminal pairs"))
+    assert pipeline.run(days=90, top_n=15) == 0
+    assert json.loads((res / "meta.json").read_text())["pair_coverage"]["documented_zero_rows"] == 2
+
+
+# --- refusing the live tree (lane_pool CLI)
+def _cli_args(results, parts):
+    import types
+
+    return types.SimpleNamespace(results=str(results), parts=str(parts), lane="tc", models=None, max_events=0,
+                                 workers=1, recycle=30, dask_threads=1, rss_cap_gb=40.0, force=False,
+                                 stats_json=None, days=90, no_publish=True)
+
+
+def test_cli_refuses_results_or_parts_under_the_live_tree(tmp_path, monkeypatch):
+    live = tmp_path / "live"
+    (live / "data" / "results").mkdir(parents=True)
+    (live / "data" / "cache" / "score_parts").mkdir(parents=True)
+    priv = tmp_path / "priv"
+    priv.mkdir()
+    monkeypatch.setattr(lane_pool, "LIVE_ROOT", live)
+    monkeypatch.chdir(priv)
+    monkeypatch.delenv("LANE_BACKFILL_ALLOW_LIVE", raising=False)
+    assert lane_pool.run_lane_cli(_cli_args(live / "data" / "results", priv)) == lane_pool.EXIT_REFUSED
+    assert lane_pool.run_lane_cli(_cli_args(priv, live / "data" / "cache" / "score_parts")) == lane_pool.EXIT_REFUSED
+    (priv / "alias").symlink_to(live / "data" / "results")                          # a symlink into live
+    assert lane_pool.run_lane_cli(_cli_args(priv / "alias", priv)) == lane_pool.EXIT_REFUSED
+    monkeypatch.chdir(live)                                                          # running from the live tree
+    assert lane_pool.run_lane_cli(_cli_args(priv, priv)) == lane_pool.EXIT_REFUSED
+    assert lane_pool.refuse_live_tree(priv, priv) is not None
+    monkeypatch.chdir(priv)
+    assert lane_pool.refuse_live_tree(priv, priv) is None
+    monkeypatch.setenv("LANE_BACKFILL_ALLOW_LIVE", "1")
+    assert lane_pool.refuse_live_tree(live / "data" / "results", priv) is None
+
+
+# --- a worker that dies (OOM kill) must not hang or lose completed pairs
+@pytest.fixture
+def dying_lane(monkeypatch, tmp_path):
+    ev = _event()
+    kill_marker = tmp_path / "killed_once"
+    holder = {"mode": "always"}
+
+    def init_job(track, model, init, leads, reader=None):
+        if model == "aurora" and (holder["mode"] == "always" or not kill_marker.exists()):
+            kill_marker.write_text("x")
+            os._exit(137)                                # what the OOM killer does to a worker
+        return tc.score_init(track, model, init, leads, make_reader(ev))
+
+    lane = lane_pool.Lane(event_type="tropical_cyclone", truth="ibtracs", models=lane_pool.tc_models,
+                          plan=tc.plan_for, init_job=init_job, finalize=tc.finalize_pair, label="tc")
+    monkeypatch.setitem(lane_pool.LANES, "tc", lane)
+    return ev, holder
+
+
+def _fork_pool(n=2):
+    import multiprocessing as mp
+
+    return lambda: cf.ProcessPoolExecutor(max_workers=n, mp_context=mp.get_context("fork"))
+
+
+def test_pool_survives_one_killed_worker_by_rebuilding(dying_lane):
+    ev, holder = dying_lane
+    holder["mode"] = "once"
+    done = {}
+    stats = lane_pool.run_pairs("tc", [(ev, m) for m in MODELS], lambda e, m, df, st: done.update({m: st}),
+                                workers=2, executor_factory=_fork_pool(), poll_s=0.05)
+    assert stats["pool_rebuilds"] == 1 and stats["errors"] >= 1 and stats["abort"] is None
+    assert set(done) == set(MODELS) and all(s["status"] == "scored" for s in done.values())   # nothing lost
+
+
+def test_pool_that_keeps_dying_stops_cleanly_marks_abort_and_keeps_completed_pairs(dying_lane):
+    ev, _ = dying_lane
+    done = {}
+    stats = lane_pool.run_pairs("tc", [(ev, "graphcast"), (ev, "aurora")], lambda e, m, df, st: done.update({m: st}),
+                                workers=1, executor_factory=_fork_pool(1), poll_s=0.05)
+    assert stats["abort"] and "worker pool broken" in stats["abort"] and stats["stopped"]
+    assert stats["pool_rebuilds"] == lane_pool.MAX_POOL_REBUILDS
+    assert "aurora" not in done                         # never half-written: the pair stays pending for the next run
+    assert stats["unfinished_pairs"] >= 1

@@ -26,26 +26,45 @@
 #     part file, which are keyed (event, model, fingerprint, truth) so the next run resumes),
 #     SIGKILL only if it has not exited after the drain wait, and exit 0.
 #
-# Exit: 0 job finished OR stopped by the guard (resumable); 3 refused to start;
+# LIVE TREE: refused (exit 3). The backfill writes part files, sidecars and scores under the tree it
+# runs in, so it must run from a private tree (e.g. /opt/ewb-preview-*), never /opt/ewb-live: it
+# refuses when this script's tree, or any --results / --parts (also after `--`, and the defaults
+# data/results and data/cache/score_parts), resolves under /opt/ewb-live, unless
+# LANE_BACKFILL_ALLOW_LIVE=1 (a deliberate, owner-approved live backfill).
+#
+# Exit: 0 job finished OR stopped because the weekly service came up (resumable);
+#       75 PAUSED FOR DEPLOY: the deploy lock was taken mid-run (the pool drained, rerun to resume;
+#          deliberately not 0 so a stopped backfill is never mistaken for a finished one);
+#       3 refused to start (weekly live / lock held / Monday window / live tree);
 #       124 hard cap reached (the pool drained, resumable); else the job's own status.
 #
-# Test hooks (tests/test_lane_guard.py): LANE_GUARD_SYSTEMCTL, LANE_GUARD_LOCK,
-# LANE_GUARD_NOW (a `date -d` string = the fake clock), LANE_GUARD_POLL (s),
-# LANE_GUARD_DRAIN (s), LANE_JOB_CMD (replaces the lane_pool command).
+# Test hooks (tests/test_lane_guard.py) are honoured ONLY when LANE_GUARD_TEST=1 and ignored
+# otherwise, so a stray environment variable can never fake the guard on the box:
+# LANE_GUARD_SYSTEMCTL, LANE_GUARD_UNIT, LANE_GUARD_LOCK, LANE_GUARD_NOW (a `date -d` string = the
+# fake clock), LANE_GUARD_POLL (s), LANE_GUARD_DRAIN (s), LANE_GUARD_LIVE_ROOT, LANE_JOB_CMD
+# (replaces the lane_pool command).
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SYSTEMCTL="${LANE_GUARD_SYSTEMCTL:-systemctl}"
-UNIT="${LANE_GUARD_UNIT:-ewb-live-weekly.service}"
-LOCK="${LANE_GUARD_LOCK:-/opt/ewb-live/.deploy.lock}"
-POLL="${LANE_GUARD_POLL:-30}"
-DRAIN="${LANE_GUARD_DRAIN:-600}"
+if [ "${LANE_GUARD_TEST:-0}" = 1 ]; then
+    SYSTEMCTL="${LANE_GUARD_SYSTEMCTL:-systemctl}"
+    UNIT="${LANE_GUARD_UNIT:-ewb-live-weekly.service}"
+    LOCK="${LANE_GUARD_LOCK:-/opt/ewb-live/.deploy.lock}"
+    POLL="${LANE_GUARD_POLL:-30}"
+    DRAIN="${LANE_GUARD_DRAIN:-600}"
+    LIVE_ROOT="${LANE_GUARD_LIVE_ROOT:-/opt/ewb-live}"
+    JOB_OVERRIDE="${LANE_JOB_CMD:-}"
+    FAKE_NOW="${LANE_GUARD_NOW:-}"
+else
+    SYSTEMCTL=systemctl UNIT=ewb-live-weekly.service LOCK=/opt/ewb-live/.deploy.lock
+    POLL=30 DRAIN=600 LIVE_ROOT=/opt/ewb-live JOB_OVERRIDE="" FAKE_NOW=""
+fi
 CAP_HOURS="${LANE_CAP_HOURS:-6}"
 
 log() { echo "$(date -u +%FT%TZ) lane_backfill: $*" >&2; }
 
 now_epoch() {
-    if [ -n "${LANE_GUARD_NOW:-}" ]; then date -u -d "$LANE_GUARD_NOW" +%s; else date -u +%s; fi
+    if [ -n "$FAKE_NOW" ]; then date -u -d "$FAKE_NOW" +%s; else date -u +%s; fi
 }
 
 # guard_block: prints the reason and returns 0 when a backfill must NOT run now.
@@ -94,6 +113,32 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+under_live() {   # under_live <path>: 0 when the resolved path (relative ones against $ROOT) is the live tree or below
+    local p="$1" r
+    [[ "$p" == /* ]] || p="$ROOT/$p"
+    r="$(realpath -m -- "$p" 2>/dev/null)" || return 1
+    [ "$r" = "$LIVE_ROOT" ] || [[ "$r" == "$LIVE_ROOT"/* ]]
+}
+if [ "${LANE_BACKFILL_ALLOW_LIVE:-0}" != 1 ]; then
+    live_hit=""
+    under_live "$ROOT" && live_hit="tree $ROOT"
+    argv=("$@")
+    for ((i = 0; i < ${#argv[@]}; i++)); do
+        a="${argv[$i]}"
+        case "$a" in
+            --results|--parts) under_live "${argv[$((i + 1))]:-.}" && live_hit="$a ${argv[$((i + 1))]}" ;;
+            --results=*|--parts=*) under_live "${a#*=}" && live_hit="$a" ;;
+        esac
+    done
+    # the defaults the lane writes when no --results / --parts is given (a symlinked data/ counts)
+    under_live "data/results" && live_hit="${live_hit:-default data/results}"
+    under_live "data/cache/score_parts" && live_hit="${live_hit:-default data/cache/score_parts}"
+    if [ -n "$live_hit" ]; then
+        log "REFUSED to start ($LANE): would write under the live tree $LIVE_ROOT ($live_hit); run from a private tree or set LANE_BACKFILL_ALLOW_LIVE=1"
+        exit 3
+    fi
+fi
+
 if reason="$(guard_block)"; then
     log "REFUSED to start ($LANE): $reason"
     exit 3
@@ -104,8 +149,8 @@ log "guard ok for lane $LANE"
 cd "$ROOT" || exit 1
 ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true   # icechunk: "Too many open files"
 export EWB_DATA_PREP_DIR="${EWB_DATA_PREP_DIR:-$ROOT/third_party/ExtremeWeatherBench/data_prep}"
-if [ -n "${LANE_JOB_CMD:-}" ]; then
-    JOB=(bash -c "$LANE_JOB_CMD")
+if [ -n "$JOB_OVERRIDE" ]; then
+    JOB=(bash -c "$JOB_OVERRIDE")
 else
     JOB=("${LANE_PYTHON:-.venv/bin/python}" -m ewb_live.scoring.lane_pool "$LANE" "$@")
 fi
@@ -118,9 +163,11 @@ JOB_PID=$!
 log "started $LANE (pid/pgid $JOB_PID, cap ${CAP_HOURS} h, poll ${POLL} s)"
 
 STOPPED=0
+STOP_WHY=""
 stop_job() {   # stop_job <why>: SIGTERM the group, wait for the drain, SIGKILL as a last resort
     log "STOPPING ($1): SIGTERM to process group $JOB_PID, waiting up to ${DRAIN} s for the pool to drain"
     STOPPED=1
+    STOP_WHY="$1"
     kill -TERM -- "-$JOB_PID" 2>/dev/null || true
     local waited=0
     while kill -0 "$JOB_PID" 2>/dev/null && [ "$waited" -lt "$DRAIN" ]; do sleep 1; waited=$((waited + 1)); done
@@ -146,7 +193,12 @@ done
 wait "$JOB_PID" 2>/dev/null
 RC=$?
 if [ "$STOPPED" = 1 ]; then
-    log "stopped by the guard; completed part files are kept, rerun to resume"
+    case "$STOP_WHY" in
+        "weekly/deploy lock"*)
+            log "PAUSED FOR DEPLOY (exit 75, not finished): $STOP_WHY; completed part files are kept, rerun to resume"
+            exit 75 ;;
+    esac
+    log "stopped by the guard ($STOP_WHY); completed part files are kept, rerun to resume"
     exit 0
 fi
 if [ "$RC" = 124 ]; then log "hard cap (${CAP_HOURS} h) reached; the pool drained, rerun to resume"; fi

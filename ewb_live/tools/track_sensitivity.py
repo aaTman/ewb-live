@@ -8,8 +8,9 @@ closed-contour depth / lost-track patience change.
 
     python -m ewb_live.tools.track_sensitivity --every 3 --workers 10 --out logs/track_sensitivity.json
 
-Run it through the R1 guard (it reads the store and ECMWF):
-    LANE_JOB_CMD='.venv/bin/python -m ewb_live.tools.track_sensitivity ...' ops/lane_backfill.sh tc
+Run it through the R1 guard (it reads the store and ECMWF); the guard only honours a replacement job
+command in test mode:
+    LANE_GUARD_TEST=1 LANE_JOB_CMD='.venv/bin/python -m ewb_live.tools.track_sensitivity ...' ops/lane_backfill.sh tc
 LXC only (``ewb_live/_guard.py``).
 """
 from __future__ import annotations

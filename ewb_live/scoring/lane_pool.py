@@ -35,6 +35,7 @@ import signal
 import sys
 import threading
 import time
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -48,6 +49,9 @@ DEFAULT_WORKERS = 12
 DEFAULT_RECYCLE = 30
 DEFAULT_RSS_CAP_GB = 40.0
 EXIT_RSS_CAP = 6
+EXIT_REFUSED = 3
+MAX_POOL_REBUILDS = 2
+LIVE_ROOT = Path("/opt/ewb-live")      # the live tree: a backfill must not write under it
 
 
 @dataclass(frozen=True)
@@ -247,44 +251,86 @@ def run_pairs(lane_key: str, pairs: list[tuple], on_pair: Callable, *,
         max_workers=workers, mp_context=ctx, initializer=_worker_init,
         max_tasks_per_child=recycle or None))
     sampler = RssSampler(cap_gb=rss_cap_gb, on_over=over)
-    with sampler, make_ex() as ex:
-        inflight: set = set()
+    stats["pool_rebuilds"] = 0
+    with sampler:
+        ex = make_ex()
+        inflight: dict = {}                    # future -> job (so a broken pool can requeue them)
+        retry_q: list = []                     # jobs lost to a broken pool, resubmitted first
         it = iter(jobs)
         exhausted = not jobs
         last_log = time.time()
-        while inflight or (not exhausted and not stop.is_set()):
-            while not exhausted and not stop.is_set() and len(inflight) < workers + 2:
-                try:
-                    inflight.add(ex.submit(_run_job, next(it)))
-                except StopIteration:
-                    exhausted = True
-            if not inflight:
-                break
-            done, inflight = cf.wait(inflight, timeout=poll_s, return_when=cf.FIRST_COMPLETED)
-            for f in done:
-                try:
-                    r = f.result()
-                except Exception as exc:  # noqa: BLE001 - worker died (OOM kill): the pair is retried next run
+        try:
+            while inflight or retry_q or (not exhausted and not stop.is_set()):
+                broken = False
+                while not stop.is_set() and len(inflight) < workers + 2 and not broken:
+                    job = retry_q.pop() if retry_q else None
+                    if job is None:
+                        if exhausted:
+                            break
+                        job = next(it, None)
+                        if job is None:
+                            exhausted = True
+                            break
+                    try:
+                        inflight[ex.submit(_run_job, job)] = job
+                    except BrokenProcessPool:
+                        retry_q.append(job)
+                        broken = True
+                if not inflight and not broken:
+                    break
+                if inflight:
+                    done, _ = cf.wait(list(inflight), timeout=poll_s, return_when=cf.FIRST_COMPLETED)
+                else:
+                    done = set()
+                for f in done:
+                    job = inflight.pop(f)
+                    try:
+                        r = f.result()
+                    except BrokenProcessPool:
+                        retry_q.append(job)
+                        broken = True
+                        continue
+                    except Exception as exc:  # noqa: BLE001 - a job-level failure: the pair is retried next run
+                        stats["errors"] += 1
+                        logger.error("worker job failed: %r", exc)
+                        continue
+                    stats["jobs_done"] += 1
+                    stats["retries"] += r.get("retries", 0)
+                    stats["errors"] += r["status"] == "error"
+                    stats["no_data_inits"] += r["status"] == "no_data"
+                    done_recs.append(r)
+                    p = pending.get(r["key"])
+                    if p is not None:
+                        p["recs"].append(r)
+                        if len(p["recs"]) == p["n"]:
+                            finish(r["key"])
+                if broken:
+                    # a worker died (OOM kill / segfault): every in-flight future is lost with it.
+                    # Completed pairs are already persisted; requeue the lost jobs on a fresh pool a
+                    # bounded number of times, then stop cleanly and mark the abort.
                     stats["errors"] += 1
-                    logger.error("worker job failed: %r", exc)
-                    continue
-                stats["jobs_done"] += 1
-                stats["retries"] += r.get("retries", 0)
-                stats["errors"] += r["status"] == "error"
-                stats["no_data_inits"] += r["status"] == "no_data"
-                done_recs.append(r)
-                p = pending.get(r["key"])
-                if p is not None:
-                    p["recs"].append(r)
-                    if len(p["recs"]) == p["n"]:
-                        finish(r["key"])
-            if time.time() - last_log > progress_s:
-                last_log = time.time()
-                logger.info("lane %s: %d/%d jobs, %d pairs done, pool rss %.1f GB (peak %.1f)",
-                            lane_key, stats["jobs_done"], len(jobs), stats["pairs_done"],
-                            sampler.timeline[-1][1] if sampler.timeline else 0.0, sampler.peak_total / 1e9)
-        if stop.is_set():
-            stats["stopped"] = True
+                    retry_q.extend(inflight.values())
+                    inflight.clear()
+                    ex.shutdown(wait=False, cancel_futures=True)
+                    if stats["pool_rebuilds"] >= MAX_POOL_REBUILDS:
+                        stats["abort"] = f"worker pool broken {stats['pool_rebuilds'] + 1}x (a worker was killed, likely OOM)"
+                        logger.error(stats["abort"])
+                        stop.set()
+                        retry_q.clear()
+                    else:
+                        stats["pool_rebuilds"] += 1
+                        logger.error("worker pool broken (a worker was killed, likely OOM): rebuilding (%d/%d), "
+                                     "%d jobs requeued", stats["pool_rebuilds"], MAX_POOL_REBUILDS, len(retry_q))
+                        ex = make_ex()
+                if time.time() - last_log > progress_s:
+                    last_log = time.time()
+                    logger.info("lane %s: %d/%d jobs, %d pairs done, pool rss %.1f GB (peak %.1f)",
+                                lane_key, stats["jobs_done"], len(jobs), stats["pairs_done"],
+                                sampler.timeline[-1][1] if sampler.timeline else 0.0, sampler.peak_total / 1e9)
+            if stop.is_set():
+                stats["stopped"] = True
+        finally:
+            ex.shutdown(wait=True, cancel_futures=True)
     wpids = {r["pid"] for r in done_recs}
     wpeaks = [v for k, v in sampler.peak_by_pid.items() if k in wpids]
     good = [r for r in done_recs if r["status"] == "scored"]
@@ -306,11 +352,29 @@ def run_pairs(lane_key: str, pairs: list[tuple], on_pair: Callable, *,
 # =============================================================================
 # CLI: the guarded backfill job (ops/lane_backfill.sh) and a direct lane run
 # =============================================================================
+def refuse_live_tree(results: Path, parts: Path) -> str | None:
+    """Name of the first of cwd / results / parts that resolves under the live tree, else None.
+    ``LANE_BACKFILL_ALLOW_LIVE=1`` overrides (a deliberate live backfill)."""
+    if os.environ.get("LANE_BACKFILL_ALLOW_LIVE") == "1":
+        return None
+    live = LIVE_ROOT.resolve()
+    for name, path in (("cwd", Path.cwd()), ("--results", results), ("--parts", parts)):
+        r = path.resolve()
+        if r == live or live in r.parents:
+            return f"{name} {r}"
+    return None
+
+
 def run_lane_cli(args) -> int:
     from .. import pipeline, sources
     from ..events.types import Event
 
     results = Path(args.results)
+    live = refuse_live_tree(results, Path(args.parts))
+    if live:
+        logger.error("REFUSED: %s resolves under the live tree %s; run from a private tree "
+                     "or set LANE_BACKFILL_ALLOW_LIVE=1", live, LIVE_ROOT)
+        return EXIT_REFUSED
     pipeline.RESULTS = results
     pipeline.PARTS = Path(args.parts)
     lane = LANES[args.lane]

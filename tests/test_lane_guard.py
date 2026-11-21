@@ -34,7 +34,7 @@ def box(tmp_path):
     exit_ts.write_text("")
     lock = tmp_path / "deploy.lock"
     lock.write_text("")
-    env = {**os.environ, "LANE_GUARD_SYSTEMCTL": str(sc), "LANE_GUARD_LOCK": str(lock),
+    env = {**os.environ, "LANE_GUARD_TEST": "1", "LANE_GUARD_SYSTEMCTL": str(sc), "LANE_GUARD_LOCK": str(lock),
            "FAKE_STATE_FILE": str(state), "FAKE_EXIT_FILE": str(exit_ts),
            "LANE_GUARD_NOW": "2026-11-21 12:00:00 UTC",           # a Saturday
            "LANE_GUARD_POLL": "1", "LANE_GUARD_DRAIN": "3"}
@@ -178,7 +178,8 @@ def test_poll_takes_the_lock_as_a_stop_signal_too(box):
     with open(box["lock"], "w") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
         _, err = p.communicate(timeout=60)
-    assert p.returncode == 0 and "lock" in err and "STOPPING" in err
+    # PAUSED FOR DEPLOY: distinct from success so a stopped backfill is not mistaken for a finished one
+    assert p.returncode == 75 and "PAUSED FOR DEPLOY" in err and "STOPPING" in err, (p.returncode, err)
 
 
 def test_a_pool_that_will_not_drain_is_killed_after_the_wait(box):
@@ -198,3 +199,84 @@ def test_a_pool_that_will_not_drain_is_killed_after_the_wait(box):
 def test_hard_cap_stops_the_job(box):
     r = run(box, "--cap-hours", "0.0006", job="sleep 30", timeout=60)       # ~2 s
     assert r.returncode == 124 and "hard cap" in r.stderr
+
+
+# ------------------------------------------------- test hooks are gated (review)
+def test_hooks_are_ignored_without_the_test_flag(box):
+    marker = box["tmp"] / "fake_systemctl_called"
+    sc = box["tmp"] / "systemctl"
+    sc.write_text(f"#!/usr/bin/env bash\ntouch {marker}\necho active\n")
+    env = {k: v for k, v in box["env"].items() if k != "LANE_GUARD_TEST"}
+    env["LANE_JOB_CMD"] = f"touch {box['tmp'] / 'job_ran'}"
+    r = subprocess.run(["bash", str(SCRIPT), "tc", "--check-only"], env=env, capture_output=True, text=True, timeout=60)
+    assert not marker.exists(), "a stray LANE_GUARD_SYSTEMCTL must not fake the guard"
+    assert "is active" not in r.stderr or "fake" not in r.stderr
+    assert not (box["tmp"] / "job_ran").exists()
+
+
+def test_header_says_hooks_need_the_flag():
+    head = SCRIPT.read_text().split("set -uo pipefail")[0]
+    assert "LANE_GUARD_TEST=1" in head and "ignored" in head
+
+
+# ------------------------------------------------------- live-tree refusal (review)
+@pytest.fixture
+def trees(box):
+    """tmp/live (the fake live tree) and tmp/priv (a private tree), each with its own copy of the script."""
+    live, priv = box["tmp"] / "live", box["tmp"] / "priv"
+    for t in (live, priv):
+        (t / "ops").mkdir(parents=True)
+        (t / "ops" / "lane_backfill.sh").write_text(SCRIPT.read_text())
+        (t / "data" / "results").mkdir(parents=True)
+        (t / "data" / "cache" / "score_parts").mkdir(parents=True)
+    box["env"]["LANE_GUARD_LIVE_ROOT"] = str(live)
+    return live, priv
+
+
+def run_in(box, tree, *args, env_extra=None):
+    env = {**box["env"], **(env_extra or {})}
+    return subprocess.run(["bash", str(tree / "ops" / "lane_backfill.sh"), "tc", *args], env=env,
+                          capture_output=True, text=True, timeout=60)
+
+
+def test_refuses_to_run_from_the_live_tree(box, trees):
+    live, priv = trees
+    r = run_in(box, live, "--check-only")
+    assert r.returncode == 3 and "live tree" in r.stderr, r.stderr
+    assert run_in(box, priv, "--check-only").returncode == 0
+
+
+@pytest.mark.parametrize("form", ["sep", "eq"])
+@pytest.mark.parametrize("flag", ["--results", "--parts"])
+def test_refuses_results_or_parts_under_the_live_tree_also_after_dashdash(box, trees, flag, form):
+    live, priv = trees
+    target = str(live / "data" / "results")
+    args = ["--check-only", "--", f"{flag}={target}"] if form == "eq" else ["--check-only", "--", flag, target]
+    r = run_in(box, priv, *args)
+    assert r.returncode == 3 and "live tree" in r.stderr, r.stderr
+    ok = run_in(box, priv, "--check-only", "--", flag, str(priv / "data" / "results"))
+    assert ok.returncode == 0, ok.stderr
+
+
+def test_refuses_a_relative_or_symlinked_path_that_resolves_into_live(box, trees):
+    live, priv = trees
+    (priv / "alias").symlink_to(live / "data" / "results")
+    r = run_in(box, priv, "--check-only", "--", "--results", "alias")
+    assert r.returncode == 3, r.stderr
+    r = run_in(box, priv, "--check-only", "--", "--parts", "../live/data/cache/score_parts")
+    assert r.returncode == 3, r.stderr
+
+
+def test_refuses_when_the_default_data_dirs_are_symlinked_into_live(box, trees):
+    live, priv = trees
+    import shutil
+
+    shutil.rmtree(priv / "data")
+    (priv / "data").symlink_to(live / "data")
+    r = run_in(box, priv, "--check-only")
+    assert r.returncode == 3 and "default data/results" in r.stderr, r.stderr
+
+
+def test_allow_live_override(box, trees):
+    live, _ = trees
+    assert run_in(box, live, "--check-only", env_extra={"LANE_BACKFILL_ALLOW_LIVE": "1"}).returncode == 0

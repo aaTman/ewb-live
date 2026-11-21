@@ -33,12 +33,20 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 from test_trackviz_fe import EVENT as TC_EVENT  # the same synthetic storm  # noqa: E402
 
 
-def _tc_score_rows():
+# aurora tracks the storms it keeps very well (+50 % at 24/48 h, +90 % where it keeps almost none) but loses most
+# of them from 72 h on: its 72-120 h cells are greyed and must not feed the banner; its mean miss rate is 59 %.
+AURORA_LOSES_STORMS = {24.0: (0.20, 50.0), 48.0: (0.30, 50.0), 72.0: (0.60, 90.0), 96.0: (0.90, 90.0), 120.0: (0.95, 90.0)}
+
+
+def _tc_score_rows(aurora=None):
     """Scorecard rows of the TC lane in the real pipeline schema (build_scorecard)."""
     rows = []
     for model, scale, miss in (("ifs_hres", 1.0, 0.05), ("graphcast", 0.8, 0.10), ("aurora", 1.3, 0.62)):
         for lead in (24.0, 48.0, 72.0, 96.0, 120.0):
             rel = None if model == "ifs_hres" else round((1.0 - scale) * 100, 2)
+            if aurora and model == "aurora":
+                miss, rel = aurora[lead]
+                scale = 1.0 - rel / 100.0
             for metric, val in (("TrackPositionError", 60.0 * scale * lead / 24.0), ("TrackMiss", miss),
                                 ("AlongTrackError", -4.0 * scale), ("CrossTrackError", 6.0 * scale),
                                 ("CentralPressureError", 12.0 * scale)):
@@ -51,7 +59,7 @@ def _tc_score_rows():
     return rows
 
 
-def _fixture(root, tc_scores=False, real_shape=False):
+def _fixture(root, tc_scores=False, real_shape=False, aurora=None):
     web = os.path.join(root, "webroot")
     os.makedirs(web)
     for f in os.listdir(DASH):
@@ -78,7 +86,7 @@ def _fixture(root, tc_scores=False, real_shape=False):
         if real_shape:   # 9 models x 5 metrics x 24-120 h cut from the real 44-storm backfill (miss rates intact)
             sc["rows"] = sc["rows"] + json.load(open(os.path.join(ROOT, "tests", "fixtures", "tc_scorecard_real_shape.json")))
         else:
-            sc["rows"] = sc["rows"] + _tc_score_rows()
+            sc["rows"] = sc["rows"] + _tc_score_rows(aurora)
         json.dump(sc, open(os.path.join(out, "scorecard.json"), "w"))
         meta = json.load(open(os.path.join(out, "meta.json")))
         meta["track_verification"] = {"tropical_cyclone": {
@@ -291,7 +299,7 @@ def test_tc_lane_renders_scored_table_with_miss_rate_beside_the_error(scored_pag
 def test_tc_cell_above_50pct_misses_is_greyed_and_says_why(scored_page):
     pg = scored_page
     grey = pg.locator("#scorecard-sec .sc-block td.cell.miss-grey")
-    assert grey.count() == 5, grey.count()                     # aurora: 5 error cells (miss rate 62 %)
+    assert grey.count() == 6, grey.count()                     # aurora: 5 error cells (miss rate 62 %) + the all-greyed Mean
     assert all("aurora" in t for t in pg.eval_on_selector_all(
         "#scorecard-sec .sc-block td.cell.miss-grey", "els => els.map(e => e.closest('tr').innerText)"))
     grey.first.hover()
@@ -418,3 +426,56 @@ def test_real_shape_no_overflow_and_dark_theme_tokens(real_page):
     grey = pg.locator("#scorecard-sec .sc-block td.cell.miss-grey").first
     bg = grey.evaluate("e => getComputedStyle(e).backgroundImage")
     assert "gradient" in bg                                   # the hatch survives both themes
+
+
+# ---------------------------- greyed cells are not ranking inputs (PR #16 review)
+@pytest.fixture(scope="module")
+def base_greyed(tmp_path_factory):
+    web = _fixture(str(tmp_path_factory.mktemp("tlg")), tc_scores=True, aurora=AURORA_LOSES_STORMS)
+    handler = lambda *a, **k: _Quiet(*a, directory=web, **k)  # noqa: E731
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{srv.server_address[1]}"
+    srv.shutdown()
+
+
+@pytest.fixture()
+def greyed_page(base_greyed):
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        pg = b.new_page(viewport={"width": 1440, "height": 1000})
+        errs: list[str] = []
+        pg.on("pageerror", lambda e: errs.append(str(e)))
+        pg._errs = errs                      # type: ignore[attr-defined]
+        pg.goto(base_greyed + "/index.html#tab=tropical_cyclone")
+        pg.wait_for_selector("#scorecard-sec .sc-block table", timeout=20000)
+        yield pg
+        b.close()
+
+
+def test_greyed_cells_do_not_feed_the_banner_or_the_mean_colour(greyed_page):
+    pg = greyed_page
+    strip = pg.inner_text("#verdict-strip")
+    # aurora wins its 24/48 h cells (+50 %) and loses most storms later: the +90 % of its greyed 72-120 h
+    # cells is NOT averaged in, and the banner says the leader's mean miss rate is above 50 %
+    assert "aurora best" in strip and "+50.0%" in strip and "won 2/" in strip, strip
+    assert "(>50% misses)" in strip and "misses 59%" in strip, strip
+    grey = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="aurora").first.locator("td.cell.miss-grey")
+    assert grey.count() == 3, grey.count()                       # 72, 96, 120 h; the mean is not all-greyed
+    cell = grey.first
+    assert cell.get_attribute("title") == "miss rate > 50%"
+    assert "miss rate > 50%" in cell.get_attribute("aria-label")
+    mean = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="aurora").first.locator("td.cell.mean").first
+    assert "miss-grey" not in mean.get_attribute("class")
+    assert pg._errs == [], pg._errs
+
+
+def test_scored_fixture_all_greyed_mean(scored_page):
+    pg = scored_page
+    row = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="aurora").first
+    assert row.locator("td.cell.miss-grey").count() == 6      # 5 leads + the Mean
+    assert "at every lead" in row.locator("td.cell.mean").first.get_attribute("title")
+
+
+def test_track_scoring_listing_is_not_a_live_region(scored_page):
+    assert scored_page.locator("#track-scoring-code").get_attribute("aria-live") is None
