@@ -231,6 +231,9 @@ function leadsForType(etype, leads) {
   const have = want.filter((h) => state.allLeads.includes(h));
   return have.length ? have : leads;
 }
+/* Track lanes rank models on the track error only: the signed components are bias-to-zero
+   (a ratio of tiny biases is not a skill) and the miss rate is read beside the error (D5). */
+function skillRanked(etype, met) { return !TYPE_LEADS[etype] || met === 'TrackPositionError'; }
 /* D5: a cell whose miss rate is above this is greyed (its error rests on the storms the model kept) */
 const MISS_GREY = 0.5;
 const TRACK_METRIC_ORDER = ['TrackPositionError', 'TrackMiss', 'AlongTrackError', 'CrossTrackError', 'CentralPressureError'];
@@ -1346,10 +1349,7 @@ function renderScorecard() {
           if (Number.isFinite(cell.rel)) { s += cell.rel; n += 1; }
           const small = Number.isFinite(cell.n) && cell.n < minSample();
           if (small) anySmallN = true;
-          /* Track lanes rank models on the track error only: the signed components are bias-to-zero
-   (a ratio of tiny biases is not a skill) and the miss rate is read beside the error (D5). */
-function skillRanked(etype, met) { return !TYPE_LEADS[etype] || met === 'TrackPositionError'; }
-/* D5: a track-error cell whose miss rate is above 50 % is greyed, not coloured by skill */
+          /* D5: a track-error cell whose miss rate is above 50 % is greyed, not coloured by skill */
           const missCell = TYPE_LEADS[etype] && met !== 'TrackMiss'
             ? (idx.get(`${etype}|TrackMiss|${lead}`) || {})[model] : null;
           const greyed = !!(missCell && Number.isFinite(missCell.mean) && missCell.mean > MISS_GREY);

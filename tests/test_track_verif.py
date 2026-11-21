@@ -338,3 +338,6 @@ def test_page_copy_matches_the_rules():
     assert "noScores" not in tc_meta                       # the lane stops showing 'Not scored'
     assert "tropical_cyclone: [24, 48, 72, 96, 120]" in js  # D8 lead columns
     assert "MISS_GREY = 0.5" in js
+    import re
+
+    assert re.search(r"^function skillRanked\(", js, re.M)           # top level, not inside a block
