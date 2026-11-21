@@ -545,7 +545,15 @@ def scan_temperature_events(
             "duration_days": ev.duration_days,
             "footprint_area_km2": [round(a, 1) for a in ev.footprint_area_km2],
             "box_area_km2": [round(a, 1) for a in ev.box_area_km2],
-            "core_area_km2": [round(a, 1) for a in ev.core_area_km2],
+            # SPEC §2: the core counts from the qualifying day. The ramp days
+            # are not a core in that sense (the start clock counted cells from
+            # the seed day, the qualify clock counts everything valid before
+            # it), so the series publishes null before qualified_date and the
+            # numbers that follow mean exactly what SPEC says.
+            "core_area_km2": [None if k < (0 if ev.qualified is None
+                                           else (ev.qualified - ev.start).days)
+                              else round(a, 1) for k, a in
+                              enumerate(ev.core_area_km2)],
             "anchor_box": None if ev.anchor is None else [
                 float(lats[ev.anchor.i0]), float(lats[ev.anchor.i1]),
                 normalize_lon_180(float(lons[ev.anchor.j0])),

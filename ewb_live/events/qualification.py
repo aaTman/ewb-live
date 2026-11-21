@@ -36,6 +36,8 @@ from pathlib import Path
 
 import numpy as np
 
+from . import frame_masks
+
 DIRNAME = Path("data/results/raw_exceedance")
 # upstream detection floors (see ewb_live/events/*, SPEC §2)
 SEED_AREA_KM2 = 200_000.0
@@ -75,7 +77,8 @@ def qualified_at(event, frames_dir: Path | None = None) -> str:
     # against: tropical_cyclone's first qualifying fix IS the qualification
     # instant at its own 3/6-hourly resolution (tc lane, 2026-11-16), a daily
     # lane such as flood qualifies at 00:00 UTC of its first qualifying day.
-    if event.event_type not in ("heat_wave", "freeze", "atmospheric_river"):
+    if event.event_type not in ("heat_wave", "freeze", "cold_snap",
+                                "atmospheric_river"):
         return f"{event.start:%Y-%m-%dT%H:%M:%SZ}"
     frames_dir = Path(frames_dir or DIRNAME)
     idx_p = frames_dir / "index.json"
@@ -105,8 +108,12 @@ def qualified_at(event, frames_dir: Path | None = None) -> str:
         return fallback
     if not frames:
         return fallback
-    layer = {"heat_wave": 0, "freeze": 1, "cold_snap": 1,
-             "atmospheric_river": 2}[event.event_type]
+    # the frame layer of the type's own mask: heat/freeze their bits, cold_snap
+    # the p15 freeze bit via frame_masks.MASK_ALIAS (that bit IS its mask,
+    # cold_snap.py); LAYERS only lists the two daily temperature layers the
+    # mask reader decodes, the AR paint bit is the frame's third layer
+    hazard = frame_masks.MASK_ALIAS.get(event.event_type, event.event_type)
+    layer = frame_masks.LAYERS.get(hazard, 2)
     lat_min, lat_max, lon_min, lon_max = event.bbox
     if event.event_type == "atmospheric_river":
         floor_px = AR_MIN_PX

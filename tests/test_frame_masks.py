@@ -255,6 +255,12 @@ def test_qualification_clamps_to_the_qualify_day(tmp_path, monkeypatch):
     assert ev.start == dt.datetime(2026, 9, 1)            # began as a 15-cell patch
     assert ev.details["qualified_date"] == "2026-09-02"   # qualified on day 1
     assert qualified_at(ev, root) == "2026-09-02T00:00:00Z"
+    # round-3 item 4: the published core series means what SPEC §2 says -
+    # null on the pre-qualification day, numbers from the qualifying day on
+    core = ev.details["core_area_km2"]
+    assert len(core) == len(ev.details["footprint_area_km2"])
+    assert core[0] is None
+    assert all(isinstance(a, float) for a in core[1:])
 
 
 def test_scan_publishes_the_persistence_box_with_fill(tmp_path, monkeypatch):
