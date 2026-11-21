@@ -2,12 +2,20 @@
 
 The weekly pipeline re-detects the whole 90-day window and rebuilds
 `data/results/events.json` from scratch; `make_event_id` hashes
-(type, start, published bbox), so an ongoing event's id lives exactly as long
-as its published box and start do not move. This script measures that, per
-ruleset, on the real lane: replay window W1 = start..E and the "next weekly
-run" W2 = start..E+7 (plus a start-sliding variant), and for the events that
-are `ongoing` at W1's end report how many survive W2 with the same id / start
-/ bbox.
+(type, start, ID BOX) and an ongoing event's id lives exactly as long as its
+id box and start do not move. This script measures that, per ruleset, on the
+real lane: replay window W1 = start..E and the "next weekly run" W2 =
+start..E+7 (plus the start-sliding variant W2s = start+7d..E+7, which is what
+the real 90-day slid window does), and for the events that are `ongoing` at
+W1's end reports how many survive W2 with the same id / start / bbox.
+
+Two ID bases are measured, because the shipped code (temperature.py,
+2026-11-20) hashes the ANCHOR bbox (the tracker box on day 3, frozen) for
+heat/freeze, not the published rectangle:
+  anchor   = make_event_id over the ANCHOR bbox (what production ships;
+             falls back to the published box when anchor_day=None)
+  published = make_event_id over the published box (the pre-2026-11-20 rule,
+             kept as the comparison the reviewer asked for)
 
 Rulesets (production code, no review-copy):
   shipped = Params(claim_valid_only=False, seed_valid_only=False,
@@ -53,10 +61,13 @@ RULESETS = {
 
 
 def published(dates, mask, cell_area, lats, lons, params, hazard="heat_wave"):
-    """The Events a scan would publish: (id, start, end, bbox, ongoing).
+    """The Events a scan would publish: (id, ids, start, end, bbox, ongoing).
 
-    Mirrors the bbox mapping in scan_temperature_events (cell centres + the
-    wrap convention), without the truth reads this measurement does not need.
+    Mirrors the bbox/id mapping in scan_temperature_events (cell centres, the
+    wrap convention, and the ANCHOR-bbox id basis - the tracker box on day 3,
+    with the published box as the anchor_day=None fallback - without the
+    truth reads this measurement does not need). ``ids`` carries both bases:
+    "anchor" (shipped) and "published" (pre-2026-11-20 rule).
     """
     evs = track_events(mask, dates, cell_area, params, hazard)
     ny, nx = mask.shape[1:]
@@ -73,8 +84,14 @@ def published(dates, mask, cell_area, lats, lons, params, hazard="heat_wave"):
         bbox = (float(lats[pub.i0]), float(lats[pub.i1]),
                 normalize_lon_180(float(lons[pub.j0])),
                 normalize_lon_180(float(lons[pub.j1])))
+        id_box = ev.anchor if ev.anchor is not None else pub
+        anchor_bbox = (float(lats[id_box.i0]), float(lats[id_box.i1]),
+                       normalize_lon_180(float(lons[id_box.j0])),
+                       normalize_lon_180(float(lons[id_box.j1])))
         start_dt = dt.datetime.combine(ev.start, dt.time())
-        out.append({"id": make_event_id(hazard, start_dt, bbox),
+        ids = {"anchor": make_event_id(hazard, start_dt, anchor_bbox),
+               "published": make_event_id(hazard, start_dt, bbox)}
+        out.append({"id": ids["anchor"], "ids": ids,
                     "start": ev.start, "end": ev.end, "bbox": bbox,
                     "ongoing": ev.end is None,
                     "box_km2": float(cell_area[pub.mask(ny, nx)].sum())})
@@ -103,25 +120,29 @@ def overlaps(a, b) -> bool:
 
 def report(name: str, w1: list[dict], w2: list[dict]) -> None:
     ongoing = [e for e in w1 if e["ongoing"]]
-    same_id = same_start = same_bbox = matched = lost = 0
+    same_id = same_pub = same_start = same_bbox = matched = lost = 0
     for e in ongoing:
         succ = [f for f in w2 if overlaps(e, f)]
         if not succ:
             lost += 1
             continue
         matched += 1
-        same_id += any(f["id"] == e["id"] for f in succ)
+        same_id += any(f["ids"]["anchor"] == e["ids"]["anchor"] for f in succ)
+        same_pub += any(f["ids"]["published"] == e["ids"]["published"]
+                        for f in succ)
         same_start += any(f["start"] == e["start"] for f in succ)
         same_bbox += any(f["bbox"] == e["bbox"] for f in succ)
     print(f"{name}: ongoing@W1end={len(ongoing)} matched-in-W2={matched} "
-          f"lost={lost} same-id={same_id} same-start={same_start} "
+          f"lost={lost} same-id(ANCHOR,shipped)={same_id} "
+          f"same-id(published,old)={same_pub} same-start={same_start} "
           f"same-bbox={same_bbox}", flush=True)
     for e in ongoing:
         succ = [f for f in w2 if overlaps(e, f)]
-        tag = "KEPT" if any(f["id"] == e["id"] for f in succ) else (
+        tag = "KEPT" if any(f["ids"]["anchor"] == e["ids"]["anchor"]
+                            for f in succ) else (
             "REKEYED" if succ else "LOST")
         print(f"   {tag:8s} {e['id']} {e['start']} box {e['box_km2'] / 1e6:6.2f}M "
-              + (f"-> {sorted({f['id'] for f in succ})} "
+              + (f"-> {sorted({f['ids']['anchor'] for f in succ})} "
                  f"box {sorted(round(f['box_km2'] / 1e6, 2) for f in succ)}M"
                  if succ else ""), flush=True)
 
