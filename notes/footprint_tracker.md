@@ -400,15 +400,25 @@ Merging changes event geometry (new ids) and starts stamping viz assets, so the
 first weekly after deploy rebuilds part of the asset tree. In order:
 
 1. Merge via PR into `develop`; CI gates as usual. Deploy it to the LXC per the usual path.
-   **Then repair the missing ERA5 days**, with no weekly or pipeline run active:
-   `./ops/remote.sh 'cd /opt/ewb-live && .venv/bin/python -m ewb_live.scoring.truth_mirror --requeue-nan'`
-   (expected on 2026-11-21: `requeued` 32, then `copied` 16 for Nov 4 and `unavailable` 16
-   for Nov 9), followed immediately by
-   `./ops/remote.sh 'cd /opt/ewb-live && .venv/bin/python -m ewb_live.viz.exceedance --force'`
-   (about 21 min). `index.json` `no_truth` must then list only the four Nov 9 frames. Keep
-   `--force`: a plain build after the requeue leaves the blank Nov 4 frames indexed.
+   **Then repair the missing ERA5 days.** Run every `ops/remote.sh` command below from a
+   clean checkout of the merged `develop`: `run` and `bg` first sync that tree over
+   `/opt/ewb-live`. Confirm with `./ops/remote.sh status` that no weekly or pipeline run
+   is active, then in this order:
+   - `./ops/remote.sh bg mirror-requeue python -m ewb_live.scoring.truth_mirror --requeue-nan`
+   - Wait until `./ops/remote.sh logs mirror-requeue -n 5` shows the final JSON summary
+     (expected on 2026-11-21: `requeued` 32, then `copied` 16 for Nov 4 and `unavailable`
+     16 for Nov 9).
+   - Only then: `./ops/remote.sh bg exceedance-force python -m ewb_live.viz.exceedance --force`
+     (about 20 min in the 2026-11-21 scratch rebuild).
+   - Wait for `frames indexed` in `./ops/remote.sh logs exceedance-force -n 5`. `index.json`
+     `no_truth` must then list only the four Nov 9 frames. Keep `--force`: a plain build
+     after the requeue leaves the blank Nov 4 frames indexed.
+
+   The repair does not invalidate cached scores. On 2026-11-21 the only published
+   ERA5-scored event spanning Nov 4 was a freeze that M2 changes, so it is scored afresh;
+   re-check this if the selection has moved by merge day.
 2. **Pre-warm the viz assets** off the weekly window (one run, resumable):
-   `./ops/remote.sh 'cd /opt/ewb-live && .venv/bin/python -m ewb_live.viz --all --time-budget-s 3300'`.
+   `./ops/remote.sh bg viz-warm python -m ewb_live.viz --all --time-budget-s 3300`.
    The round-4 estimate of **42 rebuilds** (~7,600 s) was measured under `separate`
    and has not been re-measured for `largest_close`, so budget for at least one
    resume. AR assets are current by rule (unstamped at schema

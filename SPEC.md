@@ -134,8 +134,10 @@ def score_event(event: Event, models: list[str]) -> pd.DataFrame
      other rules as `"oldest_qualified"`/`"largest"`/`"separate"`; the flood/legacy lanes
      pin `"oldest_qualified"` and are byte-unchanged (`notes/footprint_tracker.md`).
      **Missing truth:** a day whose ERA5 field is entirely NaN keeps only the cells valid
-     on both neighbouring days, so one missing day cannot end an event by itself. It never
-     counts toward `min_days`, and two or more consecutive missing days still split a spell.
+     on both neighbouring days, so one missing interior day cannot end an event by itself.
+     A missing first or last scan day is not bridged, and two or more consecutive missing
+     days still split a spell. A bridged day never counts toward the `min_days` detection
+     floor, but published durations and run lengths include it.
      **Continuations (curation, owner 2026-11-21):** a heat, freeze or cold-snap fragment
      passed over by selection is still published, as its own event outside the per-type
      quota, when it starts within `MERGE_GAP_DAYS` of a selected same-type event's end,
