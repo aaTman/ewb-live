@@ -54,3 +54,23 @@ workers, `ifs_hres` +8 % (and 39.7 s with 12 concurrent ECMWF readers in the sma
 `EWB_LIVE_LEAD_PARALLEL` if S3 politeness matters. (3) WP2 (MLC) and WP3 (landfall classes) are untouched; `Lane` in `lane_pool.py`
 is the registration point. (4) Pre-existing: sidecars of EWB jobs carry no `fp`, which used to turn every documented
 zero-row pair into a blocker after a publish-only run; fixed here (same-status fp is carried), flagged for review.
+
+## [wp1] 2026-11-21 03:25 UTC — PR #16 follow-ups: truth label, miss-rate verdict, real-data fixtures
+
+Owner review of the preview (:8062) raised three points.
+1. **Header truth** was `ERA5` on the TC tab. Now lane-aware: TC tab -> `IBTrACS` (tooltip names the best track), "all types" ->
+   `ERA5 + IBTrACS (TC)` when the TC lane has score rows, other lanes unchanged; `setTab` re-renders the header. e2e asserts all four.
+2. **Miss rate vs `ifs_hres`** (`notes/scoring_tc_miss_rate.md`, part files read-only on the LXC + one sensitivity run of 1827 reads in 417 s
+   via `ops/lane_backfill.sh`): the advantage is **real**. On the common set of (storm, valid time, lead) every model has data for (5775
+   samples) the miss rate is ifs_hres 6.8 % vs pangu 11.3 %, graphcast 13.6 %, fcn 21.7 %, aurora 26.8 % (`_gfs` twins 11-27 %); on the 5
+   IFS-initialised models alone 7.2 % vs 10.9-25.7 %. Track error on the common set where ALL are non-missed: graphcast 78 km, aurora 89,
+   pangu 95, ifs_hres 103, fcn 112 km, same ordering as the headline, so no survivorship flattery. Cause: the AI models' lows are shallower
+   (median fc-obs central pressure ifs_hres +1.8 hPa, graphcast +9.8, aurora +13.8, pangu +14.1, fcn +17.1) and misses sit on weak storms
+   (24-72 h, 34-49 kt: ifs 7 % vs MLWP 13-24 %; >= 64 kt: 0-3 % vs 0.5-9 %). Loosening the closed contour (2 -> 1 -> 0.5 hPa) shrinks the gap
+   in points (3.4 -> 1.9 -> 1.5) but never closes it (ratio 1.4 -> 1.5 -> 2.0); patience (lost after 3) changes nothing. No asymmetry in
+   tracker, grid, inits or matching found, so no tracker change. The banner now reads "ranks track error only" and shows the miss rates
+   (real data: `graphcast best · +15.8% vs ifs_hres · won 5/5 cells · ranks track error only · misses 15% vs 8%`).
+3. **Real-data checks**: cross-track group, 'Skill vs lead' (5 Plotly charts) and the 50 % grey rule verified with a real-data-shaped
+   fixture (`tests/fixtures/tc_scorecard_real_shape.json`, cut from the real 44-storm scorecard, one model's 96/120 h miss rate forced above
+   50 %) at 1440 px and 390 px light + dark, no JS errors, no overflow. Screenshots in `notes/screenshots/` (gitignored).
+   Observation, not changed: the skill-vs-lead charts run to 10 d where TC miss rates climb to 1.0 on a handful of samples.
