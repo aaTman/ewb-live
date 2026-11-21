@@ -4050,3 +4050,52 @@ Needs the orchestrator/owner: (1) accept a split pool (store 12 workers + 2-work
 pool projects to 40.66 GB; (2) D2 question: verify TC from the first >= 34 kt fix instead of the first IBTrACS fix?
 Files: ewb_live/tools/track_pilot.py, tests/test_track_pilot_smoke.py (11 offline tests), notes/scoring_pilot.md, notes/screenshots/scoring_pilot.json.
 Raw per-sample records stay on the box in /opt/ewb-pilot/out*/jobs.jsonl. No deploy, no merge.
+
+## [live-deploy-tc] 2026-11-21 12:00 UTC — DONE: PR #16 (develop b7ed93d) TC scoring is LIVE on :8050 / ewb.espr.ai, TC backfilled on the live tree, Monday weekly will run the new code
+
+**What is live.** TC (tropical cyclone) scoring from PR #16 / develop `b7ed93d`, deployed 2026-11-21. Owner ordered a Saturday deploy rather than waiting for the Monday 11-23 07:00 UTC weekly, so the Monday weekly runs the new code (this replaced the earlier gate "wait until the Monday weekly has finished"; owner chose "Go now").
+
+- Live was NOT at `869d54e` as the brief said: `DEPLOYED_FROM` showed dashboard files from develop `ee19b01` (PR #12 theater mode, 2026-11-20 20:51Z).
+- Checksum dry-run diff live vs develop `b7ed93d` matched `git diff ee19b01..b7ed93d` exactly: 22 files — `ewb_live/` (`pipeline.py`, `events/select.py`, `scoring/__init__.py`, `scoring/truth.py` changed; `scoring/lane_pool.py`, `scoring/tc.py`, `scoring/track_verif.py`, `tools/track_pilot.py`, `tools/track_sensitivity.py` new), `dashboard/` (`app.js`, `index.html`, `styles.css` changed; `track_scoring.py` new), `ops/lane_backfill.sh` new, `tests/` (`conftest`, `test_events_unit`, `e2e/test_dashboard_fe`, `e2e/test_tracklane_fe` changed; `test_lane_guard`, `test_score_tc`, `test_track_pilot_smoke`, `test_track_verif`, `fixtures/tc_scorecard_real_shape.json` new). `pyproject.toml`, `uv.lock`, `SPEC.md`, `README.md` identical; scipy and skimage already in the live venv.
+- The repo's `ops/ewb-live-weekly.service` is only a `__REPO__` template and was NOT installed; the live /etc unit already has `TimeoutStartSec=24h`.
+
+**Timeline.** Preflight 11:01Z; paused timers 11:01Z; backup 11:02Z; code rsync 11:02Z; TC backfill 11:02:29Z -> 11:22:06Z (rc=0); publish-only step after that; timers restored 11:59Z.
+
+**Measured.** Preflight 11:01Z: weekly inactive, `.deploy.lock` free, :8050 200, disk 175 GB free, `scores.parquet` 34,930 rows (13 type/metric groups), meta `full_run_complete` true.
+
+- Backfill stats (`data/lane_tc_stats.json`): 396 pairs, 4662 jobs all done, wall 1104.5 s (18.4 min; dev estimate was 26 min), 12 workers recycle 30, peak pool RSS 18.4 GB (cap 40), peak worker 1.789 GB, 159 worker processes, 2 retries, 0 errors, 144 no_data inits, 0 pool rebuilds, stopped false, unfinished_pairs 0; mean job store 1.481 s, ifs_hres 4.573 s.
+- Publish-only step wrote 326,716 score rows, 205 events.
+- Scores: 34,930 -> 326,716 rows. The 13 non-TC `(event_type, metric)` groups are identical row for row in counts (13/13). TC rows: AlongTrackError 55,910; CentralPressureError 56,035; CrossTrackError 55,910; TrackMiss 67,805; TrackPositionError 56,126 (total 291,786; truth_source ibtracs).
+- meta: `full_run_complete` true, `event_counts` unchanged (heat 15, freeze 5, cold_snap 8, AR 13, TC 44, MLC 80, flood 40), `n_scored_pairs` 416 -> 812, `pair_coverage` scored 812 / documented_zero_rows 1443 / expected 2255 / unattempted_or_failed [], `track_verification` added.
+- Scorecard TC mean track error 24 h / 120 h: ifs_hres 51.7 / 265.0 km, graphcast 43.3 / 230.0 km (same as the dev backfill).
+
+**Backups / rollback.** `/opt/ewb-live/_rollback_20261121_tc/` (154 MB) = `ewb_live dashboard ops tests`, `SPEC.md README.md pyproject.toml uv.lock`, `results/` (snapshot of `data/results`), `pip_freeze.txt`, `meta.json`, `rowcounts.csv`, `score_parts_count.txt` (1365 part files before). `DEPLOYED_FROM` line appended.
+
+- Rollback (no trigger hit, not executed):
+```
+R=/opt/ewb-live/_rollback_20261121_tc; cd /opt/ewb-live
+for d in ewb_live dashboard ops tests; do rsync -a --delete --exclude=__pycache__ --exclude='.bak-*' $R/$d/ $d/; done
+cp -a $R/SPEC.md $R/README.md $R/pyproject.toml $R/uv.lock .
+rsync -a --delete $R/results/ data/results/ && systemctl restart ewb-live-web
+```
+- Note `ops/` and `tests/` keep the new files after this (harmless); the new TC part files in `data/cache/score_parts` are additive and can stay; restoring `results/` is what removes the TC rows.
+- Rollback triggers were: site down >5 min, console errors on first load, other lanes' rows changed, e2e regressions.
+
+**Paused / restored.** `ewb-live-freshness.timer`, `ewb-refresh.timer`, `ewb-live-store.timer` paused 11:01Z, restored 11:59Z and verified in `systemctl list-timers` (freshness next 12:09Z, refresh 12:34Z, store Sun 05:30Z, weekly Mon 11-23 07:00Z untouched). Unlike the 11-19 deploy no immediate catch-up run of refresh or store was observed at restore; the first freshness run (11:59:44Z) exited 0 with no new WARN in `logs/freshness.log`.
+
+**Verification.** Code rsync 11:02Z: dry run inspected first; `--delete` only inside `ewb_live/` and `dashboard/` (nothing deleted in the dry run), `ops/` and `tests/` without `--delete` (so the box-only `arfix_rebuild.sh` and the 3 stale e2e files stay), excludes `__pycache__ *.pyc .bak-*`, via `flock -w 900 /opt/ewb-live/.deploy.lock rsync`; re-check afterwards showed 0 differences in all four dirs.
+
+- `ewb-live-web` restarted: active, :8050 200, `app.js?v=6b017a18`, imports of `ewb_live.pipeline` / `scoring.lane_pool` / `dashboard.track_scoring` OK. `ops/lane_backfill.sh tc --check-only` is REFUSED without the override (exit 3, live-tree refusal) and 'guard ok' with `LANE_BACKFILL_ALLOW_LIVE=1`.
+- TC backfill ran as `systemd-run --unit=ewb-live-tcbackfill --setenv=LANE_BACKFILL_ALLOW_LIVE=1 ... ops/lane_backfill.sh tc --cap-hours 3`, log `/opt/ewb-live/logs/tc_backfill_live.log`, weekly inactive during the whole run.
+- Browser (headless chromium on the box, 1440x900 and 390x844, light and dark, 4 runs): 0 console errors, 0 pageerrors, 0 failed requests; no horizontal overflow (1440/1440, 390/390); TC tab chip 'Trop. cyclone 44'; truth label 'IBTrACS'; no 'Not scored' text; scorecard header = Model, Track error [km], Miss rate, vs ifs_hres, leads 1d-5d + Mean; first rows 'ifs_hres 51.7 92.7 141 195 265 149 | 5% 6% 6% 11% 11% 8%', 'graphcast 43.3 71.9 115 164 230 125 | 9% 13% 14% 17% 21% 15%'; verdict strip 'graphcast best · +15.8% vs ifs_hres · won 5/5 cells · ranks track error only · misses 15% vs 8%'; 0 greyed cells (no cell above 50% miss); the 2 unsupported models (`aifs_single`, `aigfs`) show dashes in every cell while the header says '11 scored · 11 in roster' (existing UI behaviour, 88 unsupported pairs). At 390 px the table scrolls horizontally inside its own container (leads 5d/Mean). `http://127.0.0.1:8050` 200 and `https://ewb.espr.ai` 200. Screenshots (not in git): `/home/orca/orca/workspaces/ewb-live/screenshots/live-deploy-tc/live_{1440,390}_{light,dark}_tc.png`.
+- e2e (chromium, ON the box against `http://127.0.0.1:8050`, `-m e2e` needed because pyproject addopts has `-m "not e2e"`; first dispatch without `-m` collected 212 and deselected all = a void run that was caught and NOT counted): the 7 checkout files `test_chips_fe`, `test_dashboard_fe`, `test_dashboard_regions_fe`, `test_guardian_fe`, `test_tracklane_fe`, `test_trackviz_fe`, `test_trackwind_fe`: `211 passed, 1 skipped in 730.07s (0:12:10)`, 0 failed (the 4 failures of the 11-20 deploy are gone). Skip: `test_chips_fe.py:161: every lane has events this window`. Log `/opt/ewb-live/logs/tc_deploy_e2e.log`. The 3 stale box-only e2e files (`test_ar_ramp_simple`, `test_trackexpiry_fe`, `test_zz_debug_freeze`) were deliberately not run.
+
+**Abnormal / flags for the owner.** Meta side effects of the publish-only step: `meta.window` moved from 2026-08-21..2026-11-19 to 2026-08-23..2026-11-21 (publish-only uses end = today, events unchanged); the weekly-owned keys `cycle`, `week`, `next_update` were dropped from `meta.json` (the frontend and ops code do not read them; the Monday weekly rewrites them via `ewb_live/weekly.py`); the ibtracs lag note refreshed (`lag_days` 4.5). Not hand-edited.
+
+**Remaining.**
+1. Monday 2026-11-23 07:00Z weekly will run the new code: the TC part files are cached so only new/changed storms are scored; EWB jobs ~9 h last time, TC lane adds its own pool; first scheduled run of the TC lane in the weekly is unattended, watch it.
+2. The weekly will rewrite meta `cycle`/`week`/`next_update`/`window`.
+3. Known TC limitations are listed in `notes/scoring_design.md` section 8.3 (fingerprint, search window, ECMWF lead drop, 10-day skill-vs-lead sparse).
+4. MLC (WP2), landfall classes (WP3) and flood (WP4) scoring still unscored.
+5. `/opt/ewb-live/_rollback_20261121_tc` (154 MB) can be deleted after the Monday weekly has run clean.
+6. Dev/preview trees (`/opt/ewb-preview-tc` :8062 etc.) untouched.
