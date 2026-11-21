@@ -247,15 +247,15 @@ def test_an_init_after_the_observed_landfall_is_never_eligible_and_never_scored(
 
 
 # --------------------------------------------------------------------------- unscorable --
-def test_an_antimeridian_storm_and_a_storm_without_a_sid_are_unscorable():
-    """EWB's detector cannot read them: ``scorable`` says why and no rows are produced."""
+def test_an_antimeridian_flag_does_not_block_scoring_but_a_missing_sid_does():
+    """The antimeridian flag is no reason to skip (EWB's detector matched its own target on such storms);
+    a storm without an IBTrACS sid cannot be keyed and gets no rows. Same-name storms differ by sid."""
     tr = tc.observed_track(_event())
     crosser = _event(track_crosses_antimeridian=True)
-    ok, why = landfall.scorable(crosser)
-    assert ok is False and "antimeridian" in why
+    assert landfall.scorable(crosser) == (True, "")
     df, info = landfall.landfall_rows(crosser, MODEL, tr, [_perfect_fc_track(T0)])
-    assert info["status"] == "unscorable" and info["reason"] == why and info["n_landfalls"] == 0
-    assert len(df) == 0 and list(df.columns) == tv.SCORE_COLUMNS
+    assert info["status"] == "scored" and len(df) > 0
+    assert landfall.storm_id(_event())["sid"] == "S1"
 
     no_sid = _event()
     del no_sid.details["sid"]
