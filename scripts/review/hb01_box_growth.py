@@ -748,6 +748,47 @@ def geom_delta(w: Window, rows: list[dict], base_rows: list[dict]) -> dict:
             "gained_ids": [rows[i]["id"] for i in sorted(only_new)][:8]}
 
 
+def _bbox_intersects(a: dict, b: dict) -> bool:
+    for l0, l1 in ([(a["bbox"][2], a["bbox"][3])]
+                   if a["bbox"][2] <= a["bbox"][3]
+                   else [(a["bbox"][2], 180.0), (-180.0, a["bbox"][3])]):
+        for m0, m1 in ([(b["bbox"][2], b["bbox"][3])]
+                       if b["bbox"][2] <= b["bbox"][3]
+                       else [(b["bbox"][2], 180.0), (-180.0, b["bbox"][3])]):
+            if min(l1, m1) - max(l0, m0) > 0:
+                return True
+    return False
+
+
+def pairable(b: dict, r: dict) -> bool:
+    """Location pairing between two scored rows: the windows share at least
+    3 calendar days and the bboxes intersect (wrap-aware). Tracker ids are
+    renumbered by every replay, so string pairing compares nothing."""
+    b0 = dt.date.fromisoformat(b["start"])
+    b1 = dt.date.fromisoformat(b["end"])
+    r0 = dt.date.fromisoformat(r["start"])
+    r1 = dt.date.fromisoformat(r["end"])
+    return (min(b1, r1) - max(b0, r0)).days + 1 >= 3 and _bbox_intersects(b, r)
+
+
+def lost_gained5(rows: list[dict], base_rows: list[dict]) -> dict:
+    """The five biggest spells each rule failed to reproduce, by tracker box
+    area - location pairing (see `pairable`), ids and bboxes included so the
+    numbers can be checked by hand."""
+    unmatched_c3 = {i for i, r in enumerate(rows)
+                    if not any(pairable(b, r) for b in base_rows)}
+    unmatched_s0 = {i for i, b in enumerate(base_rows)
+                    if not any(pairable(b, r) for r in rows)}
+    lost = sorted((base_rows[i] for i in sorted(unmatched_s0)),
+                  key=lambda r: -r["box_km2"])
+    gained = sorted((rows[i] for i in sorted(unmatched_c3)),
+                    key=lambda r: -r["box_km2"])
+    pick = lambda rr: [{"id": r["id"], "start": r["start"], "end": r["end"],
+                        "box_km2": round(r["box_km2"]), "bbox": r["bbox"]}
+                       for r in rr[:5]]
+    return {"lost5": pick(lost), "gained5": pick(gained)}
+
+
 def paired_worst(rows: list[dict], base_rows: list[dict], n: int = 5) -> list[dict]:
     """Before/after of the ``n`` biggest baseline boxes (C3 is a big rule,
     not a tweak - we want to see what happened to the boxes that made the
@@ -759,28 +800,9 @@ def paired_worst(rows: list[dict], base_rows: list[dict], n: int = 5) -> list[di
     biggest such successor is the "after" box; a spell that C3 split shows
     its largest piece, and one it killed shows kept=false.
     """
-    def _span(r: dict) -> tuple[dt.date, dt.date]:
-        return (dt.date.fromisoformat(r["start"]), dt.date.fromisoformat(r["end"]))
-
-    def _intersects(a: dict, b: dict) -> bool:
-        for l0, l1 in ([(a["bbox"][2], a["bbox"][3])]
-                       if a["bbox"][2] <= a["bbox"][3]
-                       else [(a["bbox"][2], 180.0), (-180.0, a["bbox"][3])]):
-            for m0, m1 in ([(b["bbox"][2], b["bbox"][3])]
-                           if b["bbox"][2] <= b["bbox"][3]
-                           else [(b["bbox"][2], 180.0), (-180.0, b["bbox"][3])]):
-                if min(l1, m1) - max(l0, m0) > 0:
-                    return True
-        return False
-
-    def _pairable(b: dict, r: dict) -> bool:
-        b0, b1 = _span(b)
-        r0, r1 = _span(r)
-        return (min(b1, r1) - max(b0, r0)).days + 1 >= 3 and _intersects(b, r)
-
     out = []
     for b in sorted(base_rows, key=lambda r: -r["box_km2"])[:n]:
-        cand = [r for r in rows if _pairable(b, r)]
+        cand = [r for r in rows if pairable(b, r)]
         best = max(cand, key=lambda r: r["box_km2"], default=None)
         out.append({"id": b["id"], "start": b["start"], "end": b["end"],
                     "before_box_km2": round(b["box_km2"]),
@@ -823,6 +845,7 @@ def run_strategies(w: Window, base_spells: list[Spell], base_rows: list[dict],
                 agg["published_dropped"] = identity_delta(
                     rows, rows_pre)["lost_vs_current"]
             agg["worst5_paired"] = paired_worst(rows, base_rows)
+            agg.update(lost_gained5(rows, base_rows))
         out[st.name] = {"summary": agg, "rows": rows}
         print(f"  {w.hazard:<10} {st.name:<31} n={agg['n']:<4} "
               f"fill_med={agg.get('fill_med', 0):.2f} "

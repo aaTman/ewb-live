@@ -212,6 +212,19 @@ the tracker's *own* events (bbox IoU ≥ 0.15), which is what `start` dates and
 | `C4_valid_box_only` | C3's tracking, tracker's own box | 0.61 | 0.39 | 0.30 | 1.81 M | 7.71 M | 25.89 M | 3.6 | 161 | 4/28 | 47/46 (10) | 0.32 / 0.59 | 64 |
 | `P0_published_json` | live `events.json`, on the lane masks | 0.52 | 0.29 | 0.23 | 3.37 M | 16.62 M | 47.31 M | 5.0 | 151 | 4/32 | — | 0.24 / 0.46 | 0 |
 
+**Correction (2026-11-21, fix round 1):** this table was measured with the
+design-phase `TunedTracker`, a hand-copied replay of `Tracker.step()` that
+drifted from production. The implementation round re-measured the shipped
+C3 with the production code (`hb01 --selfcheck --strategies
+C3_valid_box_persist`, both gates PASS: the tuned strategies now inherit
+`Tracker.step()` and drive it only through `Params` knobs). Corrected C3
+heat row: fill med **0.76**, p10 0.51, daily fill 0.43, box med **1.14 M**,
+p90 4.70 M, max **22.15 M**, box/peak 2.2, **163** events, churn 45/46 (10
+id-paired). freeze/cold_snap row: fill **0.78**, box med **0.98 M**, p90
+3.03 M, max 11.80 M, 33 events, churn 13/11. The design-phase numbers in
+the table stand as relative comparisons between strategies, not as the
+absolute C3 outcome - see "Implementation result" for the final table.
+
 **daily fill med** is the number a reader perceives: the median, over an event's
 days, of the share of the box's land that is actually qualifying that day
 (0.24 today). Freeze columns are the same strategies replayed on the freeze lane
@@ -278,12 +291,13 @@ threshold in the tracker:
    2–98 % quantiles of that mask, falling back to the bbox of every ever-valid
    cell when the persistence mask is empty.
 
-Measured on heat waves: fill median 0.52 → **0.79**, p10 0.30 → **0.51**, daily
-fill median 0.24 → **0.43**, box median 3.80 → **1.11 M km²** (land 2.75 →
-**0.81 M km²**), p90 16.6 → **4.71 M km²**, max 61.6 → **19.5 M km²**, box/peak
-4.9 → **2.0**; all 5 worst boxes drop under 20 M km² while their fill *rises*.
-Freeze lane: fill 0.46 → **0.80**, daily fill 0.24 → **0.49**, box median 2.69 →
-**0.86 M km²**, box max 24.6 → 11.8 M km². Event count barely moves (162 → 161
+Measured on heat waves (production code, corrected 2026-11-21 - see
+"Implementation result"): fill median 0.52 → **0.76**, p10 0.30 → **0.51**, daily
+fill median 0.24 → **0.43**, box median 3.80 → **1.14 M km²** (land 2.78 →
+**0.87 M km²**), p90 16.6 → **4.70 M km²**, max 61.6 → **22.1 M km²**, box/peak
+4.9 → **2.2**; the worst box is still cut ~3x while fills rise.
+Freeze lane: fill 0.46 → **0.78**, daily fill 0.24 → **0.47**, box median 2.69 →
+**0.98 M km²**, box max 24.6 → 11.8 M km². Event count barely moves (162 → 163
 heat, 35 → 33 freeze), so this is not a strategy that hides boxes by deleting
 events.
 
@@ -386,69 +400,84 @@ feature flag.
 
 ---
 
-## Implementation result (hb-implement, 2026-11-21)
+## Implementation result (hb-implement, 2026-11-21; re-measured by hb-fix1 the
+same day after the round-1 review found the measuring script diverging from
+production - see the correction note under §4)
 
 C3_valid_box_persist is implemented on `fix/heatwave-box-size` (tracker knobs
 in `event_tracker.py`, publish + provenance in `temperature.py`, flood lane
 pinned to the shipped rules, SPEC §2 and notes/footprint_tracker.md updated).
 Re-measured on the LXC with the **production** code
-(`scripts/review/hb01_box_growth.py --selfcheck --strategies
-S2c_persist_half_trim,C3_valid_box_persist --published
-/opt/ewb-live/data/results/events.json --start 2026-08-21 --end 2026-11-13`,
-out/hb05*.json). Correctness gates first: `selfcheck` PASS on both hazards
-(legacy-pinned production reproduces the shipped tracker event-for-event,
-162/162 heat, 35/35 freeze) and `prodcheck` PASS (production C3 reproduces
-the measured C3 event-for-event, 161/161 and 33/33) - the port is faithful.
+(`scripts/review/hb01_box_growth.py --lane /opt/ewb-live/data/results/raw_exceedance
+--published /opt/ewb-live/data/results/events.json --start 2026-08-21
+--end 2026-11-13 --selfcheck --hazards heat_wave,freeze,cold_snap`; the
+strategies drive `Tracker.step()` through `Params` knobs only). Correctness
+gates, all PASS: `selfcheck` (legacy-pinned replay reproduces the shipped
+tracker event-for-event: 162/162 heat, 35/35 freeze, 35/35 cold_snap) and
+`prodcheck` (C3-tuned replay reproduces the production-C3 run event-for-event:
+163/163, 33/33, 33/33) - the measurement is the product.
 
-Before / after (85-day window, heat_wave n and freeze n):
+Before / after (85-day window 2026-08-21..11-13; cold_snap is re-scanned on
+the freeze mask by the weekly lane, so its detection columns equal freeze -
+the published catalogue's current cold_snap state is the P0 column):
 
-| metric                | heat S0 | heat C3 | freeze S0 | freeze C3 |
-|-----------------------|---------|---------|-----------|-----------|
-| events                | 162     | 161     | 35        | 33        |
-| fill, median          | 0.52    | **0.79**| 0.46      | **0.80**  |
-| fill, 10th pct        | 0.30    | 0.51    | 0.34      | 0.53      |
-| fill, worst event     | 0.11    | 0.27    | 0.16      | 0.34      |
-| daily fill, median    | 0.24    | 0.43    | 0.24      | 0.49      |
-| box, median (km2)     | 3.80M   | **1.11M**| 2.69M    | 0.86M     |
-| box, land-only median | 2.78M   | 0.81M   | 1.97M     | 0.80M     |
-| box, p90              | 16.6M   | 4.7M    | 8.0M      | 3.0M      |
-| box, max              | 61.6M   | 19.5M   | 24.6M     | 11.8M     |
-| box / biggest day, med| 4.9x    | 2.0x    | 4.3x      | 1.7x      |
-| duration med/max (d)  | 4/32    | 4/28    | 3/6       | 3/7       |
+| metric                | heat S0 | heat C3 | freeze S0 | freeze C3 | cold_snap P0 |
+|-----------------------|---------|---------|-----------|-----------|--------------|
+| events                | 162     | 163     | 35        | 33        | 24           |
+| fill, median          | 0.52    | **0.76**| 0.46      | **0.78**  | 0.48         |
+| fill, 10th pct        | 0.30    | 0.51    | 0.34      | 0.53      |              |
+| fill, worst event     | 0.11    | 0.27    | 0.16      | 0.34      |              |
+| daily fill, median    | 0.24    | 0.43    | 0.24      | 0.47      |              |
+| box, median (km2)     | 3.80M   | **1.14M**| 2.69M    | **0.98M** | 2.49M        |
+| box, land-only median | 2.78M   | 0.87M   | 1.97M     | 0.92M     | 1.97M        |
+| box, p90              | 16.6M   | 4.7M    | 8.0M      | 3.0M      | 8.1M (max)   |
+| box, max              | 61.6M   | 22.2M   | 24.6M     | 11.8M     | 8.1M         |
+| box / biggest day, med| 4.9x    | 2.2x    | 4.3x      | 1.7x      | 3.7x         |
+| duration med/max (d)  | 4/32    | 4/28    | 3/6       | 3/7       | 3/6          |
 
-Targets met: fill median >= 0.75 (0.79 / 0.80) and box median <= 1.5M km2
-(1.11M / 0.86M), without touching duration medians.
+Targets met: fill median >= 0.75 (0.76 / 0.78) and box median <= 1.5M km2
+(1.14M / 0.98M), without touching duration medians.
 
-Worst-5 fate (piece-identity matcher, >=70% same-day cell overlap):
-heat_wave-20260821-10, the 61.6M km2 / 31-day pan-American box, is KEPT and
-shrinks to 7.5M km2 at fill 0.95; the two October belt events
-(-20261013-548 at 45.5M km2 fill 0.34 and -20261014-557 at 42.1M km2) and the
-three worst spring-freeze boxes (24.6M/14.4M/8.4M km2, fills 0.37/0.53/0.36)
-are LOST - with the whole-region claim gone their valid-only area never
-reaches the 50k/200k km2 floors. That is C3 working as designed: those events
-were boxes, not weather. Catalogue churn vs the shipped tracker is heat 102
-matched / 60 lost / 59 gained, freeze 22 / 13 / 11 (lost and gained are mostly
-the same regions re-cut at persistence size); no published (curated) event is
-dropped and no new splits appear (published_dropped=0, split_extra=0 on both
-hazards). The 32-day monster ends 4 days earlier under C3 (core collapse
-measured on valid cells), the honest direction.
+Worst-5 fate (date+location matcher: >=3 shared days and bbox overlap -
+tracker ids are renumbered by any replay, so ids cannot be the pairing
+key; `hb01` `summary.worst5_paired`): heat_wave-20260821-10, the 61.6M km2
+pan-American box, is KEPT and shrinks to 9.1M km2 at fill 0.96; the two
+October belt events (-20261013-548 45.5M -> 6.6M fill 0.80, -20261014-557
+42.1M -> 11.7M fill 0.28) and the -20261105-780 / -20260918-279 belts are
+KEPT and cut 3-6x; the biggest surviving C3 box is 22.2M km2 (fill 0.58).
+Freeze: the two biggest boxes (24.6M and 14.4M km2) are KEPT at 2.1M km2
+fill 0.80; the 8.4M / 7.9M / 8.1M ring boxes shrink or die - with the
+whole-region claim gone their valid-only area never reaches the seed floor.
+That is C3 working as designed: those events were boxes, not weather.
+Catalogue churn vs the shipped tracker is heat 117 matched / 45 lost / 46
+gained, freeze 22 / 13 / 11 (lost and gained are mostly the same regions
+re-cut at persistence size; the lists with ids, boxes and bboxes are in the
+`hb01` summary as `lost5` / `gained5`); no published (curated) event is
+dropped and no new splits appear (published_dropped=0, split_extra=0 on all
+three hazards). The 32-day monster ends 4 days earlier under C3 (core
+collapse measured on valid cells), the honest direction.
 
 Ongoing-event ids: hashing the moving persistence box re-keys ongoing events
 every weekly run - measured on the LXC (`scripts/review/hb04_ongoing_ids.py`,
-two overlapping weekly windows, 2026-08-21..09-10 -> +7d): the shipped rule
-re-keys 2/5 ongoing ids, C3-with-published-hash re-keys 6/8. So the
-temperature-lane id now hashes the **frozen day-3 anchor bbox** instead of the
-published box (start unchanged; `anchor_day=None` falls back to the old rule).
+W1 2026-08-21..11-02, extend W2 +7d and slid-start W2s +7d - the two things a
+real weekly run does; at the lane edge (11-06) no spell is open, so the
+earlier committed window measured nothing). Of 5-6 ongoing heat spells per
+base: the published-box hash keeps 3/5 ids on extend and re-keys the rest,
+and is no better on the slid start; the shipped **anchor** basis (hash of the
+frozen day-3 box) keeps 5/5 under C3 on both extend and slid-start - start
+unchanged; `anchor_day=None` falls back to the old rule.
 An ongoing event keeps its id, URL, and score-cache lineage across weekly
 runs while its published box is redrawn - covered by
 `test_scan_id_survives_the_published_box_moving`. select.py merged ids and the
 other lanes are unchanged; note `subsume_freeze_overlaps` and curation
-overlap decisions run on the new (smaller) boxes, so curation must be
+overlap decisions run on the new (smaller) boxes - pinned both ways by
+`test_subsumption_on_the_smaller_c3_boxes` - so curation must be
 re-reviewed in the same release (scores too - same release).
 
-Tests: full `pytest -q` green (599 passed, 2 skipped; the 2 AR-upstream tests
-need the `third_party/ExtremeWeatherBench` clone, environment provisioning
-only). Local lint (`uvx ruff check`): no new findings in any changed file vs
-its branch baseline (the ruff 0.17 default ruleset fails the pre-existing
-repo baseline ~900 findings; my files are flat or -1). Replay runtimes:
-heat 69s, freeze 16s per strategy on the LXC.
+Tests: full `pytest -q` green on the fix branch (617 passed, 29 skipped; the
+skips are environment-gated - AR-upstream needs the
+`third_party/ExtremeWeatherBench` clone, e2e needs a live deploy; environment
+provisioning only). Local lint (`uvx ruff check`): no new findings in any
+changed file vs its branch baseline (the ruff 0.17 default ruleset fails the
+pre-existing repo baseline ~900 findings; my files are flat or -1). Replay
+runtimes: heat 70s, freeze 17s per strategy on the LXC.

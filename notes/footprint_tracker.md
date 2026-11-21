@@ -87,22 +87,30 @@ the cap / capped-neighbour / release / anchor cases are the
 differs from the LEGACY-pinned one; the publish rule has the
 `test_persistence_box_*` and seam cases.
 
-Measured on the live window (LXC replay, `scripts/review/hb01_box_growth.py`;
-see `notes/heatwave_box_diagnosis.md` §4 and "Implementation result"): heat
-fill median 0.52 → 0.79, daily fill 0.24 → 0.43, box median 3.80 → 1.11 M km²,
-max 61.6 → 19.5 M km²; freeze fill 0.46 → 0.80, box median 2.69 → 0.86 M km².
-Event membership genuinely changes (a continent-wide belt comes back as one
-object per hot region: ~48/162 heat spells get no matched successor), the
-published ids re-hash once (the bbox is in `make_event_id`), and every
-scoring region shrinks — so the release rebuilds `events.json`, the id-keyed
-score cache and the scorecard together.
+Measured on the live window 2026-08-21..11-13 (LXC replay with the shipped
+code — the review scripts replay through the production `Tracker.step()` and
+both gates pass: `selfcheck` reproduces the shipped tracker 162/162 heat,
+35/35 freeze/cold_snap, `prodcheck` reproduces the production-C3 run
+163/163 heat, 33/33 freeze/cold_snap; see
+`notes/heatwave_box_diagnosis.md` "Implementation result" for the full
+table): heat fill median 0.52 → 0.76, daily fill 0.24 → 0.43, box median
+3.80 → 1.14 M km², max 61.6 → 22.2 M km²; freeze fill 0.46 → 0.78, box median
+2.69 → 0.98 M km²; cold_snap is re-scanned on the freeze mask, so it moves
+with freeze (the published cold_snap catalogue today sits at fill 0.48, box
+median 2.49 M km²). Event membership genuinely changes (a continent-wide
+belt comes back as one object per hot region: 45/162 heat spells lose their
+successor and 46 new ones appear under C3), the published ids re-hash once
+(the bbox is in `make_event_id`), and every scoring region shrinks — so the
+release rebuilds `events.json`, the id-keyed score cache and the scorecard
+together.
 
 The re-hash is a one-time cost, not a weekly one: the heat/freeze id now
 hashes the **anchor bbox** (frozen day-3 box) rather than the published box,
 so an ongoing event keeps its id while its persistence box is redrawn
-(`scripts/review/hb04_ongoing_ids.py`: hashing the published box re-keyed
-6/8 ongoing spells per week, the anchor basis keeps them; `select.py`'s
-merged ids and the other lanes are unchanged).
+(`scripts/review/hb04_ongoing_ids.py`: hashing the published box re-keys 2 of
+5 ongoing heat spells across one weekly extend (+7d) and keeps only 3/5 ids
+when the 90-day window start also slides +7d; the anchor basis keeps 5/5 in
+both; `select.py`'s merged ids and the other lanes are unchanged).
 
 ## Port layout
 
@@ -177,4 +185,22 @@ cd /opt/ewb-events-live && EWB_LIVE_CACHE=/opt/ewb-events-live/data/cache \
     --published /opt/ewb-live/data/results/events.json --out /tmp/evt02.json
 # laneref/ = symlinks to /opt/ewb-events/data/raw/*.bin + an index.json describing the
 # grid (ny 721, nx 1440, lat0 -90, lon0 -180, step 0.25) and cutoff = last frame.
+
+# the box-size change itself (all read-only against production data):
+cd /opt/ewb-heatbox && EWB_LIVE_CACHE=/opt/ewb-heatbox/data/cache \
+  /opt/ewb-live/.venv/bin/python scripts/review/hb01_box_growth.py \
+    --lane /opt/ewb-live/data/results/raw_exceedance \
+    --published /opt/ewb-live/data/results/events.json \
+    --start 2026-08-21 --end 2026-11-13 --selfcheck \
+    --hazards heat_wave,freeze,cold_snap --out out/hb01_fix
+#   selfcheck + prodcheck above; per-hazard JSONs carry the churn lists
+#   (lost5/gained5/worst5_paired) behind every number in the notes table
+  /opt/ewb-live/.venv/bin/python scripts/review/hb04_ongoing_ids.py \
+    --lane /opt/ewb-live/data/results/raw_exceedance \
+    --start 2026-08-21 --end 2026-11-02      # ongoing@W1end, W2 = +7d, W2s slid +7d
+  /opt/ewb-live/.venv/bin/python scripts/review/hb05_qualify_fallbacks.py \
+    --events /opt/ewb-live/data/results/events.json \
+    --lane /opt/ewb-live/data/results/raw_exceedance
+#   attributes every qualified_at fallback (all 31: qualified_date sits on
+#   the exclusive end date, so the frame window is empty by construction)
 ```
