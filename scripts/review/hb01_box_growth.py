@@ -11,9 +11,11 @@ tracker (``ewb_live/events/event_tracker.py``, SPEC §2) on the same lane frames
 * records every day the box grew and WHY, attributing the added area to the
   growth hypotheses H1..H5 (H6/H7 are audited separately, see
   ``notes/heatwave_box_diagnosis.md``);
-* re-scores the tightening strategies S1..S7 (parameter sets plus a
-  ``Tracker`` subclass that lives only in this file — nothing in ``ewb_live/``
-  is changed) on identical inputs so they can be compared on one table.
+* re-scores the tightening strategies S1..S7 (production ``Params`` knob sets
+  plus a rolling-box ``Tracker`` subclass that lives only in this file —
+  nothing in ``ewb_live/`` is changed) on identical inputs so they can be
+  compared on one table.``--selfcheck``/``--prodcheck`` prove the legacy and
+  C3 rows run the same ``Tracker`` code production runs.
 
 The daily mask is the tracker's own input: the published ``raw_exceedance``
 frames ANDed over the four 00/06/12/18Z steps, land only (SPEC §2 "Mask
@@ -36,6 +38,7 @@ growth log) and ``<out>_summary.json``.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime as dt
 import importlib
 import json
@@ -92,7 +95,12 @@ class Window:
 
 def load_window(lane: Path, start: dt.date, end: dt.date, hazard: str,
                 land: np.ndarray | None = None) -> Window:
-    """Daily masks straight out of the published frames lane (read-only)."""
+    """Daily masks straight out of the published frames lane (read-only).
+
+    cold_snap (review #7) tracks the p15 freeze layer without the <=0C cap
+    (temperature.MAX_C_BY_TYPE[cold_snap] is None), so its replay input is
+    the freeze lane bits themselves - exactly the MASK_ALIAS the scan uses.
+    """
     dates, lats, lons, masks = frame_masks.daily_masks(lane)
     sel = [i for i, d in enumerate(dates) if start <= d <= end]
     if not sel:
@@ -103,7 +111,8 @@ def load_window(lane: Path, start: dt.date, end: dt.date, hazard: str,
         from ewb_live.viz.build import land_mask
 
         land = land_mask(lats, lons)
-    return Window(hazard, dates, lats, lons, masks[hazard][sel],
+    return Window(hazard, dates, lats, lons,
+                  masks[frame_masks.MASK_ALIAS.get(hazard, hazard)][sel],
                   _cell_area_km2(lats, step, lons.size), land)
 
 
@@ -144,149 +153,55 @@ class Published:
         return self.spell.id + (f"-{self.tag}" if self.tag else "")
 
 
-# ------------------------------------------------------- tuned tracker (S3/5/7)
+# ------------------------------------------------------- tuned tracker (S7)
 class TunedTracker(Tracker):
-    """``Tracker`` with the three box rules the strategies need, all off by default.
+    """``Tracker`` with the prototype flags expressed as production Params.
 
-    With every flag off this reproduces :class:`~ewb_live.events.event_tracker.Tracker`
-    exactly (``--selfcheck`` proves it), so a strategy can change the rule
-    without touching production code.
+    The three box rules (claim/seed/merge) are production ``Params`` knobs
+    since the 2026-11-20 C3 rule, so the tuned tracker maps its prototype
+    flags onto them and inherits ``Tracker.step`` unchanged - the table rows
+    and production then cannot drift apart (``--selfcheck`` proves a flags-off
+    run equals the shipped legacy rule, ``--prodcheck`` that production
+    defaults equal the C3 row, merge fix included).
 
     Args:
-        claim_overlap: claim only the region cells that are valid today AND
-            within ``move_cells`` of the current footprint (S3), instead of
-            every cell of a claimed region, closing-filled cells included.
-        seed_valid_only: a new candidate's box/footprint is the region's *valid*
-            cells, not the whole labelled region (S3's other half: a seed box
-            that spans a closing-filled gap is born too big).
-        merge_keeps_older_box: on a merge keep the surviving (older) event's box
-            and clip the partner's cells to it (S5) instead of unioning boxes.
-        rolling_days: re-derive the box each day from the footprints of the last
-            ``rolling_days`` days so it may shrink (S7); None = cumulative box.
+        claim_overlap: production ``claim_valid_only`` (S3).
+        seed_valid_only: production ``seed_valid_only`` (S3v).
+        merge_keeps_older_box: production ``merge_keep_box`` (S5; since the
+            round-1 fix the survivor keeps growing by its OWN claim and only
+            the younger members' cells are clipped into the older box).
+        rolling_days: re-derive the reported box each day from the
+            footprints of the last ``rolling_days`` days so it may shrink
+            (S7); None = the cumulative box. Applied as a post-step hook:
+            the day's claim, anchor and core checks run on the stock
+            cumulative box (the pre-anchor rolling the first S7 pass ran
+            inside the step could not be reused once the rules moved into
+            production ``Tracker.step``; it only ever differed for events
+            under ``anchor_day`` days old).
     """
 
     def __init__(self, cell_area: np.ndarray, params: Params, hazard: str,
                  claim_overlap: bool = False, seed_valid_only: bool = False,
                  merge_keeps_older_box: bool = False,
                  rolling_days: int | None = None) -> None:
-        super().__init__(cell_area, params, hazard)
-        self.claim_overlap = claim_overlap
-        self.seed_valid_only = seed_valid_only
-        self.merge_keeps_older_box = merge_keeps_older_box
+        super().__init__(cell_area, dataclasses.replace(
+            params, claim_valid_only=claim_overlap,
+            seed_valid_only=seed_valid_only,
+            merge_keep_box=merge_keeps_older_box), hazard)
         self.rolling_days = rolling_days
         self.box_hist: dict[str, list[Box]] = {}
 
     def step(self, day: dt.date, valid: np.ndarray) -> list[TrackedEvent]:
-        """One day: the stock step with the box rules above swapped in."""
-        p = self.params
-        ny, nx = valid.shape
-        weighted = valid * self.cell_area
-        self.streak = np.where(valid, self.streak + 1, 0)
-        labels = label_regions(valid, p.region_radius, p.region_min_fraction)
-        region_area = ndi.sum(weighted, labels, np.arange(labels.max() + 1))
-        region_area[0] = 0.0
-
-        hits = [self.follow(ev, labels, region_area) for ev in self.active]
-        for k, ev in enumerate(self.active):
-            if ev.qualified is not None and self.ending(ev, hits[k], labels,
-                                                        valid, weighted, day):
-                hits[k] = set()   # release its regions, as the stock step does
-        groups = merge_groups(hits, [ev.box for ev in self.active],
-                              self.fits, nx)
-        groups.sort(key=lambda g: (self.active[g[0]].qualified is None, g[0]))
-        taken = np.zeros((ny, nx), bool)
-        kept: list[TrackedEvent] = []
-        ended: list[TrackedEvent] = []
-        for group in groups:
-            ev = self.active[group[0]]
-            group_hits = set().union(*(hits[k] for k in group))
-            merged_in = False
-            for k in group[1:]:
-                other = self.active[k]
-                if self.merge_keeps_older_box:
-                    merged_in = True
-                else:
-                    ev.box = ev.box.union(other.box, nx)
-                if other.qualified is not None and (
-                        ev.qualified is None
-                        or other.qualified < ev.qualified):
-                    ev.qualified = other.qualified
-            share = (np.isin(labels, list(group_hits)) & ~taken if group_hits
-                     else np.zeros((ny, nx), bool))
-            if self.claim_overlap and ev.footprint.any():
-                share &= valid & dilate(ev.footprint, p.move_cells)
-            if merged_in:
-                share &= ev.box.mask(ny, nx)
-            if share.any():
-                grown = ev.box.union(Box.from_mask(share), nx)
-                if self.fits(grown):
-                    ev.box = grown
-                else:
-                    share &= ev.box.mask(ny, nx)
-            if share.any():
-                ev.footprint = share
-            if self.rolling_days:
-                ev.box = self._rolling_box(ev, share, nx)
-            footprint_area = float(weighted[share].sum())
-            box_area = float(weighted[ev.box.mask(ny, nx)].sum())
-            if ev.qualified is None:
-                if footprint_area >= p.qualify_area_km2:
-                    ev.qualified = day
-                elif not share.any() or (day - ev.start).days >= p.max_ramp_days:
-                    continue
-            if (p.anchor_day is not None and ev.anchor is None
-                    and (day - ev.start).days + 1 >= p.anchor_day):
-                ev.anchor = ev.box
-            core_area = self.core_area(ev, ev.anchor or ev.box, day, weighted)
-            if ev.qualified is not None and core_area < p.end_area_km2:
-                ev.end = day
-                ended.append(ev)
-                continue
-            taken |= share
-            ev.footprint_area_km2.append(footprint_area)
-            ev.box_area_km2.append(box_area)
-            ev.core_area_km2.append(core_area)
-            kept.append(ev)
-
-        occupied = np.zeros((ny, nx), bool)
-        for ev in kept:
-            occupied |= ev.box.mask(ny, nx)
-        free_area = ndi.sum(weighted * ~taken, labels,
-                            np.arange(labels.max() + 1))
-        free_area[0] = 0.0
-        for label in np.flatnonzero(free_area >= p.seed_area_km2):
-            region = (labels == label) & ~taken
-            if self.seed_valid_only:
-                region &= valid
-                if not region.any():
-                    continue
-            if (occupied & region).any():
-                continue
-            box = Box.from_mask(region)
-            if not self.fits(box):
-                continue
-            self.count += 1
-            ev = TrackedEvent(f"{self.hazard}-{day:%Y%m%d}-{self.count}",
-                              self.hazard, day, box)
-            ev.footprint = region
-            area = float(free_area[label])
-            if area >= p.qualify_area_km2:
-                ev.qualified = day
-            ev.footprint_area_km2.append(area)
-            ev.box_area_km2.append(float(weighted[ev.box.mask(ny, nx)].sum()))
-            ev.core_area_km2.append(ev.box_area_km2[-1])
-            if p.anchor_day is not None and p.anchor_day <= 1:
-                ev.anchor = box
-            occupied |= ev.box.mask(ny, nx)
-            kept.append(ev)
-        self.active = sorted(kept, key=lambda e: (e.start, e.id))
+        ended = super().step(day, valid)
+        if self.rolling_days:
+            for ev in self.active:
+                ev.box = self._rolling_box(ev, nx=valid.shape[1])
         return ended
 
-    def _rolling_box(self, ev: TrackedEvent, share: np.ndarray,
-                     nx: int) -> Box:
+    def _rolling_box(self, ev: TrackedEvent, nx: int) -> Box:
         """Bbox of the footprints of the last ``rolling_days`` days."""
         hist = self.box_hist.setdefault(ev.id, [])
-        hist.append(Box.from_mask(share) if share.any() else ev.box)
+        hist.append(Box.from_mask(ev.footprint) if ev.footprint.any() else ev.box)
         del hist[:-self.rolling_days]
         box = hist[0]
         for b in hist[1:]:
@@ -405,11 +320,13 @@ def _evkey(ev):
 
 
 def selfcheck(w: Window, params: Params) -> bool:
-    """With all flags off the tuned tracker must equal the pre-C3 shipped one.
+    """With all flags off the tuned tracker must equal the pre-C3 shipped rule.
 
-    Production ``Params()`` is C3 since 2026-11-20 (SPEC §2), so the shipped
-    side of the comparison pins those knobs off - exactly how the S0 row
-    replays the old rule.
+    Production ``Params()`` is C3 since 2026-11-20 (SPEC §2), so both sides
+    pin the knobs off here - the S0 row replays the old rule through the SAME
+    ``Tracker`` code the strategies use (TunedTracker now only maps its flags
+    onto the production knobs, so a table row cannot silently drift from
+    production any more - review round 1).
     """
     from ewb_live.events.event_tracker import track_events
 
@@ -427,10 +344,11 @@ def selfcheck(w: Window, params: Params) -> bool:
 def prodcheck(w: Window, params: Params) -> bool:
     """Production defaults (the C3 knobs) must reproduce the tuned C3 tracking.
 
-    The C3 row of the table is the TunedTracker with claim_overlap +
-    seed_valid_only + merge_keeps_older_box; the shipped Tracker now carries
-    the same rules as Params defaults - this asserts they agree event-for-event
-    on the live lane, so the table row *is* what the next production run does.
+    The C3 row is the TunedTracker with claim_overlap + seed_valid_only +
+    merge_keeps_older_box, which maps onto production ``Params()`` - this
+    asserts the two agree event-for-event on the live lane (including the
+    round-1 merge fix, which both sides now run through the shared
+    ``Tracker.step``), so the table row *is* what the next production run does.
     """
     from ewb_live.events.event_tracker import track_events
 
@@ -831,11 +749,39 @@ def geom_delta(w: Window, rows: list[dict], base_rows: list[dict]) -> dict:
             "gained_ids": [rows[i]["id"] for i in sorted(only_new)][:8]}
 
 
-def paired_worst(rows: list[dict], base_rows: list[dict]) -> list[dict]:
-    """Before/after of the three biggest baseline boxes."""
+def paired_worst(rows: list[dict], base_rows: list[dict], n: int = 5) -> list[dict]:
+    """Before/after of the ``n`` biggest baseline boxes (C3 is a big rule,
+    not a tweak - we want to see what happened to the boxes that made the
+    problem visible).
+
+    Successors are matched by DATE AND LOCATION - windows sharing >= 3 days
+    whose bboxes intersect - not by tracker-id string: every C3 run renumbers
+    the tracker's objects, so id pairing compares nothing (review #5). The
+    biggest such successor is the "after" box; a spell that C3 split shows
+    its largest piece, and one it killed shows kept=false.
+    """
+    def _span(r: dict) -> tuple[dt.date, dt.date]:
+        return (dt.date.fromisoformat(r["start"]), dt.date.fromisoformat(r["end"]))
+
+    def _intersects(a: dict, b: dict) -> bool:
+        for l0, l1 in ([(a["bbox"][2], a["bbox"][3])]
+                       if a["bbox"][2] <= a["bbox"][3]
+                       else [(a["bbox"][2], 180.0), (-180.0, a["bbox"][3])]):
+            for m0, m1 in ([(b["bbox"][2], b["bbox"][3])]
+                           if b["bbox"][2] <= b["bbox"][3]
+                           else [(b["bbox"][2], 180.0), (-180.0, b["bbox"][3])]):
+                if min(l1, m1) - max(l0, m0) > 0:
+                    return True
+        return False
+
+    def _pairable(b: dict, r: dict) -> bool:
+        b0, b1 = _span(b)
+        r0, r1 = _span(r)
+        return (min(b1, r1) - max(b0, r0)).days + 1 >= 3 and _intersects(b, r)
+
     out = []
-    for b in sorted(base_rows, key=lambda r: -r["box_km2"])[:3]:
-        cand = [r for r in rows if r["parent"] == b["parent"]]
+    for b in sorted(base_rows, key=lambda r: -r["box_km2"])[:n]:
+        cand = [r for r in rows if _pairable(b, r)]
         best = max(cand, key=lambda r: r["box_km2"], default=None)
         out.append({"id": b["id"], "start": b["start"], "end": b["end"],
                     "before_box_km2": round(b["box_km2"]),
@@ -877,7 +823,7 @@ def run_strategies(w: Window, base_spells: list[Spell], base_rows: list[dict],
                     rows, rows_pre)["split_into_extra"]
                 agg["published_dropped"] = identity_delta(
                     rows, rows_pre)["lost_vs_current"]
-            agg["worst3_paired"] = paired_worst(rows, base_rows)
+            agg["worst5_paired"] = paired_worst(rows, base_rows)
         out[st.name] = {"summary": agg, "rows": rows}
         print(f"  {w.hazard:<10} {st.name:<31} n={agg['n']:<4} "
               f"fill_med={agg.get('fill_med', 0):.2f} "
@@ -955,7 +901,7 @@ def main() -> int:
         base_rows = [score_one(w, Published(s, s.box)) for s in base_spells]
         base_agg = aggregate(base_rows, time.perf_counter() - t0)
         base_agg["note"] = "as shipped"
-        base_agg["worst3_paired"] = paired_worst(base_rows, base_rows)
+        base_agg["worst5_paired"] = paired_worst(base_rows, base_rows)
         entry: dict[str, Any] = {"S0_current": {"summary": base_agg,
                                                 "rows": base_rows}}
         entry["attribution"] = attribute(w, params0)
