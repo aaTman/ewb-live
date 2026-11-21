@@ -449,6 +449,7 @@ function normScRow(r) {
     ci_lo: firstDefined(r.ci95_lo, r.ci_lo),
     ci_hi: firstDefined(r.ci95_hi, r.ci_hi),
     n_events: Number.isFinite(r.n_events) ? r.n_events : null,
+    n_samples: Number.isFinite(r.n_samples) ? r.n_samples : null,
     rel: firstDefined(r.relative_skill_vs_ifs_pct, r.skill_vs_ifs_pct),
   };
 }

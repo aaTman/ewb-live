@@ -33,7 +33,25 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 from test_trackviz_fe import EVENT as TC_EVENT  # the same synthetic storm  # noqa: E402
 
 
-def _fixture(root):
+def _tc_score_rows():
+    """Scorecard rows of the TC lane in the real pipeline schema (build_scorecard)."""
+    rows = []
+    for model, scale, miss in (("ifs_hres", 1.0, 0.05), ("graphcast", 0.8, 0.10), ("aurora", 1.3, 0.62)):
+        for lead in (24.0, 48.0, 72.0, 96.0, 120.0):
+            rel = None if model == "ifs_hres" else round((1.0 - scale) * 100, 2)
+            for metric, val in (("TrackPositionError", 60.0 * scale * lead / 24.0), ("TrackMiss", miss),
+                                ("AlongTrackError", -4.0 * scale), ("CrossTrackError", 6.0 * scale),
+                                ("CentralPressureError", 12.0 * scale)):
+                signed = metric in ("AlongTrackError", "CrossTrackError", "CentralPressureError")
+                rows.append({"event_type": "tropical_cyclone", "metric": metric, "lead_time_hours": lead,
+                             "model": model, "mean": round(val, 3), "n_events": 6, "n_samples": 40,
+                             "ci95_lo": None, "ci95_hi": None,
+                             "skill_vs_ifs_pct": None if signed or model == "ifs_hres" else rel,
+                             "skill_n_common": 6})
+    return rows
+
+
+def _fixture(root, tc_scores=False):
     web = os.path.join(root, "webroot")
     os.makedirs(web)
     for f in os.listdir(DASH):
@@ -55,6 +73,14 @@ def _fixture(root):
     json.dump({"weeks": []}, open(os.path.join(out, "weeks.json"), "w"))
     json.dump({}, open(os.path.join(out, "scorecard_by_region.json"), "w"))
     json.dump({"events": []}, open(os.path.join(out, "global_timeline.json"), "w"))
+    if tc_scores:
+        sc = json.load(open(os.path.join(out, "scorecard.json")))
+        sc["rows"] = sc["rows"] + _tc_score_rows()
+        json.dump(sc, open(os.path.join(out, "scorecard.json"), "w"))
+        meta = json.load(open(os.path.join(out, "meta.json")))
+        meta["track_verification"] = {"tropical_cyclone": {
+            "min_wind_kt": 34.0, "n_events": 1, "n_inits_verified": 12, "n_inits_not_verified": 5, "events": {}}}
+        json.dump(meta, open(os.path.join(out, "meta.json"), "w"))
     return web
 
 
@@ -123,11 +149,13 @@ def test_close_detail_teardown(page):
     assert page._errs == [], page._errs
 
 
-def test_scorecard_says_not_scored_for_the_lane(page):
+def test_scorecard_says_not_scored_when_the_build_has_no_tc_score_rows(page):
+    """TC is a scored lane now (WP1): a data release WITHOUT its score rows says so
+    ("Not scored in this data release"), not "no EWB benchmark"."""
     page.wait_for_selector("#scorecard-sec .sc-block", timeout=20000)
     body = page.inner_text("#scorecard-sec")
     assert "Not scored" in body, body[:400]
-    assert "IBTrACS" in body
+    assert "no EWB benchmark for IBTrACS" not in body
 
 
 def test_screenshot(page):
@@ -216,3 +244,75 @@ def test_honest_zero_reports_the_archive_reach(zero_page):
 def test_honest_zero_when_archive_unreachable(zero_page):
     pg = zero_page(lambda m: m.update(ibtracs=None))
     assert "unreachable" in pg.inner_text("#event-table")
+
+
+# ---------------------------------------------------------- the scored lane ---
+@pytest.fixture(scope="module")
+def base_scored(tmp_path_factory):
+    web = _fixture(str(tmp_path_factory.mktemp("tls")), tc_scores=True)
+    handler = lambda *a, **k: _Quiet(*a, directory=web, **k)  # noqa: E731
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{srv.server_address[1]}"
+    srv.shutdown()
+
+
+@pytest.fixture(params=[(1440, 1000), (390, 844)], ids=["1440", "390"])
+def scored_page(base_scored, request):
+    w, h = request.param
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        pg = b.new_page(viewport={"width": w, "height": h})
+        errs: list[str] = []
+        pg.on("pageerror", lambda e: errs.append(str(e)))
+        pg._errs = errs                      # type: ignore[attr-defined]
+        pg.goto(base_scored + "/index.html#tab=tropical_cyclone")
+        pg.wait_for_selector("#scorecard-sec .sc-block table", timeout=20000)
+        yield pg
+        b.close()
+
+
+def test_tc_lane_renders_scored_table_with_miss_rate_beside_the_error(scored_page):
+    pg = scored_page
+    head = pg.inner_text("#scorecard-sec .sc-block thead")
+    assert "TRACK ERROR" in head.upper() and "MISS RATE" in head.upper()
+    assert "NOT SCORED" not in pg.inner_text("#scorecard-sec").upper()
+    leads = pg.eval_on_selector_all("#scorecard-sec .sc-block thead tr.lead th", "els => els.map(e => e.innerText)")
+    assert [x for x in leads if x.endswith("d")] == ["1d", "2d", "3d", "4d", "5d", "1d", "2d", "3d", "4d", "5d"], leads
+    # miss rate prints as a percentage, the error in km
+    cells = pg.inner_text("#scorecard-sec .sc-block tbody tr:has-text('graphcast')")
+    assert "10%" in cells and "60" not in cells.split("graphcast")[0]
+    assert pg._errs == [], pg._errs
+
+
+def test_tc_cell_above_50pct_misses_is_greyed_and_says_why(scored_page):
+    pg = scored_page
+    grey = pg.locator("#scorecard-sec .sc-block td.cell.miss-grey")
+    assert grey.count() == 5, grey.count()                     # aurora: 5 error cells (miss rate 62 %)
+    assert all("aurora" in t for t in pg.eval_on_selector_all(
+        "#scorecard-sec .sc-block td.cell.miss-grey", "els => els.map(e => e.closest('tr').innerText)"))
+    grey.first.hover()
+    pg.wait_for_selector("#tooltip:not(.hidden)", timeout=5000)
+    tip = pg.inner_text("#tooltip")
+    assert "greyed" in tip and "tracked" in tip, tip
+
+
+def test_tc_note_states_the_rules_and_the_not_verified_count(scored_page):
+    note = scored_page.inner_text("#scorecard-sec .lane-note")
+    assert "IBTrACS" in note and "ahead" in note and "right" in note
+    assert "5 earlier ones not verified" in note and "12 00/12 UTC inits verified" in note
+
+
+def test_tc_more_metrics_shows_signed_components(scored_page):
+    pg = scored_page
+    pg.get_by_role("button", name="more metrics").click()
+    pg.wait_for_timeout(500)
+    head = pg.inner_text("#scorecard-sec .sc-block thead").upper()
+    for label in ("ALONG-TRACK", "CROSS-TRACK", "CENTRAL PRESSURE"):
+        assert label in head, head
+    assert pg._errs == [], pg._errs
+
+
+def test_tc_no_horizontal_page_scroll(scored_page):
+    over = scored_page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert over <= 0, over
