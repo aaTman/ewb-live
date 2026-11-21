@@ -32,12 +32,16 @@ growing*:
    holds ``qualify_area_km2`` (200k km2); it is valid when it qualified and
    lasted >= ``min_days`` (3) days. An event ends on the first day its **core**
    holds less than ``end_area_km2`` (100k km2). The core is the valid area in
-   its box made of cells valid *every day since the event began* — the heat
-   that started the event. From ``anchor_day`` (3) the core is measured inside
-   the box the event had on that day (its **anchor**), so an event ends when
-   the persistent spell at its early location breaks, even if fresh heat keeps
-   appearing elsewhere inside its grown box. That is what stops the permanently
-   hot belts (Amazon, Sahara/Sahel, Indonesia) from running for a whole season.
+   its box made of cells valid *every day since the event qualified* — the heat
+   that made it an event (owner decision 2026-11-21, ``Params.core_clock``;
+   ``core_clock="start"`` keeps the pre-change count from the start day). The
+   core clock therefore starts at qualification, so the qualifying day can
+   never also be the ending day. From the later of ``anchor_day`` (3) and the
+   qualification day the core is measured inside the box the event had on that
+   day (its **anchor**), so an event ends when the persistent spell at its
+   early location breaks, even if fresh heat keeps appearing elsewhere inside
+   its grown box. That is what stops the permanently hot belts (Amazon,
+   Sahara/Sahel, Indonesia) from running for a whole season.
 
 The tracker box is the *tracking* geometry. What a scan publishes as the event
 rectangle (``ewb_live/events/temperature.py``) is the **persistence box**
@@ -257,8 +261,17 @@ class Params:
             event's grown footprint is at least this share of the *smaller* of
             region and (ungrown) footprint.
         join_area_km2: Smallest region that may join an open footprint.
+        core_clock: Which day the core's every-day-since streak is counted
+            from: ``"qualified"`` (default, owner 2026-11-21) counts cells
+            valid every day since the event *qualified*, so a spell that grows
+            into qualification is never ended by its own qualifying day; the
+            anchor freezes no earlier than that day either. ``"start"`` is the
+            pre-2026-11-21 rule (count from the candidate's start day) and
+            reproduces it exactly.
         anchor_day: Event day (1 = first) whose box fixes where the core is
-            counted from then on; None counts the whole growing box.
+            counted from then on; None counts the whole growing box. Under
+            ``core_clock="qualified"`` the anchor freezes on the later of this
+            day and the qualification day, never before qualification.
         max_box_area_km2: Largest box allowed: a bigger region cannot seed, and
             an event at the cap keeps its box and clips its footprint to it.
             None means no limit.
@@ -294,6 +307,7 @@ class Params:
     move_cells: int = 8
     min_overlap: float = 0.5
     join_area_km2: float = 1e4
+    core_clock: Literal["qualified", "start"] = "qualified"
     anchor_day: int | None = 3
     max_box_area_km2: float | None = None
     claim_valid_only: bool = True
@@ -314,6 +328,9 @@ class TrackedEvent:
         start: Day the candidate was seeded.
         box: Box covering every footprint so far; fixed once ended.
         qualified: First day the footprint reached ``qualify_area_km2``.
+        core_clock_start: Day the core's every-day-since streak counts from
+            (:meth:`Tracker.core_clock_day`): the day this object qualified,
+            or the day it inherited qualification through a merge.
         end: First day the core held less than ``end_area_km2``; None while open.
         anchor: Box on ``anchor_day``; the core is measured inside it from then on.
         footprint_area_km2: Valid area in the footprint on each open day.
@@ -327,6 +344,7 @@ class TrackedEvent:
     start: dt.date
     box: Box
     qualified: dt.date | None = None
+    core_clock_start: dt.date | None = None
     end: dt.date | None = None
     anchor: Box | None = None
     footprint_area_km2: list[float] = field(default_factory=list)
@@ -414,7 +432,12 @@ class Tracker:
                 other = self.active[k]
                 if other.qualified is not None and (
                         ev.qualified is None or other.qualified < ev.qualified):
+                    # the survivor publishes the earlier qualification, but its
+                    # core clock never moves into a past it did not live
+                    # through: it keeps its own start of clock, or starts
+                    # today's if it had none (SPEC §2, step 4)
                     ev.qualified = other.qualified
+                    ev.core_clock_start = ev.core_clock_start or day
                 if p.merge_keep_box:
                     # ... a merge only clips the YOUNGER member's claim into
                     # the older box; the survivor's own drift cells stay free
@@ -437,10 +460,12 @@ class Tracker:
             if ev.qualified is None:
                 if footprint_area >= p.qualify_area_km2:
                     ev.qualified = day
+                    ev.core_clock_start = day
                 elif not share.any() or (day - ev.start).days >= p.max_ramp_days:
                     continue
             if (p.anchor_day is not None and ev.anchor is None
-                    and (day - ev.start).days + 1 >= p.anchor_day):
+                    and (day - ev.start).days + 1 >= p.anchor_day
+                    and self.anchor_released(ev)):
                 ev.anchor = ev.box
             core_area = self.core_area(ev, ev.anchor or ev.box, day, weighted)
             if ev.qualified is not None and core_area < p.end_area_km2:
@@ -476,10 +501,12 @@ class Tracker:
             area = float(free_area[label])
             if area >= p.qualify_area_km2:
                 ev.qualified = day
+                ev.core_clock_start = day
             ev.footprint_area_km2.append(area)
             ev.box_area_km2.append(float(weighted[ev.box.mask(ny, nx)].sum()))
             ev.core_area_km2.append(ev.box_area_km2[-1])
-            if p.anchor_day is not None and p.anchor_day <= 1:
+            if (p.anchor_day is not None and p.anchor_day <= 1
+                    and self.anchor_released(ev)):
                 ev.anchor = box
             occupied |= ev.box.mask(ny, nx)
             kept.append(ev)
@@ -513,10 +540,27 @@ class Tracker:
                     box = grown
         return self.core_area(ev, box, day, weighted) < self.params.end_area_km2
 
+    def core_clock_day(self, ev: TrackedEvent) -> dt.date:
+        """The day the core counts its every-day-since streak from."""
+        if self.params.core_clock == "start":
+            return ev.start
+        return ev.core_clock_start or ev.qualified or ev.start
+
+    def anchor_released(self, ev: TrackedEvent) -> bool:
+        """True when the anchor may freeze: under ``core_clock="qualified"``
+        never before the core clock starts, i.e. never before qualification."""
+        return (self.params.core_clock == "start"
+                or ev.core_clock_start is not None)
+
     def core_area(self, ev: TrackedEvent, box: Box, day: dt.date,
                   weighted: np.ndarray) -> float:
-        """Valid area in ``box`` from cells valid every day since the event began."""
-        age = (day - ev.start).days + 1
+        """Valid area in ``box`` from cells valid every day since the core clock.
+
+        The clock starts at the day the event qualified (SPEC §2 step 4, owner
+        2026-11-21) or at its start day under ``core_clock="start"``, so an
+        event always holds at least one core cell on its qualifying day.
+        """
+        age = (day - self.core_clock_day(ev)).days + 1
         return float(weighted[box.mask(*weighted.shape) & (self.streak >= age)].sum())
 
     def follow(self, ev: TrackedEvent, labels: np.ndarray,

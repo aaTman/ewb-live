@@ -6,13 +6,15 @@ methodology of 2026-11-10, ported from github.com/aaTman/ewb-events into
 ``ewb_live/events/event_tracker.py`` and specified in SPEC §2: regions ->
 candidates at 50k km2 -> events at 200k km2 of footprint, a box that grows with
 the footprint, and an end when the **core** (the cells valid every day since
-the event began, measured in the day-3 anchor box) falls below 100k km2. Since
+the event qualified, measured in its anchor box) falls below 100k km2. Since
 the 2026-11-20 box-size rule the tracker box (cumulative) is only the tracking
 geometry: the published Event bbox is the **persistence box** (the cells valid
 on >= half the event's days, area-weighted 2-98 % trimmed; ``Params.publish_box
 / publish_min_fraction / publish_trim``) and the event id hashes the frozen
 day-3 anchor bbox, so an ongoing event keeps its id across weekly runs while
-its published box is redrawn (SPEC §2, notes/footprint_tracker.md). It
+its published box is redrawn (SPEC §2, notes/footprint_tracker.md). The core
+and the anchor both start no earlier than qualification (owner decision
+2026-11-21): a spell that grows into its qualifying day is never ended by it. It
 replaced, in order: the upstream EWB blob tracker (unbounded 1 deg-per-edge
 expansion, "blob vanished or <50% of own peak" ending, no seed suppression;
 notes/ewb.md) and the same morning's interim 200k-seed/+250 km-box rule
@@ -260,7 +262,7 @@ def _mirror_t2m_daily(dates, lats, lons, reduce: str = "mean") -> np.ndarray | N
     return out - 273.15
 
 
-TRACK_RULE_REV = "c3-v1"  # bump when the heat/freeze/cold_snap tracking rule changes (cache key)
+TRACK_RULE_REV = "c3-v2"  # bump when the heat/freeze/cold_snap tracking rule changes (cache key)
 
 FREEZE_MAX_C = 0.0   # freeze cells: t2m <= this (degC) at all four 6-hourly steps
 
@@ -344,7 +346,7 @@ def scan_temperature_events(
     Tracking is the owner's footprint/core methodology
     (``ewb_live/events/event_tracker.py``, SPEC §2): regions -> candidates at
     50k km2 -> events at 200k km2 of footprint, an end when the core (valid
-    every day since the start, measured in the day-3 anchor box) holds less
+    every day since the event qualified, measured in its anchor box) holds less
     than 100k km2. The tracker box keeps growing with the footprint (follow/
     claim/seeding geometry); the published Event bbox is the persistence box
     and the id hashes the day-3 anchor box (SPEC §2, 2026-11-20 rule). ``min_area_km2`` overrides the 200k

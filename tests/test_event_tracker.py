@@ -35,8 +35,11 @@ PARAMS = Params(region_radius=1, region_min_fraction=0.3, move_cells=2,
 # (Params.claim_valid_only / seed_valid_only / merge_keep_box, SPEC §2) is the
 # default; these tests predate it and assert its geometry, so they run with
 # the legacy knobs on. The C3 rule has its own tests further down.
+# core_clock="start" (owner 2026-11-21): the shipped core counted every-day
+# valid cells from the candidate's start day; these cases pin that too.
 LEGACY = dataclasses.replace(PARAMS, claim_valid_only=False,
-                             seed_valid_only=False, merge_keep_box=False)
+                             seed_valid_only=False, merge_keep_box=False,
+                             core_clock="start")
 DAY0 = dt.date(2026, 9, 1)
 
 
@@ -307,6 +310,10 @@ def test_defaults_match_the_published_methodology():
     # the older box, published box = persistence box (2-98 % trim, half-days k)
     assert (p.claim_valid_only, p.seed_valid_only, p.merge_keep_box) == (True, True, True)
     assert (p.publish_box, p.publish_min_fraction, p.publish_trim) == ("persistence", 0.5, 0.02)
+    # owner 2026-11-21: the core clock (and the anchor freeze) start at
+    # qualification; "start" is the pinned pre-change rule
+    assert p.core_clock == "qualified"
+    assert LEGACY.core_clock == "start"
 
 
 def test_event_ends_when_its_persistent_core_drops_under_the_floor():
@@ -327,6 +334,180 @@ def test_core_needs_cells_valid_every_day_since_the_event_began():
     evs = run([a, a & ~left, a, a, left, cells(0)])   # left misses day 2
     assert evs[0].end == DAY0 + dt.timedelta(days=4)  # its run restarted: not core
     assert evs[0].core_area_km2 == [25e4, 20e4, 20e4, 20e4]
+
+
+# ------------------------------------------- core clock from qualification (2026-11-21) ---
+# Owner decision 2026-11-21 (SPEC §2 step 4): the core counts cells valid every
+# day since the event QUALIFIED, and the anchor freezes no earlier than that
+# day. Under the shipped rule (``core_clock="start"``) a spell that grew into
+# its qualifying day was closed in the same pass - the core still held only the
+# small seed area - and its region was free to re-seed the very next day, which
+# is how 29 heat + 2 freeze events in the live catalogue got
+# ``qualified_date == end``. Every case below runs both clocks so the diff is
+# visible, and every pinned number comes from a measurement in the worktree.
+
+QUALIFY_END = dataclasses.replace(PARAMS, end_area_km2=Params().end_area_km2)
+
+
+def test_growing_spell_survives_its_own_qualifying_day():
+    """60k -> 120k -> 250k held: ONE event, early start kept (fails on "start")."""
+    frames = [cells(6), cells(12), cells(25), cells(25), cells(25), cells(0)]
+    evs = run(frames, QUALIFY_END)
+    assert len(evs) == 1
+    ev = evs[0]
+    assert ev.start == DAY0                              # the ramp day is kept
+    assert ev.qualified == DAY0 + dt.timedelta(days=2)
+    assert ev.end == DAY0 + dt.timedelta(days=5)
+    assert (ev.qualified - ev.start).days < ev.duration_days
+    # the qualifying heat is the core: 25 cells valid since the qualifying day
+    assert ev.core_area_km2 == [6e4, 6e4, 25e4, 25e4, 25e4]
+    # the old rule closed the candidate on the day it qualified (its core was
+    # still the 60k seed) and the same spell re-seeded as a new event
+    old = run(frames, dataclasses.replace(QUALIFY_END, core_clock="start"))
+    assert len(old) == 1
+    assert old[0].start == DAY0 + dt.timedelta(days=2)   # the early days were lost
+    assert old[0].core_area_km2 == [25e4, 25e4, 25e4]
+
+
+def test_qualifying_at_seed_is_the_same_under_both_clocks():
+    """A region that qualifies on its seed day: start == qualified, no diff."""
+    frames = [cells(25), cells(25), cells(25), cells(25), cells(0)]
+    new = run(frames, QUALIFY_END)[0]
+    old = run(frames, dataclasses.replace(QUALIFY_END, core_clock="start"))[0]
+    assert (new.start, new.qualified, new.end, new.anchor) == \
+           (old.start, old.qualified, old.end, old.anchor)
+    assert (new.start, new.qualified, new.end) == (DAY0, DAY0, DAY0 + dt.timedelta(days=4))
+    assert new.core_area_km2 == old.core_area_km2
+
+
+def test_qualify_clock_still_ends_a_draining_spell():
+    """The new clock must not make events immortal: cells still drain."""
+    frames = [cells(25), cells(25), cells(25), cells(5), cells(5), cells(0)]
+    ev = run(frames, QUALIFY_END)[0]
+    assert ev.qualified == DAY0
+    assert ev.end == DAY0 + dt.timedelta(days=3)     # 50k core < the 100k floor
+    assert ev.core_area_km2 == [25e4, 25e4, 25e4]
+    assert ev == run(frames, dataclasses.replace(QUALIFY_END, core_clock="start"))[0]
+
+
+def test_qualify_clock_still_ends_a_drifting_belt():
+    """Permanent-belt style: 1.2M km2 of heat that never sits still still dies.
+
+    The belt holds its footprint by drifting 2 cells a day, so no cell stays
+    valid long enough inside the frozen anchor box: the core falls 1.2M -> 120k
+    and the event ends on its 10th day exactly as under the start clock. The
+    qualify clock only stops a *growing* spell from being cut off at its own
+    qualifying day; a belt that re-claims fresh ground is still a season, not
+    an event.
+    """
+    frames = [block(slice(10, 16), slice(10 + 2 * t, 30 + 2 * t)) for t in range(14)]
+    frames.append(cells(0))
+    new = run(frames, QUALIFY_END)
+    old = run(frames, dataclasses.replace(QUALIFY_END, core_clock="start"))
+    assert [(ev.start, ev.end) for ev in new] == [(ev.start, ev.end) for ev in old]
+    assert [ev.duration_days for ev in new] == [10, 4]
+    assert new[0].core_area_km2[:4] == [12e5, 10.8e5, 9.6e5, 8.4e5]
+    assert new[0].core_area_km2[-1] == 1.2e5          # the day before it fell under
+
+
+def test_anchor_freezes_no_earlier_than_qualification():
+    """A spell that qualifies after day 3 anchors on its qualifying day."""
+    frames = [cells(6), cells(12), cells(19), cells(25), cells(25), cells(25), cells(0)]
+    ev = run(frames, QUALIFY_END)[0]
+    assert ev.qualified == DAY0 + dt.timedelta(days=3)
+    # the box the event had on its qualifying day (rows 10..14 - the ramp's
+    # 4-row day-3 box under the start clock froze a row too early)
+    assert ev.anchor == Box(10, 14, 10, 14)
+    old = run(frames, dataclasses.replace(QUALIFY_END, core_clock="start"))[0]
+    assert old.anchor == Box(10, 13, 10, 14)          # frozen on event day 3
+
+
+def test_merge_inherited_qualification_does_not_end_the_survivor():
+    """A candidate that gains qualification by absorbing a younger event.
+
+    The survivor keeps the earlier *published* qualification but its core clock
+    starts on the merge day: it cannot be ended by a past it never held, and
+    its anchor freezes on the merge day, not before. Under the start clock the
+    merge day was also its last day (its own 60k seed core was under the floor).
+    """
+    a = block(slice(10, 12), slice(10, 13))            # 60k candidate, day 0
+    b = block(slice(10, 15), slice(40, 45))            # 250k: qualifies at its seed day
+    region = block(slice(10, 15), slice(10, 45))       # one label welds them on day 3
+    frames = [a, a | b, a | b, region, region, cells(0)]
+    ev = run(frames, QUALIFY_END)[0]
+    assert ev.start == DAY0
+    assert ev.qualified == DAY0 + dt.timedelta(days=1)     # inherited from B
+    assert ev.core_clock_start == DAY0 + dt.timedelta(days=3)   # the merge day
+    assert ev.anchor == Box(10, 13, 10, 14)                 # frozen on that day
+    assert ev.end == DAY0 + dt.timedelta(days=5)
+    assert ev.start <= ev.qualified < ev.end
+    old = run(frames, dataclasses.replace(QUALIFY_END, core_clock="start"))[0]
+    assert old.end == DAY0 + dt.timedelta(days=3)           # died on the merge day
+
+
+def test_seam_ramp_keeps_its_early_start():
+    """The same growing spell across the antimeridian."""
+    def seam(cols: int) -> np.ndarray:
+        m = np.zeros((NY, NX), bool)
+        m[10:15, [(78 + k) % NX for k in range(cols)]] = True
+        return m
+    frames = [seam(1), seam(2), seam(5), seam(5), seam(5), cells(0)]
+    ev = run(frames, QUALIFY_END)[0]
+    assert (ev.start, ev.qualified, ev.end) == (
+        DAY0, DAY0 + dt.timedelta(days=2), DAY0 + dt.timedelta(days=5))
+    assert ev.box.j0 > ev.box.j1                     # still the short wrapped arc
+    assert ev.anchor == Box(10, 14, 78, 1)
+    assert run(frames, dataclasses.replace(QUALIFY_END, core_clock="start"))[0].start \
+        == DAY0 + dt.timedelta(days=2)
+
+
+def test_ending_uses_the_same_core_clock_as_step():
+    """step and ending() must agree, or a live event is killed by a stale core."""
+    day = DAY0 + dt.timedelta(days=4)
+    valid = block(slice(10, 15), slice(10, 20))       # 50 cells = 500k km2
+    streak = np.zeros((NY, NX), int)
+    streak[10:15, 10:20] = 2                         # valid the last two days only
+    ev = TrackedEvent("heat_wave-x", "heat_wave", DAY0, Box(10, 14, 10, 19),
+                      qualified=day - dt.timedelta(days=1),
+                      core_clock_start=day - dt.timedelta(days=1),
+                      anchor=Box(10, 14, 10, 19), footprint=valid)
+    labels = np.zeros((NY, NX), int)
+    weighted = valid * AREA
+
+    def tracker_with(params: Params) -> Tracker:
+        tr = Tracker(AREA, params, "heat_wave")
+        tr.streak = streak.copy()
+        return tr
+
+    qualified = tracker_with(QUALIFY_END)
+    assert not qualified.ending(ev, set(), labels, valid, weighted, day)
+    # the start clock counts from day 0: no cell was valid that long, core 0
+    start = tracker_with(dataclasses.replace(QUALIFY_END, core_clock="start"))
+    assert start.ending(ev, set(), labels, valid, weighted, day)
+    assert (qualified.core_area(ev, ev.anchor, day, weighted),
+            start.core_area(ev, ev.anchor, day, weighted)) == (5e5, 0.0)
+
+
+def test_no_event_ever_ends_on_its_qualifying_day():
+    """Invariant: start <= qualified < end, and the qualifying day is recorded."""
+    a = block(slice(10, 15), slice(10, 15))
+    scenarios = [
+        [cells(6), cells(12), cells(25), cells(25), cells(25), cells(0)],
+        [cells(25)] * 4 + [cells(0)],
+        [cells(25), cells(25), cells(25), cells(5), cells(5), cells(0)],
+        drifting(6),
+        [a] * 3 + [block(slice(10, 15), slice(15, 20))] * 3 + [cells(0)],
+        [block(slice(10, 16), slice(10 + 2 * t, 30 + 2 * t)) for t in range(8)] + [cells(0)],
+    ]
+    for frames in scenarios:
+        for ev in run(frames, QUALIFY_END):
+            assert ev.qualified is not None
+            assert ev.start <= ev.qualified
+            assert ev.end is None or ev.qualified < ev.end
+            days = (ev.duration_days if ev.end is None
+                    else (ev.end - ev.start).days)
+            assert (ev.qualified - ev.start).days < days, ev.id
+            assert (ev.qualified - ev.start).days < len(ev.footprint_area_km2)
 
 
 def test_young_event_core_needs_only_its_age_in_days():
