@@ -68,6 +68,7 @@ from __future__ import annotations
 
 import datetime as dt
 import functools
+import json
 import logging
 import os
 from typing import Any
@@ -188,15 +189,22 @@ def _detail(e, key: str, default: float = 0.0) -> float:
     return float(v) if v is not None else default
 
 
-_severity_cache: dict[str, float] = {}
+_severity_cache: dict[tuple, float] = {}
+
+
+def _severity_key(e) -> tuple:
+    """Cache key: a merged event can reuse a member's id with a longer window."""
+    details = {k: v for k, v in (e.details or {}).items() if k != "severity_rank_score"}
+    return (e.id, e.end, e.peak_value, json.dumps(details, sort_keys=True, default=str))
 
 
 def severity(e) -> float:
     """Severity score (arbitrary units, comparable within an event type)."""
-    if e.id in _severity_cache:
-        return _severity_cache[e.id]
+    key = _severity_key(e)
+    if key in _severity_cache:
+        return _severity_cache[key]
     val = _severity(e)
-    _severity_cache[e.id] = val
+    _severity_cache[key] = val
     return val
 
 
@@ -558,7 +566,6 @@ def _load_exclusions() -> dict:
     {event_id: {"reason": str, "by": str, "date": str}} applied at curation.
     Used for events misclassified by detection but settled by product review
     (e.g. post-tropical cyclones scored as ARs). Absent file = no exclusions."""
-    import json
     import pathlib
     p = pathlib.Path("data/curation_exclusions.json")
     try:
@@ -643,7 +650,7 @@ def _add_continuations(selected: list, pool: list, decisions: list[dict]) -> lis
     accepted = list(selected)
     candidates = (e for e in pool if e.event_type in CONTINUATION_TYPES
                   and e.id not in used and e.id not in exclusions)
-    for c in sorted(candidates, key=lambda e: (e.start, e.id)):
+    for c in sorted(candidates, key=lambda e: (e.start, -severity(e), e.id)):
         parent = next((s for s in parents if s.event_type == c.event_type
                        and 0.0 <= (c.start - s.end).total_seconds() / 86400.0 <= MERGE_GAP_DAYS
                        and _bbox_iou(c.bbox, s.bbox) >= MERGE_MIN_IOU), None)

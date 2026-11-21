@@ -1181,3 +1181,35 @@ def test_missing_truth_at_the_window_edge_stays_empty():
     t2m[0] = t2m[2] = np.nan
     assert (_bridge_missing_days(mask, t2m) == mask).all()
     assert _bridge_missing_days(mask, None) is mask
+
+
+def test_a_missing_truth_day_never_counts_toward_the_day_floor():
+    from types import SimpleNamespace
+
+    from ewb_live.events.temperature import _observed_days
+
+    dates = [dt.date(2026, 9, d) for d in range(1, 8)]
+    closed = SimpleNamespace(start=dates[1], end=dates[4])      # three event days
+    still_open = SimpleNamespace(start=dates[5], end=None)
+    assert _observed_days(closed, dates, set()) == 3
+    assert _observed_days(closed, dates, {dates[2]}) == 2
+    assert _observed_days(still_open, dates, {dates[6]}) == 1
+
+
+def test_merged_run_length_bridges_a_missing_truth_day(monkeypatch):
+    from ewb_live.events.temperature import recompute_merged_max_consec
+    from ewb_live.events.types import Event
+    from ewb_live.viz import build as vb
+
+    t = np.full((20, 2, 2), 310.0)
+    t[8:12] = np.nan                                            # day 3 of 5
+    axis = np.array([0.0, 1.0])
+    monkeypatch.setattr(vb, "truth_times", lambda start, end: list(range(20)))
+    monkeypatch.setattr(vb, "open_truth_window", lambda *a: (t, axis, axis, "mirror"))
+    monkeypatch.setattr(vb, "thresholds_for", lambda *a: (np.full_like(t, 300.0), 0.85))
+    monkeypatch.setattr(vb, "land_mask", lambda lat, lon: np.ones((2, 2), bool))
+    ev = Event(id="x", event_type="heat_wave", title="", start=dt.datetime(2026, 9, 1),
+               end=dt.datetime(2026, 9, 6), bbox=(0.0, 1.0, 0.0, 1.0), peak_value=40.0,
+               details={"merged_count": 2, "max_consecutive_days": 2, "quantile": 0.85})
+    assert recompute_merged_max_consec([ev], None) == 1
+    assert ev.details["max_consecutive_days"] == 5

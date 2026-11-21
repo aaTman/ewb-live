@@ -340,3 +340,10 @@ def test_scoring_treats_cold_snap_like_freeze():
     t = make_targets("cold_snap", "era5_arco")
     assert list(t) == ["ERA5"]
     assert "surface_air_temperature" in str(t["ERA5"].variables)
+
+
+def test_subzero_fraction_ignores_a_bridged_day_without_temperature():
+    active = np.ones((2, 2, 2), bool)
+    dmax = np.full((2, 2, 2), -1.0, "f4")
+    dmax[1] = np.nan
+    assert cs.subzero_flags(active, dmax) == {"subzero_cell_fraction": 1.0, "contains_subzero": True}

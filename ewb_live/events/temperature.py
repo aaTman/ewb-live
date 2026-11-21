@@ -273,6 +273,12 @@ def _bridge_missing_days(mask: np.ndarray, t2m: np.ndarray | None) -> np.ndarray
     return out
 
 
+def _observed_days(ev, dates: list[dt.date], missing: set[dt.date]) -> int:
+    """Event days with truth: a bridged day never counts toward ``min_days``."""
+    end = ev.end or dates[-1] + dt.timedelta(days=1)
+    return sum(1 for d in dates if ev.start <= d < end and d not in missing)
+
+
 TRACK_RULE_REV = "c3-v4"  # bump when the heat/freeze/cold_snap tracking rule changes (cache key); c3-v4 = merge survivor "largest_close" + missing-truth days bridged
 
 FREEZE_MAX_C = 0.0   # freeze cells: t2m <= this (degC) at all four 6-hourly steps
@@ -435,6 +441,9 @@ def scan_temperature_events(
 
     mask = _bridge_missing_days(mask, t2m_dmax)
     raw = track_events(mask, dates, cell_area, p, event_type)
+    if t2m_dmax is not None:
+        missing = {dates[i] for i in np.flatnonzero(np.isnan(t2m_dmax).all(axis=(1, 2)))}
+        raw = [ev for ev in raw if _observed_days(ev, dates, missing) >= p.min_days]
     logger.info("  tracked %s: %d valid events (%d cells-days valid)",
                 event_type, len(raw), int(mask.sum()))
 
@@ -730,10 +739,10 @@ def recompute_merged_max_consec(events: list[Event], cutoff) -> int:
             land = vb.land_mask(lat, lon)
             passed = ((t > thr) if e.event_type == "heat_wave" else (t < thr)) & land
             daily = passed.reshape(len(times) // 4, 4, len(lat), len(lon)).min(axis=1)
+            tmax = t.reshape(len(times) // 4, 4, len(lat), len(lon)).max(axis=1)
             if e.event_type == "freeze":
-                tmax = (t.reshape(len(times) // 4, 4, len(lat), len(lon))
-                        .max(axis=1) - 273.15)
-                daily = daily & (tmax <= FREEZE_MAX_C)
+                daily = daily & (tmax - 273.15 <= FREEZE_MAX_C)
+            daily = _bridge_missing_days(daily, tmax)
             d["max_consecutive_days"] = int(vb.consecutive_days(daily).max())
             n += 1
         except Exception as exc:  # noqa: BLE001 — keep member-max, never fail detection

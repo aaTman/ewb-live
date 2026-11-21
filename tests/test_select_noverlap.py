@@ -395,3 +395,17 @@ def test_continuation_never_overlaps_a_kept_event():
     out = select.rank_and_cap([a, c, f], 1)
     assert sorted(e.id for e in out) == ["a", "f"]
     assert_no_overlaps(out)
+
+
+def test_severity_cache_separates_events_sharing_an_id():
+    short = mk("heat_wave", dt.date(2026, 8, 1), 5, CONT_BOX, 40.0, sev=1.0, id="same")
+    longer = mk("heat_wave", dt.date(2026, 8, 1), 9, CONT_BOX, 40.0, sev=7.0, id="same")
+    assert select.severity(short) == 1.0
+    assert select.severity(longer) == 7.0
+
+
+def test_continuation_tie_goes_to_the_more_severe_fragment():
+    a = mk("heat_wave", dt.date(2026, 8, 1), 14, CONT_BOX, 40.0, sev=10.0, id="a")
+    low = mk("heat_wave", dt.date(2026, 8, 15), 5, (30.0, 40.0, -100.0, -94.0), 39.0, sev=1.0, id="b-low")
+    high = mk("heat_wave", dt.date(2026, 8, 15), 5, (30.0, 40.0, -96.0, -90.0), 39.0, sev=2.0, id="c-high")
+    assert [e.id for e in select.rank_and_cap([a, low, high], 1)] == ["a", "c-high"]

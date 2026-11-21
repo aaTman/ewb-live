@@ -391,21 +391,27 @@ sides read identical bytes.
 The owner compared 90-day videos of M2 and M3 on repaired data and chose M2: fewer
 duplicate rows, no empty-footprint open events, and a readable timeline. Today's core
 rule stays; capped core-age variants (3, 4, 5 and 7 days) chained events up to 59 days.
-`TRACK_RULE_REV` c3-v3 -> c3-v4 re-runs the temperature scans.
+`TRACK_RULE_REV` c3-v3 -> c3-v4 re-runs the temperature scans. The round-4 sections above
+describe `separate` as shipped; this decision supersedes them.
 
 ## Release checklist (merge day, one-time)
 
 Merging changes event geometry (new ids) and starts stamping viz assets, so the
 first weekly after deploy rebuilds part of the asset tree. In order:
 
-1. Merge via PR; CI gates as usual. Deploy `main` to the LXC per the usual path.
+1. Merge via PR into `develop`; CI gates as usual. Deploy it to the LXC per the usual path.
+   **Then repair the missing ERA5 days**, with no weekly or pipeline run active:
+   `./ops/remote.sh 'cd /opt/ewb-live && .venv/bin/python -m ewb_live.scoring.truth_mirror --requeue-nan'`
+   (expected on 2026-11-21: `requeued` 32, then `copied` 16 for Nov 4 and `unavailable` 16
+   for Nov 9), followed immediately by
+   `./ops/remote.sh 'cd /opt/ewb-live && .venv/bin/python -m ewb_live.viz.exceedance --force'`
+   (about 21 min). `index.json` `no_truth` must then list only the four Nov 9 frames. Keep
+   `--force`: a plain build after the requeue leaves the blank Nov 4 frames indexed.
 2. **Pre-warm the viz assets** off the weekly window (one run, resumable):
    `./ops/remote.sh 'cd /opt/ewb-live && .venv/bin/python -m ewb_live.viz --all --time-budget-s 3300'`.
-   Expected as of 2026-11-21 (`hb06_ship.py --fresh`-equivalent run, output
-   `out/hb06r4.json`): **42 rebuilds** - the 42 newly selected ids that have
-   no asset yet (42 selected ids drop out and keep their old assets on disk;
-   0 stamp mismatches). ~7,600 s at the measured mean per-asset cost, so
-   budget for one resume. AR assets are current by rule (unstamped at schema
+   The round-4 estimate of **42 rebuilds** (~7,600 s) was measured under `separate`
+   and has not been re-measured for `largest_close`, so budget for at least one
+   resume. AR assets are current by rule (unstamped at schema
    3) and are NOT rebuilt.
 3. Re-run the same command if the budget prints (`viz: time budget ... reached`)
    - completed assets match their stamp and are skipped, so the rerun resumes.
