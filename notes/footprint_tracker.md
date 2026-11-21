@@ -45,6 +45,60 @@ max_ramp_days 5, region_radius 6, region_min_fraction 0.3, move_cells 8, min_ove
 0.5, join_area 10 000 km², anchor_day 3, max_box_area None, and since
 2026-11-21 `core_clock="qualified"` (the flood lane pins `"start"`).
 
+## The 2026-11-21 merge-survivor rule (round 4): qualified events never merge
+
+The third adversarial review found that the round-3 survivor rule (oldest
+qualified member absorbs the group) **deletes larger, healthy qualified
+events**: the dome object `heat_wave-20260917-321` (3.62M km2, qualified at
+seed) was absorbed on 09-20 by a 0.48M km2 older neighbour that ended the next
+day; the dome re-seeded a day late under a new id. Round 4 implemented three
+candidates behind `Params.merge_survivor` and measured them on the real
+lat>=-60 replay of the live window for all three hazards
+(`scripts/review/hb08_merge_survivor.py`, outputs `out/hb08r4_*.json`):
+
+| rule (heat/freeze/cold) | events | aged-Q lost | qual. same-day re-seeds | G1 dome | G2 | G4 | G5 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `oldest_qualified` (round-3 shipped) | 159 / 13 / 30 | 25 / 1 / 1 | 24 / 1 / 1 | **fail** (09-21 object) | **4** | pass | pass |
+| `largest` (M1) | 156 / 12 / 29 | 24 / 1 / 1 | 19 / 1 / 1 | pass | **7 (fails)** | pass | pass |
+| `largest_close` (M2) | 163 / 12 / 29 | 24 / 1 / 1 | 19 / 1 / 1 | pass | 0 | pass | pass |
+| `separate` (M3, **ships**) | 172 / 13 / 30 | 0 / 0 / 0 | 0 / 0 / 0 | pass | 0 | pass | pass |
+
+(G2 = aged qualified members that vanished unpublished with no same-start
+carrier; "aged-Q lost" counts absorbed qualified members of any age - under
+M2 they publish, which is why its G2 is 0; re-seeds count same-day re-seeded
+objects inside an absorbed member's box. G1 dome = the central-Africa spell
+published as ONE event starting <= 09-17 running to ~10-06: M1/M2/M3 all
+publish `09-17 -> 10-06` peak 3.62M km2 as one object, the round-3 rule
+publishes the 09-21 re-seed.)
+
+**Winner: `separate`, by the owner-brief's ranking** (fewest lost qualified
+events, then fewest same-day re-seeds, then smallest event-count change).
+`largest` fails G2 outright (7 heat events). M2 and M3 both zero G2, but M3
+doesn't absorb any aged qualified member at all (0 vs 24) and leaves 0
+qualified same-day re-seeds (vs 19-21); its cost is the third criterion -
+heat publishes 172 events instead of 159 (+8% score jobs) because a
+qualifying blob beside a qualified event is its own event instead of being
+clipped into the neighbour, and heat box median moves 1.12M -> 1.21M km2
+(fill 0.83 unchanged; G5's medians pass with margin). Two qualified objects
+whose regions weld can now run side by side with overlapping boxes (see
+`test_separate_default_splits_the_belt_instead_of_clipping_it`) - the owner
+can flip to `largest_close` in one line if the product prefers fewer rows
+over never truncating a spell.
+
+Shipped semantics: contested cells go to the larger qualified event's claim
+first (ties: oldest) - the claim step keeps every cell in exactly one event
+regardless of rule; unqualified candidates are still absorbed by qualified
+events, with their claim clipped into the survivor's box; qualification is
+never inherited (round-3 invariant kept). `TRACK_RULE_REV` c3-v2 -> c3-v3
+(temperature score cache re-scores once on deploy; the flood lane pins
+`merge_survivor="oldest_qualified"` in `FLOOD_PARAMS` so its cache key is
+unmoved). G6 on real data: the current AND legacy rule digests of the
+new code match the 8b3b152 tree for all three hazards (six digests), the
+flood fuzz golden (`61288b41...`) is byte-identical, and the pre-knob
+`oldest_qualified` fuzz digest (`e588d54c...`, 323 events) is pinned in
+`tests/test_event_tracker.py::test_merge_survivor_rule_fuzz_digests_are_pinned`
+next to the shipped `separate` golden (`b72440c1...`, 409 events).
+
 ## The 2026-11-21 core clock: the end check starts at qualification
 
 Owner decision 2026-11-21 (the round-2 review of `fix/heatwave-box-size`). The
@@ -70,19 +124,21 @@ qualification-frame windows). `Params.core_clock` makes the clock explicit:
   and the LEGACY knobs of the tracker tests.
 
 A merge never hands qualification to a spell that never reached the floor on
-its own footprint (round-3 review fix, 2026-11-21): under `merge_keep_box`
-the survivor is the merge's **oldest qualified member** — only a merge of
-pure candidates keeps the oldest candidate — `qualified_date` is always a day
-the survivor's OWN footprint reached `qualify_area_km2`, and an absorbed
-unqualified candidate disappears like any younger member (its leftover region
-cells stay free to seed). The pre-fix rule let the OLDEST member survive even
-when it was an unqualified candidate: it inherited a younger member's
-qualification, the merge then clipped the qualified cells into the
-candidate's small box, and the tracker published "valid" events whose peak
-footprint sat below the qualify floor (second adversarial review: 10 of 174
-replayed heat events published with a 63k-195k km2 peak, 28 heat and 1 freeze
-merge groups where an unqualified survivor absorbed a qualified member; the
-real 469k km² spell it swallowed re-seeded a day late). `test_merge_survivor_is_the_oldest_qualified_member` pins the repro,
+its own footprint (round-3 review fix, 2026-11-21): a
+qualified day is always a day the survivor's OWN footprint reached
+`qualify_area_km2`, and an absorbed unqualified candidate disappears like any
+younger member (its leftover region cells stay free to seed). The pre-fix rule
+let the OLDEST member survive even when it was an unqualified candidate: it
+inherited a younger member's qualification, the merge then clipped the
+qualified cells into the candidate's small box, and the tracker published
+"valid" events whose peak footprint sat below the qualify floor (second
+adversarial review: 10 of 174 replayed heat events published with a 63k-195k
+km2 peak, 28 heat and 1 freeze merge groups where an unqualified survivor
+absorbed a qualified member; the real 469k km² spell it swallowed re-seeded a
+day late). Round 3's survivor choice (oldest QUALIFIED member) is superseded by
+round 4's merge-survivor rule below; the no-inherited-qualification invariant
+survives unchanged. `test_merge_survivor_is_the_oldest_qualified_member` pins
+the repro,
 `test_fuzz_default_params_never_publish_a_sub_floor_event` fuzzes the
 invariant, and `test_legacy_and_flood_results_are_unchanged_by_the_survivor_rule`
 goldens that the LEGACY/flood parameter paths (their pinned
@@ -115,7 +171,7 @@ ARCO, and the ARCO path split two spells the lane keeps single
 (`2230575b4bb8` 09-05..09-10, `ba6e076fce14` 10-27..11-01)):
 
 | metric | heat S0 | heat C3 | **heat C5** | freeze S0 | freeze C3 | **freeze C5** | cold_snap S0 | **cold_snap C3** | **cold_snap C5** |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | events | 149 | 148 | **159** | 11 | 10 | **13** | 24 | 23 | **30** |
 | fill, median | 0.52 | 0.74 | **0.83** | 0.42 | 0.69 | **0.85** | 0.48 | 0.78 | **0.81** |
 | daily fill, median | 0.23 | 0.42 | **0.43** | 0.24 | 0.45 | **0.47** | 0.25 | 0.47 | **0.52** |
@@ -302,45 +358,84 @@ sides read identical bytes.
   the scan window, the scan falls back to ERA5 (and says so). Events cannot start before
   the lane's first day, hence `details.window_start_truncated`.
 
+## Release checklist (merge day, one-time)
+
+Merging changes event geometry (new ids) and starts stamping viz assets, so the
+first weekly after deploy rebuilds part of the asset tree. In order:
+
+1. Merge via PR; CI gates as usual. Deploy `main` to the LXC per the usual path.
+2. **Pre-warm the viz assets** off the weekly window (one run, resumable):
+   `./ops/remote.sh 'cd /opt/ewb-live && .venv/bin/python -m ewb_live.viz --all --time-budget-s 3300'`.
+   Expected as of 2026-11-21 (re-derive with `hb06_ship.py --fresh` below):
+   ~42 of the 137 existing assets rebuild (41 selected-event ids that have no
+   asset + 1 stamp-mismatch), plus whatever ids the geometry change renamed.
+   AR assets are current by rule (unstamped at schema 3) and are NOT rebuilt.
+3. Re-run the same command if the budget prints (`viz: time budget ... reached`)
+   - completed assets match their stamp and are skipped, so the rerun resumes.
+   `viz: global steps ran` must NOT appear; if it does, finish the warm-up
+   before the weekly window instead of letting weekly burn its timeout.
+4. Trigger the weekly run; check the log for `weekly: global scorecard steps
+   still ran after the viz time budget` (must not appear) and that the asset
+   count moved by the expected number.
+5. **Re-check curation exclusions**: ids change with the geometry, so
+   `data/curation_exclusions.json` entries pinned to old ids are inert - the
+   excluded events reappear until re-excluded by id or by the operator's
+   judgement (one-off curation review; owner call).
+6. Rollback is a plain revert of the merge commit: nothing is deleted, old-id
+   assets stay on disk and the old viz code ignores the new `event_stamp`
+   field (schema stays 3). If AR viz code ever changes, bump
+   `ASSET_SCHEMA_VERSION` to 4 - that is the one lever that invalidates the
+   unstamped AR assets (SPEC: "bump when the viz artifact shape changes").
+
 ## Reproduce
 
 ```bash
-# on the ewb LXC, scratch checkout (production /opt/ewb-live untouched)
-cd /opt/ewb-events-live && EWB_LIVE_CACHE=/opt/ewb-events-live/data/cache \
-  /opt/ewb-live/.venv/bin/python scripts/review/evt02_tracker_port_compare.py \
-    --start 2026-08-11 --end 2026-11-02 --lane laneref \
-    --reference /opt/ewb-events/output/events_streak1.json \
-    --published /opt/ewb-live/data/results/events.json --out /tmp/evt02.json
-# laneref/ = symlinks to /opt/ewb-events/data/raw/*.bin + an index.json describing the
-# grid (ny 721, nx 1440, lat0 -90, lon0 -180, step 0.25) and cutoff = last frame.
-
-# the box-size change itself (all read-only against production data):
+# on the ewb LXC, scratch checkout /opt/ewb-heatbox (production /opt/ewb-live
+# read-only; the round-2 evt02 tracker-port recipe lives in git history)
 cd /opt/ewb-heatbox && EWB_LIVE_CACHE=/opt/ewb-heatbox/data/cache \
   /opt/ewb-live/.venv/bin/python scripts/review/hb01_box_growth.py \
     --lane /opt/ewb-live/data/results/raw_exceedance \
     --published /opt/ewb-live/data/results/events.json \
     --start 2026-08-21 --end 2026-11-13 --selfcheck \
-    --hazards heat_wave,freeze,cold_snap --out out/hb01_fix
-#   selfcheck + prodcheck above; per-hazard JSONs carry the churn lists
-#   (lost5/gained5/worst5_paired) behind every number in the notes table
+    --hazards heat_wave,freeze,cold_snap --emit-events out/hb01_c5_events \
+    --out out/hb01
+#   --selfcheck runs both gates: the pinned legacy fingerprint replays the
+#   shipped tracker (flood/legacy regression on real data) and production
+#   Params() replays the tuned C5 row exactly (round-4 note: --prodcheck is
+#   not a flag; both gates live inside --selfcheck). --emit-events writes
+#   the C5 stage as events.json-shaped files (input for hb05). Per-hazard
+#   JSONs carry the churn lists (lost5/gained5/worst5_paired).
   /opt/ewb-live/.venv/bin/python scripts/review/hb04_ongoing_ids.py \
     --lane /opt/ewb-live/data/results/raw_exceedance \
     --start 2026-08-21 --end 2026-11-02      # ongoing@W1end, W2 = +7d, W2s slid +7d
   /opt/ewb-live/.venv/bin/python scripts/review/hb05_qualify_fallbacks.py \
     --events /opt/ewb-live/data/results/events.json \
-    --lane /opt/ewb-live/data/results/raw_exceedance
+    --lane /opt/ewb-live/data/results/raw_exceedance   # prints JSON (redirect it)
 #   attributes every qualified_at fallback (all 34 in the live catalogue sit on
 #   the exclusive end date, so the frame window is empty by construction; the
-#   C5 replay shows 0 empty windows and 3 below-floor — see the round-3 addendum)
+#   C5 replay shows 0 empty windows and 3 below-floor - see the round-3 addendum)
+#   (run again per hazard on the emitted C5 files for the replay-side numbers)
   /opt/ewb-live/.venv/bin/python scripts/review/hb06_ship.py \
-    --fresh events_c5.json --published /opt/ewb-live/data/results/events.json \
-    --score-cache /opt/ewb-live/data/results/score_cache \
-    --viz-cache /opt/ewb-live/data/results/viz_cache \
-    --viz-log /opt/ewb-live/logs/weekly-2026-11-19T17:00:00Z.log --out out/hb06_ship.json
-#   replays the real curation path (exclusions included) for both catalogues;
-#   reports what ships before/after, score-job delta and viz rebuild cost
+    --lane /opt/ewb-live/data/results/raw_exceedance \
+    --prod-events /opt/ewb-live/data/results/events.json \
+    --exclusions /opt/ewb-live/data/curation_exclusions.json \
+    --prod-assets /opt/ewb-live/data/results/events \
+    --viz-log /opt/ewb-live/logs/weekly-2026-11-19T17:00:00Z.log \
+    --start 2026-08-21 --end 2026-11-13 --after-events-out out/hb06_new_events.json \
+    --out out/hb06_ship.json
+#   replays the real scan + curation path (exclusions included) for both
+#   catalogues; reports what ships before/after, score-job delta, the viz
+#   rebuild set, and viz timings read from the weekly-*.log viz-lines (the
+#   weekly-*.log itself has no viz-timing lines - do not point --viz-log at it)
   /opt/ewb-live/.venv/bin/python scripts/review/hb07_subfloor.py \
     --lane /opt/ewb-live/data/results/raw_exceedance \
     --start 2026-08-21 --end 2026-11-13
 #   the every-published-event-passes-the-frame-floor gate (0 violations)
+  /opt/ewb-live/.venv/bin/python scripts/review/hb08_merge_survivor.py \
+    --lane /opt/ewb-live/data/results/raw_exceedance \
+    --start 2026-08-21 --end 2026-11-13 --hazards heat_wave,freeze,cold_snap \
+    --out out/hb08
+#   the merge-survivor gate run (G1 dome case, G2 lost-published-qualified check,
+#   G4 floor gate, G5 box gates, G6 current/legacy real-data digests); writes
+#   one JSON per hazard plus out/hb08_summary.json when --hazards has three
 ```

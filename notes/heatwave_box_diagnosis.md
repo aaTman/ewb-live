@@ -502,36 +502,30 @@ numbers below are the ones that motivated the decision; all of them come from
 `scripts/review/hb01_box_growth.py` and `hb05_qualify_fallbacks.py` on the LXC,
 production `/opt/ewb-live` read-only, window 2026-08-21..11-13.
 
-**What the bug costs the product.** 31 of the 162 heat/freeze events in the live
-`events.json` have `details.qualified_date == end` (29 heat waves, 2 freezes;
-the cold-snap lane carries 3 more). `qualification.py` scans frames from
-`max(start, qualified_date)` to `end`, so for those 31 the window is empty and
-`qualified_at` silently falls back to 00:00 UTC of the *start* day — the
-published sub-daily qualification time is a guess for 19 % of the heat waves in
-the catalogue. `hb05_qualify_fallbacks.py` on the live catalogue: 131 qualify,
-**31 empty-window, 0 below-floor**, and every empty-window event is one of the
-31 (round-3 re-measure with the cold-snap lane included: 152 qualify, **34
-empty-window, 0 below-floor**). Re-run on the C5 replay of the same window:
-**206 qualify, 0 empty-window, 6 below-floor** — the failure mode is gone,
-replaced by six events (2.8 %) whose
-*persistence* box is smaller than the footprint that qualified them, so no
-single frame inside the published rectangle reaches the 200 k km² floor
-(`max_frame_px` within 6 % of the floor in five of the six). That is a
-publish-box question, not a tracking one, and it predates this change.
-(Round-3 re-measure on production's population: 199 qualify, **0 empty-window,
-3 below-floor** — all three re-derived in the addendum below.)
+**What the bug costs the product.** The live `events.json` carries 34 events
+whose `details.qualified_date == end` (29 heat waves, 2 freezes, 3 cold snaps;
+the flood lane has its own 126, pinned to the old clock and out of scope).
+`qualification.py` scans frames from `max(start, qualified_date)` to `end`, so
+for those 34 the window is empty and `qualified_at` silently falls back to
+00:00 UTC of the *start* day — the published sub-daily qualification time is
+a guess for them. `hb05_qualify_fallbacks.py` on the live catalogue: 152
+qualify, **34 empty-window, 0 below-floor**, and the 34 are exactly the
+`qualified_date == end` set. Re-run on the C5 replay of the same window
+(production population): **199 qualify, 0 empty-window, 3 below-floor** — the
+failure mode is gone, replaced by three events (1.5 %) whose *persistence* box
+is smaller than the footprint that qualified them, so no single frame inside
+the published rectangle reaches the 200 k km² floor. That is a publish-box
+question, not a tracking one, and it predates this change; the three are
+re-derived event by event in the round-3 addendum below.
 
-**The split is real.** Of the 31, 16 have a live event that starts exactly on
-the closing day and overlaps the closed spell's box (15 heat waves, 1 freeze),
-i.e. in half the cases the region really did seed a successor the same day. Under
-C3 only 2 of those 16 pairs are covered by a single replay object; under the
-qualification clock 11 of 16 are (10 heat, 1 freeze) - the other five are
-genuinely separate systems, and the remaining 15 of the 31 events never had a
-successor: they were simply cut short on their best day. (Round-3 re-measure:
-**15 heat + 1 freeze + 2 cold-snap** spells have a live same-day overlapping
-successor; one replay object covers both halves of the pair for C3 in 2/15 and
-for C5 in **9/15** heat pairs, 1/1 freeze and 1/2 cold-snap — the 11-of-16 did
-not survive the population fix.)
+**The split is real.** Of the 34 fallback events, 18 spells (15 heat waves,
+1 freeze, 2 cold snaps) have a live event that starts exactly on the closing
+day and overlaps the closed spell's box — in over half the cases the region
+really did seed a successor the same day. One replay object covers both halves
+of the pair for C3 in 2/15 heat pairs and for the qualification clock in
+**9/15** heat pairs, 1/1 freeze and 1/2 cold-snap — the others are genuinely
+separate systems, and the remaining fallback events never had a successor:
+they were simply cut short on their best day.
 
 **Ongoing ids stay stable.** `scripts/review/hb04_ongoing_ids.py` (W1
 2026-08-21..11-02, then the two things a weekly run does - extend +7 d at the
