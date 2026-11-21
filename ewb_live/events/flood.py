@@ -197,6 +197,12 @@ class FloodParams(Params):
     claim_valid_only: bool = False
     seed_valid_only: bool = False
     merge_keep_box: bool = False
+    # inert (merge_keep_box=False ignores it) but PINNED: the lane's cache
+    # fingerprint hashes every Params field, and the base default moved to
+    # "separate" in round 4 - an unpinned inherit would churn the flood
+    # cache key with zero behaviour change
+    merge_survivor: Literal["oldest_qualified", "largest", "largest_close",
+                            "separate"] = "oldest_qualified"
     publish_box: Literal["persistence", "tracker"] = "tracker"
 
 

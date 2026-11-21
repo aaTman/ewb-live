@@ -262,7 +262,7 @@ def _mirror_t2m_daily(dates, lats, lons, reduce: str = "mean") -> np.ndarray | N
     return out - 273.15
 
 
-TRACK_RULE_REV = "c3-v2"  # bump when the heat/freeze/cold_snap tracking rule changes (cache key)
+TRACK_RULE_REV = "c3-v3"  # bump when the heat/freeze/cold_snap tracking rule changes (cache key); c3-v3 = merge survivor "separate" (round 4)
 
 FREEZE_MAX_C = 0.0   # freeze cells: t2m <= this (degC) at all four 6-hourly steps
 

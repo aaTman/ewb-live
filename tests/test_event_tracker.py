@@ -566,11 +566,20 @@ def test_track_events_rejects_mismatched_shapes():
 # same scenario shows what the legacy rule did (and fails on origin/develop).
 
 def test_claim_takes_only_valid_cells_inside_the_drift_window():
-    """H3: a small footprint must not swallow a whole labelled region (belt)."""
+    """H3: a small footprint must not swallow a whole labelled region (belt).
+
+    Pinned with ``merge_survivor="oldest_qualified"`` (the C3 merge rule this
+    mechanism test was written for): the survivor absorbs the region's other
+    member with its claim clipped into the survivor's own box. The shipped
+    default (``separate``) instead lets the belt seed its own event; its
+    guard - the small survivor also never swallows the belt - is pinned in
+    :func:`test_separate_default_splits_the_belt_instead_of_clipping_it`.
+    """
+    c3 = rule(survivor="oldest_qualified")
     event = block(slice(13, 18), slice(8, 13))                  # 25 cells, qualifies
     belt = event | block(slice(10, 21), slice(12, 61))          # one giant region
     frames = [event, belt, belt, belt, cells(0)]
-    evs = run(frames)
+    evs = run(frames, c3)
     assert len(evs) == 1
     ev = evs[0]
     assert ev.duration_days == 4
@@ -585,11 +594,16 @@ def test_claim_takes_only_valid_cells_inside_the_drift_window():
 
 
 def test_drift_window_clips_a_touching_blob_to_its_near_edge():
-    """H5: cells of a region past the move_cells window are not claimed."""
+    """H5: cells of a region past the move_cells window are not claimed.
+
+    Pinned with ``merge_survivor="oldest_qualified"`` (see
+    :func:`test_claim_takes_only_valid_cells_inside_the_drift_window`).
+    """
+    c3 = rule(survivor="oldest_qualified")
     here = block(slice(10, 15), slice(10, 15))                  # 25 cells
     blob = here | block(slice(8, 17), slice(16, 41))            # touches at col 16
     frames = [here, blob, blob, blob, cells(0)]
-    ev = run(frames)[0]
+    ev = run(frames, c3)[0]
     # the blob past the drift window never enters the box at once; the
     # survivor grows only at its own claim reach (2 cells/day), so by the
     # third day the box covers columns up to 16 + 2 x 2, never the blob's
@@ -599,18 +613,41 @@ def test_drift_window_clips_a_touching_blob_to_its_near_edge():
     assert ev_old.box == Box(8, 16, 10, 40)                     # blob taken whole
 
 
+def test_separate_default_splits_the_belt_instead_of_clipping_it():
+    """The shipped default (``separate``): a qualifying region next to a
+    qualified event seeds its OWN event; the small survivor's box stays
+    strictly inside its own drift reach - less box, not more, than the clip
+    rule (j1=16 vs 20 in the H5 scenario).
+    """
+    here = block(slice(10, 15), slice(10, 15))
+    blob = here | block(slice(8, 17), slice(16, 41))
+    frames = [here, blob, blob, blob, cells(0)]
+    evs = run(frames)                                           # default PARAMS
+    assert len(evs) == 2
+    small, big = evs                                            # by start
+    assert small.box == Box(8, 16, 10, 16)                      # never past col 16
+    assert big.box == Box(8, 16, 14, 40)                        # the blob, own event
+    assert big.peak_area_km2 >= 2e5                             # a real 200k+ spell
+
+
 def test_merge_keeps_the_older_box():
-    """H2: a merge must not paint the partner's whole box onto the survivor."""
+    """H2: a merge must not paint the partner's whole box onto the survivor.
+
+    Pinned with ``merge_survivor="oldest_qualified"`` (the clip mechanism
+    under test; the shipped default absorbs unqualified candidates the same
+    way and grows no further box - asserted below for both rules).
+    """
     a = block(slice(10, 15), slice(5, 11))                      # 30 cells, qualifies
     b = block(slice(10, 13), slice(25, 29))                     # 90k km2 candidate
     region = block(slice(10, 15), slice(5, 31))                 # one label over both
     frames = [a | b, region, region, cells(0)]
-    evs = run(frames)
-    assert len(evs) == 1                                       # still one event
-    # the older object keeps its own box - B's block (and the daily re-seeded
-    # candidate from the region's body) never stretches it to 30; the survivor
-    # only creeps over the bridge at its own 2-cell/day claim reach
-    assert evs[0].box == Box(10, 14, 5, 14)
+    for p, j1 in ((rule(survivor="oldest_qualified"), 14), (PARAMS, 12)):
+        evs = run(frames, p)
+        assert len(evs) == 1                                    # still one event
+        # the older object keeps its own box - B's block (and the daily re-seeded
+        # candidate from the region's body) never stretches it to 30; the survivor
+        # only creeps over the bridge at its own 2-cell/day claim reach
+        assert evs[0].box == Box(10, 14, 5, j1)
     ev_old = run(frames, LEGACY)[0]
     assert ev_old.box == Box(10, 14, 5, 30)   # the partner's block unioned in
 
@@ -652,12 +689,12 @@ def test_drifting_event_keeps_its_own_cells_when_a_merge_is_clipped():
         frame |= block(slice(10, 15), slice(19, 24))   # the static blob, 09-01..
         frames.append(frame)
     frames.append(cells(0))
-    evs = run(frames)
+    evs = run(frames, rule(survivor="oldest_qualified"))
     assert [(ev.start, ev.end) for ev in evs] == [(DAY0, DAY0 + dt.timedelta(days=6))]
     ev_old = run(frames, LEGACY)[0]
     assert (ev_old.start, ev_old.end) == (DAY0, DAY0 + dt.timedelta(days=6))
     # day 3 (09-03), the merge day: the survivor still holds its own 30 cells
-    tracker = Tracker(AREA, PARAMS, "heat_wave")
+    tracker = Tracker(AREA, rule(survivor="oldest_qualified"), "heat_wave")
     for k, frame in enumerate(frames[:4]):
         tracker.step(DAY0 + dt.timedelta(days=k), frame)
     assert max(ev.footprint.sum() for ev in tracker.active) == 30
@@ -959,20 +996,36 @@ def seeded_after(frames: list[np.ndarray], p: Params, day: int,
     return seeds
 
 
-def test_dome_case_default_rule_deletes_the_bigger_spell():
-    """The bug this round fixes, pinned as the default rule's behaviour.
+def test_dome_case_shipped_rule_keeps_both_objects():
+    """The blocker is fixed: a merge never deletes the larger spell.
 
-    The dome (seeded day 2, peak 3.84M km2) is absorbed on day 6 by the
-    older 200k km2 spell and never published; its cells re-seed as one-day
-    candidates. This is the merge-survivor blocker (G2/G3 fail under the
-    shipped rule on real data), kept here so a fix cannot silently regress.
+    The pre-round-4 rule (pinned next) absorbed the dome (seeded day 2, peak
+    3.84M km2) on day 6 by the older 200k km2 spell and never published it;
+    its cells re-seeded as one-day candidates. The shipped rule keeps both
+    objects: the small spell keeps its own object and the dome publishes as
+    the larger event, with no re-seed chain behind the merge day.
     """
     frames = dome_case()
-    evs = run(frames)
+    evs = run(frames)                                    # shipped default
+    assert [ev.start for ev in evs] == [DAY0, DAY0 + dt.timedelta(days=2)]
+    assert max(ev.peak_area_km2 for ev in evs) > 3e6     # the dome published
+    assert not seeded_after(frames, PARAMS, 6, [20, 35, 20, 43])
+
+
+def test_dome_case_pre_round4_rule_deletes_the_bigger_spell():
+    """The pinned regression: an oldest-qualified survivor deletes the dome.
+
+    Kept so nobody re-ships the age rule without seeing what it does: the
+    dome is absorbed by the SMALLER older spell and never published, and the
+    dome region re-seeds (this is the G2/G3 failure on real data).
+    """
+    frames = dome_case()
+    p = rule(survivor="oldest_qualified")
+    evs = run(frames, p)
     assert [ev.peak_area_km2 for ev in evs] == pytest.approx([0.36e6])
     assert evs[0].start == DAY0                       # the SMALL spell lived
     # and the dome region re-seeded after the merge day (day 6 = 09-07)
-    assert seeded_after(frames, PARAMS, 6, [20, 35, 20, 43])
+    assert seeded_after(frames, p, 6, [20, 35, 20, 43])
 
 
 def test_merge_largest_survivor_keeps_the_dome():
@@ -1045,15 +1098,17 @@ def test_fuzz_merge_survivor_rules_publish_nothing_sub_floor():
                     assert ev.qualified < ev.end
 
 
-def test_default_params_fuzz_digest_is_unchanged_by_the_knob():
-    """G6 (unit part): the shipped rule is byte-identical to HEAD.
+def test_merge_survivor_rule_fuzz_digests_are_pinned():
+    """G6 (unit part): byte-identical fuzz digests for both merge rules.
 
-    Golden digest of the 30-seed fuzz with the DEFAULT Params computed with
-    the HEAD code (the step() refactor moved the advance into _advance and
-    the survivor pick into _group_units): 323 events, event-for-event
-    identical (ids, dates, boxes, anchors, all three area series). Together
-    with the LEGACY/FLOOD goldens this pins that adding merge_survivor and
-    the refactor moved nothing but the candidate rules.
+    The ``oldest_qualified`` digest is the one the HEAD code (before the
+    knob existed) produced for the 30-seed fuzz (323 events): the step()
+    refactor (advance -> _advance, survivor pick -> _group_units) and the
+    merge_survivor field moved NOTHING on that rule - the flood/legacy lanes
+    ride it. The shipped default from round 4 is ``separate`` (409 events);
+    its digest is pinned too, so a refactor that quietly changes either
+    rule breaks here. Together with the FLOOD/LEGACY goldens this covers
+    every merge path.
     """
     import hashlib
     import json
@@ -1061,20 +1116,28 @@ def test_default_params_fuzz_digest_is_unchanged_by_the_knob():
     def bx(b: Box | None) -> list[int] | None:
         return None if b is None else [b.i0, b.i1, b.j0, b.j1]
 
-    per_seed = []
-    for seed in range(30):
-        frames = fuzz_frames(seed)
-        dates = [DAY0 + dt.timedelta(days=k) for k in range(frames.shape[0])]
-        per_seed.append([
-            [ev.id, str(ev.start), str(ev.qualified), str(ev.end),
-             bx(ev.box), bx(ev.anchor),
-             [round(a, 1) for a in ev.footprint_area_km2],
-             [round(a, 1) for a in ev.box_area_km2],
-             [round(a, 1) for a in ev.core_area_km2]]
-            for ev in track_events(frames, dates, AREA, Params(), "heat_wave")])
-    assert sum(len(s) for s in per_seed) == 323
-    assert hashlib.sha256(json.dumps(per_seed).encode()).hexdigest() == \
-        "e588d54c78885e403989075b50f3038390457b320d4a7205b9791d249e9d188f"
+    def digest_of(p: Params) -> tuple[int, str]:
+        per_seed = []
+        for seed in range(30):
+            frames = fuzz_frames(seed)
+            dates = [DAY0 + dt.timedelta(days=k)
+                     for k in range(frames.shape[0])]
+            per_seed.append([
+                [ev.id, str(ev.start), str(ev.qualified), str(ev.end),
+                 bx(ev.box), bx(ev.anchor),
+                 [round(a, 1) for a in ev.footprint_area_km2],
+                 [round(a, 1) for a in ev.box_area_km2],
+                 [round(a, 1) for a in ev.core_area_km2]]
+                for ev in track_events(frames, dates, AREA, p, "heat_wave")])
+        return (sum(len(s) for s in per_seed),
+                hashlib.sha256(json.dumps(per_seed).encode()).hexdigest())
+
+    assert Params().merge_survivor == "separate"      # the shipped default
+    assert digest_of(dataclasses.replace(Params(),
+                                         merge_survivor="oldest_qualified")) == (
+        323, "e588d54c78885e403989075b50f3038390457b320d4a7205b9791d249e9d188f")
+    assert digest_of(Params()) == (
+        409, "b72440c19aeb5ea5cf470abb7b16e9dcb5817369876e823547ba4bb1deba5f1c")
 
 
 def test_persistence_box_stays_inside_a_wide_unwrapped_box():
