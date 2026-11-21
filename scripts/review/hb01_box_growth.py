@@ -439,7 +439,7 @@ def prodmatch(path: Path, w: Window, base_spells: list[Spell]) -> dict:
              or d["start"][:10] > str(w.dates[-1])}
             for d in live]
     mine = [{"id": s.id, "start": str(s.start),
-             "end": str((s.end or (w.dates[-1] + dt.timedelta(days=1)))),
+             "end": str(s.end or w.dates[-1] + dt.timedelta(days=1)),
              "bbox": [float(w.lats[s.box.i0]), float(w.lats[s.box.i1]),
                       float(w.lons[s.box.j0]), float(w.lons[s.box.j1])]}
             for s in base_spells]

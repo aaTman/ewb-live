@@ -55,7 +55,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve()
 sys.path.insert(0, str(_HERE.parents[2]))
 
-from ewb_live.events import select as sel  # noqa: E402  (path set above)
+from ewb_live.events import select as sel
 from ewb_live.events.cold_snap import subsume_freeze_overlaps
 from ewb_live.events.temperature import scan_temperature_events
 from ewb_live.events.types import Event
