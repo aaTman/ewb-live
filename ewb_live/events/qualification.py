@@ -11,8 +11,11 @@ THE DETECTION CRITERIA. Definition (SPEC §2):
   for heat/freeze, 500 pixels (min_mask_gridpoints) for AR. The AND-chain
   persistence criterion is day-level and is carried by the event itself;
   AR landfall is likewise event-level. If no frame in the window qualifies
-  (e.g. the frames end at the ERA5 mirror cutoff before the event start),
-  qualified_at falls back to 00:00 UTC of the event start date.
+  (e.g. the frames end at the ERA5 mirror cutoff before the event start, or
+  a small persistence box never sees a 200k km2 frame inside it), qualified_at
+  falls back to 00:00 UTC of the LATER of the event start date and
+  details.qualified_date - never before the footprint reached the floor
+  (review #6, 2026-11-21).
 
 `cold_snap` (owner 2026-11-16) reads the freeze frame layer: the lane's p15 bit
 IS the cold-snap mask (cold snap = the freeze rule minus the <=0C cap), so the
@@ -76,7 +79,15 @@ def qualified_at(event, frames_dir: Path | None = None) -> str:
         return f"{event.start:%Y-%m-%dT%H:%M:%SZ}"
     frames_dir = Path(frames_dir or DIRNAME)
     idx_p = frames_dir / "index.json"
-    fallback = f"{event.start:%Y-%m-%d}T00:00:00Z"
+    # the fallback day: the start, but never before details.qualified_date
+    # (SPEC §2). The smaller persistence box can leave every frame under the
+    # frame floor - returning the raw start then would publish a first-
+    # qualifying instant days before the footprint reached the area floor
+    # (review #6: heat_wave-20260909-264, 09-09T00Z vs qualified 09-12).
+    qd = str((getattr(event, "details", None) or {}).get("qualified_date")
+             or event.start.date())
+    fallback_day = max(str(event.start.date()), qd)
+    fallback = f"{fallback_day}T00:00:00Z"
     if not idx_p.exists():
         return fallback
     try:
@@ -85,9 +96,8 @@ def qualified_at(event, frames_dir: Path | None = None) -> str:
         # heat/freeze: the tracker knows the day the footprint first reached the
         # area floor (details.qualified_date). Start the frame scan there, so a
         # box that later grew over other heat cannot qualify before its own
-        # footprint did. AR events carry no qualified_date -> unchanged.
-        qd = (getattr(event, "details", None) or {}).get("qualified_date")
-        lo = max(f"{event.start:%Y-%m-%d}", str(qd)) if qd else f"{event.start:%Y-%m-%d}"
+        # footprint did. AR events carry no qualified_date -> lo == start date.
+        lo = fallback_day
         frames = [f for f in idx["frames"]
                   if f"{f[:4]}-{f[4:6]}-{f[6:8]}" >= lo
                   and f"{f[:4]}-{f[4:6]}-{f[6:8]}" < f"{event.end:%Y-%m-%d}"]
