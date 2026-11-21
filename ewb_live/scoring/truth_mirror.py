@@ -21,6 +21,9 @@ per point so appends never rewrite old chunks. A manifest JSON tracks
 which (variable, time) points completed; interrupted runs resume
 point-by-point. ``mirror_covers`` is manifest-driven: a window is served
 from the mirror only when every needed point for every variable is done.
+A point ARCO serves as entirely NaN is recorded as ``unavailable``, never
+complete: every run retries it, and it still counts as covered so scoring
+keeps reading the mirror.
 
 ``truth.py`` points EWB's own ``inputs.ERA5`` class at the store with
 the same variable/coordinate names, so scoring semantics are unchanged;
@@ -99,13 +102,22 @@ def _time_complete(man: dict, t: dt.datetime) -> bool:
     return set(man.get("complete", {}).get(_key(t), [])) >= set(MIRROR_VARS)
 
 
+def _time_available(man: dict, t: dt.datetime) -> bool:
+    """Every variable is either copied or known to be empty at the source."""
+    key = _key(t)
+    have = (set(man.get("complete", {}).get(key, []))
+            | set(man.get("unavailable", {}).get(key, [])))
+    return have >= set(MIRROR_VARS)
+
+
 def mirror_covers(start: dt.datetime, end: dt.datetime) -> bool:
-    """True iff every 6-hourly point of [start, end] is fully mirrored
-    (all four variables) — the gate for scoring a window off the mirror."""
+    """True iff every 6-hourly point of [start, end] is mirrored or known
+    empty at the source (all four variables) — the gate for scoring a window
+    off the mirror."""
     if not mirror_path().exists():
         return False
     man = load_manifest()
-    return all(_time_complete(man, t) for t in grid_times(start, end))
+    return all(_time_available(man, t) for t in grid_times(start, end))
 
 
 def ensure_mirror(
@@ -136,6 +148,7 @@ def ensure_mirror(
     g, origin = _open_or_create_store(wanted[0])
     man = load_manifest()
     complete = man.get("complete", {})
+    unavailable = man.get("unavailable", {})
 
     def _idx(t: dt.datetime) -> int:
         return int((np.datetime64(t) - np.datetime64(origin)) / np.timedelta64(6, "h"))
@@ -167,21 +180,33 @@ def ensure_mirror(
         "(%d threads)", n_existing, len(usable), len(todo), threads)
 
     lock = threading.Lock()
-    counters = {"copied": 0, "errors": 0}
+    counters = {"copied": 0, "errors": 0, "unavailable": 0}
 
     from concurrent.futures import ThreadPoolExecutor
 
     def _task(args):
         var, t, idx = args
         try:
-            _copy_point(var, t, idx)
+            has_data = _copy_point(var, t, idx)
         except Exception as exc:  # noqa: BLE001 - one flaky GCS object must not kill the run
             logger.warning("mirror copy failed %s %s: %s", var, t, exc)
             with lock:
                 counters["errors"] += 1
             return
         with lock:
-            lst = complete.setdefault(_key(t), [])
+            key = _key(t)
+            if not has_data:
+                gaps = unavailable.setdefault(key, [])
+                if var not in gaps:
+                    gaps.append(var)
+                counters["unavailable"] += 1
+                logger.warning("truth mirror: source has no data for %s %s", var, t)
+                return
+            if var in unavailable.get(key, []):
+                unavailable[key].remove(var)
+                if not unavailable[key]:
+                    del unavailable[key]
+            lst = complete.setdefault(key, [])
             if var not in lst:
                 lst.append(var)
             counters["copied"] += 1
@@ -193,16 +218,17 @@ def ensure_mirror(
                 _heartbeat(phase="mirror", done=counters["copied"],
                            total=len(todo))
             if counters["copied"] % 200 == 0:
-                save_manifest({"complete": complete})
+                save_manifest({"complete": complete, "unavailable": unavailable})
                 logger.info("truth mirror: %d/%d points copied",
                             counters["copied"], len(todo))
 
     with ThreadPoolExecutor(max_workers=threads) as ex:
         list(ex.map(_task, todo))
-    save_manifest({"complete": complete})
+    save_manifest({"complete": complete, "unavailable": unavailable})
     secs = _time.monotonic() - t0
     summary = {"requested": len(usable), "existing": n_existing,
                "copied": counters["copied"], "errors": counters["errors"],
+               "unavailable": counters["unavailable"],
                "skipped_before_origin": len(before), "seconds": round(secs, 1)}
     logger.info("truth mirror: %s", summary)
     return summary
@@ -289,7 +315,9 @@ def _open_or_create_store(first: dt.datetime) -> tuple[zarr.Group, dt.datetime]:
     return g, first
 
 
-def _copy_point(var: str, t: dt.datetime, idx: int) -> None:
+def _copy_point(var: str, t: dt.datetime, idx: int) -> bool:
+    """Copy one point; False when the source holds no data for it. The NaNs
+    are still written: an unwritten chunk would read back as the fill value."""
     src = _thread_source()
     da = src[var].sel(time=np.datetime64(t))
     if var != "2m_temperature":
@@ -298,6 +326,33 @@ def _copy_point(var: str, t: dt.datetime, idx: int) -> None:
     if not hasattr(_tls, "grp"):
         _tls.grp = zarr.open_group(str(mirror_path()), mode="r+")
     _tls.grp[var][idx] = vals
+    return not np.isnan(vals).all()
+
+
+def requeue_all_nan(start: dt.datetime, end: dt.datetime) -> int:
+    """Move points marked complete but stored entirely NaN to ``unavailable``
+    so the next ensure_mirror refetches them; returns how many moved."""
+    man = load_manifest()
+    complete = man.get("complete", {})
+    unavailable = man.get("unavailable", {})
+    g = zarr.open_group(str(mirror_path()), mode="r")
+    origin = dt.datetime.fromisoformat(str(g.attrs["origin"]))
+    moved = 0
+    for t in grid_times(start, end):
+        idx = int((t - origin).total_seconds() // 21600)
+        key = _key(t)
+        if idx < 0:
+            continue
+        for var in list(complete.get(key, [])):
+            if idx < g[var].shape[0] and np.isnan(np.asarray(g[var][idx])).all():
+                complete[key].remove(var)
+                gaps = unavailable.setdefault(key, [])
+                if var not in gaps:
+                    gaps.append(var)
+                moved += 1
+    if moved:
+        save_manifest({"complete": complete, "unavailable": unavailable})
+    return moved
 
 
 def open_mirror() -> xr.Dataset:
@@ -428,12 +483,17 @@ def main(argv=None) -> int:
     p.add_argument("--lookback", type=int, default=14)
     p.add_argument("--threads", type=int, default=24)
     p.add_argument("--verify", action="store_true")
+    p.add_argument("--requeue-nan", action="store_true",
+                   help="refetch points already marked complete but stored all-NaN")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
     end = (dt.datetime.strptime(a.end, "%Y-%m-%d") if a.end
            else dt.datetime.now(dt.timezone.utc).replace(
                hour=0, minute=0, second=0, microsecond=0, tzinfo=None))
+    if a.requeue_nan:
+        first = end - dt.timedelta(days=a.days + a.lookback)
+        print(json.dumps({"requeued": requeue_all_nan(first, end)}))
     summ = ensure_mirror(end=end, days=a.days, lookback_days=a.lookback,
                          threads=a.threads)
     print(json.dumps(summ))

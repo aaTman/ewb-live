@@ -140,6 +140,8 @@ def score_event(event: Event, models: list[str]) -> pd.DataFrame
      quota, when it starts within `MERGE_GAP_DAYS` of a selected same-type event's end,
      has bbox IoU >= `MERGE_MIN_IOU` with it, and overlaps nothing kept. One hop only;
      `details.continues` names the parent.
+     **Empty truth points:** the ERA5 mirror records a point ARCO serves as entirely NaN
+     as `unavailable`, never complete, and retries it every run.
      Qualification is never inherited: an event's `qualified_date` is a
      day *its own* footprint reached the floor, so a candidate that never reached it
      is absorbed like any younger member and leaves no event (round-3 review fix,
