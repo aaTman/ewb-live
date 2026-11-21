@@ -530,7 +530,45 @@ def _q(vals: list[float], q: float) -> float:
     return float(np.percentile(vals, q)) if vals else 0.0
 
 
-def aggregate(rows: list[dict], runtime_s: float) -> dict:
+def merge_pressure(rows: list[dict], hazard: str) -> dict:
+    """How much work the curation merge gets asked to do with these events.
+
+    Same-type events whose boxes overlap by ``select.MERGE_MIN_IOU`` and whose
+    windows sit within ``select.MERGE_GAP_DAYS`` are merged into one event by
+    ``select.rank_and_cap``; the merged window is capped at
+    ``select.MERGE_CAP_DAYS`` for the type and the validator refuses anything
+    over ``select.MAX_MERGED_DAYS``. Longer events make both caps bite, so the
+    replay reports the exposure before the curator runs: how many pairs would
+    merge, the largest merged window they would make, and how many break the
+    type cap / the hard 45-day cap. O(n^2) on a couple of hundred events.
+    """
+    from ewb_live.events import select as _sel
+
+    cap = float(_sel.MERGE_CAP_DAYS.get(hazard, _sel.MAX_MERGED_DAYS))
+    evs = [(tuple(r["bbox"]), dt.date.fromisoformat(r["start"][:10]),
+            dt.date.fromisoformat(r["end"][:10]))
+           for r in rows if r.get("bbox")]
+    pairs = over_cap = over_hard = 0
+    worst = 0
+    for i in range(len(evs)):
+        bi, si, ei = evs[i]
+        for j in range(i + 1, len(evs)):
+            bj, sj, ej = evs[j]
+            if _sel._bbox_iou(bi, bj) < _sel.MERGE_MIN_IOU:
+                continue
+            if max((sj - ei).days, (si - ej).days) > _sel.MERGE_GAP_DAYS:
+                continue
+            days = (max(ei, ej) - min(si, sj)).days
+            pairs += 1
+            worst = max(worst, days)
+            over_cap += days > cap
+            over_hard += days > _sel.MAX_MERGED_DAYS
+    return {"merge_pairs": pairs, "merge_days_max": worst or 0,
+            "merge_over_type_cap": over_cap, "merge_over_45d": over_hard}
+
+
+def aggregate(rows: list[dict], runtime_s: float,
+              hazard: str | None = None) -> dict:
     """Summary numbers of one strategy for one hazard."""
     if not rows:
         return {"n": 0, "runtime_s": round(runtime_s, 1)}
@@ -561,6 +599,7 @@ def aggregate(rows: list[dict], runtime_s: float) -> dict:
                     "valid_ever_km2": round(r["valid_ever_km2"]),
                     "fill": round(r["fill"], 3)} for r in worst],
         "runtime_s": round(runtime_s, 1),
+        **({} if hazard is None else merge_pressure(rows, hazard)),
     }
 
 
@@ -879,7 +918,7 @@ def run_strategies(w: Window, base_spells: list[Spell], base_rows: list[dict],
                      else [Published(s, s.box) for s in spells])
         rows_pre = [score_one(w, Published(s, s.box)) for s in spells]
         rows = [score_one(w, p) for p in published]
-        agg = aggregate(rows, time.perf_counter() - t0)
+        agg = aggregate(rows, time.perf_counter() - t0, w.hazard)
         agg["n_qual_eq_end"] = sum(1 for s in spells
                                    if s.qualified is not None and s.qualified == s.end)
         agg["n_over_45d"] = sum(1 for s in spells
@@ -909,6 +948,8 @@ def run_strategies(w: Window, base_spells: list[Spell], base_rows: list[dict],
               f"days_med={agg.get('days_med', 0):4.1f} "
               f"q=end={agg.get('n_qual_eq_end', 0):<3} "
               f">45d={agg.get('n_over_45d', 0):<3} "
+              f"merge={agg.get('merge_pairs', 0)}/{agg.get('merge_days_max', 0)}d/"
+              f"{agg.get('merge_over_type_cap', 0)}cap "
               f"lost={agg.get('lost_vs_current', '-'):<3} "
               f"gained={agg.get('gained_vs_current', '-'):<3} "
               f"split+={agg.get('published_split_extra', 0):<3} "
@@ -1000,7 +1041,7 @@ def published_metrics(path: Path, w: Window) -> dict:
         m["days_clamped"] = st < w.dates[0] or en > w.dates[-1]
         m["merged_at_curation"] = bool(det.get("merged_from"))
         rows.append(m)
-    agg = aggregate(rows, 0.0)
+    agg = aggregate(rows, 0.0, w.hazard)
     agg["n_merged_events"] = sum(1 for r in rows if r["merged_at_curation"])
     agg["n_clamped"] = sum(1 for r in rows if r["days_clamped"])
     return {"summary": agg, "rows": rows}
@@ -1045,7 +1086,7 @@ def main() -> int:
         base_spells = replay(w, params0)
         base_rows = [score_one(w, Published(s, s.box)) for s in base_spells]
         rows_by_stage: dict[str, list[dict]] = {"S0_current": base_rows}
-        base_agg = aggregate(base_rows, time.perf_counter() - t0)
+        base_agg = aggregate(base_rows, time.perf_counter() - t0, w.hazard)
         base_agg["note"] = "as shipped"
         base_agg["n_qual_eq_end"] = sum(1 for s in base_spells
                                         if s.qualified == s.end)
@@ -1104,6 +1145,8 @@ def main() -> int:
                                        "box_km2_max", "box_over_peak_med",
                                        "days_med", "days_p90", "days_max",
                                        "n_qual_eq_end", "n_over_45d",
+                                       "merge_pairs", "merge_days_max",
+                                       "merge_over_type_cap", "merge_over_45d",
                                        "lost_vs_current", "gained_vs_current")}
                        for k in ("S0_current", "C3_valid_box_persist",
                                  "C5_core_from_qualification")
