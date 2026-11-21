@@ -3,7 +3,11 @@
 
 Builds data/results/events/<id>/viz.json for scored events (events_selected.json
 preferred, events.json fallback) and refreshes data/results/events/index.json.
-Skips events whose viz.json already exists at the current schema unless --force.
+Skips events whose viz.json already exists at the current schema AND was built
+from the same event window/box (the ``event_stamp`` saved in the asset), unless
+--force. The stamp matters because an ongoing event keeps its id while its end
+and persistence box are redrawn every weekly run (SPEC §2): id + schema alone
+would keep serving week-old maps for a growing event.
 """
 
 from __future__ import annotations
@@ -28,6 +32,17 @@ def load_events(root: Path) -> list[dict]:
             data = json.loads(p.read_text())
             return data if isinstance(data, list) else data.get("events", [])
     raise SystemExit("no events json found in data/results/")
+
+
+def event_stamp(ev: dict) -> dict:
+    """The event geometry a viz asset was built from (staleness stamp).
+
+    Stored in every viz.json; a rebuild is forced when the event's start,
+    end or bbox moved since - which is exactly what happens to an ongoing
+    event as its window grows and its persistence box is redrawn.
+    """
+    return {"start": str(ev["start"]), "end": str(ev["end"]),
+            "bbox": [round(float(x), 4) for x in ev["bbox"]]}
 
 
 def main(argv=None) -> int:
@@ -65,9 +80,12 @@ def main(argv=None) -> int:
     entries = {}
     for i, ev in enumerate(events, 1):
         out = build.OUT_DIR / ev["id"] / "viz.json"
+        stamp = event_stamp(ev)
         if out.exists() and not args.force:
             try:
-                if json.loads(out.read_text()).get("schema") == build.SCHEMA:
+                asset = json.loads(out.read_text())
+                if (asset.get("schema") == build.SCHEMA
+                        and asset.get("event_stamp") == stamp):
                     logger.info("[%d/%d] %s exists, skip", i, len(events), ev["id"])
                     continue
             except Exception:
@@ -75,6 +93,7 @@ def main(argv=None) -> int:
         t0 = time.monotonic()
         try:
             doc = build.build_event(ev, cutoff, heat_leads, ar_leads)
+            doc["event_stamp"] = stamp
             path = build.write_event(ev["id"], doc)
             doc["generated_at"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
             entries[ev["id"]] = {"kind": doc["kind"], "ok": True,

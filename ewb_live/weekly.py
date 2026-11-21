@@ -212,8 +212,9 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
 
         # 6. dashboard per-event viz assets (design team; non-fatal —
         # a viz failure must not fail the weekly cycle). Cold-cache build
-        # is network-heavy (~30-60 min), warm runs take minutes;
-        # idempotent, skips events already at current schema.
+        # is network-heavy (~30-60 min), warm runs take minutes; idempotent,
+        # skips events whose asset is at the current schema AND still matches
+        # the event's window/box (the ongoing-event rebuild, review #1).
         try:
             proc = subprocess.run(
                 [sys.executable, "-m", "ewb_live.viz", "--all"],
