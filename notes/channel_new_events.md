@@ -4023,3 +4023,30 @@ EWB_DATA_PREP_DIR: see the DONE entry in the PR (2 known box-dependent failures
 expected). Branch fix/e2e-first-screen-gantt-a11y -> develop; NOT merged, NOT
 deployed. Screenshots: notes/screenshots/firstscreen-{1440,390}-{light,dark}.png
 (gitignored, not committed).
+
+## [scoring-wp0] 2026-11-20 20:53 UTC — WP0 pilot started (scoring design 8.2)
+
+Worktree branch `feat/scoring-pilot` off `origin/develop` (9869d5c). Tracker prototype + smoke test
+committed locally (`ewb_live/tools/track_pilot.py`, `tests/test_track_pilot_smoke.py`, 11 passed).
+Smoke runs on the LXC work (store reads ~1 s per init for 41 leads; `ifs_hres` direct 26-40 s per init).
+Launching the 4-worker pilot (Polo + longest-lived MLC, 8 store models + ifs_hres) under the pilot guard
+(weekly service inactive, not Monday 06-14 UTC), code in `/opt/ewb-pilot/code`, output in `/opt/ewb-pilot/out`;
+live `data/` is read-only, nothing is written to `/opt/ewb-live`.
+
+## [scoring-wp0] 2026-11-20 21:25 UTC — WP0 pilot DONE (stop-rule on RSS tripped marginally; WP1 not started)
+
+Measured on the LXC (4 workers, pilot guard clean at every launch/poll; nothing written under /opt/ewb-live data/):
+
+* Polo (TC) + longest-lived MLC, 8 store models + ifs_hres, 441 jobs/run. Store job: **~1.0 s** (open_init 0.24 s,
+  read 0.62 s for ~26 leads = 0.024 s/lead, tracker 0.04 s); ifs_hres: **20.9-26.8 s** (0.8-1.0 s/lead). Design said ~20 s per store job.
+* RSS: full 9-model mix 3.35 GB peak/worker, pool 12.8 GB at 4 workers -> **40.66 GB projected at 12 workers (> 40 GB cap, STOP)**.
+  Store-only 1.90 GB/worker -> 23.3 GB; ifs_hres-only 0.85 GB/worker; whole mix with `--recycle 30` 2.43 GB/worker -> 29.7 GB. 12 workers not run (brief: 4).
+* TC miss rate 24-72 h pooled **28 %** (24/48/72 h: 24/30/35 %); but 80 % for inits while Polo is a < 34 kt disturbance (7 of 25 inits) vs 7 % at hurricane stage.
+  Median position error TC 57/92/130 km, MLC 43/68/169 km at 24/48/72 h. MLC miss 18/19/32 %.
+* EWB landfall classes accept the pilot tracks via forecast_landfall/target_landfall (7 paired inits, 74-310 km).
+* Recomputed backfill wall at 12 workers: TC ~21 min, MLC ~10 min (was 2.5-3 h / 20-40 min); linear scaling assumed.
+
+Needs the orchestrator/owner: (1) accept a split pool (store 12 workers + 2-worker ifs_hres pool) or recycle <= 30 jobs/worker, since the as-sketched
+pool projects to 40.66 GB; (2) D2 question: verify TC from the first >= 34 kt fix instead of the first IBTrACS fix?
+Files: ewb_live/tools/track_pilot.py, tests/test_track_pilot_smoke.py (11 offline tests), notes/scoring_pilot.md, notes/screenshots/scoring_pilot.json.
+Raw per-sample records stay on the box in /opt/ewb-pilot/out*/jobs.jsonl. No deploy, no merge.
