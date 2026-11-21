@@ -78,15 +78,17 @@ def _lane_status_meta() -> dict:
 def _track_verification_meta(events) -> dict:
     """meta.track_verification: per track lane how many 00/12Z inits are verified and
     how many are shown as not verified. Fail-soft like the other meta notes."""
+    out: dict = {}
     try:
+        from .scoring import mlc as mlc_lane
         from .scoring import tc as tc_lane
 
-        if not any(e.event_type == tc_lane.EVENT_TYPE for e in events):
-            return {}
-        return {tc_lane.EVENT_TYPE: tc_lane.verification_summary(events)}
+        for lane in (tc_lane, mlc_lane):
+            if any(e.event_type == lane.EVENT_TYPE for e in events):
+                out[lane.EVENT_TYPE] = lane.verification_summary(events)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("track verification summary failed (meta.track_verification={}): %s", exc)
-        return {}
+        logger.warning("track verification summary failed (meta.track_verification partial): %s", exc)
+    return out
 
 
 def _flood_scoring_meta(events, models) -> dict:
@@ -132,6 +134,7 @@ def public_reason(text) -> str:
     return (t[:117] + "...") if len(t) > 120 else t
 PARTS = Path("data/cache/score_parts")
 HIGHER_IS_BETTER = {"CriticalSuccessIndex", "Accuracy", "EarlySignal",
+                    "BombDetected",   # mlc lane: share of observed bombs the forecast reproduced
                     # flood lane (notes/scoring_design.md section 6): skill is meaningless
                     # without a baseline, but the direction must still be right
                     "ProbabilityOfDetection", "FractionsSkillScore", "FractionsSkillScore5"}
@@ -142,6 +145,7 @@ SIGNED_ERROR_METRICS = {"DurationMeanError",
                         # track lanes (notes/scoring_design.md section 6): signed bias
                         # components, skill vs the baseline is meaningless for them
                         "AlongTrackError", "CrossTrackError", "CentralPressureError",
+                        "PeakDepthError",      # mlc lane: signed depth bias
                         # flood lane: signed mm differences (FalseAlarmRatio stays lower-is-better)
                         "PrecipAreaBias", "PeakPrecipError"}
 BASELINE = "ifs_hres"
@@ -334,9 +338,16 @@ def _score_job(event_dict: dict, models: list[str], truth_source: str,
     try:
         if event.event_type in lane_pool.LANE_TYPES:
             # track lanes are not EWB-evaluate scored: serial in-process track
-            # verification (production runs go through lane_pool's worker pool)
-            df, _st = lane_pool.LANE_BY_EVENT_TYPE[event.event_type].serial(
-                event, models, status_out=status_out)
+            # verification (production runs go through lane_pool's worker pool).
+            # A lane that registers its own serial scorer (tc / mlc / flood) is
+            # asked for it; a lane registered without one falls back to the
+            # generic lane_pool loop, which resolves the lane + default reader
+            # at CALL time (that is what the patched-registry tests drive).
+            _lane = lane_pool.LANE_BY_EVENT_TYPE[event.event_type]
+            if _lane.serial is not None:
+                df, _st = _lane.serial(event, models, status_out=status_out)
+            else:
+                df, _st = lane_pool.score_event_serial(event, models, status_out=status_out)
         else:
             df = score_event(event, models, truth_source=truth_source,
                              status_out=status_out)
@@ -955,10 +966,9 @@ def run(
     # the pair_coverage contract and full_run_complete stay decidable
     # (mirrors how a model with no 2 m temperature on heat/freeze is documented,
     # not left missing).
-    _UNSCORED_REASON = {
-        "midlat_cyclone": "no EWB benchmark for tracked mid-latitude lows "
-                          "(midlat_cyclone is published, not scored)",
-    }
+    # every former unscored lane now scores: tropical_cyclone (WP1), midlat_cyclone
+    # (WP2) and flood (WP4); the documented-zero mechanism stays for the next one
+    _UNSCORED_REASON: dict[str, str] = {}
     if unscored_obs:
         for e, ms in unscored_obs:
             for m in ms:
@@ -1349,7 +1359,7 @@ def run(
         # track lanes (tropical_cyclone, flood): their own worker pool (R4), after the EWB
         # jobs so the two pools never share the box's memory budget
         truths = dict(truth_by_event)
-        pairs_by_lane: dict[str, list] = {}
+        pairs_by_lane: dict[str, list] = {}            # lane key -> [(event, model)]
         for e, ms in lane_todo:
             lane_key = next(k for k, ln in lane_pool.LANES.items() if ln.event_type == e.event_type)
             for m in ms:

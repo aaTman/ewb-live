@@ -307,7 +307,8 @@ def results_tree(tmp_path, monkeypatch):
 
 def test_tc_left_the_unscored_set_and_has_its_own_truth_tag():
     assert "tropical_cyclone" not in select.UNSCORED_TYPES
-    assert "midlat_cyclone" in select.UNSCORED_TYPES and "flood" not in select.UNSCORED_TYPES
+    assert "midlat_cyclone" not in select.UNSCORED_TYPES and "flood" not in select.UNSCORED_TYPES
+    assert select.UNSCORED_TYPES == set()   # WP1 (tc) + WP2 (mlc) + WP4 (flood): nothing left unscored
     ev = _event()
     assert truth.truth_source_for_event(ev, dt.datetime(2030, 1, 1)) == "ibtracs"
     assert truth.truth_source_for_event(ev, dt.datetime(1999, 1, 1)) == "ibtracs"   # not ARCO-dependent
@@ -315,8 +316,26 @@ def test_tc_left_the_unscored_set_and_has_its_own_truth_tag():
 
 
 def test_score_job_dispatches_tc_to_the_track_scorer(monkeypatch):
+    """pipeline._score_job must route a TC event to the in-process track scorer.
+
+    The fake reader is injected through the lane's init_job (the pool worker's own
+    mechanism, as in the ``fake_lane`` fixture): since the lane-dispatch refactor,
+    ``_score_job`` calls ``lane_pool.score_event_serial`` WITHOUT a reader, and
+    ``tc.score_init`` binds ``tc.default_reader`` as a default argument at import
+    time, so patching ``tc.default_reader`` no longer reaches this path — the
+    wiring gap is pinned strict-xfail by
+    tests/test_score_mlc.py::test_score_job_lane_dispatch_honours_a_patched_default_reader.
+    Note ``score_event_serial`` resolves the lane through the import-time snapshot
+    ``LANE_BY_EVENT_TYPE`` (not the live ``LANES`` dict the pool reads), so both
+    mappings are re-stamped here."""
     ev = _event()
-    monkeypatch.setattr(tc, "default_reader", make_reader(ev))
+    reader = make_reader(ev)
+    lane = lane_pool.Lane(event_type="tropical_cyclone", truth="ibtracs", models=lane_pool.tc_models,
+                          plan=tc.plan_for,
+                          init_job=lambda track, m, init, leads, r=None: tc.score_init(track, m, init, leads, reader),
+                          finalize=tc.finalize_pair, label="tc")
+    monkeypatch.setitem(lane_pool.LANES, "tc", lane)
+    monkeypatch.setitem(lane_pool.LANE_BY_EVENT_TYPE, "tropical_cyclone", lane)
     status = {}
     eid, df = pipeline._score_job(ev.to_dict(), ["graphcast"], "ibtracs", status_out=status)
     assert eid == ev.id and df is not None and "TrackMiss" in set(df["metric"])

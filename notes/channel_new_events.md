@@ -4164,3 +4164,49 @@ graphcast_gfs); 39 part files in the first 6 min. Not live, not dev, nothing dep
 See notes/channel_scoring.md [wp4] for the numbers: 36,388 flood rows (graphcast + graphcast_gfs, 40 events), backfill 10-11 min / 16.1 GB pool peak on the
 private tree /opt/ewb-preview-flood-lane (port 8066; the unit ewb-preview-fl-web is left running for the owner's review), units 741 passed / 2 known failures,
 full e2e 251 passed / 1 skipped. Not merged, not deployed.
+
+## [scoring-wp2] 2026-11-21 11:00 UTC — WP2 (MLC lane) started: scorer + dispatch committed, 3-event smoke run clean
+
+Branch `feat/scoring-mlc-lane` off develop (b7ed93d). `ewb_live/scoring/mlc.py` committed (fe507bd): MLC-A on the shared core
+(`track_verif` + `MLC_PARAMS`, readers/statuses of `scoring/tc.py`) and MLC-B in the same read: `PeakDepthError` (hPa, signed, forecast
+lowest MSLP within +/-8 deg of the observed centre minus ERA5 central pressure; no tracker so no misses), `BombDetected` /
+`BombFalseAlarm` (0/1; observed and forecast 24 h fall of the central pressure scaled to 60 deg as `mlc_track.bomb_ratio`; windows that
+are observed bombs emit Detected, the rest emit FalseAlarm). Lane registered in `lane_pool.LANES["mlc"]`, truth tag `era5_arco`
+(constant for MLC), `midlat_cyclone` left `UNSCORED_TYPES`, pipeline lane block is now per lane. Private preview tree
+`/opt/ewb-preview-mlc` (port 8063 planned; not /opt/ewb-live, not /opt/ewb-live-dev). Smoke run through `ops/lane_backfill.sh mlc`
+(3 events x graphcast/aurora/ifs_hres, 45 jobs, 33.8 s, peak 11.5 GB): 9 pairs scored, 0 errors. Dashboard wiring and offline tests are with
+two Pi (fleet/agent) children; the full MLC backfill waits for their review. Note: that smoke run was launched with `nohup ... &` inside
+the ssh command (breaks the "no bare & in a foreground ssh" rule); the full backfill goes through `systemd-run`.
+
+## [scoring-wp2] 2026-11-21 13:45 UTC — WP2: Pi children reviewed + merged into the branch, full MLC backfill launched
+
+Dashboard wiring (Pi, cherry-picked 0859a53) and offline tests (Pi, `tests/test_score_mlc.py`, 17 tests) reviewed. One real finding from the tests: `score_event_serial`
+resolved its reader/lane at import time (the serial `_score_job` fallback ignored a patched reader); fixed at call time (41f64ac), strict xfail dropped.
+Offline on the box (preview tree): `test_score_mlc` + `test_score_tc` + `test_track_verif` + `test_lane_guard` = 116 passed. Guard ok (weekly inactive, Saturday 13:43 UTC).
+Full MLC backfill launched in `/opt/ewb-preview-mlc` as systemd unit `ewb-preview-mlc-backfill` through `ops/lane_backfill.sh mlc` (12 workers, recycle 30, cap 40 GB).
+
+## [scoring-wp2] 2026-11-21 14:10 UTC — WP2: full MLC backfill DONE (80 lows x 9 models), suites + browser check running (Pi)
+
+Launched through `ops/lane_backfill.sh mlc` (systemd unit, preview tree `/opt/ewb-preview-mlc`, weekly inactive, Saturday): 711 pairs without a part file (9 already
+done by the smoke run), **5355 jobs, wall 954 s (15.9 min; pilot estimate ~10 min), 12 workers, recycle 30, peak pool RSS 16.09 GB** (peak worker 1.59 GB, 182 worker
+processes; the 40 GB cap was never near), 3 transient S3 retries, 0 failed jobs, 120 no-data inits (the `_gfs` store gaps, never misses). Per `(model, init)` job: store
+0.93 s, `ifs_hres` 3.9 s (warm cache from the smoke run: not comparable to the 21 s of the pilot), tracker 0.035 s.
+Rows: **MLC scored rows 247,567** (80 events x 9 models = 720 pairs `scored`; 160 `unsupported` = `aifs_single`, `aigfs`) = TrackPositionError 31,923; AlongTrackError 31,697;
+CrossTrackError 31,697; CentralPressureError 31,923; TrackMiss 44,853; PeakDepthError 44,835; BombDetected 1,130; BombFalseAlarm 29,509. Truth tag `era5_arco` on all. TC rows (291,778)
+and the four EWB lanes unchanged. `meta.full_run_complete` true; 600 00/12Z inits verified.
+Miss rate (honesty check, "looks pathological?" = no): 24 / 48 / 72 / 96 h `ifs_hres` 12.5 / 20.4 / 32.4 / 50.6 %, MLWP models 15-20 / 26-35 / 42-55 / 59-78 %. Matches the pilot's single low
+(18 / 19 / 32 %). Not an end-of-life artefact: split by hours before the observed track ends the miss rate is flat 16-24 % (ifs) vs 22-34 % (MLWP) even 24-96+ h before the end.
+Same pattern as TC (the AI models' shallower lows fail the 3 hPa closed contour first). Cells above 50 % are greyed by the dashboard rule (most of 96 h, incl. `ifs_hres` at 50.6 %).
+Headline (mean km, 24 h): aurora 87, graphcast 88, pangu 100, ifs_hres 106, fcn 107, `_gfs` twins 119-129. PeakDepthError (24 h): ifs_hres -1.2 hPa (deeper), MLWP -0.1..+1.6 (shallower).
+Bomb: detected 24 h ifs 83 % vs 59-73 % MLWP (n 27-35 windows; n = 3-4 at 72 h, tiny), false-alarm rate <= 1-2 %. GraphCast (IFS-init) has no 24 h bomb window (lead 0 is fill; first at 30 h).
+
+## [scoring-wp2] 2026-11-21 15:10 UTC — WP2 DONE: MLC lane scored, PR to develop
+
+**Tests (box, private preview tree `/opt/ewb-preview-mlc`, never the live tree).** Unit suite (`tests`, e2e + `test_fcn_humidity.py` + 28 network-marked excluded): **714 passed, 2 failed** = the 2 known box
+failures (`test_cold_snap_severity_and_merge_envelope_follow_freeze`, `test_imerg::test_s3_credentials_parses_and_caches`). New offline `tests/test_score_mlc.py` 17 tests (+ `test_score_tc/track_verif/lane_guard` green:
+116 passed together). e2e (8 files, server on :8063): first full run 225 passed, 1 skipped, 2 failed (a new MLC e2e that counted roster models without rows as cells: test bug, fixed); after the fix
+`test_tracklane_fe.py` + `test_dashboard_fe.py` (incl. the rebased #18 test) 111 passed. Browser check of the real preview data at 1440 and 390 px, light and dark (Pi script, screenshots in the gitignored
+`notes/screenshots/`): no JS errors, no horizontal page overflow, no "Not scored", header truth `ERA5 track` on the MLC tab / `ERA5 + IBTrACS (TC)` on all types / `IBTrACS` on TC, 44 greyed cells (all 96 h track-error cells +
+3 d for fcn, tracker-dependent only; Peak depth / bomb cells never greyed), tooltip of Peak depth has no "tracked N of M". Found + fixed: the phone tooltip left the viewport (shared `moveTip`, pre-existing, 1 line).
+**Not changed (pre-existing, flagged):** `aifs_single`/`aigfs` rows are all em dashes on every lane; the MLC event-detail panel still uses the TC wind legend and labels the weakest low as the peak.
+**Open:** not deployed, not merged; the weekly run will score MLC after the EWB jobs and the TC pool (~16 min extra, peak pool RSS 16 GB); preview unit `ewb-preview-mlc-web` (port 8063) left running.

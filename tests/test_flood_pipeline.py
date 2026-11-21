@@ -136,7 +136,7 @@ def test_flood_scores_only_the_graphcast_family_and_documents_the_rest():
 
 def test_flood_left_the_unscored_set():
     assert "flood" not in select.UNSCORED_TYPES
-    assert "midlat_cyclone" in select.UNSCORED_TYPES          # still published-not-scored
+    assert "midlat_cyclone" not in select.UNSCORED_TYPES      # WP2 (merged) scores it in its own lane
 
 
 def test_flood_truth_tag_is_pardig_and_is_not_cutoff_dependent():
