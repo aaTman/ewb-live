@@ -204,11 +204,16 @@ re-running the real curation path over the fresh scan — `hb06_ship.py`,
 exclusions included — ships 15 heat / 12 freeze / 15 cold snaps after the
 release), so this changes which events are scored and grows the weekly
 temperature score jobs from 28 to 42 (+14) on top of the one-off id re-hash the
-release already carries (42 viz assets to rebuild on the first weekly run: 41
-new ids + 1 stale stamp; measured per-asset temperature build times from
-production viz logs are median 55 s / p90 525 s, so the step fits the 5,400 s
-budget at median cost (~2,300 s) but not at cold-cache p90 cost — the step is
-best-effort and finishes in later weeks, or can be pre-warmed before release).
+release already carries (42 viz assets to rebuild on the first weekly run: 42
+selected ids with no asset yet, 0 stamp mismatches — `hb06r4.json`; measured
+per-asset build times from the production viz logs: temperature assets
+median 55 s / mean 181 s / p90 489 s, all assets median 37 s / p90 344 s, so
+42 rebuilds cost ~2,300 s at median, ~7,600 s at mean — over the weekly step's
+budget at mean cost. The viz step now stops at a soft time budget
+(`--time-budget-s`, 5,100 s from the weekly cycle) and still runs the global
+scorecard steps, so an over-budget first run simply resumes later (assets are
+id-keyed and skipped when current) — or is pre-warmed before release per the
+checklist below).
 Nothing breaks a duration gate: the longest
 heat spell is 28 days against the 45-day publish ceiling
 (`validate.MAX_DURATION_DAYS`), and no replayed event exceeds it. Curation merge
@@ -389,10 +394,12 @@ first weekly after deploy rebuilds part of the asset tree. In order:
 1. Merge via PR; CI gates as usual. Deploy `main` to the LXC per the usual path.
 2. **Pre-warm the viz assets** off the weekly window (one run, resumable):
    `./ops/remote.sh 'cd /opt/ewb-live && .venv/bin/python -m ewb_live.viz --all --time-budget-s 3300'`.
-   Expected as of 2026-11-21 (re-derive with `hb06_ship.py --fresh` below):
-   ~42 of the 137 existing assets rebuild (41 selected-event ids that have no
-   asset + 1 stamp-mismatch), plus whatever ids the geometry change renamed.
-   AR assets are current by rule (unstamped at schema 3) and are NOT rebuilt.
+   Expected as of 2026-11-21 (`hb06_ship.py --fresh`-equivalent run, output
+   `out/hb06r4.json`): **42 rebuilds** - the 42 newly selected ids that have
+   no asset yet (42 selected ids drop out and keep their old assets on disk;
+   0 stamp mismatches). ~7,600 s at the measured mean per-asset cost, so
+   budget for one resume. AR assets are current by rule (unstamped at schema
+   3) and are NOT rebuilt.
 3. Re-run the same command if the budget prints (`viz: time budget ... reached`)
    - completed assets match their stamp and are skipped, so the rerun resumes.
    `viz: global steps ran` must NOT appear; if it does, finish the warm-up
