@@ -531,19 +531,28 @@ the specification; the sections above are written to match them.
 
 ### 8.0 Rules for every work package
 
+> Amended 2026-11-20: R1 is state-based now. The weekly unit's `TimeoutStartSec` is **24 h**
+> (`ops/ewb-live-weekly.service`, merged) and the last weekly run took **~9 h**, so the fixed clock window of
+> Monday 06:00-13:00 UTC it was originally sized from (old 6 h timeout) is retired.
+
 * **R1: backfills never overlap the weekly run.** `ewb-live-weekly.timer` fires **Monday 07:00 UTC**
-  (`Persistent=true`, `TimeoutStartSec=6h`), and the last weekly run peaked at **183.8 GB** total RSS on a
-  256 GB box (`data/perf.json`); a 40 GB backfill pool on top leaves no headroom. Therefore:
-  * No backfill/pilot job may run, or be allowed to still be running, between **Monday 06:00 UTC and
-    Monday 13:00 UTC** (one hour before the timer, the full 6 h timeout after). Start a long job
-    only if `now + its hard wall-clock cap` is before the next Monday 06:00 UTC.
-  * Every backfill is launched through one guard (WP1 adds `ops/lane_backfill.sh`): it refuses to start
-    inside the blocked window, refuses if `systemctl is-active ewb-live-weekly.service` (a Persistent catch-up
-    can fire at any time) or the weekly/deploy flock is held, sets `timeout` to the hard cap, and
-    re-checks every 5 minutes inside the job: if the weekly service becomes active or the blocked window is
-    reached it stops the pool and exits cleanly, leaving a resumable partial result (part files are
-    keyed by `(event, model, fingerprint, truth)`, so a rerun resumes).
-  * Pilot runs (< 15 min, < 10 GB) are exempt from the 40 GB cap but not from the window.
+  (`Persistent=true`, so a catch-up can fire at any time), `ewb-live-weekly.service` is `Type=oneshot` with
+  **`TimeoutStartSec=24h`**, and the last weekly run took **~9 h** wall clock and peaked at **183.8 GB**
+  total RSS on a 256 GB box (`data/perf.json`); a 40 GB backfill pool on top leaves no headroom. A weekly run
+  of unknown length can be live at any hour, so the guard reads **state, not the clock**:
+  * **Never start** a backfill/pilot job while the weekly run is live or pending: refuse if
+    `systemctl is-active ewb-live-weekly.service` is `active` or `activating`, or the weekly/deploy flock is
+    held (`/opt/ewb-live/.deploy.lock`, `flock -n`).
+  * **Refuse from Monday 06:30 UTC until Monday 14:00 UTC** while the weekly service is not yet active - it
+    may be about to start - unless it has already run that week, i.e. `systemctl show
+    ewb-live-weekly.service -p ActiveExitTimestamp` is a time at or after this Monday 07:00 UTC. Outside
+    those 7 h there is no clock restriction at all: the state checks alone decide.
+  * Every backfill is launched through one guard (WP1 adds `ops/lane_backfill.sh`): it runs the two checks
+    above, sets `timeout` to the hard cap, and **polls the same state every 30 s** while the job runs. If the
+    weekly service becomes active or the flock is taken, it sends **SIGTERM** to the pool, waits for it to
+    exit and leaves a resumable partial result (part files are keyed by `(event, model, fingerprint,
+    truth)`, so a rerun resumes).
+  * Pilot runs (< 15 min, < 10 GB) are exempt from the 40 GB cap but not from the guard.
 * **R2: LXC only for compute**, via `ops/remote.sh`; every foreground command under `timeout` (<= 10 min),
   anything longer in the background with a log polled by short commands; unit tests with tiny synthetic
   data may run locally (`.venv/bin/python -m pytest tests -q`).
@@ -613,8 +622,16 @@ rows exist on the box).
     window around the track, `msl` only for tracking), `score_tc_event(event, models) -> DataFrame, status`.
   * `ewb_live/scoring/lane_pool.py`: the dedicated worker pool and RSS sampler (R4), reused by WP2/WP4.
   * `ops/lane_backfill.sh`: the R1 guard and launcher (`ops/lane_backfill.sh <lane> [--models ...]`).
+    Guard behaviour is state-based (R1, amended): refuse to start when `systemctl is-active
+    ewb-live-weekly.service` is `active`/`activating` or the weekly/deploy flock `/opt/ewb-live/.deploy.lock`
+    is held (`flock -n`); refuse between Monday 06:30 UTC and Monday 14:00 UTC while the weekly service is
+    not yet active, unless `systemctl show ewb-live-weekly.service -p ActiveExitTimestamp` shows a run that
+    finished at or after this Monday 07:00 UTC; no other clock window. Then run the lane under `timeout`
+    with the hard cap, **poll those same checks every 30 s**, and on a positive poll send **SIGTERM** to the
+    worker pool's process group, wait for it to drain, and exit 0: completed part files
+    (`event, model, fingerprint, truth`) let the next run resume.
   * `tests/test_track_verif.py`, `tests/test_score_tc.py`, `tests/test_lane_guard.py` (R1 guard logic with a
-    fake clock and fake `systemctl`).
+    fake clock, fake `systemctl` output and a fake lock file).
 * **Files to touch (minimal, additive):** `ewb_live/pipeline.py` (`_score_job` dispatch by `event_type`; import
   of `UNSCORED_TYPES`; `SIGNED_ERROR_METRICS`, `HIGHER_IS_BETTER`; the `_UNSCORED_REASON` entry for TC is
   dropped), `ewb_live/events/select.py` (`UNSCORED_TYPES` loses `tropical_cyclone`),
