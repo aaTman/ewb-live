@@ -20,7 +20,13 @@ tracker (``ewb_live/events/event_tracker.py``, SPEC §2) on the same lane frames
 The daily mask is the tracker's own input: the published ``raw_exceedance``
 frames ANDed over the four 00/06/12/18Z steps, land only (SPEC §2 "Mask
 source"), so "a valid heat-wave point" here is exactly a cell the detector
-counted. Freeze gets the same metrics as a side column (shared rule).
+counted. **Freeze gets the production rule, not the raw lane bits** (review
+round 2): the lane's p15 layer has no <=0 degC ceiling, so "freeze" measured on
+the lane is really the cold-snap population. For ``freeze`` this script applies
+production's cap the same way ``scan_temperature_events`` does
+(``mask & (t2m_dmax <= temperature.MAX_C_BY_TYPE["freeze"])``, t2m_dmax from the
+ERA5 truth mirror, read-only); ``cold_snap`` is the same lane bits uncapped, so
+the two rows are finally different populations (SPEC §2).
 
 Run on the ewb LXC from the scratch tree (production stays read-only):
 
@@ -67,11 +73,12 @@ from ewb_live.events.event_tracker import (
     label_regions,
 )
 from ewb_live.events.temperature import _cell_area_km2
+from ewb_live.events.validate import MAX_DURATION_DAYS as MAX_PUBLISH_DAYS
 
 # the greedy bbox/day matcher from the tracker-port review, reused verbatim
 _evt02 = importlib.import_module("evt02_tracker_port_compare")
 
-HAZARDS = ("heat_wave", "freeze")
+HAZARDS = ("heat_wave", "freeze", "cold_snap")
 # growth hypotheses the attribution can charge area to (H6 = downstream
 # curation, H7 = seam; both audited outside the per-day log)
 CAUSES = ("H1_contiguous", "H2_merge", "H3_region_claim", "H4_closing_fill",
@@ -124,6 +131,7 @@ class Spell:
     id: str
     start: dt.date
     end: dt.date | None       # exclusive; None = still open at the window end
+    qualified: dt.date | None  # the day the footprint first reached qualify area
     i0: int                   # first event day, index into Window.dates
     i1: int                   # last event day, inclusive
     box: Box
@@ -133,6 +141,7 @@ class Spell:
     def to_dict(self) -> dict:
         return {"id": self.id, "hazard": self.hazard, "start": str(self.start),
                 "end": str(self.end) if self.end else None,
+                "qualified": str(self.qualified) if self.qualified else None,
                 "days": self.i1 - self.i0 + 1,
                 "box": [self.box.i0, self.box.i1, self.box.j0, self.box.j1],
                 "peak_km2": round(self.peak_km2, 1),
@@ -177,16 +186,23 @@ class TunedTracker(Tracker):
             inside the step could not be reused once the rules moved into
             production ``Tracker.step``; it only ever differed for events
             under ``anchor_day`` days old).
+        core_clock: production ``Params.core_clock``. Pinned to ``"start"``
+            (the shipped rule) so the S0/selfcheck baselines stay the shipped
+            rule after the owner's 2026-11-21 decision made ``"qualified"`` the
+            production default; ``--prodcheck`` sets it to ``"qualified"`` to
+            prove the C3+qualify row is what production now runs.
     """
 
     def __init__(self, cell_area: np.ndarray, params: Params, hazard: str,
                  claim_overlap: bool = False, seed_valid_only: bool = False,
                  merge_keeps_older_box: bool = False,
-                 rolling_days: int | None = None) -> None:
+                 rolling_days: int | None = None,
+                 core_clock: str = "start") -> None:
         super().__init__(cell_area, dataclasses.replace(
             params, claim_valid_only=claim_overlap,
             seed_valid_only=seed_valid_only,
-            merge_keep_box=merge_keeps_older_box), hazard)
+            merge_keep_box=merge_keeps_older_box,
+            core_clock=core_clock), hazard)
         self.rolling_days = rolling_days
         self.box_hist: dict[str, list[Box]] = {}
 
@@ -306,9 +322,9 @@ def replay(w: Window, params: Params, **tweaks: Any) -> list[Spell]:
     out: list[Spell] = []
     for ev in replay_raw(w, params, **tweaks):
         last = (ev.end - dt.timedelta(days=1)) if ev.end else w.dates[-1]
-        out.append(Spell(w.hazard, ev.id, ev.start, ev.end, idx[ev.start],
-                         idx[last], ev.box, float(ev.peak_area_km2),
-                         ev.end is None))
+        out.append(Spell(w.hazard, ev.id, ev.start, ev.end, ev.qualified,
+                         idx[ev.start], idx[last], ev.box,
+                         float(ev.peak_area_km2), ev.end is None))
     return out
 
 
@@ -330,7 +346,7 @@ def selfcheck(w: Window, params: Params) -> bool:
     from ewb_live.events.event_tracker import track_events
 
     legacy = replace(params, claim_valid_only=False, seed_valid_only=False,
-                     merge_keep_box=False)
+                     merge_keep_box=False, core_clock="start")
     ref = [_evkey(ev) for ev in track_events(w.mask, w.dates, w.cell_area,
                                              legacy, w.hazard)]
     mine = [_evkey(ev) for ev in replay_raw(w, params)]
@@ -355,7 +371,8 @@ def prodcheck(w: Window, params: Params) -> bool:
                                              params, w.hazard)]
     mine = [_evkey(ev) for ev in replay_raw(w, params, claim_overlap=True,
                                             seed_valid_only=True,
-                                            merge_keeps_older_box=True)]
+                                            merge_keeps_older_box=True,
+                                            core_clock="qualified")]
     ok = ref == mine
     print(f"prodcheck {w.hazard}: {'PASS' if ok else 'FAIL'} "
           f"({len(ref)} production-C3 vs {len(mine)} tuned-C3 events)", flush=True)
@@ -508,7 +525,8 @@ def aggregate(rows: list[dict], runtime_s: float) -> dict:
         "box_km2_max": round(max(box)),
         "box_over_peak_med": round(float(np.median(ratio)), 2),
         "box_over_peak_p90": round(_q(ratio, 90), 2),
-        "days_med": float(np.median(dur)), "days_max": max(dur),
+        "days_med": float(np.median(dur)), "days_p90": _q(dur, 90),
+        "days_max": max(dur),
         "excess_out_km2_tot": round(sum(r["excess_out_km2"] for r in rows)),
         "hole_km2_tot": round(sum(r["hole_km2"] for r in rows)),
         "worst3": [{"id": r["id"], "start": r["start"], "end": r["end"],
@@ -717,6 +735,12 @@ STRATEGIES: list[Strategy] = [
              tweaks={"claim_overlap": True, "seed_valid_only": True,
                      "merge_keeps_older_box": True},
              note="C3 tracking with the tracker's own box (no persistence rule)"),
+    Strategy("C5_core_from_qualification",
+             tweaks={"claim_overlap": True, "seed_valid_only": True,
+                     "merge_keeps_older_box": True, "core_clock": "qualified"},
+             post=post_persist(persist_k(0.5), 0.02),
+             note="C3 tracking with the core clock and the anchor freeze starting "
+                  "at qualification (owner 2026-11-21) = production Params()"),
 ]
 
 
@@ -830,6 +854,10 @@ def run_strategies(w: Window, base_spells: list[Spell], base_rows: list[dict],
         rows_pre = [score_one(w, Published(s, s.box)) for s in spells]
         rows = [score_one(w, p) for p in published]
         agg = aggregate(rows, time.perf_counter() - t0)
+        agg["n_qual_eq_end"] = sum(1 for s in spells
+                                   if s.qualified is not None and s.qualified == s.end)
+        agg["n_over_45d"] = sum(1 for s in spells
+                                if (s.i1 - s.i0 + 1) > MAX_PUBLISH_DAYS)
         agg.update({"note": st.note, "params": st.params,
                     "tweaks": {k: v for k, v in st.tweaks.items() if v}})
         if st.name != "S0_current":
@@ -852,6 +880,9 @@ def run_strategies(w: Window, base_spells: list[Spell], base_rows: list[dict],
               f"box_med={agg.get('box_km2_med', 0) / 1e6:6.2f}M "
               f"box_p90={agg.get('box_km2_p90', 0) / 1e6:6.2f}M "
               f"box_max={agg.get('box_km2_max', 0) / 1e6:6.2f}M "
+              f"days_med={agg.get('days_med', 0):4.1f} "
+              f"q=end={agg.get('n_qual_eq_end', 0):<3} "
+              f">45d={agg.get('n_over_45d', 0):<3} "
               f"lost={agg.get('lost_vs_current', '-'):<3} "
               f"gained={agg.get('gained_vs_current', '-'):<3} "
               f"split+={agg.get('published_split_extra', 0):<3} "
@@ -860,6 +891,64 @@ def run_strategies(w: Window, base_spells: list[Spell], base_rows: list[dict],
 
 
 # ------------------------------------------------------------ published state
+def successor_audit(path: Path, w: Window, rows_by_stage: dict[str, list[dict]],
+                    follow: tuple[str, ...] = ("C3_valid_box_persist",
+                                               "C5_core_from_qualification"),
+                    ) -> dict:
+    """Did the old same-day ending really split a spell?
+
+    The shipped rule could close a candidate on the day it qualified, leaving
+    its region free to seed a new event the same day; 31 live heat/freeze
+    events have ``qualified_date == end``. For each of them this finds a live
+    event of the same type that *starts on that closing day* and overlaps the
+    closed box in space (the successor the old rule created, if the spell kept
+    going), then follows the closed event into each replay stage with the
+    committed location matcher (:func:`pairable`) and reports how many replay
+    rows cover it and its successor. ``became = 1`` means one spell under that
+    stage, i.e. the pair really was one event.
+    """
+    live = [d for d in json.loads(path.read_text())
+            if d["event_type"] == w.hazard]
+    rows = []
+    for d in live:
+        det = d.get("details") or {}
+        if str(det.get("qualified_date") or "") != str(d["end"][:10]):
+            continue
+        qd = dt.date.fromisoformat(str(d["end"][:10]))
+        box = box_from_bbox(w, tuple(d["bbox"]))
+        closed = {"id": d["id"], "start": d["start"][:10], "end": d["end"][:10],
+                  "bbox": list(d["bbox"])}
+        succ = [x for x in live
+                if x["id"] != d["id"]
+                and dt.date.fromisoformat(x["start"][:10]) == qd
+                and _bbox_intersects(closed, {"bbox": list(x["bbox"])})]
+        row = {"id": d["id"], "start": closed["start"], "end": closed["end"],
+               "successors": [{"id": x["id"], "end": x["end"][:10],
+                               "days": (dt.date.fromisoformat(x["end"][:10])
+                                         - qd).days} for x in succ],
+               "successor_start_overlaps_spell": any(
+                   x["start"][:10] <= closed["end"] and x["end"][:10] >= closed["start"]
+                   for x in succ)}
+        for stage in follow:
+            stage_rows = rows_by_stage.get(stage, [])
+            hit = [r for r in stage_rows if pairable(closed, r)]
+            succ_ids = {x["id"] for x in succ}
+            both = [r for r in stage_rows
+                    if pairable(closed, r) or any(
+                        pairable({"start": x["start"][:10], "end": x["end"][:10],
+                                  "bbox": list(x["bbox"])}, r)
+                        for x in succ)]
+            row[stage] = {"rows_for_closed": len(hit),
+                          "rows_for_closed_plus_successor": len(both),
+                          "successor_was_live": bool(succ_ids)}
+        rows.append(row)
+    return {"n_qual_eq_end": len(rows),
+            "n_with_same_day_successor": sum(1 for r in rows if r["successors"]),
+            "n_successor_overlapping_the_spell": sum(
+                1 for r in rows if r["successor_start_overlaps_spell"]),
+            "rows": rows}
+
+
 def published_metrics(path: Path, w: Window) -> dict:
     """Fill of the live catalogue's boxes, measured on the lane's own masks."""
     rows = []
@@ -921,14 +1010,24 @@ def main() -> int:
         t0 = time.perf_counter()
         base_spells = replay(w, params0)
         base_rows = [score_one(w, Published(s, s.box)) for s in base_spells]
+        rows_by_stage: dict[str, list[dict]] = {"S0_current": base_rows}
         base_agg = aggregate(base_rows, time.perf_counter() - t0)
         base_agg["note"] = "as shipped"
+        base_agg["n_qual_eq_end"] = sum(1 for s in base_spells
+                                        if s.qualified == s.end)
+        base_agg["n_over_45d"] = sum(1 for s in base_spells
+                                     if (s.i1 - s.i0 + 1) > MAX_PUBLISH_DAYS)
         base_agg["worst5_paired"] = paired_worst(base_rows, base_rows)
         entry: dict[str, Any] = {"S0_current": {"summary": base_agg,
                                                 "rows": base_rows}}
         entry["attribution"] = attribute(w, params0)
         entry["seam_audit"] = seam_audit(w, base_spells)
         entry.update(run_strategies(w, base_spells, base_rows, params0, only))
+        rows_by_stage.update({k: v["rows"] for k, v in entry.items()
+                              if isinstance(v, dict) and "rows" in v})
+        if a.published and Path(a.published).exists():
+            entry["successor_audit"] = successor_audit(Path(a.published), w,
+                                                       rows_by_stage)
         if a.published and Path(a.published).exists():
             entry["P0_published_json"] = published_metrics(Path(a.published), w)
             p = entry["P0_published_json"]["summary"]
@@ -948,6 +1047,17 @@ def main() -> int:
             "per_event": entry["attribution"]["per_event"],
             "seam": entry["seam_audit"],
             "published": entry.get("P0_published_json", {}).get("summary"),
+            "successor_audit": entry.get("successor_audit"),
+            "stages": {k: {col: entry[k]["summary"].get(col)
+                           for col in ("n", "fill_med", "daily_fill_med",
+                                       "box_km2_med", "box_km2_p90",
+                                       "box_km2_max", "box_over_peak_med",
+                                       "days_med", "days_p90", "days_max",
+                                       "n_qual_eq_end", "n_over_45d",
+                                       "lost_vs_current", "gained_vs_current")}
+                       for k in ("S0_current", "C3_valid_box_persist",
+                                 "C5_core_from_qualification")
+                       if k in entry},
             "strategies": {k: v["summary"] for k, v in entry.items()
                            if isinstance(v, dict) and "summary" in v},
             "spells": [s.to_dict() for s in base_spells],
