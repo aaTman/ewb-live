@@ -33,7 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ewb_live.events.qualification import (SEED_AREA_KM2, _layer_at)
+from ewb_live.events.qualification import SEED_AREA_KM2, _layer_at
 
 
 def _frames_for(idx, lo: str, end: dt.datetime) -> list[str]:
