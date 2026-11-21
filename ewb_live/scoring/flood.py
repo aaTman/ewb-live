@@ -65,6 +65,7 @@ PAD_DEG = 2.0                 # verification domain: bbox + 2 degrees
 DAY_PAD = 2                   # verified days: start-2 .. last event day + 2
 MAX_LEAD_DAYS = 10            # leads 24 .. 240 h
 FILL_ABS = 1e30               # store fill values are 9.97e36
+FALLBACK_OFFSETS_H = (0,)     # nearest-earlier-init rescue disabled: leads stay whole days (see read_store_apcp)
 GRID = 0.25
 N_LAT, N_LON = 721, 1440
 #: store families that carry ``apcp`` (registry ``AIWP_MODELS`` base codes)
@@ -316,9 +317,11 @@ def plan_for(event, **kw) -> dict:
 def read_store_apcp(model: str, init: dt.datetime, leads: list[int], win, *,
                     counter: dict | None = None, sleep=time.sleep):
     """``(lat asc, lon, apcp[lead, lat, lon] in m with fill as NaN, offset_h)`` for the
-    domain window, from the icechunk store via ``open_init``. Falls back to the nearest
-    EARLIER init (12 h, the pipeline rule): leads shift by the offset, valid times stay.
-    Raises :class:`tc.NoData` when neither init exists."""
+    domain window, from the icechunk store via ``open_init``. The nearest-earlier-init
+    fallback (``FALLBACK_OFFSETS_H``) is OFF for flood: a rescued 12Z init would emit rows
+    at leads 36, 60, ... that the dashboard folds into the 1 d / 3 d columns, which would
+    show 36 h skill under a 24 h label. A missing 00Z init is a ``no_data`` init instead.
+    Raises :class:`tc.NoData` when the init is not in the store."""
     from ..sources import registry
     from ..sources.aiwp import _code
     from ..stores import mlwp_icechunk as store
@@ -326,7 +329,7 @@ def read_store_apcp(model: str, init: dt.datetime, leads: list[int], win, *,
     code = _code(registry.models()[model])
     lat0, lat1, lon0, width = win
     last: Exception | None = None
-    for offset in (0, 12):
+    for offset in FALLBACK_OFFSETS_H:
         ini = init - dt.timedelta(hours=offset)
 
         def attempt(ini=ini, offset=offset):
@@ -350,7 +353,7 @@ def read_store_apcp(model: str, init: dt.datetime, leads: list[int], win, *,
         arr[have] = part
         order = np.argsort(lats)
         return lats[order], lons, arr[:, order, :], offset
-    raise tc_lane.NoData(f"{model} init {init:%Y-%m-%d %H}Z not in store (also not -12h): {last}")
+    raise tc_lane.NoData(f"{model} init {init:%Y-%m-%d %H}Z not in store: {last}")
 
 
 def default_reader(model: str, init: dt.datetime, leads: list[int], win, *, counter: dict | None = None):
