@@ -20,8 +20,7 @@ const TYPE_META = {
                         noScores: true,      // observation lane (PARDIG/IMERG): published, not benchmarked
                         noScoresNote: (n) => `Not scored — ${n} flood${n === 1 ? '' : 's'} tracked from AI-estimated precipitation (Google PARDIG, CC BY 4.0); no EWB benchmark for this lane yet.` },
   midlat_cyclone:     { label: 'Midlatitude cyclones', short: 'Midlatitude cyclone',
-                        rule: 'A closed ERA5 MSLP low ≤990 hPa living ≥48 h and travelling ≥1000 km, born between 25° and 70°. Track lane — no scorecard yet.',
-                        noScores: true },   // mlc track lane: published, not benchmarked
+                        rule: 'A closed ERA5 MSLP low ≤990 hPa living ≥48 h and travelling ≥1000 km, born between 25° and 70°. Scored on track error, central pressure, peak depth and bomb detection against that ERA5 track.' },
 };
 /* AR green (design 2026-11-08, owner request): all type colors resolve
    through CSS tokens — dual-theme values, no hardcoded hex in JS. */
@@ -100,7 +99,7 @@ const TYPE_CRITERIA = {
   // observation lane (PARDIG rain by default — AI-estimated, not ERA5): published, never scored — EWB has no flood benchmark
   flood: 'Rain from Google PARDIG-NRT — an AI-estimated precipitation product (CC BY 4.0), 15-minute instantaneous rates summed to a daily total and averaged up onto the ERA5 0.25° land lattice; GPM IMERG remains a supported fallback source. A cell exceeds when its daily total or its trailing 72 h accumulation reaches the 95th percentile of that calendar day in the ERA5 1990–2019 wet-day climatology AND at least 20 mm/day (or 50 mm per 72 h) — the floor is mandatory because the rain product and ERA5 are different instruments. Cells with no ERA5 percentile (hyper-arid) can never exceed, ocean cells are excluded, and a day whose frames are incomplete is dropped rather than read as dry. A region ≥10,000 km² becomes an event once its footprint reaches 50,000 km² and ends under 10,000 km². There is no EWB benchmark for flood, so floods are published and mapped but no model is scored on them.',
   tropical_cyclone: 'One IBTrACS best-track storm = one event: at least 3 track fixes at tropical-storm force (≥34 kt sustained) spanning at least 12 hours, extratropical/mixed fixes excluded. The wind is the archive’s 1-minute best estimate (USA/JTWC-informed) and one storm never mixes averaging periods — a storm only an RSMC reports is published on that agency’s basis and says so (details.wind_basis). Peak value is the strongest sustained wind in the tropical-storm window (kt); the detail view draws the full track, coloured by intensity. Best-track observations, so there is no model scorecard for this lane yet.',
-  midlat_cyclone: 'A closed low in 6-hourly ERA5 mean sea level pressure: a centre that is the lowest pressure within 6° with a +3 hPa isobar closing around it inside 6°, tracked forward while it stays within 6° per step (gaps up to 12 h are bridged). It becomes an event when it lives ≥48 h, travels ≥1000 km, reaches ≤990 hPa, was born between 25–70° and under 500 m elevation, and did not start as a tropical cyclone. Peak value is the lowest central pressure (hPa); a bomb tag marks a fall of ≥24 hPa in 24 h at 60° latitude. Tracked from ERA5, so there is no model scorecard for this lane yet.',
+  midlat_cyclone: 'A closed low in 6-hourly ERA5 mean sea level pressure: a centre that is the lowest pressure within 6° with a +3 hPa isobar closing around it inside 6°, tracked forward while it stays within 6° per step (gaps up to 12 h are bridged). It becomes an event when it lives ≥48 h, travels ≥1000 km, reaches ≤990 hPa, was born between 25–70° and under 500 m elevation, and did not start as a tropical cyclone. Peak value is the lowest central pressure (hPa); a bomb tag marks a fall of ≥24 hPa in 24 h at 60° latitude. Forecasts are scored against this ERA5 track: position, along/cross-track, central pressure, peak depth and bomb detection.',
 };
 /* ------------------------------------------------------------------ */
 /* EMPTY-LANE COPY — ONE PLACE (owner rule 2026-11-17 / mlc-fix 2026-11-18)     */
@@ -159,6 +158,10 @@ function tcEmptyNote() {
 function trackLaneNote(etype, n) {
   const p = el('p', 'lane-note');
   const tv = ((state.meta || {}).track_verification || {})[etype];
+  if (etype === 'midlat_cyclone') {
+    p.textContent = mlcLaneNote(n, tv);
+    return p;
+  }
   const ib = (state.meta || {}).ibtracs;
   let s = `Scored against the IBTrACS best track (provisional until the archive catches up)`
     + `${n ? ` \u00b7 ${n} storm${n === 1 ? '' : 's'} in this view` : ''}. `
@@ -183,6 +186,27 @@ function trackLaneNote(etype, n) {
   }
   p.textContent = s;
   return p;
+}
+
+/* MLC lane, scored: truth is the ERA5 MSLP track each low was detected on, so the same
+   track-error/along/cross/miss definitions apply, plus peak depth (signed) and the two
+   bomb-detection rates. The tracker-free metrics have no miss rate and are never greyed. */
+function mlcLaneNote(n, tv) {
+  let s = 'Scored against the ERA5 MSLP track each low was detected on '
+    + '(0.25\u00b0, the same grid as the models, so central pressure has no resolution floor)'
+    + `${n ? ` \u00b7 ${n} storm${n === 1 ? '' : 's'} in this view` : ''}. `
+    + 'Track error is the great-circle distance to that position; along-track is positive when '
+    + 'the forecast is ahead of the low, cross-track positive to its right. A forecast that loses '
+    + 'the low counts toward the miss rate and gets no error; cells above 50% misses are greyed. '
+    + 'Peak depth compares the forecast\u2019s lowest pressure within 8\u00b0 of the observed centre '
+    + 'with the ERA5 central pressure (positive = forecast too shallow); it needs no tracking, so '
+    + 'it has no miss rate. Bombs detected is the share of observed 24-h bomb-rate deepenings '
+    + '(Sanders\u2013Gyakum, scaled by latitude) that the forecast also showed; false alarms is the '
+    + 'share of non-bomb windows where it showed one.';
+  if (tv && Number.isFinite(tv.n_inits_verified)) {
+    s += ` ${tv.n_inits_verified} 00/12 UTC inits verified from each low\u2019s first ERA5 fix.`;
+  }
+  return s;
 }
 
 const MODEL_COLORS = {
@@ -222,9 +246,13 @@ const FALLBACK_METRICS = {
   CrossTrackError:                 { label: 'Cross-track', units: 'km', higher_is_better: false, dir: 'zero' },
   CentralPressureError:            { label: 'Central pressure', units: 'hPa', higher_is_better: false, dir: 'zero' },
   TrackMiss:                       { label: 'Miss rate', units: '', higher_is_better: false },
+  /* MLC lane extras: peak depth is signed (zero is ideal); the bomb metrics are 0/1 rates */
+  PeakDepthError:                  { label: 'Peak depth', units: 'hPa', higher_is_better: false, dir: 'zero' },
+  BombDetected:                    { label: 'Bombs detected', units: '', higher_is_better: true },
+  BombFalseAlarm:                  { label: 'Bomb false alarms', units: '', higher_is_better: false },
 };
 /* leads shown per track lane (D8): the store keeps every 6-hourly lead */
-const TYPE_LEADS = { tropical_cyclone: [24, 48, 72, 96, 120] };
+const TYPE_LEADS = { tropical_cyclone: [24, 48, 72, 96, 120], midlat_cyclone: [24, 48, 72, 96] };
 function leadsForType(etype, leads) {
   const want = TYPE_LEADS[etype];
   if (!want) return leads;
@@ -237,13 +265,18 @@ function skillRanked(etype, met) { return !TYPE_LEADS[etype] || met === 'TrackPo
 /* D5: a track-error cell whose model lost more than half its samples at that lead is greyed, and a
    greyed cell feeds neither the verdict banner, the model order nor the Mean colour. */
 function missGreyed(idx, etype, met, lead, model) {
-  if (!TYPE_LEADS[etype] || met === 'TrackMiss') return false;
+  if (!TYPE_LEADS[etype] || met === 'TrackMiss' || TRACKER_FREE_METRICS.has(met)) return false;
   const mc = (idx.get(`${etype}|TrackMiss|${lead}`) || {})[model];
   return !!(mc && Number.isFinite(mc.mean) && mc.mean > MISS_GREY);
 }
 /* D5: a cell whose miss rate is above this is greyed (its error rests on the storms the model kept) */
 const MISS_GREY = 0.5;
-const TRACK_METRIC_ORDER = ['TrackPositionError', 'TrackMiss', 'AlongTrackError', 'CrossTrackError', 'CentralPressureError'];
+const TRACK_METRIC_ORDER = ['TrackPositionError', 'TrackMiss', 'AlongTrackError', 'CrossTrackError', 'CentralPressureError', 'PeakDepthError', 'BombDetected', 'BombFalseAlarm'];
+/* 0/1 rates shown as percent (the miss rate and the MLC bomb rates) */
+const RATE_METRICS = new Set(['TrackMiss', 'BombDetected', 'BombFalseAlarm']);
+/* metrics that do not depend on the tracker keeping the low/storm: the 50%-miss grey rule
+   and the "tracked N of M samples" tooltip row never apply to them */
+const TRACKER_FREE_METRICS = new Set(['PeakDepthError', 'BombDetected', 'BombFalseAlarm']);
 const BINARY_METRICS = new Set(['csi', 'CriticalSuccessIndex', 'Accuracy', 'EarlySignal']);
 
 /* ------------------------------------------------------------------ */
@@ -359,7 +392,7 @@ function fmtVal(metricId, v) {
   if (v === null || v === undefined || !Number.isFinite(v)) return '—';
   const u = metricMeta(metricId).units;
   if (BINARY_METRICS.has(metricId)) return v.toFixed(2).replace('-', '\u2212');
-  if (metricId === 'TrackMiss') return Math.round(v * 100) + '%';
+  if (RATE_METRICS.has(metricId)) return Math.round(v * 100) + '%';
   const a = Math.abs(v);
   let s;
   if (a >= 100) s = v.toFixed(0);
@@ -637,7 +670,8 @@ function metricBlurb(id) {
    track, not ERA5 (owner review 2026-11-21). One lane tab -> that lane's truth; "all types"
    -> the mix, named only when the TC lane has score rows in this build. Other lanes keep the
    run's truth_source. */
-const LANE_TRUTH = { tropical_cyclone: { short: 'IBTrACS', title: 'Tropical cyclones are scored against the IBTrACS best track (provisional until the archive catches up), not ERA5.' } };
+const LANE_TRUTH = { tropical_cyclone: { short: 'IBTrACS', title: 'Tropical cyclones are scored against the IBTrACS best track (provisional until the archive catches up), not ERA5.' },
+  midlat_cyclone: { short: 'ERA5 track', title: 'Mid-latitude cyclones are scored against the ERA5 MSLP track each low was detected on (0.25\u00b0, same grid as the models).' } };
 function tcHasScores() { return state.scorecard.some((r) => r.event_type === 'tropical_cyclone'); }
 function truthShortFor(base) {
   const lt = LANE_TRUTH[state.tab];
@@ -1532,7 +1566,7 @@ function attachTip(td, etype, met, c) {
       const mc = (idx0(etype, 'TrackMiss', c.lead) || {})[model || state.baseline];
       if (met === 'TrackMiss' && Number.isFinite(c.ns)) {
         rows.push(`<div class="t-row"><span>samples</span><b>${c.ns}</b></div>`);
-      } else if (mc && Number.isFinite(mc.ns) && Number.isFinite(c.ns)) {
+      } else if (!TRACKER_FREE_METRICS.has(met) && mc && Number.isFinite(mc.ns) && Number.isFinite(c.ns)) {
         rows.push(`<div class="t-row"><span>tracked</span><b>${c.ns} of ${mc.ns} samples</b></div>`);
       }
       if (c.greyed) {

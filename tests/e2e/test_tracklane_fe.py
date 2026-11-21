@@ -59,7 +59,7 @@ def _tc_score_rows(aurora=None):
     return rows
 
 
-def _fixture(root, tc_scores=False, real_shape=False, aurora=None):
+def _fixture(root, tc_scores=False, real_shape=False, aurora=None, mlc_scores=False):
     web = os.path.join(root, "webroot")
     os.makedirs(web)
     for f in os.listdir(DASH):
@@ -92,6 +92,21 @@ def _fixture(root, tc_scores=False, real_shape=False, aurora=None):
         meta["track_verification"] = {"tropical_cyclone": {
             "min_wind_kt": 34.0, "n_events": 1, "n_inits_verified": 12, "n_inits_not_verified": 5, "events": {}}}
         json.dump(meta, open(os.path.join(out, "meta.json"), "w"))
+    if mlc_scores:
+        evp = os.path.join(out, "events_selected.json")
+        evs2 = json.load(open(evp))
+        evs2.append(MLC_EVENT)
+        json.dump(evs2, open(evp, "w"))
+        scp = os.path.join(out, "scorecard.json")
+        sc = json.load(open(scp))
+        sc["rows"] = sc["rows"] + _mlc_score_rows()
+        json.dump(sc, open(scp, "w"))
+        mp = os.path.join(out, "meta.json")
+        meta = json.load(open(mp))
+        tv = dict(meta.get("track_verification") or {})
+        tv["midlat_cyclone"] = {"n_events": 1, "n_inits_verified": 18, "events": {}}
+        meta["track_verification"] = tv
+        json.dump(meta, open(mp, "w"))
     return web
 
 
@@ -479,3 +494,178 @@ def test_scored_fixture_all_greyed_mean(scored_page):
 
 def test_track_scoring_listing_is_not_a_live_region(scored_page):
     assert scored_page.locator("#track-scoring-code").get_attribute("aria-live") is None
+
+
+# ------------------------------------------- MLC lane, scored (mirrors TC, PR #16 pattern)
+# Mid-latitude cyclones score against the ERA5 MSLP track each low was detected on — the same
+# 0.25° grid the models run on. Metrics: the five TC track metrics plus PeakDepthError (signed;
+# needs no tracking, so it has no miss rate and is never greyed) and the two 0-1 bomb rates.
+# graphcast's TrackMiss at 96 h is 0.6 to exercise the >50%-miss grey rule; its 96 h
+# PeakDepthError must NOT be greyed with it.
+
+MLC_METRICS = ("TrackPositionError", "TrackMiss", "AlongTrackError", "CrossTrackError",
+               "CentralPressureError", "PeakDepthError", "BombDetected", "BombFalseAlarm")
+
+MLC_EVENT = {
+    "id": "mlcfake0001",
+    "event_type": "midlat_cyclone",
+    "title": "Midlatitude Cyclone Fixture",
+    "start": "2026-10-09T12:00:00",
+    "end": "2026-10-11T12:00:00",
+    "bbox": [42.0, 55.0, -40.0, -22.0],
+    "peak_value": 976.0,
+    "details": {"min_pressure_hpa": 976.0, "displacement_km": 2400.0,
+                "bomb": True, "bomb_ratio": 1.6, "peak_value_units": "hPa",
+                "source": "ERA5 MSLP closed-low tracker"},
+}
+
+
+def _mlc_score_rows():
+    """Scorecard rows of the MLC lane in the same pipeline schema as _tc_score_rows."""
+    bomb = {"ifs_hres": (0.62, 0.06), "graphcast": (0.70, 0.04)}
+    miss_by_lead = {"ifs_hres": {24.0: 0.04, 48.0: 0.06, 72.0: 0.08, 96.0: 0.10},
+                    "graphcast": {24.0: 0.10, 48.0: 0.16, 72.0: 0.30, 96.0: 0.60}}
+    rows = []
+    for model, scale, in (("ifs_hres", 1.0), ("graphcast", 0.8)):
+        rel = None if model == "ifs_hres" else round((1.0 - scale) * 100, 2)
+        for lead in (24.0, 48.0, 72.0, 96.0):
+            vals = {"TrackPositionError": 90.0 * scale * lead / 24.0,
+                    "TrackMiss": miss_by_lead[model][lead],
+                    "AlongTrackError": -6.0 * scale, "CrossTrackError": 9.0 * scale,
+                    "CentralPressureError": 7.0 * scale, "PeakDepthError": 5.0 * scale,
+                    "BombDetected": bomb[model][0], "BombFalseAlarm": bomb[model][1]}
+            for metric, val in vals.items():
+                signed = metric in ("AlongTrackError", "CrossTrackError",
+                                    "CentralPressureError", "PeakDepthError")
+                rows.append({"event_type": "midlat_cyclone", "metric": metric, "lead_time_hours": lead,
+                             "model": model, "mean": round(val, 3), "n_events": 8, "n_samples": 60,
+                             "ci95_lo": None, "ci95_hi": None,
+                             "skill_vs_ifs_pct": None if signed or model == "ifs_hres" else rel,
+                             "skill_n_common": 8})
+    return rows
+
+
+@pytest.fixture(scope="module")
+def base_mlc(tmp_path_factory):
+    web = _fixture(str(tmp_path_factory.mktemp("tlm")), mlc_scores=True)
+    handler = lambda *a, **k: _Quiet(*a, directory=web, **k)  # noqa: E731
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{srv.server_address[1]}"
+    srv.shutdown()
+
+
+@pytest.fixture(params=[(1440, 1000), (390, 844)], ids=["1440", "390"])
+def mlc_page(base_mlc, request):
+    w, h = request.param
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        pg = b.new_page(viewport={"width": w, "height": h})
+        errs: list[str] = []
+        pg.on("pageerror", lambda e: errs.append(str(e)))
+        pg._errs = errs                      # type: ignore[attr-defined]
+        pg.goto(base_mlc + "/index.html#tab=midlat_cyclone")
+        pg.wait_for_selector("#scorecard-sec .sc-block table", timeout=20000)
+        yield pg
+        b.close()
+
+
+# JS: locate one data column of the single scorecard block by its metric-group header
+# (prefix match) and lead header (exact, e.g. '4d'), and report the cell in the row
+# containing a given model. Column index is the offset inside the row's td.cell list.
+_MLC_CELL_JS = """
+([grpStart, leadText, model]) => {
+  const block = document.querySelector('#scorecard-sec .sc-block');
+  const grpThs = [...block.querySelectorAll('thead tr.grp th')];
+  const leadThs = [...block.querySelectorAll('thead tr.lead th')];
+  let acc = 0, idx = -1;
+  for (let gi = 1; gi < grpThs.length; gi++) {
+    const g = grpThs[gi], span = g.colSpan || 1;
+    if (idx < 0 && g.textContent.trim().toUpperCase().startsWith(grpStart))
+      for (let j = 0; j < span; j++)
+        if (leadThs[acc + j + 1] && leadThs[acc + j + 1].textContent.trim() === leadText) idx = acc + j;
+    acc += span;
+  }
+  if (idx < 0) return { error: 'column not found: ' + grpStart + ' ' + leadText,
+                        heads: grpThs.map(t => t.textContent.trim()),
+                        leads: leadThs.map(t => t.textContent.trim()) };
+  const row = [...block.querySelectorAll('tbody tr')].find(r => r.innerText.includes(model));
+  const td = row ? row.querySelectorAll('td')[idx + 1] : null;   // +1: the model-name column
+  return { idx, text: td ? td.textContent : null, cls: td ? td.className : null,
+           grey: td ? td.classList.contains('miss-grey') : null };
+}
+"""
+
+# JS: every cell text of the first metric group whose header starts with grpStart.
+_MLC_COL_JS = """
+(grpStart) => {
+  const block = document.querySelector('#scorecard-sec .sc-block');
+  const grpThs = [...block.querySelectorAll('thead tr.grp th')];
+  let acc = 0, idx = -1;
+  for (let gi = 1; gi < grpThs.length; gi++) {
+    const g = grpThs[gi], span = g.colSpan || 1;
+    if (g.textContent.trim().toUpperCase().startsWith(grpStart)) { idx = acc; break; }
+    acc += span;
+  }
+  if (idx < 0) return null;
+  return [...block.querySelectorAll('tbody tr')]
+    .map(r => { const td = r.querySelectorAll('td')[idx + 1]; return td ? td.textContent : null; });
+}
+"""
+
+
+def test_mlc_lane_renders_a_scored_table(mlc_page):
+    """The MLC tab shows a scored table — no 'Not scored' copy anywhere in the lane."""
+    pg = mlc_page
+    assert pg.locator("#scorecard-sec .sc-block table").count() == 1
+    body = pg.inner_text("#scorecard-sec")
+    assert "Not scored" not in body, body[:400]
+    head = pg.inner_text("#scorecard-sec .sc-block thead").upper()
+    assert "TRACK ERROR" in head and "MISS RATE" in head
+    leads = pg.eval_on_selector_all("#scorecard-sec .sc-block thead tr.lead th",
+                                    "els => els.map(e => e.innerText)")
+    assert [x for x in leads if x.endswith("d")] == ["1d", "2d", "3d", "4d",
+                                                     "1d", "2d", "3d", "4d"], leads
+    assert pg._errs == [], pg._errs
+
+
+def test_mlc_grey_rule_greys_track_error_not_peak_depth(mlc_page):
+    """graphcast misses 60 % of its 96 h samples: its 96 h track error is greyed, its
+    96 h Peak depth is NOT — that metric does not depend on the tracker keeping the low."""
+    pg = mlc_page
+    pg.get_by_role("button", name="more metrics").click()
+    pg.wait_for_timeout(500)
+    tr96 = pg.evaluate(_MLC_CELL_JS, ["TRACK ERROR", "4d", "graphcast"])
+    assert tr96.get("grey") is True, tr96
+    pd96 = pg.evaluate(_MLC_CELL_JS, ["PEAK DEPTH", "4d", "graphcast"])
+    assert pd96.get("grey") is False, pd96
+    # greyed cells in the whole block: exactly the four tracker-dependent errors at 96 h
+    # (track/along/cross/central); the miss rate itself and the three tracker-free
+    # metrics (peak depth, both bomb rates) are never greyed
+    assert pg.locator("#scorecard-sec .sc-block td.cell.miss-grey").count() == 4, tr96
+    assert pg._errs == [], pg._errs
+
+
+def test_mlc_header_truth_is_the_era5_track(mlc_page):
+    assert _truth(mlc_page) == "ERA5 track"
+
+
+def test_mlc_note_states_the_truth_and_the_new_metrics(mlc_page):
+    note = mlc_page.inner_text("#scorecard-sec .lane-note")
+    assert "ERA5 MSLP track" in note and "Peak depth" in note, note
+    assert "18 00/12 UTC inits verified" in note, note
+
+
+def test_mlc_no_horizontal_page_scroll(mlc_page):
+    over = mlc_page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert over <= 0, over
+
+
+def test_mlc_bomb_detected_cells_print_as_percent(mlc_page):
+    pg = mlc_page
+    pg.get_by_role("button", name="more metrics").click()
+    pg.wait_for_timeout(500)
+    texts = pg.evaluate(_MLC_COL_JS, "BOMBS DETECTED")
+    assert texts, texts
+    assert all(t and t.endswith("%") and t[:-1].strip().isdigit() for t in texts), texts
+    assert pg._errs == [], pg._errs
