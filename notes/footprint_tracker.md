@@ -22,10 +22,11 @@ The short version is in SPEC §2. Mechanics, in the order the tracker applies th
 region grouping (closing + local density) → candidate at 50 k km² → event at 200 k
 km² of footprint → footprint that only ever grows over **valid** cells within
 8 cells/day of what it holds (2026-11-20 rule, below) → end when the **core**
-(valid every day since the start, measured inside the day-3 **anchor box**)
-holds < 100 k km². What a scan *publishes* as the event rectangle is not the
-tracker box but the **persistence box** (bbox of the cells valid on ≥ half the
-event's days, area-weighted 2–98 % trimmed).
+(valid every day since the event **qualified**, measured inside the **anchor
+box** — the box as it stood on the later of day 3 and the qualification day;
+owner decision 2026-11-21, below) holds < 100 k km². What a scan *publishes* as
+the event rectangle is not the tracker box but the **persistence box** (bbox of
+the cells valid on ≥ half the event's days, area-weighted 2–98 % trimmed).
 
 The two ideas that actually buy something over the pad rule:
 
@@ -41,7 +42,44 @@ The two ideas that actually buy something over the pad rule:
 `Params` defaults are the reference CLI's defaults (checked against the reference run's
 own `params` block): seed 50 000 km², qualify 200 000 km², end 100 000 km², min_days 3,
 max_ramp_days 5, region_radius 6, region_min_fraction 0.3, move_cells 8, min_overlap
-0.5, join_area 10 000 km², anchor_day 3, max_box_area None.
+0.5, join_area 10 000 km², anchor_day 3, max_box_area None, and since
+2026-11-21 `core_clock="qualified"` (the flood lane pins `"start"`).
+
+## The 2026-11-21 core clock: the end check starts at qualification
+
+Owner decision 2026-11-21 (the round-2 review of `fix/heatwave-box-size`). The
+shipped core counted cells valid on *every day since the candidate's start*, so
+a spell that grew into qualification had a core of only its small seed area:
+the day it reached 200 k km² it also fell under the 100 k km² end floor and was
+closed in the same pass. Its `end` (exclusive) sat on the qualifying day, so
+the qualifying day was not one of the event's days and the region was free to
+seed a new object the same day — the live catalogue carries **31** events that
+end the day they qualify (29 heat waves + 2 freezes). `Params.core_clock`
+makes the clock explicit:
+
+* `"qualified"` (default, the owner's rule): the core counts cells valid every
+  day **since `qualified_date`**, and the **anchor** freezes on the later of
+  `anchor_day` and the qualification day — never before it. On its qualifying
+  day an event's core is its whole footprint, so the same-day ending is
+  structurally impossible: every valid event satisfies `start <= qualified <
+  end` and its qualifying day is one of its days (`tests/test_event_tracker.py::
+  test_no_event_ever_ends_on_its_qualifying_day`).
+* `"start"`: the shipped rule, unchanged, for anything that must not move — the
+  flood lane (`FLOOD_PARAMS`, which is not re-measured against this decision)
+  and the LEGACY knobs of the tracker tests.
+
+A merge that hands an unqualified candidate the qualification of a younger
+object adopts the earlier `qualified_date` for publication but starts the core
+clock and the anchor on the **merge day**: the survivor cannot be ended by a
+past it never held (`test_merge_inherited_qualification_does_not_end_the_survivor`).
+Everything else is untouched — start dates, the ramp rules, `max_ramp_days`, the
+claim/seed/merge geometry and the persistence publish box — and
+`TRACK_RULE_REV` moved `c3-v1 → c3-v2`, so the event cache and the frames-derived
+detection are rebuilt together with the release.
+
+Measured on the live lane (`scripts/review/hb01_box_growth.py`, stages
+`S0_current` shipped → `C3_valid_box_persist` (core from start) →
+`C5_core_from_qualification` = production now), 85 days 2026-08-21..11-13:
 
 ## The 2026-11-20 box-size change (strategy `C3_valid_box_persist`)
 

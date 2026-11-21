@@ -958,15 +958,17 @@ def successor_audit(path: Path, w: Window, rows_by_stage: dict[str, list[dict]],
         for stage in follow:
             stage_rows = rows_by_stage.get(stage, [])
             hit = [r for r in stage_rows if pairable(closed, r)]
-            succ_ids = {x["id"] for x in succ}
+            succ_rows = [{"start": x["start"][:10], "end": x["end"][:10],
+                          "bbox": list(x["bbox"])} for x in succ]
             both = [r for r in stage_rows
-                    if pairable(closed, r) or any(
-                        pairable({"start": x["start"][:10], "end": x["end"][:10],
-                                  "bbox": list(x["bbox"])}, r)
-                        for x in succ)]
+                    if pairable(closed, r) or any(pairable(s, r) for s in succ_rows)]
+            # the pair really was one spell if ONE replay object covers both
+            one = [r for r in stage_rows
+                   if pairable(closed, r) and any(pairable(s, r) for s in succ_rows)]
             row[stage] = {"rows_for_closed": len(hit),
                           "rows_for_closed_plus_successor": len(both),
-                          "successor_was_live": bool(succ_ids)}
+                          "one_row_covers_both": bool(one),
+                          "successor_was_live": bool(succ)}
         rows.append(row)
     return {"n_qual_eq_end": len(rows),
             "n_with_same_day_successor": sum(1 for r in rows if r["successors"]),
