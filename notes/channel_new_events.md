@@ -4138,3 +4138,14 @@ tests/test_lane_guard.py refusing because the preview tree's data/ symlinks to t
 data/), 2 are the known box-dependent test_cold_snap severity + test_imerg s3_credentials. Browser check 1280/1440/390 light+dark
 (+1100, 1366): no clipped labels, no overflow, no console errors. Screenshots: notes/screenshots/firstscreen-midwidth/ (gitignored).
 Preview :8065 unit stopped and /opt/ewb-preview-fs* removed.
+## [scoring-wp4] 2026-11-21 11:04 UTC — WP4 flood lane started (branch feat/scoring-flood-lane, base develop)
+
+Scope decided with the owner: GraphCast only (graphcast, graphcast_gfs; the only store family with `apcp`), truth = PARDIG daily on the
+ERA5 0.25 lattice ("vs AI-estimated precip", not observed rain), metrics = daily exceedance contingency (CSI, POD, FAR) + FSS (3x3, 5x5) +
+areal bias / peak error over the event footprint. ifs_hres `tp` baseline is NOT built (not in this brief), so no skill colour for flood.
+Done so far: `ewb_live/scoring/flood.py` (commit f1789e1). Measured on the LXC with real data: all 40 events build a verification plan
+(5-9 s each, mostly land mask + climatology), event ee4e843948f1 x {graphcast, graphcast_gfs} x 17 inits scores in 29 s serial, 983 rows, 2.1 GB parent RSS.
+Data facts found (design note had them wrong): apcp fill is 9.97e36 (not NaN) and only on some IFS-initialised inits; ~15-30 % of cells are small
+negatives (clipped); ALL 40 events have lane_of_record 3day, so the 72 h lane defines the event but the table scores the daily lane (documented).
+Pi children (fleet/agent) are doing tests, pipeline wiring and dashboard+e2e in parallel; I review their diffs before merging. Private preview tree:
+/opt/ewb-preview-flood-lane (port 8066, not live/dev). Nothing deployed, nothing merged.
