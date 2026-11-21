@@ -4150,3 +4150,10 @@ are observed bombs emit Detected, the rest emit FalseAlarm). Lane registered in 
 (3 events x graphcast/aurora/ifs_hres, 45 jobs, 33.8 s, peak 11.5 GB): 9 pairs scored, 0 errors. Dashboard wiring and offline tests are with
 two Pi (fleet/agent) children; the full MLC backfill waits for their review. Note: that smoke run was launched with `nohup ... &` inside
 the ssh command (breaks the "no bare & in a foreground ssh" rule); the full backfill goes through `systemd-run`.
+
+## [scoring-wp2] 2026-11-21 13:45 UTC — WP2: Pi children reviewed + merged into the branch, full MLC backfill launched
+
+Dashboard wiring (Pi, cherry-picked 0859a53) and offline tests (Pi, `tests/test_score_mlc.py`, 17 tests) reviewed. One real finding from the tests: `score_event_serial`
+resolved its reader/lane at import time (the serial `_score_job` fallback ignored a patched reader); fixed at call time (41f64ac), strict xfail dropped.
+Offline on the box (preview tree): `test_score_mlc` + `test_score_tc` + `test_track_verif` + `test_lane_guard` = 116 passed. Guard ok (weekly inactive, Saturday 13:43 UTC).
+Full MLC backfill launched in `/opt/ewb-preview-mlc` as systemd unit `ewb-preview-mlc-backfill` through `ops/lane_backfill.sh mlc` (12 workers, recycle 30, cap 40 GB).
