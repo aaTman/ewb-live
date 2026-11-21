@@ -422,27 +422,39 @@ def test_anchor_freezes_no_earlier_than_qualification():
     assert old.anchor == Box(10, 13, 10, 14)          # frozen on event day 3
 
 
-def test_merge_inherited_qualification_does_not_end_the_survivor():
-    """A candidate that gains qualification by absorbing a younger event.
+def test_merge_survivor_is_the_oldest_qualified_member():
+    """A merge cannot hand qualification to an unqualified candidate.
 
-    The survivor keeps the earlier *published* qualification but its core clock
-    starts on the merge day: it cannot be ended by a past it never held, and
-    its anchor freezes on the merge day, not before. Under the start clock the
-    merge day was also its last day (its own 60k seed core was under the floor).
+    Round-3 blocker (real-data repro: a 48k km2 candidate absorbed a 363k km2
+    qualified event, clipped its cells into the small box and published a
+    "valid" event with a 51k km2 peak, while the real spell re-seeded a day
+    late). The survivor is the group's OLDEST QUALIFIED member, an event's
+    ``qualified`` is a day its OWN footprint reached the floor, and an
+    absorbed candidate simply disappears. Here the 60k candidate A welds to
+    the qualified 250k event B on day 3: the merged object is B - B's own
+    seed day, B's own core clock, and B's core survives the merge, not A's
+    clipped husk.
     """
     a = block(slice(10, 12), slice(10, 13))            # 60k candidate, day 0
     b = block(slice(10, 15), slice(40, 45))            # 250k: qualifies at its seed day
     region = block(slice(10, 15), slice(10, 45))       # one label welds them on day 3
     frames = [a, a | b, a | b, region, region, cells(0)]
-    ev = run(frames, QUALIFY_END)[0]
-    assert ev.start == DAY0
-    assert ev.qualified == DAY0 + dt.timedelta(days=1)     # inherited from B
-    assert ev.core_clock_start == DAY0 + dt.timedelta(days=3)   # the merge day
-    assert ev.anchor == Box(10, 13, 10, 14)                 # frozen on that day
+    evs = run(frames, QUALIFY_END)
+    assert len(evs) == 1                               # A left no event
+    ev = evs[0]
+    assert ev.id.endswith("-2")                        # it is B, seeded day 1
+    assert ev.start == DAY0 + dt.timedelta(days=1)     # B's own seed, not A's
+    assert ev.qualified == ev.start                    # its own qualifying day
+    assert ev.core_clock_start == ev.qualified         # no merge-day clock
+    assert (ev.footprint_area_km2[(ev.qualified - ev.start).days]
+            >= QUALIFY_END.qualify_area_km2)           # floor reached on its own day
+    assert ev.peak_area_km2 >= QUALIFY_END.qualify_area_km2   # never clipped sub-floor
+    assert ev.anchor == Box(10, 14, 38, 44)            # day-3 anchor: B's grown box
     assert ev.end == DAY0 + dt.timedelta(days=5)
-    assert ev.start <= ev.qualified < ev.end
+    # the pinned start clock picks the same survivor - the fix is the
+    # survivor rule, not the clock
     old = run(frames, dataclasses.replace(QUALIFY_END, core_clock="start"))[0]
-    assert old.end == DAY0 + dt.timedelta(days=3)           # died on the merge day
+    assert (old.start, old.qualified) == (ev.start, ev.qualified)
 
 
 def test_seam_ramp_keeps_its_early_start():
@@ -807,3 +819,85 @@ def test_event_crossing_the_seam_keeps_a_wrapped_box():
     assert pb == Box(10, 14, 76, 6)              # persistence trims, still wrapping
     ev_old = run(frames, LEGACY)[0]
     assert ev_old.box == Box(10, 14, 74, 8)      # unchanged from the shipped rule
+
+
+# ------------------------------------- merge survivor rule (round 3, 2026-11-21) ---
+# The merge survivor fix must hold on random input AND must not touch the
+# legacy/flood parameter paths. Both cases run the same seeded fuzz: drifting,
+# noisy blob fields that weld and split, so merge groups of every shape occur.
+
+def fuzz_frames(seed: int, days: int = 30) -> np.ndarray:
+    """A seeded drifting, flickering blob field (region merges/splits daily)."""
+    rng = np.random.default_rng(seed)
+    base = rng.random((NY, NX)) < 0.22
+    return np.array([np.roll(base, k * int(rng.integers(0, 3)), axis=1)
+                     & (rng.random((NY, NX)) < 0.85) for k in range(days)])
+
+
+def test_fuzz_default_params_never_publish_a_sub_floor_event():
+    """Round-3 fuzz: every valid event qualified on its OWN footprint.
+
+    For every valid event over 20 seeded fuzz runs with the default (C3)
+    Params: the footprint recorded on the qualifying day is >= the qualify
+    floor, the peak is >= the floor, and start <= qualified < end. The
+    absorbed-candidate bug (a merge handing qualification to a 48k km2
+    candidate, publishing a valid event with a 51k km2 peak) fails this.
+    """
+    for seed in range(20):
+        frames = fuzz_frames(seed)
+        dates = [DAY0 + dt.timedelta(days=k) for k in range(frames.shape[0])]
+        events = track_events(frames, dates, AREA, Params(), "heat_wave")
+        for ev in events:
+            day = (ev.qualified - ev.start).days
+            assert 0 <= day < len(ev.footprint_area_km2)
+            assert ev.footprint_area_km2[day] >= Params().qualify_area_km2
+            assert ev.peak_area_km2 >= Params().qualify_area_km2
+            assert ev.start <= ev.qualified
+            if ev.end is not None:
+                assert ev.qualified < ev.end
+
+
+def test_legacy_and_flood_results_are_unchanged_by_the_survivor_rule():
+    """merge_keep_box=False (LEGACY) and the flood lane keep HEAD's results.
+
+    Golden digest of the same seeded fuzz run with the HEAD code (the old
+    oldest-survivor-with-inheritance rule): 232 LEGACY heat events and 11 083
+    flood events, event-for-event identical (ids, dates, qualified, boxes,
+    anchors and all three area series). The survivor rule and the removal of
+    the core-clock inheritance only take effect under merge_keep_box=True.
+    """
+    import hashlib
+    import json
+
+    def bx(b: Box | None) -> list[int] | None:
+        return None if b is None else [b.i0, b.i1, b.j0, b.j1]
+
+    # the PRODUCTION legacy fingerprint (default thresholds, shipped knobs),
+    # not the tests' small-grid LEGACY
+    prod_legacy = dataclasses.replace(
+        Params(), claim_valid_only=False, seed_valid_only=False,
+        merge_keep_box=False, core_clock="start")
+    per_seed = []
+    for seed in range(30):
+        frames = fuzz_frames(seed)
+        dates = [DAY0 + dt.timedelta(days=k)
+                 for k in range(frames.shape[0])]
+        per_seed.append([
+            [ev.id, str(ev.start), str(ev.qualified), str(ev.end),
+             bx(ev.box), bx(ev.anchor),
+             [round(a, 1) for a in ev.footprint_area_km2],
+             [round(a, 1) for a in ev.box_area_km2],
+             [round(a, 1) for a in ev.core_area_km2]]
+            for ev in track_events(frames, dates, AREA, prod_legacy, "heat_wave")])
+    assert hashlib.sha256(json.dumps(per_seed).encode()).hexdigest() == \
+        "c7f5b1fb9da5407b765c5be2ff07c807d950297b19b5ef657e6156504bdf2929"
+    # flood keeps its own pinned knobs (claim/seed/merge legacy, start clock,
+    # day-2 anchor) - same seeds, run through FloodParams at HEAD
+    from ewb_live.events.flood import FloodParams
+    flood = []
+    for seed in range(30):
+        frames = fuzz_frames(seed)
+        dates = [DAY0 + dt.timedelta(days=k) for k in range(frames.shape[0])]
+        flood.append(len(track_events(frames, dates, AREA, FloodParams(),
+                                      "flood")))
+    assert sum(flood) == 11083   # flood event count at HEAD over the fuzz set

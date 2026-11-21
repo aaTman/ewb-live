@@ -22,7 +22,10 @@ growing*:
    >= ``min_overlap`` of the *smaller* of region and footprint — so a large
    neighbour brushing the edge is not swallowed. Its box grows to cover every
    footprint it has ever had and never shrinks; objects that claim the same
-   region merge into the older one.
+   region merge into the merge's **oldest qualified member** (only a group of
+   pure candidates keeps its oldest candidate; review round 3 #1) — a merge
+   never hands qualification to a spell that never reached the floor on its
+   own footprint.
    Since the 2026-11-20 box-size rule (SPEC §2, ``notes/heatwave_box_diagnosis.md``)
    the claimed part of a region is only its **valid** cells within
    ``move_cells`` of what the event holds (``claim_valid_only``), a candidate
@@ -283,10 +286,12 @@ class Params:
         seed_valid_only: A new candidate's footprint and first box are the
             labelled region's valid cells only, never its closing-filled
             bridge cells. False keeps the original whole-region seeding.
-        merge_keep_box: When objects claim the same cells the older one keeps
-            its own box and each YOUNGER member's claim is clipped into it;
-            the survivor keeps growing its box by its own claims. A merge
-            never unions two boxes. False keeps the original box-union.
+        merge_keep_box: When objects claim the same cells the survivor - the
+            group's OLDEST QUALIFIED member, or its oldest candidate when no
+            member qualified (review round 3 #1) - keeps its own box and every
+            other member's claim is clipped into it; the survivor keeps
+            growing its box by its own claims, and qualification is never
+            inherited. False keeps the original oldest-survivor box-union.
         publish_box: The rectangle a scan publishes for the event:
             ``"persistence"`` = :func:`persistence_box` over the event's days,
             ``"tracker"`` = the cumulative tracker box.
@@ -329,8 +334,8 @@ class TrackedEvent:
         box: Box covering every footprint so far; fixed once ended.
         qualified: First day the footprint reached ``qualify_area_km2``.
         core_clock_start: Day the core's every-day-since streak counts from
-            (:meth:`Tracker.core_clock_day`): the day this object qualified,
-            or the day it inherited qualification through a merge.
+            (:meth:`Tracker.core_clock_day`): the day this object's OWN
+            footprint qualified - a merge never moves it (SPEC §2 step 4).
         end: First day the core held less than ``end_area_km2``; None while open.
         anchor: Box on ``anchor_day``; the core is measured inside it from then on.
         footprint_area_km2: Valid area in the footprint on each open day.
@@ -420,31 +425,45 @@ class Tracker:
             if ev.qualified is not None and self.ending(ev, hits[k], labels, valid, weighted, day):
                 hits[k] = set()  # release its regions so they cannot block a neighbour
         groups = merge_groups(hits, [ev.box for ev in self.active], self.fits, nx)
-        groups.sort(key=lambda g: (self.active[g[0]].qualified is None, g[0]))
+        # Under ``merge_keep_box`` the survivor is the group's OLDEST QUALIFIED
+        # member: a merge never inherits a qualification onto an unqualified
+        # candidate, which would clip the qualified member's cells into the
+        # candidate's small box and publish a sub-floor "event" (review round
+        # 3 #1). Only a group with no qualified member keeps its oldest
+        # candidate. The legacy rule keeps the oldest member (SPEC §2 step 4).
+        surv = [next((k for k in g if self.active[k].qualified is not None),
+                     g[0]) if p.merge_keep_box else g[0] for g in groups]
+        order = sorted(range(len(groups)),
+                       key=lambda g: (self.active[surv[g]].qualified is None,
+                                      groups[g][0]))
         taken = np.zeros((ny, nx), bool)
         kept: list[TrackedEvent] = []
         ended: list[TrackedEvent] = []
-        for group in groups:
-            ev = self.active[group[0]]
+        for gi in order:
+            group = groups[gi]
+            ev = self.active[surv[gi]]
             # the survivor keeps its own claim of its own regions ...
-            share = self.claim(ev, hits[group[0]], labels, valid) & ~taken
-            for k in group[1:]:
+            share = self.claim(ev, hits[surv[gi]], labels, valid) & ~taken
+            for k in group:
+                if k == surv[gi]:
+                    continue
                 other = self.active[k]
-                if other.qualified is not None and (
-                        ev.qualified is None or other.qualified < ev.qualified):
-                    # the survivor publishes the earlier qualification, but its
-                    # core clock never moves into a past it did not live
-                    # through: it keeps its own start of clock, or starts
-                    # today's if it had none (SPEC §2, step 4)
-                    ev.qualified = other.qualified
-                    ev.core_clock_start = ev.core_clock_start or day
                 if p.merge_keep_box:
-                    # ... a merge only clips the YOUNGER member's claim into
-                    # the older box; the survivor's own drift cells stay free
-                    # to grow it (SPEC §2 step 4, review round 1 #2)
+                    # ... a merge only clips the OTHER member's claim into the
+                    # survivor's box; the survivor's own drift cells stay free
+                    # to grow it (SPEC §2 step 4, review round 1 #2). An
+                    # absorbed unqualified candidate disappears; qualification
+                    # is never inherited - a qualified day is a day the
+                    # survivor's OWN footprint reached the floor (round 3 #1).
                     share |= (self.claim(other, hits[k], labels, valid)
                               & ev.box.mask(ny, nx) & ~taken)
                 else:
+                    if other.qualified is not None and (
+                            ev.qualified is None or other.qualified < ev.qualified):
+                        # legacy: the survivor publishes the earlier
+                        # qualification (its core clock keeps its own start;
+                        # under the pinned start clock nothing reads it)
+                        ev.qualified = other.qualified
                     ev.box = ev.box.union(other.box, nx)
                     share |= self.claim(other, hits[k], labels, valid) & ~taken
             if share.any():
