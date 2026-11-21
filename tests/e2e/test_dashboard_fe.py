@@ -591,6 +591,49 @@ def test_controls_live_in_the_section_they_change(live_url, page_ctx):
     assert page.errors == [], page.errors
 
 
+@pytest.mark.parametrize("vw,vh", [(1280, 800), (1366, 768)])
+def test_first_screen_budget_at_laptop_widths(live_url, page_ctx, vw, vh):
+    """The 1100-1300 px band is where the home page used to lose the first screen:
+    two container-query thresholds stacked there — below 680 px of map column the
+    scales card fell to one lane per row, below NARROW_W 600 px the gantt put lane
+    names ABOVE their bands — and the events column paid for both, ending at
+    ~1010 px on a 1280x800 laptop. Now: 1280x800 ends ~797 px, and the 1366x768
+    section is ~642 px tall."""
+    page = page_ctx
+    page.set_viewport_size({"width": vw, "height": vh})   # before the load, as the user arrives
+    _home(page, live_url)
+    m = page.evaluate("""() => {
+        const box = (s) => document.querySelector(s).getBoundingClientRect();
+        const rows = (sel) => new Set([...document.querySelectorAll(sel)]
+            .map((n) => Math.round(n.getBoundingClientRect().top))).size;
+        const css = (s) => getComputedStyle(document.querySelector(s));
+        return { eventsEnd: Math.round(box('#events-sec').bottom),
+                 eventsH: Math.round(box('#events-sec').height),
+                 headerBottom: Math.round(box('header.top').bottom),
+                 legendRows: rows('#gm-legend .lg-group'),
+                 legendWide: css('#gm-legend').getPropertyValue('--lg-wide').trim() === '1',
+                 chipRows: rows('#type-tabs .etype-tab'),
+                 lab: parseFloat(css('#global-sec').getPropertyValue('--gm-lab')) || 0,
+                 // a label's textContent would also carry its <title> tooltip, which
+                 // ends in the tooltip's own words — read only the drawn text nodes
+                 labels: [...document.querySelectorAll('#gm-gantt .gm-lane-lab')].map(
+                     (n) => [...n.childNodes].filter((c) => c.nodeType === 3)
+                         .map((c) => c.nodeValue).join('')),
+                 overflowX: document.documentElement.scrollWidth > window.innerWidth }; }""")
+    # the events column fits the viewport below the header, no scrolling for rows
+    assert m["eventsH"] <= vh - m["headerBottom"], m
+    # 1280x800 keeps the whole section inside the first screen; at 1366x768 the
+    # seven lanes land its bottom at ~822 px, so there only the overflow is bounded
+    assert m["eventsEnd"] <= (800 if vw == 1280 else 900), m
+    # one lane per row is the cliff that cost +75 px: the card stays a wide strip
+    assert m["legendRows"] <= 3 and m["legendWide"], m
+    assert m["chipRows"] == 1, m                       # event-type chips never wrap to 2 rows
+    assert m["lab"] > 0, m                             # WIDE gantt: names beside the bands
+    assert not [s for s in m["labels"] if s.endswith("\u2026")], m   # short names, no ellipsis
+    assert m["overflowX"] is False, m
+    assert page.errors == [], page.errors
+
+
 def test_type_filter_narrows_map_list_and_scorecard_together(live_url, page_ctx):
     page = page_ctx
     _home(page, live_url)
