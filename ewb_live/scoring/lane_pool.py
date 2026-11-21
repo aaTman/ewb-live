@@ -106,12 +106,12 @@ def score_event_serial(event, models: list[str], status_out: dict | None = None,
     the pool; this is ``pipeline._score_job``'s fallback and the tests' equivalent)."""
     import pandas as pd
 
-    lane = LANE_BY_EVENT_TYPE[event.event_type]
+    lane = LANES[LANE_KEY_BY_EVENT_TYPE[event.event_type]]      # live registry (tests patch it)
+    reader = reader or tc_lane.default_reader                   # resolved at call time, not import time
     plan = lane.plan(event)
     frames, status = [], {}
     for m in models:
-        recs = [lane.init_job(plan["track"], m, init, leads, *([reader] if reader else []))
-                for init, leads in plan["verified"]]
+        recs = [lane.init_job(plan["track"], m, init, leads, reader) for init, leads in plan["verified"]]
         df, st = lane.finalize(event, m, plan, recs)
         status[m] = st
         if df is not None:

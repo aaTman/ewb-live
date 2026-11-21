@@ -560,17 +560,6 @@ def test_score_event_serial_matches_pool_path():
     assert set(a["model"]) == set(MODELS)
 
 
-@pytest.mark.xfail(
-    reason="scoring/lane_pool.py::score_event_serial only forwards a reader when one is passed "
-           "(it does `*([reader] if reader else [])`), and pipeline._score_job — the MLC commit's "
-           "'pipeline dispatch' path — calls it WITHOUT a reader. mlc.score_init/tc.score_init both "
-           "bind `reader: Callable = tc.default_reader` as a DEFAULT ARGUMENT at import time, so a "
-           "later monkeypatch of tc.default_reader (the whole point of the serial path's injectable "
-           "reader, and what the old tc.score_tc_event's call-time `reader or default_reader` honoured) "
-           "never reaches it: the MLC lane falls back to the real store and a patched reader is "
-           "silently ignored. Source fix: resolve the lane's default reader at call time (e.g. "
-           "`reader=tc.default_reader` read inside the function body, or pass reader through _score_job).",
-    strict=True)
 def test_score_job_lane_dispatch_honours_a_patched_default_reader(monkeypatch):
     """The track-lane dispatch in pipeline._score_job must use an injected default reader."""
     ev = _event()
