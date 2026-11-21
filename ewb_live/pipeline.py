@@ -91,6 +91,27 @@ def _track_verification_meta(events) -> dict:
     return out
 
 
+def _flood_scoring_meta(events, models) -> dict:
+    """meta.flood_scoring: which models the flood lane can score and what its truth is
+    (an AI-estimated precipitation product, not observed rain). Fail-soft like the others."""
+    try:
+        from .scoring import flood as flood_lane
+
+        if not any(e.event_type == flood_lane.EVENT_TYPE for e in events):
+            return {}
+        ok, why = flood_lane.flood_models(models)
+        return {"truth": flood_lane.TRUTH_TAG,
+                "truth_label": "vs AI-estimated precipitation (Google PARDIG)",
+                "scored_models": ok,
+                "unsupported_models": sorted(why),
+                "note": "Flood is scored for GraphCast only (graphcast, graphcast_gfs): the other "
+                        "models carry no precipitation in the store. Truth is Google PARDIG, an "
+                        "AI-estimated precipitation product, not observed rain."}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("flood scoring summary failed (meta.flood_scoring={}): %s", exc)
+        return {}
+
+
 def public_meta(meta: dict) -> dict:
     """meta.json payload with private-infrastructure keys removed (G-31)."""
     return {k: v for k, v in meta.items() if k not in PUBLIC_META_DROP}
@@ -113,7 +134,10 @@ def public_reason(text) -> str:
     return (t[:117] + "...") if len(t) > 120 else t
 PARTS = Path("data/cache/score_parts")
 HIGHER_IS_BETTER = {"CriticalSuccessIndex", "Accuracy", "EarlySignal",
-                    "BombDetected"}   # mlc lane: share of observed bombs the forecast reproduced
+                    "BombDetected",   # mlc lane: share of observed bombs the forecast reproduced
+                    # flood lane (notes/scoring_design.md section 6): skill is meaningless
+                    # without a baseline, but the direction must still be right
+                    "ProbabilityOfDetection", "FractionsSkillScore", "FractionsSkillScore5"}
 # science-review D6: a signed-error metric's cell mean is signed, so
 # lower-is-better on it can score LARGER |error| as positive skill
 # (aurora +82% heat duration). Skill suppressed; signed mean stays as `mean`.
@@ -121,7 +145,9 @@ SIGNED_ERROR_METRICS = {"DurationMeanError",
                         # track lanes (notes/scoring_design.md section 6): signed bias
                         # components, skill vs the baseline is meaningless for them
                         "AlongTrackError", "CrossTrackError", "CentralPressureError",
-                        "PeakDepthError"}      # mlc lane: signed depth bias
+                        "PeakDepthError",      # mlc lane: signed depth bias
+                        # flood lane: signed mm differences (FalseAlarmRatio stays lower-is-better)
+                        "PrecipAreaBias", "PeakPrecipError"}
 BASELINE = "ifs_hres"
 PEAK_WINDOW_METRICS = ("MaximumMeanAbsoluteError",
                        "MaximumLowestMeanAbsoluteError",
@@ -312,8 +338,16 @@ def _score_job(event_dict: dict, models: list[str], truth_source: str,
     try:
         if event.event_type in lane_pool.LANE_TYPES:
             # track lanes are not EWB-evaluate scored: serial in-process track
-            # verification (production runs go through lane_pool's worker pool)
-            df, _st = lane_pool.score_event_serial(event, models, status_out=status_out)
+            # verification (production runs go through lane_pool's worker pool).
+            # A lane that registers its own serial scorer (tc / mlc / flood) is
+            # asked for it; a lane registered without one falls back to the
+            # generic lane_pool loop, which resolves the lane + default reader
+            # at CALL time (that is what the patched-registry tests drive).
+            _lane = lane_pool.LANE_BY_EVENT_TYPE[event.event_type]
+            if _lane.serial is not None:
+                df, _st = _lane.serial(event, models, status_out=status_out)
+            else:
+                df, _st = lane_pool.score_event_serial(event, models, status_out=status_out)
         else:
             df = score_event(event, models, truth_source=truth_source,
                              status_out=status_out)
@@ -932,10 +966,9 @@ def run(
     # the pair_coverage contract and full_run_complete stay decidable
     # (mirrors how a model with no 2 m temperature on heat/freeze is documented,
     # not left missing).
-    _UNSCORED_REASON = {
-        "flood": "no EWB benchmark for IMERG-accumulation events "
-                 "(flood is published, not scored)",
-    }
+    # every former unscored lane now scores: tropical_cyclone (WP1), midlat_cyclone
+    # (WP2) and flood (WP4); the documented-zero mechanism stays for the next one
+    _UNSCORED_REASON: dict[str, str] = {}
     if unscored_obs:
         for e, ms in unscored_obs:
             for m in ms:
@@ -980,6 +1013,7 @@ def run(
     # TC verification coverage (owner 2026-11-21): inits before the first >= 34 kt fix
     # are shown as not verified, never counted as misses
     track_verification = _track_verification_meta(events)
+    flood_scoring = _flood_scoring_meta(events, models)
 
     def _write_outputs(frames: list) -> int:
         """Concat + (re)write scores/scorecard/meta atomically. Called
@@ -1045,6 +1079,7 @@ def run(
             "ibtracs": ibtracs_meta,
             "lane_status": lane_status,
             "track_verification": track_verification,
+            "flood_scoring": flood_scoring,
             "climatology": _clim_meta(),
             # owner decision 2026-11-08 (G-40): documented deviation — the AR
             # lane keeps the upstream EWB mask filters verbatim and ADDS an
@@ -1321,11 +1356,12 @@ def run(
         logger.info("scoring perf: %s", perf_stats)
 
     if lane_todo:
-        # track lanes (tropical_cyclone): their own worker pool (R4), after the EWB
+        # track lanes (tropical_cyclone, flood): their own worker pool (R4), after the EWB
         # jobs so the two pools never share the box's memory budget
         truths = dict(truth_by_event)
-        pairs_by_lane: dict = {}                       # lane key -> [(event, model)]
+        pairs_by_lane: dict[str, list] = {}            # lane key -> [(event, model)]
         for e, ms in lane_todo:
+            lane_key = next(k for k, ln in lane_pool.LANES.items() if ln.event_type == e.event_type)
             for m in ms:
                 p = _part_path(e, m, truths[e.id])
                 if p.exists():                         # interim part: reuse, do not rescore
@@ -1333,8 +1369,8 @@ def run(
                     continue
                 if lane_terminal(_pair(e.id, m), e, truths[e.id]):
                     continue                           # documented no_data / empty for this fingerprint
-                pairs_by_lane.setdefault(lane_pool.LANE_KEY_BY_EVENT_TYPE[e.event_type], []).append((e, m))
-        for lane_key, pairs in pairs_by_lane.items():
+                pairs_by_lane.setdefault(lane_key, []).append((e, m))
+        if any(pairs_by_lane.values()):
             last_pub = [_t.monotonic()]
 
             def _lane_pair(e, model, df, st):
@@ -1350,18 +1386,22 @@ def run(
                         logger.warning("interim output write failed (lane): %s", exc)
                 _heartbeat(phase="lane", event=e.id, model=model)
 
-            with _heartbeat_beat("lane"):
-                lane_stats = run_lanes(
-                    pairs, lane_key=lane_key, truth_of=lambda e: truths[e.id], on_pair=_lane_pair,
-                    workers=int(os.environ.get("EWB_LIVE_SCORING_WORKERS", "12")),
-                    recycle=int(os.environ.get("EWB_LIVE_SCORING_RECYCLE", "30")),
-                    dask_threads=int(os.environ.get("EWB_LIVE_LANE_DASK_THREADS", "2")),
-                    rss_cap_gb=float(os.environ.get("EWB_LIVE_SCORING_RSS_CAP_GB", "40")))
-            perf_stats[f"lane_{lane_key}"] = {k: lane_stats.get(k) for k in (
-                "workers", "recycle", "jobs", "pairs_done", "wall_s", "peak_total_rss_gb",
-                "peak_worker_rss_gb", "retries", "errors", "mean_job_s_store", "mean_job_s_ifs")}
-            if lane_stats.get("abort"):
-                failed_after_retry.add(f"lane_{lane_key}")
+            for lane_key in sorted(pairs_by_lane):
+                pairs = pairs_by_lane[lane_key]
+                if not pairs:
+                    continue
+                with _heartbeat_beat("lane"):
+                    lane_stats = run_lanes(
+                        pairs, lane_key=lane_key, truth_of=lambda e: truths[e.id], on_pair=_lane_pair,
+                        workers=int(os.environ.get("EWB_LIVE_SCORING_WORKERS", "12")),
+                        recycle=int(os.environ.get("EWB_LIVE_SCORING_RECYCLE", "30")),
+                        dask_threads=int(os.environ.get("EWB_LIVE_LANE_DASK_THREADS", "2")),
+                        rss_cap_gb=float(os.environ.get("EWB_LIVE_SCORING_RSS_CAP_GB", "40")))
+                perf_stats[f"lane_{lane_key}"] = {k: lane_stats.get(k) for k in (
+                    "workers", "recycle", "jobs", "pairs_done", "wall_s", "peak_total_rss_gb",
+                    "peak_worker_rss_gb", "retries", "errors", "mean_job_s_store", "mean_job_s_ifs")}
+                if lane_stats.get("abort"):
+                    failed_after_retry.add(f"lane_{lane_key}")
         _persist_pair_status()
 
     n_rows = _write_outputs(new_frames)

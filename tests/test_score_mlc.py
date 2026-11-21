@@ -451,7 +451,7 @@ def test_truth_tag_and_lane_registration():
     assert len(ok) == 9 and "ifs_hres" in ok               # the 8 store models + the baseline
     assert set(why) == {"aifs_single", "aigfs"}
     assert all("midlat_cyclone" in r for r in why.values())
-    assert select.UNSCORED_TYPES == {"flood"}
+    assert select.UNSCORED_TYPES == set()   # merge with WP4: flood is scored too, nothing left unscored
 
 
 # ------------------------------------------------------ scorecard + pipeline --

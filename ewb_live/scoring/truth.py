@@ -49,6 +49,8 @@ def truth_source_for_event(event, cutoff: dt.datetime) -> str:
         return "ibtracs"      # track lane: truth is the IBTrACS best track, not an ERA5 field
     if getattr(event, "event_type", None) == "midlat_cyclone":
         return "era5_arco"    # track lane: the published track IS the ERA5 analysis, whatever the window's ARCO reach
+    if getattr(event, "event_type", None) == "flood":
+        return "pardig"       # flood lane: truth is Google PARDIG, not an ERA5 field
     return "era5_arco" if event.end - dt.timedelta(hours=1) <= cutoff else "ifs_hres_analysis"
 
 

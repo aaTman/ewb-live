@@ -4138,6 +4138,33 @@ tests/test_lane_guard.py refusing because the preview tree's data/ symlinks to t
 data/), 2 are the known box-dependent test_cold_snap severity + test_imerg s3_credentials. Browser check 1280/1440/390 light+dark
 (+1100, 1366): no clipped labels, no overflow, no console errors. Screenshots: notes/screenshots/firstscreen-midwidth/ (gitignored).
 Preview :8065 unit stopped and /opt/ewb-preview-fs* removed.
+## [scoring-wp4] 2026-11-21 11:04 UTC — WP4 flood lane started (branch feat/scoring-flood-lane, base develop)
+
+Scope decided with the owner: GraphCast only (graphcast, graphcast_gfs; the only store family with `apcp`), truth = PARDIG daily on the
+ERA5 0.25 lattice ("vs AI-estimated precip", not observed rain), metrics = daily exceedance contingency (CSI, POD, FAR) + FSS (3x3, 5x5) +
+areal bias / peak error over the event footprint. ifs_hres `tp` baseline is NOT built (not in this brief), so no skill colour for flood.
+Done so far: `ewb_live/scoring/flood.py` (commit f1789e1). Measured on the LXC with real data: all 40 events build a verification plan
+(5-9 s each, mostly land mask + climatology), event ee4e843948f1 x {graphcast, graphcast_gfs} x 17 inits scores in 29 s serial, 983 rows, 2.1 GB parent RSS.
+Data facts found (design note had them wrong): apcp fill is 9.97e36 (not NaN) and only on some IFS-initialised inits; ~15-30 % of cells are small
+negatives (clipped); ALL 40 events have lane_of_record 3day, so the 72 h lane defines the event but the table scores the daily lane (documented).
+Pi children (fleet/agent) are doing tests, pipeline wiring and dashboard+e2e in parallel; I review their diffs before merging. Private preview tree:
+/opt/ewb-preview-flood-lane (port 8066, not live/dev). Nothing deployed, nothing merged.
+
+## [scoring-wp4] 2026-11-21 13:33 UTC — WP4 flood: code merged on the branch, backfill running on the private preview tree
+
+Merged into feat/scoring-flood-lane: flood.py + 29 kernel/unit tests (Pi), pipeline/lane_pool wiring + 16 tests (Pi; reviewed, I shortened
+UNSUPPORTED_REASON below the 120-char public_reason cap), dashboard + e2e (Pi; the About paragraph lives in index.html, detection.py holds none).
+Pi note: the first tests child ended after ~2 min with nothing written (its context was compressed right after reading); re-split into two small
+briefs with the signatures inline, both passed. Local run: 81 passed (flood suites + lane guard) on the box.
+Backfill: `ops/lane_backfill.sh flood` from /opt/ewb-preview-flood-lane (guard ok, weekly inactive) started 13:27 UTC, 80 pairs (40 events x graphcast,
+graphcast_gfs); 39 part files in the first 6 min. Not live, not dev, nothing deployed or merged.
+
+## [scoring-wp4] 2026-11-21 14:39 UTC — WP4 flood DONE, PR to develop opening
+
+See notes/channel_scoring.md [wp4] for the numbers: 36,388 flood rows (graphcast + graphcast_gfs, 40 events), backfill 10-11 min / 16.1 GB pool peak on the
+private tree /opt/ewb-preview-flood-lane (port 8066; the unit ewb-preview-fl-web is left running for the owner's review), units 741 passed / 2 known failures,
+full e2e 251 passed / 1 skipped. Not merged, not deployed.
+
 ## [scoring-wp2] 2026-11-21 11:00 UTC — WP2 (MLC lane) started: scorer + dispatch committed, 3-event smoke run clean
 
 Branch `feat/scoring-mlc-lane` off develop (b7ed93d). `ewb_live/scoring/mlc.py` committed (fe507bd): MLC-A on the shared core

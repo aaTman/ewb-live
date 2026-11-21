@@ -787,6 +787,28 @@ rows exist on the box).
   for graphcast, graphcast_gfs and ifs_hres, document the six unsupported models, test as listed, backfill
   via the guard, PR to develop."
 
+* **WP4 as built (flood lane; deviations from the plan above, owner brief 2026-11-21).**
+  * *Scope:* GraphCast only (`graphcast`, `graphcast_gfs`); the `ifs_hres` ECMWF-`tp` baseline of D6 is **not built**, so flood has no skill
+    colour and the dashboard says "GraphCast only - not ranked". The other nine registered models are documented `unsupported` pairs
+    ("no precipitation in the MLWP store ... (GraphCast only)"). `sources/registry.py`, `aiwp.py` and `ecmwf.py` are untouched: the scorer reads
+    `apcp` straight from `open_init`, like the TC lane reads `msl`.
+  * *Metrics (row per event, model, 00Z init, verified day):* `CriticalSuccessIndex`, `ProbabilityOfDetection`, `FalseAlarmRatio`,
+    `FractionsSkillScore` (3x3 cells), `FractionsSkillScore5` (5x5), `PrecipAreaBias` (mm, signed, footprint mean forecast - truth),
+    `PeakPrecipError` (mm, signed). Contingency/FSS are on the **daily lane** (`max(ERA5 wet-day p95, 20 mm)` per cell and day of year) even
+    though all 40 events have the 72 h lane as lane of record; the footprint is the event's own union (daily OR 72 h) exceedance mask.
+    A day without a defined denominator emits no row for that metric (FAR needs a forecast exceedance: n is smaller than for CSI).
+  * *Data facts the plan had wrong:* `apcp` fill is `9.97e36`, not NaN, and only some IFS-initialised inits have it in the first 6 h (so the
+    IFS member has **no 24 h cell** in any event: its first complete day is lead 48 h); ~15-30 % of cells are small negatives (clipped at 0).
+  * *No nearest-earlier-init rescue.* A rescued 12Z init emits leads 36, 60, ... which the dashboard bins into the 1 d / 3 d columns; a missing 00Z
+    init is `no_data` instead. The upstream GFS-initialised store lacks the 00Z init on ~1/3 of days (21 % of the planned `graphcast_gfs` inits).
+  * *Known limitations:* AI-estimated truth that also defines the events (POD/CSI conditional on a truth exceedance); GraphCast was trained on ERA5
+    (low-biased rain); two members of one model family; the 24 h column is empty for `graphcast`; a forced rerun of a lane needs the part files
+    AND the cached rows/statuses of its pairs dropped to be re-merged (`--force` rewrites parts, but publish-only keeps cached rows for pairs
+    already marked done).
+  * *Measured (LXC, private tree, 40 events x 2 models, 80 pairs, 1458 jobs, 12 workers recycle 30):* pool 340-355 s, total 10 min 18 s - 10 min
+    59 s through `ops/lane_backfill.sh` (serial planning of the 40 events, ~5 s each, is the rest), peak pool RSS 16.1 GB, 1.39 GB per worker,
+    1.8-1.9 s per store job; 36,388 flood rows.
+
 ---------------------------------------------------------------------------------------------
 
 ## 9. Evidence and method
