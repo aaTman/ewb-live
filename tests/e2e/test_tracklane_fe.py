@@ -38,6 +38,35 @@ from test_trackviz_fe import EVENT as TC_EVENT  # the same synthetic storm  # no
 AURORA_LOSES_STORMS = {24.0: (0.20, 50.0), 48.0: (0.30, 50.0), 72.0: (0.60, 90.0), 96.0: (0.90, 90.0), 120.0: (0.95, 90.0)}
 
 
+def _tc_landfall_rows():
+    """Landfall score rows (EWB's landfall classes, storms that reached land only) for the
+    same three models at leads 24/48/72; n = 2 storms / 6 (storm, init) samples per cell.
+    aurora lands the easy storms well but its 72 h landfall miss rate is 60 % (> 50 %):
+    that greys its three landfall VALUE cells at that lead, and landfall never feeds the
+    banner or the model order — even though aurora's landfall values alone would lead it."""
+    rows = []
+    # model: {lead: (displacement km, time_me h, intensity_mae hPa, miss rate)}
+    spec = {
+        "ifs_hres":  {24.0: (90.0, 6.0, 8.0, 0.20), 48.0: (90.0, 6.0, 8.0, 0.20),
+                      72.0: (90.0, 6.0, 8.0, 0.30)},
+        "graphcast": {24.0: (108.0, 4.0, 6.4, 0.25), 48.0: (108.0, 4.0, 6.4, 0.25),
+                      72.0: (108.0, 4.0, 6.4, 0.25)},
+        "aurora":    {24.0: (45.0, -2.0, 4.0, 0.35), 48.0: (45.0, -2.0, 4.0, 0.35),
+                      72.0: (117.0, 13.0, 16.0, 0.60)},
+    }
+    for model, per_lead in spec.items():
+        for lead, (disp, time_me, inten, miss) in per_lead.items():
+            for metric, val, nsamp in (("landfall_displacement", disp, 4), ("landfall_time_me", time_me, 4),
+                                       ("landfall_intensity_mae", inten, 4), ("landfall_miss", miss, 6)):
+                rows.append({"event_type": "tropical_cyclone", "metric": metric, "lead_time_hours": lead,
+                             "model": model, "mean": val, "n_events": 2, "n_samples": nsamp,
+                             "ci95_lo": None, "ci95_hi": None,
+                             # signed landfall_time_me: no pipeline skill; the dashboard
+                             # recomputes it sign-aware (dir 'zero')
+                             "skill_vs_ifs_pct": None, "skill_n_common": 2})
+    return rows
+
+
 def _tc_score_rows(aurora=None):
     """Scorecard rows of the TC lane in the real pipeline schema (build_scorecard)."""
     rows = []
@@ -56,7 +85,7 @@ def _tc_score_rows(aurora=None):
                              "ci95_lo": None, "ci95_hi": None,
                              "skill_vs_ifs_pct": None if signed or model == "ifs_hres" else rel,
                              "skill_n_common": 6})
-    return rows
+    return rows + _tc_landfall_rows()
 
 
 def _fixture(root, tc_scores=False, real_shape=False, aurora=None):
@@ -479,3 +508,56 @@ def test_scored_fixture_all_greyed_mean(scored_page):
 
 def test_track_scoring_listing_is_not_a_live_region(scored_page):
     assert scored_page.locator("#track-scoring-code").get_attribute("aria-live") is None
+
+
+# ------------------------------------------------- the landfall block (PR #17)
+# EWB's landfall classes score the storms that reached land: Landfall position (km),
+# timing (h, signed), intensity (hPa) and the landfall miss rate (0/1 per init, read
+# as a percent). In the fixture aurora's landfall values are the table's best at 24/48 h
+# but its 72 h landfall miss rate is 60 % — its value cells there are greyed, and no
+# landfall metric feeds the verdict banner or the model order.
+def test_landfall_block_renders_and_greys_on_its_own_miss_rate(scored_page):
+    pg = scored_page
+    pg.get_by_role("button", name="more metrics").click()
+    pg.wait_for_timeout(500)
+    head = pg.inner_text("#scorecard-sec .sc-block thead").upper()
+    for label in ("LANDFALL POSITION", "LANDFALL TIMING", "LANDFALL INTENSITY", "LANDFALL MISS RATE"):
+        assert label in head, head
+    note = pg.inner_text("#scorecard-sec .lane-note")
+    assert "landfall classes" in note and "observed landfall" in note and "no paired landfall" in note, note
+    # the aurora row is 9 metric groups x (5 leads + Mean). Its TrackMiss (62 %) greys the
+    # four track-error groups (cells 0-5, 12-29); landfall_miss 60 % @72 h adds exactly the
+    # three landfall VALUE cells (32, 38, 44). The two miss-rate groups are never greyed.
+    idxs = pg.eval_on_selector_all(
+        "#scorecard-sec .sc-block tbody tr",
+        """rows => {
+             const r = rows.find((x) => x.innerText.includes('aurora'));
+             return [...r.querySelectorAll('td.cell')]
+               .map((c, i) => (c.classList.contains('miss-grey') ? i : -1)).filter((i) => i >= 0);
+           }""")
+    assert idxs == [*range(0, 6), *range(12, 30), 32, 38, 44], idxs
+    cells = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="aurora").first.locator("td.cell")
+    miss72 = cells.nth(8 * 6 + 2)                              # landfall miss rate at 72 h
+    assert "60%" in miss72.inner_text(), miss72.inner_text()   # prints as a percent, like TrackMiss
+    assert "miss-grey" not in (miss72.get_attribute("class") or "")
+    cells.nth(5 * 6 + 2).hover()                               # greyed Landfall position @72 h
+    pg.wait_for_selector("#tooltip:not(.hidden)", timeout=5000)
+    tip = pg.inner_text("#tooltip")
+    assert "greyed" in tip and "landfall-paired" in tip, tip
+    assert pg._errs == [], pg._errs
+
+
+def test_landfall_metrics_stay_out_of_the_verdict_and_the_model_order(scored_page):
+    """The verdict still counts only the five track-error cells, and no landfall cell moves
+    a row: aurora's track error is fully miss-greyed here (unranked band), yet its 24/48 h
+    landfall values would average ~+56 % — if landfall fed the ranking it would jump to 2."""
+    pg = scored_page
+    pg.get_by_role("button", name="more metrics").click()
+    pg.wait_for_timeout(400)
+    strip = pg.inner_text("#verdict-strip")
+    assert "graphcast" in strip and "+20.0%" in strip and "won 5/5 cells" in strip, strip
+    order = pg.eval_on_selector_all("#scorecard-sec .sc-block tbody tr .model-col",
+                                    "els => els.map(e => e.innerText.trim())")
+    assert order[0] == "ifs_hres" and order[1] == "graphcast", order
+    assert order.index("aurora") > order.index("graphcast"), order
+    assert pg._errs == [], pg._errs

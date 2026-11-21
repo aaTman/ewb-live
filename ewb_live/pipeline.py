@@ -117,7 +117,9 @@ HIGHER_IS_BETTER = {"CriticalSuccessIndex", "Accuracy", "EarlySignal"}
 SIGNED_ERROR_METRICS = {"DurationMeanError",
                         # track lanes (notes/scoring_design.md section 6): signed bias
                         # components, skill vs the baseline is meaningless for them
-                        "AlongTrackError", "CrossTrackError", "CentralPressureError"}
+                        "AlongTrackError", "CrossTrackError", "CentralPressureError",
+                        # landfall timing is signed (positive = lands late): bias-to-zero
+                        "landfall_time_me"}
 BASELINE = "ifs_hres"
 PEAK_WINDOW_METRICS = ("MaximumMeanAbsoluteError",
                        "MaximumLowestMeanAbsoluteError",
