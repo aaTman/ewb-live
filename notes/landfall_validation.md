@@ -44,9 +44,10 @@ Run 2026-11-21 on the ewb LXC, private tree `/opt/ewb-preview-lf` (not `/opt/ewb
 
 Storms with an observed landfall (EWB's detector on the best track): **14 of 44** (20 landfalls; the "about 24 of 44" coarse proxy over-counted).
 13 storms have landfall rows (Olana's landfall precedes every verifiable >= 34 kt init, so it has none). Rows: `landfall_displacement` 381,
-`landfall_time_me` 381, `landfall_intensity_mae` 381, `landfall_miss` 996 (2139 rows). Miss rate over 9 models: aurora 0.66, aurora_gfs 0.76,
-fourcastnet_v2 0.85, fourcastnet_v2_gfs 0.85, graphcast 0.60, graphcast_gfs 0.56, ifs_hres 0.48, pangu_weather 0.66, pangu_weather_gfs 0.67
-(the pairing needs a forecast landfall within +/-24 h of the observed one, so far leads are mostly misses: ~0.4-0.7 below 72 h, 0.8-1.0 beyond 96 h).
+`landfall_time_me` 381, `landfall_intensity_mae` 381, `landfall_miss` 996 (2139 rows). Landfall miss rate per model: aurora 0.64, aurora_gfs 0.72, fourcastnet_v2 0.78, fourcastnet_v2_gfs 0.78, graphcast 0.55, graphcast_gfs 0.52,
+ifs_hres 0.43, pangu_weather 0.58, pangu_weather_gfs 0.61; by lead to the observed landfall: <=24 h 0.51, 24-48 h 0.49, 48-72 h 0.50,
+72-96 h 0.61, 96-120 h 0.73, >120 h 0.83. A miss is "no forecast landfall paired within EWB's +/-24 h window" (the low was lost, stayed
+offshore, or landed more than 24 h off), so the cells at or above 50 % are greyed by the dashboard's D5 rule and rest on few storms.
 
 ## 4. Storm classes EWB cannot score (no rows, never NaN rows)
 
