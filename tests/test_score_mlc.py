@@ -439,7 +439,7 @@ def test_truth_tag_and_lane_registration():
     assert truth.truth_source_for_event(h, T0 + dt.timedelta(days=10)) == "era5_arco"
     assert truth.truth_source_for_event(h, T0 - dt.timedelta(days=10)) == "ifs_hres_analysis"
     # the TC lane still reports its own truth
-    assert truth.truth_source_for_event(_tc_event(), dt.datetime(1999, 1, 1)) == "ibtracs"
+    assert truth.truth_source_for_event(_tc_event(), dt.datetime(1999, 1, 1)) == tc.TRUTH_TAG
 
     assert "midlat_cyclone" in lane_pool.LANE_TYPES
     assert lane_pool.LANE_KEY_BY_EVENT_TYPE["midlat_cyclone"] == "mlc"
