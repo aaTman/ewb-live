@@ -4149,3 +4149,12 @@ Data facts found (design note had them wrong): apcp fill is 9.97e36 (not NaN) an
 negatives (clipped); ALL 40 events have lane_of_record 3day, so the 72 h lane defines the event but the table scores the daily lane (documented).
 Pi children (fleet/agent) are doing tests, pipeline wiring and dashboard+e2e in parallel; I review their diffs before merging. Private preview tree:
 /opt/ewb-preview-flood-lane (port 8066, not live/dev). Nothing deployed, nothing merged.
+
+## [scoring-wp4] 2026-11-21 13:33 UTC — WP4 flood: code merged on the branch, backfill running on the private preview tree
+
+Merged into feat/scoring-flood-lane: flood.py + 29 kernel/unit tests (Pi), pipeline/lane_pool wiring + 16 tests (Pi; reviewed, I shortened
+UNSUPPORTED_REASON below the 120-char public_reason cap), dashboard + e2e (Pi; the About paragraph lives in index.html, detection.py holds none).
+Pi note: the first tests child ended after ~2 min with nothing written (its context was compressed right after reading); re-split into two small
+briefs with the signatures inline, both passed. Local run: 81 passed (flood suites + lane guard) on the box.
+Backfill: `ops/lane_backfill.sh flood` from /opt/ewb-preview-flood-lane (guard ok, weekly inactive) started 13:27 UTC, 80 pairs (40 events x graphcast,
+graphcast_gfs); 39 part files in the first 6 min. Not live, not dev, nothing deployed or merged.
