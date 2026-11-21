@@ -104,7 +104,7 @@ def test_temperature_clip_product_decision(monkeypatch):
         q_lower=None, op_lower=">", q_upper=0.15, op_upper="<")
 
 
-def test_ar_floors_match_upstream_ar_bounds():
+def test_ar_floors_match_upstream_ar_bounds(upstream_data_prep):
     from ewb_live.events._upstream import ar_bounds
 
     ab = ar_bounds()
@@ -115,7 +115,7 @@ def test_ar_floors_match_upstream_ar_bounds():
 
 # --------------------------------------------- upstream tracker smoke use ---
 
-def test_upstream_consecutive_filter_and_blobs():
+def test_upstream_consecutive_filter_and_blobs(upstream_data_prep):
     from ewb_live.events._upstream import temperature_events as te_mod
 
     te = te_mod()
