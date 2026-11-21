@@ -626,6 +626,24 @@ function metricBlurb(id) {
     : mm.higher_is_better ? 'Higher is better.' : 'Lower is better.';
   return (METRIC_BLURB[id] ? METRIC_BLURB[id] + ' ' : '') + dir;
 }
+/* The header "truth" is lane-aware: tropical cyclones are scored against the IBTrACS best
+   track, not ERA5 (owner review 2026-11-21). One lane tab -> that lane's truth; "all types"
+   -> the mix, named only when the TC lane has score rows in this build. Other lanes keep the
+   run's truth_source. */
+const LANE_TRUTH = { tropical_cyclone: { short: 'IBTrACS', title: 'Tropical cyclones are scored against the IBTrACS best track (provisional until the archive catches up), not ERA5.' } };
+function tcHasScores() { return state.scorecard.some((r) => r.event_type === 'tropical_cyclone'); }
+function truthShortFor(base) {
+  const lt = LANE_TRUTH[state.tab];
+  if (lt) return lt.short;
+  if (state.tab === 'all' && tcHasScores()) return `${base} + IBTrACS (TC)`;
+  return base;
+}
+function truthTitleFor(base) {
+  const lt = LANE_TRUTH[state.tab];
+  if (lt) return lt.title;
+  if (state.tab === 'all' && tcHasScores()) return `${base} \u2014 except tropical cyclones, which are scored against the IBTrACS best track.`;
+  return base;
+}
 function renderHeader() {
   const m = state.meta;
   $('#m-updated').textContent = m.last_updated ? fmtDate(m.last_updated) : '\u2014';
@@ -639,7 +657,7 @@ function renderHeader() {
   const nModels = new Set(state.scores.map((r) => r.model)).size;
   const rosterN = Math.max(state.allModels.length,
     Array.isArray(m.models) ? m.models.length : 0);
-  const truthShort = truth.text.split(' \u00b7 ')[0];
+  const truthShort = truthShortFor(truth.text.split(' \u00b7 ')[0]);
   const reg = regionEntry();
   const kv = (k, v, title) =>
     `<span class="kv"><span class="k">${k}</span>` +
@@ -653,7 +671,7 @@ function renderHeader() {
       'models with score rows vs models declared for this run'),
     kv('window', days ? `${days} d` : '\u2014',
       m.window ? `${fmtDate(m.window.start)} \u2013 ${fmtDate(m.window.end)}` : ''),
-    kv('truth', esc(truthShort), truth.title || truth.text),
+    kv('truth', esc(truthShort), truthTitleFor(truth.title || truth.text)),
   ].join('');
 
   renderWeekPicker();
@@ -740,7 +758,7 @@ function saveState() {
 /* The event-type filter is the one page-wide control: it narrows the map
    (layers + boxes), the timeline, the event list and the scorecard together. */
 function setTab(id) {
-  state.tab = id; saveState(); renderControls(); renderAll();
+  state.tab = id; saveState(); renderHeader(); renderControls(); renderAll();
   if (window.MergedMap) MergedMap.onTabChange(id);
   syncUrl(false);   // the type filter is URL state, like Region and the date (2026-11-17)
 }
@@ -1137,8 +1155,19 @@ function renderVerdictStrip(idx) {
     const leader = ranked[0];
     const meanRel = acc[leader].s / acc[leader].n;
     const cells = acc[leader].wins;
+    /* track lanes: the ranking is track error ONLY, so say it and put the miss rates beside it
+       (a model that loses more storms than the baseline can still win on the storms it keeps) */
+    let missNote = '';
+    if (TYPE_LEADS[etype]) {
+      const lds = leadsForType(etype, leads);
+      const mm = (m) => meanVisible(idx, etype, 'TrackMiss', m, lds);
+      const a = mm(leader), b = mm(B);
+      if (a !== null && b !== null) {
+        missNote = ` \u00b7 ranks track error only \u00b7 misses ${Math.round(a * 100)}% vs ${Math.round(b * 100)}%`;
+      } else missNote = ' \u00b7 ranks track error only';
+    }
     parts.push({
-      etype, model: leader, meanRel, cells, total: cellN,
+      etype, model: leader, meanRel, cells, total: cellN, missNote,
     });
   }
   if (!parts.length) { host.hidden = true; host.innerHTML = ''; return; }
@@ -1147,7 +1176,7 @@ function renderVerdictStrip(idx) {
     const chip = typeChipHtml(p.etype);
     const sign = p.meanRel >= 0 ? '+' : '';
     const txt = `<b>${esc(p.model)}</b> best · ${sign}${p.meanRel.toFixed(1)}% vs ${esc(B)}` +
-      ` · won ${p.cells}/${p.total} cells`;
+      ` · won ${p.cells}/${p.total} cells${p.missNote || ""}`;
     return `<span class="verdict-item">${chip}<span class="v-text">${txt}</span></span>`;
   }).join('');
 }

@@ -51,7 +51,7 @@ def _tc_score_rows():
     return rows
 
 
-def _fixture(root, tc_scores=False):
+def _fixture(root, tc_scores=False, real_shape=False):
     web = os.path.join(root, "webroot")
     os.makedirs(web)
     for f in os.listdir(DASH):
@@ -75,7 +75,10 @@ def _fixture(root, tc_scores=False):
     json.dump({"events": []}, open(os.path.join(out, "global_timeline.json"), "w"))
     if tc_scores:
         sc = json.load(open(os.path.join(out, "scorecard.json")))
-        sc["rows"] = sc["rows"] + _tc_score_rows()
+        if real_shape:   # 9 models x 5 metrics x 24-120 h cut from the real 44-storm backfill (miss rates intact)
+            sc["rows"] = sc["rows"] + json.load(open(os.path.join(ROOT, "tests", "fixtures", "tc_scorecard_real_shape.json")))
+        else:
+            sc["rows"] = sc["rows"] + _tc_score_rows()
         json.dump(sc, open(os.path.join(out, "scorecard.json"), "w"))
         meta = json.load(open(os.path.join(out, "meta.json")))
         meta["track_verification"] = {"tropical_cyclone": {
@@ -326,3 +329,92 @@ def test_tc_verdict_ranks_on_track_error_only(scored_page):
     pg.wait_for_timeout(400)
     strip = pg.inner_text("#verdict-strip")
     assert "graphcast" in strip and "+20.0%" in strip and "won 5/5 cells" in strip, strip
+    # the banner says what it ranks and shows the miss rates beside it (owner review: every model
+    # missed more storms than the baseline while the banner only quoted the track error)
+    assert "ranks track error only" in strip and "misses 10% vs 5%" in strip, strip
+
+
+def _truth(pg):
+    return pg.inner_text("#kv-line .kv:has(.k:text-is('truth')) .v").strip()
+
+
+def test_header_truth_is_lane_aware(scored_page):
+    """The header said TRUTH ERA5 on the TC tab although TC is scored vs IBTrACS (owner review)."""
+    pg = scored_page
+    assert _truth(pg) == "IBTrACS"                                     # the page opens on #tab=tropical_cyclone
+    pg.locator("#type-tabs button", has_text="All").click()
+    pg.wait_for_timeout(300)
+    mix = _truth(pg)
+    assert "ERA5" in mix and "IBTrACS" in mix, mix
+    pg.locator("#type-tabs [data-tab=atmospheric_river]").click()
+    pg.wait_for_timeout(300)
+    other = _truth(pg)
+    assert "ERA5" in other and "IBTrACS" not in other, other           # other lanes unchanged
+    pg.locator("#type-tabs [data-tab=tropical_cyclone]").click()
+    pg.wait_for_timeout(300)
+    assert _truth(pg) == "IBTrACS"
+    assert "IBTrACS best track" in pg.get_attribute("#kv-line .kv:has(.k:text-is('truth')) .v", "title")
+
+
+# ------------------------------------------- real-data-shaped scorecard (PR #16 follow-up)
+@pytest.fixture(scope="module")
+def base_real(tmp_path_factory):
+    web = _fixture(str(tmp_path_factory.mktemp("tlr")), tc_scores=True, real_shape=True)
+    handler = lambda *a, **k: _Quiet(*a, directory=web, **k)  # noqa: E731
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{srv.server_address[1]}"
+    srv.shutdown()
+
+
+@pytest.fixture(params=[(1440, 1000, "light"), (390, 844, "light"), (390, 844, "dark")],
+                ids=["1440", "390-light", "390-dark"])
+def real_page(base_real, request):
+    w, h, scheme = request.param
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        pg = b.new_page(viewport={"width": w, "height": h}, color_scheme=scheme)
+        errs: list[str] = []
+        pg.on("pageerror", lambda e: errs.append(str(e)))
+        pg._errs = errs                      # type: ignore[attr-defined]
+        pg.goto(base_real + "/index.html#tab=tropical_cyclone")
+        pg.wait_for_selector("#scorecard-sec .sc-block table", timeout=20000)
+        yield pg
+        b.close()
+
+
+def test_real_shape_grey_rule_hits_exactly_the_over_50pct_cells(real_page):
+    pg = real_page
+    grey = pg.eval_on_selector_all("#scorecard-sec .sc-block td.cell.miss-grey",
+                                   "els => els.map(e => e.closest('tr').innerText.split('\\t')[0].trim())")
+    assert grey and set(grey) == {"fourcastnet_v2_gfs"} and len(grey) == 2, grey   # 96 h and 120 h track error
+    # the miss-rate cells themselves are never greyed (they ARE the evidence)
+    assert pg.locator("#scorecard-sec .sc-block td.cell.miss-grey").count() == 2
+    assert pg._errs == [], pg._errs
+
+
+def test_real_shape_cross_track_group_and_skill_expander(real_page):
+    pg = real_page
+    pg.get_by_role("button", name="more metrics").click()
+    pg.wait_for_timeout(600)
+    heads = pg.eval_on_selector_all("#scorecard-sec .sc-block thead tr.grp th", "els => els.map(e => e.innerText)")
+    cross = [h for h in heads if h.upper().startswith("CROSS-TRACK")]
+    assert cross, heads
+    # every model row has 5 numeric cross-track cells + a mean (signed values keep their sign)
+    row = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="graphcast").first
+    cells = row.locator("td.cell").all_inner_texts()
+    assert len(cells) == 6 * 5, cells                    # 5 metrics x (5 leads + mean)
+    assert all(c.strip() != "" for c in cells[-12:-6]) and any("\u2212" in c for c in cells), cells
+    # "Skill vs lead" opens and draws charts for the TC lane
+    pg.locator("#skill-details summary").click()
+    pg.wait_for_selector("#skill-details .js-plotly-plot", timeout=15000)
+    assert pg.locator("#skill-details .js-plotly-plot").count() >= 1
+    assert pg._errs == [], pg._errs
+
+
+def test_real_shape_no_overflow_and_dark_theme_tokens(real_page):
+    pg = real_page
+    assert pg.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth") <= 0
+    grey = pg.locator("#scorecard-sec .sc-block td.cell.miss-grey").first
+    bg = grey.evaluate("e => getComputedStyle(e).backgroundImage")
+    assert "gradient" in bg                                   # the hatch survives both themes
