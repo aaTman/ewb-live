@@ -49,9 +49,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-from scipy import ndimage
 
-from ..events.mlc_track import R_EARTH_KM, haversine_deg, haversine_km, unwrap_lons
+from ..events.mlc_track import R_EARTH_KM, haversine_deg, haversine_km, unwrap_lons  # noqa: F401
 
 logger = logging.getLogger("track_pilot")
 
@@ -87,183 +86,20 @@ def guard_status(now: dt.datetime | None = None) -> tuple[bool, str]:
 
 
 # =============================================================================
-# geometry (section 3.4, owner-approved convention D10)
+# geometry + tracker: absorbed into the WP1 core (ewb_live/scoring/track_verif.py)
 # =============================================================================
-def wrap_deg(x):
-    """Wrap to [-180, 180)."""
-    return (np.asarray(x, float) + 180.0) % 360.0 - 180.0
-
-
-def bearing_deg(lat1, lon1, lat2, lon2):
-    """Initial great-circle bearing 1 -> 2, degrees clockwise from north."""
-    p1, p2 = np.deg2rad(lat1), np.deg2rad(lat2)
-    dl = np.deg2rad(lon2 - lon1)
-    y = np.sin(dl) * np.cos(p2)
-    x = np.cos(p1) * np.sin(p2) - np.sin(p1) * np.cos(p2) * np.cos(dl)
-    return np.rad2deg(np.arctan2(y, x))
-
-
-def _local_xy(lat0, lon0, lat, lon):
-    """(east, north) km of (lat, lon) in the tangent plane at (lat0, lon0)."""
-    d = haversine_km(lat0, lon0, lat, lon)
-    b = np.deg2rad(bearing_deg(lat0, lon0, lat, lon))
-    return d * np.sin(b), d * np.cos(b)
-
-
-def observed_motion(times, lat, lon, k: int):
-    """(heading deg cw from north, speed km/h) at fix ``k`` of an observed track.
-
-    Centred 6 h + 6 h difference; one-sided at the first/last fix; a 3-h
-    neighbour is used when the 6-h one is missing. ``(nan, nan)`` if fewer than
-    two usable fixes lie within +/-6 h.
-    """
-    t = np.asarray([np.datetime64(x, "s") for x in times])
-    sec = lambda a, b: float((a - b) / np.timedelta64(1, "s"))  # noqa: E731
-
-    def find(dh):
-        target = t[k] + np.timedelta64(int(dh * 3600), "s")
-        hit = np.where(t == target)[0]
-        return int(hit[0]) if hit.size else None
-
-    back = find(-6) if find(-6) is not None else find(-3)
-    fwd = find(6) if find(6) is not None else find(3)
-    if back is None and fwd is None:
-        return float("nan"), float("nan")
-    i0 = back if back is not None else k
-    i1 = fwd if fwd is not None else k
-    if i0 == i1:
-        return float("nan"), float("nan")
-    x0, y0 = _local_xy(lat[k], lon[k], lat[i0], lon[i0])
-    x1, y1 = _local_xy(lat[k], lon[k], lat[i1], lon[i1])
-    hrs = sec(t[i1], t[i0]) / 3600.0
-    vx, vy = (x1 - x0) / hrs, (y1 - y0) / hrs
-    return float(np.rad2deg(np.arctan2(vx, vy))), float(np.hypot(vx, vy))
-
-
-def along_cross(obs_lat, obs_lon, fc_lat, fc_lon, heading_deg, speed_kmh):
-    """(distance, along, cross) km. along > 0 forecast ahead, cross > 0 right of
-    the observed motion. along/cross are NaN for an undefined / stationary motion."""
-    d = float(haversine_km(obs_lat, obs_lon, fc_lat, fc_lon))
-    if not (np.isfinite(heading_deg) and np.isfinite(speed_kmh)) or speed_kmh < STATIONARY_KMH:
-        return d, float("nan"), float("nan")
-    beta = float(bearing_deg(obs_lat, obs_lon, fc_lat, fc_lon))
-    delta = np.deg2rad(float(wrap_deg(beta - heading_deg)))
-    return d, float(d * np.cos(delta)), float(d * np.sin(delta))
-
-
-# =============================================================================
-# prototype storm-following tracker
-# =============================================================================
-@dataclass(frozen=True)
-class TrackerParams:
-    """Tracker knobs. TC numbers = EWB's own (2 hPa closed contour, 5.5 deg);
-    MLC numbers = the mlc-v3 recipe (3 hPa, 6 deg, faster movers)."""
-    r_step_deg: float          # search radius around the persistence-advanced position
-    delta_hPa: float           # the centre + delta isobar must close
-    max_gc_deg: float          # ... within this great-circle distance of the centre
-    smooth_sigma_cells: float = 1.0
-    nbhd_deg: float = 1.0      # local-minimum neighbourhood radius
-    lost_after: int = 2        # consecutive steps without a low -> lost
-
-
-TC_PARAMS = TrackerParams(r_step_deg=3.0, delta_hPa=2.0, max_gc_deg=5.5)
-MLC_PARAMS = TrackerParams(r_step_deg=5.0, delta_hPa=3.0, max_gc_deg=6.0)
-
-
-def _closed_low(sm: np.ndarray, lat: np.ndarray, lon: np.ndarray, r: int, c: int,
-                p: TrackerParams, dlat: float, dlon: float) -> bool:
-    """Does the ``sm[r, c] + delta`` isobar close within ``max_gc_deg`` of the centre?
-
-    The sub-level connected set around the centre must not reach the edge of a
-    box of half-width ``max_gc + 1 cell`` (open contour) and every member must
-    be within ``max_gc`` great-circle degrees (the PROOF/EWB closed-contour test).
-    """
-    ny, nx = sm.shape
-    hr = int(math.ceil(p.max_gc_deg / dlat)) + 1
-    coslat = max(0.2, math.cos(math.radians(float(lat[r]))))
-    hc = int(math.ceil(p.max_gc_deg / (dlon * coslat))) + 1
-    r0, r1, c0, c1 = max(0, r - hr), min(ny, r + hr + 1), max(0, c - hc), min(nx, c + hc + 1)
-    box = sm[r0:r1, c0:c1]
-    lab, _ = ndimage.label(box < sm[r, c] + p.delta_hPa, structure=np.ones((3, 3), int))
-    comp = lab == lab[r - r0, c - c0]
-    # a set that reaches the box edge is open; so is one that reaches the window edge
-    # (the box is clipped there: "unknown" counts as not closed)
-    if comp[0, :].any() or comp[-1, :].any() or comp[:, 0].any() or comp[:, -1].any():
-        return False
-    rr, cc = np.nonzero(comp)
-    d = haversine_deg(float(lat[r]), float(lon[c]), lat[r0 + rr], lon[c0 + cc])
-    return bool(np.max(d) < p.max_gc_deg)
-
-
-def follow_track(field: np.ndarray, lat: np.ndarray, lon: np.ndarray,
-                 start_lat: float, start_lon: float, p: TrackerParams):
-    """Follow one low through a ``(step, lat, lon)`` MSLP stack (hPa).
-
-    ``step`` 0 is the init (lead 0); lat ascending, lon ascending and contiguous
-    (may exceed 180). Returns ``(lat, lon, mslp, ok, nodata)`` arrays, one per
-    step; ``ok`` is False where there is no valid low or the track is lost,
-    position and MSLP are NaN there. ``nodata`` marks steps whose field is all
-    fill/NaN (e.g. GraphCast lead 0): they are not the tracker's failure, do not
-    count towards losing the track, and are not verified.
-    """
-    nstep, ny, nx = field.shape
-    dlat = float(np.mean(np.abs(np.diff(lat))))
-    dlon = float(np.mean(np.abs(np.diff(lon))))
-    nb = max(2, int(round(p.nbhd_deg / dlat)))
-    out_lat = np.full(nstep, np.nan)
-    out_lon = np.full(nstep, np.nan)
-    out_p = np.full(nstep, np.nan)
-    ok = np.zeros(nstep, bool)
-    nodata = np.zeros(nstep, bool)
-    prev = (start_lat, start_lon)               # last accepted (or carried) position
-    vel = np.zeros(2)                           # (dlat, dlon) per step
-    misses = 0
-    lost = False
-    cap = 0.75 * p.r_step_deg
-    for s in range(nstep):
-        if lost:
-            continue
-        f = np.asarray(field[s], float)
-        if not np.isfinite(f).any():
-            nodata[s] = True
-            continue
-        f = np.where(np.isfinite(f), f, np.nanmax(f))
-        sm = ndimage.gaussian_filter(f, p.smooth_sigma_cells, mode="nearest")
-        pred_lat = prev[0] + vel[0]
-        pred_lon = prev[1] + vel[1]
-        # candidate local minima within r_step of the predicted position
-        is_min = sm == ndimage.minimum_filter(sm, size=2 * nb + 1, mode="nearest")
-        rr, cc = np.nonzero(is_min)
-        if rr.size:
-            d = haversine_deg(pred_lat, pred_lon, lat[rr], lon[cc])
-            near = d <= p.r_step_deg
-            rr, cc, d = rr[near], cc[near], d[near]
-        found = None
-        for i in np.argsort(d) if rr.size else []:
-            if _closed_low(sm, lat, lon, int(rr[i]), int(cc[i]), p, dlat, dlon):
-                found = (int(rr[i]), int(cc[i]))
-                break
-        if found is None:
-            misses += 1
-            if misses >= p.lost_after:
-                lost = True
-            else:
-                prev, vel = (pred_lat, pred_lon), vel              # carry on persistence
-            continue
-        misses = 0
-        r, c = found
-        r0, r1, c0, c1 = max(0, r - 1), min(ny, r + 2), max(0, c - 1), min(nx, c + 2)
-        out_lat[s], out_lon[s] = float(lat[r]), float(lon[c])
-        out_p[s] = float(np.min(f[r0:r1, c0:c1]))                  # unsmoothed centre MSLP
-        ok[s] = True
-        new = (float(lat[r]), float(lon[c]))
-        if s >= 1 and ok[s - 1]:                # motion only from consecutive forecast fixes
-            step = np.array([new[0] - prev[0], new[1] - prev[1]])
-            n = float(np.hypot(*step))
-            vel = step if n <= cap else step * (cap / n)
-        prev = new
-    out_lon = wrap_deg(out_lon)
-    return out_lat, out_lon, out_p, ok, nodata
+from ..scoring.track_verif import (  # noqa: E402,F401  (re-exported: the smoke tests import them from here)
+    MLC_PARAMS,
+    TC_PARAMS,
+    TrackerParams,
+    _closed_low,
+    _local_xy,
+    along_cross,
+    follow_track,
+    observed_motion,
+    wrap_deg,
+)
+from ..scoring.track_verif import bearing as bearing_deg  # noqa: E402,F401
 
 
 # =============================================================================

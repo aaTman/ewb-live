@@ -318,8 +318,8 @@
       3-hourly fixes at tropical-storm force (34&nbsp;kt sustained wind) spanning at least
       12&nbsp;hours, with extratropical and mixed fixes excluded. The event window runs from the
       first to the last storm-force fix; the detail view draws the storm’s whole track, coloured
-      by wind. These are best-track <em>observations</em>, so the lane carries no model scorecard
-      — it is published for context, not benchmarked.</li>
+      by wind. The best track is the truth the models are scored against (see <b>Scoring
+      tropical cyclones</b> below).</li>
       <li><b>Midlatitude cyclone</b> — a closed low in 6-hourly ERA5 mean sea
       level pressure: the lowest pressure within 6° with a <b>+3&nbsp;hPa</b> isobar
       closing around it inside 6°, followed while it stays within 6° per 6-hour step
@@ -408,12 +408,47 @@
 
     <h3>Scoring</h3>
     <p>Models are scored from daily 00&nbsp;UTC runs at leads of 0–240&nbsp;h (the scorecard shows
-    1, 3, 5, 7 and 10 days). Truth is ERA5. ERA5 trails real time by about six days; an event
+    1, 3, 5, 7 and 10 days; tropical cyclones 1&ndash;5 days). Truth is ERA5 (tropical
+    cyclones: the IBTrACS best track). ERA5 trails real time by about six days; an event
     ending after that point would be scored against the IFS&nbsp;HRES 0-h analysis, which favours
     IFS.</p>
     <p id="about-models">—</p>
     <p class="dlg-note">Names ending <code>_gfs</code> are forced with GFS initial conditions;
     the others use ECMWF-based forcing.</p>
+
+    <h3>Scoring tropical cyclones</h3>
+    <p>Tropical cyclones are not scored with ERA5 fields: each model&rsquo;s sea-level-pressure
+    forecast is searched for the storm and compared with the IBTrACS best track (provisional until
+    the archive catches up). For every 00 and 12&nbsp;UTC forecast at which the storm is already
+    at tropical-storm force, the forecast low is followed from the <em>observed</em> position at
+    the start; two steps in a row without a closed low lose the track.
+    Verification starts at the storm&rsquo;s first best-track fix of at least 34&nbsp;kt, so
+    earlier forecasts &mdash; of a disturbance that is not yet a storm &mdash; are listed as not
+    verified, not as misses.</p>
+    <ul>
+      <li><b>Track error</b> (km) &mdash; great-circle distance from the best-track position;
+      lower is better.</li>
+      <li><b>Along-track</b> (km, signed) &mdash; positive when the forecast is <em>ahead</em> of
+      the observed storm (too fast), negative behind. <b>Cross-track</b> (km, signed) &mdash;
+      positive to the <em>right</em> of the observed track, negative to the left. The motion is the
+      observed heading over the 6&nbsp;h before and after the valid time; a storm slower than
+      2&nbsp;km/h has no direction, so only its track error counts. Closer to zero is better.</li>
+      <li><b>Central pressure</b> (hPa, signed) &mdash; forecast minus best-track pressure,
+      positive = too weak. At 0.25&deg; a model cannot draw the core of a strong storm, so this is
+      a resolution-limited bias to read, not a ranking. No wind error is published for the same
+      reason.</li>
+      <li><b>Miss rate</b> &mdash; the share of forecast steps with no storm to follow. A miss
+      gets no error value (never imputed); a cell where more than half the steps are misses is
+      greyed because its error rests on the storms the model kept.</li>
+    </ul>
+    <details class="repro repro-track">
+      <summary>How the track errors are computed, in Python</summary>
+      <p class="dlg-note">The formulas above in a few lines:
+      <a href="track_scoring.py" download>track_scoring.py</a> &mdash; run
+      <code>python3 track_scoring.py</code> for a worked example. The test suite checks this
+      listing against the scorer that produces the numbers on this site.</p>
+      <pre id="track-scoring-code">loading&hellip;</pre>
+    </details>
 
     <h3>Reading the scorecard</h3>
     <p>Each cell prints the mean metric over events. Its colour is the relative skill against
