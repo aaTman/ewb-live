@@ -106,6 +106,14 @@ def load_window(lane: Path, start: dt.date, end: dt.date, hazard: str,
     cold_snap (review #7) tracks the p15 freeze layer without the <=0C cap
     (temperature.MAX_C_BY_TYPE[cold_snap] is None), so its replay input is
     the freeze lane bits themselves - exactly the MASK_ALIAS the scan uses.
+
+    ``freeze`` is NOT (review round 2): those lane bits are the p15 spell
+    population (= published freeze + published cold_snap together), so the
+    production ceiling is applied here with the production rule and the
+    production temperature source - ``temperature._mirror_t2m_daily(...,
+    "max")`` over the ERA5 truth mirror, opened read-only - exactly as
+    ``scan_temperature_events`` does. Without it every freeze number in this
+    script would be a cold-snap number wearing a freeze label.
     """
     dates, lats, lons, masks = frame_masks.daily_masks(lane)
     sel = [i for i, d in enumerate(dates) if start <= d <= end]
@@ -117,8 +125,24 @@ def load_window(lane: Path, start: dt.date, end: dt.date, hazard: str,
         from ewb_live.viz.build import land_mask
 
         land = land_mask(lats, lons)
-    return Window(hazard, dates, lats, lons,
-                  masks[frame_masks.MASK_ALIAS.get(hazard, hazard)][sel],
+    mask = masks[frame_masks.MASK_ALIAS.get(hazard, hazard)][sel]
+    from ewb_live.events import temperature as T
+
+    max_c = T.MAX_C_BY_TYPE.get(hazard)
+    if max_c is not None:
+        dmax = T._mirror_t2m_daily(dates, lats, lons, "max")
+        if dmax is None:
+            raise SystemExit(
+                f"{hazard} needs the ERA5 truth mirror for the <= {max_c:g} degC "
+                "cap ($EWB_LIVE_CACHE/truth/era5.zarr); without it the replay "
+                "would measure the cold-snap population and call it freeze")
+        capped = mask & (dmax <= max_c)
+        print(f"  {hazard} cap: t2m daily max <= {max_c:g} degC from the ERA5 "
+              f"truth mirror; p15 cells {int(mask.sum())} -> "
+              f"{int(capped.sum())} "
+              f"({100 * capped.sum() / max(1, int(mask.sum())):.0f} %)", flush=True)
+        mask = capped
+    return Window(hazard, dates, lats, lons, mask,
                   _cell_area_km2(lats, step, lons.size), land)
 
 
