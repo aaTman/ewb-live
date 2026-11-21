@@ -65,7 +65,6 @@ from ewb_live.events.event_tracker import (
     circular_span,
     dilate,
     label_regions,
-    merge_groups,
 )
 from ewb_live.events.temperature import _cell_area_km2
 

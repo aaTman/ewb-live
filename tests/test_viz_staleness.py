@@ -11,7 +11,6 @@ import pytest
 
 from ewb_live.viz import __main__ as viz_main
 from ewb_live.viz import build
-from ewb_live.viz import timeline as viz_timeline
 
 
 @pytest.fixture()
@@ -81,7 +80,7 @@ def test_ongoing_event_rebuilds_when_it_grows(harness):
 
 
 def test_bbox_only_change_rebuilds(harness):
-    built, write_events, tmp = harness
+    built, write_events, _tmp = harness
     write_events([event()])
     viz_main.main(["--all"])
     write_events([event(bbox=(10.0, 20.0, 30.0, 42.0))])
@@ -105,7 +104,7 @@ def test_legacy_asset_without_stamp_is_rebuilt_once(harness):
 
 
 def test_force_rebuilds_anyway(harness):
-    built, write_events, tmp = harness
+    built, write_events, _tmp = harness
     write_events([event()])
     viz_main.main(["--all"])
     viz_main.main(["--all", "--force"])
