@@ -29,6 +29,12 @@ Run on the ewb LXC (scratch tree):
     /opt/ewb-live/.venv/bin/python scripts/review/hb04_ongoing_ids.py \
       --lane /opt/ewb-live/data/results/raw_exceedance \
       --start 2026-08-21 --end 2026-11-06
+
+Rulesets are the pre-C3 shipped rule, C3 with the core counted from the start
+day, and C3 + the core clock/anchor freeze starting at qualification (the
+owner's 2026-11-21 decision, now production ``Params()``) - the last is the one
+whose id stability matters, because the anchor box is the id basis and it now
+freezes later for a growing spell.
 """
 from __future__ import annotations
 
@@ -53,10 +59,16 @@ from ewb_live.events.temperature import _cell_area_km2
 from ewb_live.events.types import make_event_id, normalize_lon_180
 
 RULESETS = {
+    # the pre-C3 shipped rule (whole-region claim/seed, box-union merge, core
+    # counted from the candidate's start day, tracker box published)
     "shipped": dataclasses.replace(Params(), claim_valid_only=False,
                                    seed_valid_only=False, merge_keep_box=False,
-                                   publish_box="tracker"),
-    "c3": Params(),
+                                   core_clock="start", publish_box="tracker"),
+    # C3 with the core counted from the start day (the 2026-11-20 rule)
+    "c3_core_from_start": dataclasses.replace(Params(), core_clock="start"),
+    # C3 + the core clock and anchor freeze starting at qualification
+    # (owner 2026-11-21) = production Params() now
+    "c3_qualify": Params(),
 }
 
 
