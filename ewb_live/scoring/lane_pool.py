@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from . import flood as flood_lane
 from . import tc as tc_lane
 from . import track_verif as tv
 
@@ -64,6 +65,9 @@ class Lane:
     init_job: Callable                           # (track, model, init, leads, reader) -> record
     finalize: Callable                           # (event, model, plan, [records]) -> (df|None, status)
     label: str
+    # serial in-process scorer (event, models, status_out=None) -> (DataFrame, {model: status});
+    # what pipeline._score_job dispatches to for this lane's events
+    serial: Callable | None = None
 
 
 def tc_models(models: list) -> tuple[list, dict]:
@@ -82,7 +86,11 @@ def tc_models(models: list) -> tuple[list, dict]:
 LANES: dict[str, Lane] = {
     "tc": Lane(event_type=tc_lane.EVENT_TYPE, truth=tc_lane.TRUTH_TAG, models=tc_models,
                plan=tc_lane.plan_for, init_job=tc_lane.score_init, finalize=tc_lane.finalize_pair,
-               label="tropical cyclone"),
+               label="tropical cyclone", serial=tc_lane.score_tc_event),
+    "flood": Lane(event_type=flood_lane.EVENT_TYPE, truth=flood_lane.TRUTH_TAG,
+                  models=flood_lane.flood_models, plan=flood_lane.plan_for,
+                  init_job=flood_lane.score_init, finalize=flood_lane.finalize_pair,
+                  label="flood", serial=flood_lane.score_flood_event),
 }
 LANE_BY_EVENT_TYPE = {ln.event_type: ln for ln in LANES.values()}
 LANE_TYPES = frozenset(LANE_BY_EVENT_TYPE)

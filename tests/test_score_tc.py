@@ -307,7 +307,7 @@ def results_tree(tmp_path, monkeypatch):
 
 def test_tc_left_the_unscored_set_and_has_its_own_truth_tag():
     assert "tropical_cyclone" not in select.UNSCORED_TYPES
-    assert {"midlat_cyclone", "flood"} <= select.UNSCORED_TYPES
+    assert "midlat_cyclone" in select.UNSCORED_TYPES and "flood" not in select.UNSCORED_TYPES
     ev = _event()
     assert truth.truth_source_for_event(ev, dt.datetime(2030, 1, 1)) == "ibtracs"
     assert truth.truth_source_for_event(ev, dt.datetime(1999, 1, 1)) == "ibtracs"   # not ARCO-dependent
