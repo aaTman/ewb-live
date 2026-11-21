@@ -411,3 +411,45 @@ def test_sidecar_foldin_keeps_a_proven_fp_for_the_same_status(results_tree, monk
     assert pipeline.run(days=90, publish_only=True) == 0
     ps = json.loads((res / "pair_status.json").read_text())
     assert ps[f"{ev.id}|aigfs"]["fp"] == fp
+
+
+def test_full_run_scores_the_tc_lane_through_the_pool_block(results_tree, fake_lane, monkeypatch):
+    """pipeline.run() (not publish-only): TC pairs go to lane_pool, rows land in scores,
+    unsupported models are documented, the run completes (exit 0, full_run_complete)."""
+    ev, _ = fake_lane
+    from ewb_live import events as events_pkg, sources
+    from ewb_live.events import qualification, validate
+    from ewb_live.scoring import truth as truth_mod, truth_mirror
+
+    monkeypatch.setattr(sources, "list_models", lambda: MODELS + ["aigfs"])
+    monkeypatch.setattr(truth_mod, "probe_arco_cutoff", lambda: dt.datetime(2026, 11, 1))
+    monkeypatch.setattr(truth_mirror, "ensure_mirror", lambda **k: None)
+    monkeypatch.setattr(events_pkg, "detect_events", lambda *a, **k: [ev])
+    monkeypatch.setattr(validate, "validate_event", lambda e: [])
+    monkeypatch.setattr(qualification, "qualify_events", lambda evs: None)
+    for name, val in (("_ibtracs_meta", lambda *a, **k: None), ("_lane_status_meta", lambda: {}),
+                      ("_clim_meta", lambda: {}), ("_sel_thresholds", lambda: {})):
+        monkeypatch.setattr(pipeline, name, val)
+    real = pipeline.run_lanes
+    seen = {}
+
+    def threaded(pairs, **kw):
+        seen["workers"], seen["recycle"] = kw["workers"], kw["recycle"]
+        return real(pairs, executor_factory=_threads(2), poll_s=0.05, **kw)
+
+    monkeypatch.setattr(pipeline, "run_lanes", threaded)
+    monkeypatch.setenv("EWB_LIVE_SCORING_WORKERS", "5")
+    assert pipeline.run(days=90, top_n=15) == 0
+    assert seen == {"workers": 5, "recycle": 30}                      # one pool, recycle every 30 jobs
+    res = results_tree / "results"
+    meta = json.loads((res / "meta.json").read_text())
+    assert meta["full_run_complete"] is True and meta["pair_coverage"]["scored"] == 2
+    assert meta["pair_coverage"]["documented_zero_rows"] == 1            # aigfs: not a lane model
+    sc = pd.read_parquet(res / "scores.parquet")
+    assert set(sc["model"]) == set(MODELS) and set(sc["truth_source"]) == {"ibtracs"}
+    assert set(sc["metric"]) == set(tv.TRACK_METRICS)
+    perf = json.loads((results_tree / "perf.json").read_text())["perf"]
+    assert perf["lane_tc"]["pairs_done"] == 2 and perf["lane_tc"]["jobs"] > 0
+    # second run: nothing left to score (parts + cached rows), still complete
+    monkeypatch.setattr(pipeline, "run_lanes", lambda pairs, **kw: pytest.fail("rescored a finished pair"))
+    assert pipeline.run(days=90, top_n=15) == 0
