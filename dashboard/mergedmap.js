@@ -1153,9 +1153,11 @@
     $('#raw-readout').textContent = fmtReadout(ts);
     const past = ts > rawLast();
     const badge = $('#raw-badge');
-    badge.classList.toggle('hidden', !past);   // .sec-badge sets display; class hides it
+    const noTruth = (raw.no_truth || []).includes(ts);   // blank because ERA5 has no data
+    badge.classList.toggle('hidden', !past && !noTruth);   // .sec-badge sets display; class hides it
     // design-recommended copy (19:05): honest end-of-frames marker, not an IFS claim
-    badge.textContent = past ? `raw layers end ${fmtShort(raw.cutoff)} ${raw.cutoff.slice(8, 10)}Z · ERA5 lag` : '';
+    badge.textContent = past ? `raw layers end ${fmtShort(raw.cutoff)} ${raw.cutoff.slice(8, 10)}Z · ERA5 lag`
+      : noTruth ? 'No ERA5 data for this step' : '';
     renderBoxes();
     renderGantt();
     emitTracks('frame');       // track lanes follow the step, the tab and the region

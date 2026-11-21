@@ -349,3 +349,38 @@ def test_run_sidecar_v2_in_incremental_build(tmp_path, monkeypatch):
     assert rx.build_frames(tmp_path, times, layer_fn, True, [], seed) == 4
     h2, _ = rx.run_from_bytes((tmp_path / "2026081100.run").read_bytes(), (8, 8))
     assert (h2[2:4, 2:4] == 0x81).all()   # 1 completed day + today provisional
+
+
+NT_FRAMES = ["2026110400", "2026110406", "2026110500", "2026110506"]
+
+
+def test_no_truth_frames_are_the_all_nan_steps():
+    import xarray as xr
+
+    times = [np.datetime64(f"2026-11-04T{h:02d}") for h in (0, 6, 12)]
+    v = np.full((3, 2, 2), 280.0, "f4")
+    v[1] = np.nan
+    v[2, 0, 0] = np.nan                             # a partly missing step has truth
+    ds = xr.Dataset({"2m_temperature": (("time", "latitude", "longitude"), v)},
+                    coords={"time": np.array(times, "datetime64[ns]"),
+                            "latitude": [1.0, 0.0], "longitude": [0.0, 1.0]})
+    assert rx._no_truth_frames(ds, times) == {"2026110406"}
+
+
+def test_recovered_truth_requeues_that_frame_and_every_later_one():
+    index = {"frames": list(NT_FRAMES), "no_truth": ["2026110406"]}
+    rx._reconcile_no_truth(index, set(NT_FRAMES), set())
+    assert index["frames"] == ["2026110400"] and index["no_truth"] == []
+
+
+def test_still_missing_truth_rebuilds_nothing():
+    index = {"frames": list(NT_FRAMES), "no_truth": ["2026110406"]}
+    rx._reconcile_no_truth(index, set(NT_FRAMES), {"2026110406"})
+    assert index["frames"] == NT_FRAMES and index["no_truth"] == ["2026110406"]
+
+
+def test_capped_build_keeps_no_truth_outside_its_scope():
+    index = {"frames": list(NT_FRAMES), "no_truth": ["2026110406"]}
+    rx._reconcile_no_truth(index, {"2026110500", "2026110506"}, {"2026110506"})
+    assert index["frames"] == NT_FRAMES
+    assert index["no_truth"] == ["2026110406", "2026110506"]

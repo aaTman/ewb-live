@@ -141,7 +141,9 @@ def score_event(event: Event, models: list[str]) -> pd.DataFrame
      has bbox IoU >= `MERGE_MIN_IOU` with it, and overlaps nothing kept. One hop only;
      `details.continues` names the parent.
      **Empty truth points:** the ERA5 mirror records a point ARCO serves as entirely NaN
-     as `unavailable`, never complete, and retries it every run.
+     as `unavailable`, never complete, and retries it every run. The map lane lists such
+     frames in `index.json` `no_truth`, the map labels them, and when one recovers that
+     frame and every later frame are rebuilt.
      Qualification is never inherited: an event's `qualified_date` is a
      day *its own* footprint reached the floor, so a candidate that never reached it
      is absorbed like any younger member and leaves no event (round-3 review fix,
