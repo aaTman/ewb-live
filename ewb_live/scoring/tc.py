@@ -296,8 +296,8 @@ def finalize_pair(event, model: str, plan: dict, init_results: list[dict]):
     if gaps:
         note += f" ({len(gaps)} missing from the store, not counted as misses)"
     lf_info = _landfall_info(event, model, plan["track"], init_results)
-    if lf_info["status"] == "error":     # EWB side failed: retried next run, blocks full_run_complete
-        return None, {"status": "read_error", "rows": 0, "reason": "landfall classes failed: " + lf_info["reason"]}
+    # the track metrics never depend on landfall: if the EWB side failed, the pair still publishes its
+    # track rows and the failure is recorded in status["landfall"] (rescored with --force)
     lf_df = lf_info.pop("df")
     if len(lf_df):
         df = pd.concat([df, lf_df], ignore_index=True)
@@ -308,7 +308,7 @@ def finalize_pair(event, model: str, plan: dict, init_results: list[dict]):
 
 def _landfall_info(event, model: str, track, init_results: list[dict]) -> dict:
     """Landfall rows of one pair (``df``) + a small status dict; ``status == "error"`` when the
-    EWB side raised (the pair is then a ``read_error``, rescored next run)."""
+    EWB side raised (no landfall rows, the track rows still publish)."""
     from . import landfall
 
     fc_tracks = [r["fc_track"] for r in init_results if r["status"] == "scored" and r.get("fc_track")]

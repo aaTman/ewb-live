@@ -371,16 +371,20 @@ def test_finalize_pair_on_an_open_ocean_storm_keeps_the_track_rows_and_no_landfa
                                   tv.rows_for_pair(ev.id, ev.event_type, MODEL, samples))
 
 
-def test_finalize_pair_turns_a_landfall_failure_into_a_retriable_read_error(monkeypatch):
-    """An EWB-side exception must not publish half a pair: (None, read_error) mentioning landfall."""
+def test_finalize_pair_keeps_the_track_rows_when_the_landfall_side_fails(monkeypatch):
+    """Track metrics never depend on landfall: an EWB-side exception still publishes the track rows,
+    with the failure recorded in ``status['landfall']``."""
     ev, tr = _event(), tc.observed_track(_event())
 
     def boom(*a, **k):
         raise RuntimeError("shapely exploded")
 
     monkeypatch.setattr(landfall, "landfall_rows", boom)
-    results = [{"init": T0.isoformat(), "status": "scored", "samples": _samples(), "retries": 0,
+    samples = _samples()
+    results = [{"init": T0.isoformat(), "status": "scored", "samples": samples, "retries": 0,
                 "fc_track": _perfect_fc_track(T0)}]
     df, status = tc.finalize_pair(ev, MODEL, _plan(tr), results)
-    assert df is None and status["status"] == "read_error" and status["rows"] == 0
-    assert "landfall" in status["reason"] and "shapely exploded" in status["reason"]
+    assert status["status"] == "scored" and status["landfall"]["status"] == "error"
+    assert "shapely exploded" in status["landfall"]["reason"]
+    pd.testing.assert_frame_equal(df.reset_index(drop=True),
+                                  tv.rows_for_pair(ev.id, ev.event_type, MODEL, samples))
