@@ -1662,6 +1662,7 @@ function moveTip(ev) {
   const r = tipEl.getBoundingClientRect();
   if (x + r.width > window.innerWidth - 8) x = ev.clientX - r.width - pad;
   if (y + r.height > window.innerHeight - 8) y = ev.clientY - r.height - pad;
+  x = Math.max(8, x); y = Math.max(8, y);   // phone width: the flipped tip must not leave the viewport
   tipEl.style.left = x + 'px';
   tipEl.style.top = y + 'px';
 }

@@ -667,5 +667,8 @@ def test_mlc_bomb_detected_cells_print_as_percent(mlc_page):
     pg.wait_for_timeout(500)
     texts = pg.evaluate(_MLC_COL_JS, "BOMBS DETECTED")
     assert texts, texts
-    assert all(t and t.endswith("%") and t[:-1].strip().isdigit() for t in texts), texts
+    # the fixture scores two models; the roster's other models have no rows and print an em dash
+    texts = [t for t in texts if t != "\u2014"]
+    assert len(texts) == 2, texts
+    assert all(t.endswith("%") and t[:-1].strip().isdigit() for t in texts), texts
     assert pg._errs == [], pg._errs
