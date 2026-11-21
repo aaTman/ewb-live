@@ -901,3 +901,184 @@ def test_legacy_and_flood_results_are_unchanged_by_the_survivor_rule():
         flood.append(len(track_events(frames, dates, AREA, FloodParams(),
                                       "flood")))
     assert sum(flood) == 11083   # flood event count at HEAD over the fuzz set
+
+# ------------------------- round 4: which member of a merge group survives ---
+# Brief fix_round4.md item 1: a merge must not delete a larger, healthy
+# qualified event. Repro of the central-Africa dome (real production case
+# heat_wave-20260917-321: 3.62M km2, qualified at its seed day, absorbed by
+# a 0.48M km2 neighbour that itself ended the next day): a small qualified
+# event sits while a younger, far bigger dome grows toward it; one labelled
+# region welds them. The shipped rule keeps the OLDEST qualified member -
+# the small one - so the dome's history vanishes and its cells re-seed.
+
+def dome_case() -> list[np.ndarray]:
+    """A stationary 200k km2 spell and a young 2.24M km2 dome that grows into it."""
+    frames = []
+    for k in range(9):
+        small = block(slice(22, 26), slice(15, 20))      # 20 cells = 200k km2
+        if k < 8:
+            dome = (block(slice(20, 36), slice(30 - 2 * (k - 2), 44))
+                    if k >= 2 else np.zeros_like(small))  # 224 cells = 2.24M
+            frames.append(small | dome)
+        else:
+            frames.append(np.zeros_like(small))
+    return frames
+
+
+def rule(**kw) -> Params:
+    return dataclasses.replace(PARAMS, merge_survivor=kw["survivor"])
+
+
+def seeded_after(frames: list[np.ndarray], p: Params, day: int,
+                 region: list[int]) -> list[str]:
+    """Ids of objects seeded on/after ``day`` whose box touches ``region``."""
+    dates = [DAY0 + dt.timedelta(days=k) for k in range(len(frames))]
+    tr = Tracker(AREA, p, "heat_wave")
+    seen, seeds = set(), []
+    for d, f in zip(dates, frames, strict=True):
+        tr.step(d, f)
+        for ev in tr.active:
+            if ev.id in seen:
+                continue
+            seen.add(ev.id)
+            b = [ev.box.i0, ev.box.i1, ev.box.j0, ev.box.j1]
+            if ev.start >= dates[day] and b[1] >= region[0] and b[0] <= region[1] \
+                    and b[3] >= region[2] and b[2] <= region[3]:
+                seeds.append(ev.id)
+    return seeds
+
+
+def test_dome_case_default_rule_deletes_the_bigger_spell():
+    """The bug this round fixes, pinned as the default rule's behaviour.
+
+    The dome (seeded day 2, peak 3.84M km2) is absorbed on day 6 by the
+    older 200k km2 spell and never published; its cells re-seed as one-day
+    candidates. This is the merge-survivor blocker (G2/G3 fail under the
+    shipped rule on real data), kept here so a fix cannot silently regress.
+    """
+    frames = dome_case()
+    evs = run(frames)
+    assert [ev.peak_area_km2 for ev in evs] == pytest.approx([0.36e6])
+    assert evs[0].start == DAY0                       # the SMALL spell lived
+    # and the dome region re-seeded after the merge day (day 6 = 09-07)
+    assert seeded_after(frames, PARAMS, 6, [20, 35, 20, 43])
+
+
+def test_merge_largest_survivor_keeps_the_dome():
+    """M1: the largest qualified claim today survives, not the oldest."""
+    evs = run(dome_case(), rule(survivor="largest"))
+    assert len(evs) == 1
+    ev = evs[0]
+    assert ev.start == DAY0 + dt.timedelta(days=2)    # the DOME lived on
+    assert ev.end == DAY0 + dt.timedelta(days=8)
+    assert ev.duration_days == 6
+    assert ev.peak_area_km2 > 3e6                     # 3.84M km2 published
+    # one object, not a chain of re-seeds (G3)
+    assert not seeded_after(dome_case(), rule(survivor="largest"), 6,
+                            [20, 35, 20, 43])
+
+
+def test_merge_largest_close_publishes_the_absorbed_aged_event():
+    """M2: an absorbed qualified member of >= min_days is CLOSED, not deleted.
+
+    The small spell (6 days) ends on the merge day and is published with its
+    own start date - G2's "no qualified event with >= min_days disappears
+    unpublished" - while the dome carries the merged cells on.
+    """
+    evs = run(dome_case(), rule(survivor="largest_close"))
+    assert len(evs) == 2
+    small, dome = evs                                  # ordered by start
+    assert (small.start, small.end, small.duration_days) == (
+        DAY0, DAY0 + dt.timedelta(days=6), 6)         # closed on the merge day
+    assert (dome.start, dome.end, dome.duration_days) == (
+        DAY0 + dt.timedelta(days=2), DAY0 + dt.timedelta(days=8), 6)
+    assert dome.peak_area_km2 > 3e6 and small.peak_area_km2 < 1e6
+    assert not seeded_after(dome_case(), rule(survivor="largest_close"), 6,
+                            [20, 35, 20, 43])
+
+
+def test_merge_separate_never_merges_qualified_events():
+    """M3: qualified events keep their own object; the small one is untouched.
+
+    The small spell keeps its own start, its own end and - mutation guard -
+    its OWN tracker box: it never grows over the dome's cells, and the dome
+    keeps the contested cells as the larger event.
+    """
+    evs = run(dome_case(), rule(survivor="separate"))
+    assert len(evs) == 2
+    small, dome = evs
+    assert (small.start, small.end, small.duration_days) == (
+        DAY0, DAY0 + dt.timedelta(days=8), 8)
+    assert small.box == Box(22, 25, 15, 19)           # not the dome's box
+    assert (dome.start, dome.end) == (DAY0 + dt.timedelta(days=2),
+                                      DAY0 + dt.timedelta(days=8))
+    assert dome.peak_area_km2 > 3e6
+    assert not seeded_after(dome_case(), rule(survivor="separate"), 6,
+                            [20, 35, 20, 43])
+
+
+def test_fuzz_merge_survivor_rules_publish_nothing_sub_floor():
+    """G4 for the candidate rules: floor + start <= qualified < end holds."""
+    for survivor in ("largest", "largest_close", "separate"):
+        p = dataclasses.replace(Params(), merge_survivor=survivor)
+        for seed in range(20):
+            frames = fuzz_frames(seed)
+            dates = [DAY0 + dt.timedelta(days=k) for k in range(frames.shape[0])]
+            for ev in track_events(frames, dates, AREA, p, "heat_wave"):
+                day = (ev.qualified - ev.start).days
+                assert 0 <= day < len(ev.footprint_area_km2)
+                assert ev.footprint_area_km2[day] >= p.qualify_area_km2
+                assert ev.peak_area_km2 >= p.qualify_area_km2
+                assert ev.start <= ev.qualified
+                if ev.end is not None:
+                    assert ev.qualified < ev.end
+
+
+def test_default_params_fuzz_digest_is_unchanged_by_the_knob():
+    """G6 (unit part): the shipped rule is byte-identical to HEAD.
+
+    Golden digest of the 30-seed fuzz with the DEFAULT Params computed with
+    the HEAD code (the step() refactor moved the advance into _advance and
+    the survivor pick into _group_units): 323 events, event-for-event
+    identical (ids, dates, boxes, anchors, all three area series). Together
+    with the LEGACY/FLOOD goldens this pins that adding merge_survivor and
+    the refactor moved nothing but the candidate rules.
+    """
+    import hashlib
+    import json
+
+    def bx(b: Box | None) -> list[int] | None:
+        return None if b is None else [b.i0, b.i1, b.j0, b.j1]
+
+    per_seed = []
+    for seed in range(30):
+        frames = fuzz_frames(seed)
+        dates = [DAY0 + dt.timedelta(days=k) for k in range(frames.shape[0])]
+        per_seed.append([
+            [ev.id, str(ev.start), str(ev.qualified), str(ev.end),
+             bx(ev.box), bx(ev.anchor),
+             [round(a, 1) for a in ev.footprint_area_km2],
+             [round(a, 1) for a in ev.box_area_km2],
+             [round(a, 1) for a in ev.core_area_km2]]
+            for ev in track_events(frames, dates, AREA, Params(), "heat_wave")])
+    assert sum(len(s) for s in per_seed) == 323
+    assert hashlib.sha256(json.dumps(per_seed).encode()).hexdigest() == \
+        "e588d54c78885e403989075b50f3038390457b320d4a7205b9791d249e9d188f"
+
+
+def test_persistence_box_stays_inside_a_wide_unwrapped_box():
+    """The published box never escapes the tracker box (round-4 fuzz fix).
+
+    A 41-column box on a 60-column grid; the persistent cells sit at both
+    ends. The SHORTEST arc over those columns wraps the array seam (cols
+    40..1) and leaves the box at both ends; the box's own arc is the 0..40
+    span. The old rule published the wrapped arc - a box bigger than (and
+    mostly outside) the tracker box whose fill it reports.
+    """
+    m = np.zeros((4, 8, 60), bool)
+    m[:, 2:6, 0:2] = True
+    m[:, 2:6, 40:41] = True
+    box = Box(0, 7, 0, 40)
+    pb = persistence_box(m, box, np.full((8, 60), 1e4), 2)
+    assert pb == Box(2, 5, 0, 40)
+    assert not (pb.mask(8, 60) & ~box.mask(8, 60)).any()

@@ -166,9 +166,29 @@ def label_regions(valid: np.ndarray, radius: int, min_fraction: float) -> np.nda
     return labels
 
 
-def _arc_cols(mask: np.ndarray, nx: int) -> np.ndarray:
-    """Column indices of the shortest seam-wrapping arc covering ``mask``'s columns."""
-    j0, j1 = circular_span(mask.any(axis=0))
+def _measure_arc(occupied_cols: np.ndarray, box: Box, nx: int) -> np.ndarray:
+    """Column indices to measure a persistence box on, in eastward order.
+
+    The arc must fit inside ``box`` - the shortest seam-wrapping arc over a
+    subset of a very wide box's columns can leave the box and run the other
+    way round the globe (round-4 fuzz: 455 of 20 000 cases), and the
+    published rectangle may never exceed the tracker box it reports fill for
+    (SPEC §2). Only when the box itself is the whole ring is the short arc
+    over the event's own columns the right measure (a seam-crossing spell
+    then legitimately wraps); otherwise the arc is the box's own arc (wrapped
+    box) or the plain min-max span (unwrapped box).
+
+    Args:
+        occupied_cols: Boolean length-``nx`` array, the cells to cover.
+        box: The tracker box (the search area, all its own cells count).
+        nx: Number of grid columns.
+    """
+    if box.j0 <= box.j1 and not box.columns(nx).all():
+        idx = np.flatnonzero(occupied_cols)
+        return np.arange(int(idx[0]), int(idx[-1]) + 1)
+    if box.j0 > box.j1 and (box.j1 - box.j0) % nx + 1 < nx:
+        return np.concatenate([np.arange(box.j0, nx), np.arange(0, box.j1 + 1)])
+    j0, j1 = circular_span(occupied_cols)
     return (j0 + np.arange((j1 - j0) % nx + 1)) % nx
 
 
@@ -195,8 +215,9 @@ def persistence_box(daily_mask: np.ndarray, box: Box, cell_area: np.ndarray,
     no longer stretches the published box), and return the bbox. If no cell
     reaches ``k_days`` the bbox of every ever-valid cell is used instead;
     ``None`` when the event held no valid cell at all inside ``box``. Only
-    ``box``'s own cells count — other spells' cells are not this event's
-    event (SPEC §2, published box).
+    ``box``'s own cells count - other spells' cells are not this event's
+    event (SPEC §2, published box) - and the result never leaves ``box``,
+    columns measured on the box's own longitude arc.
 
     Args:
         daily_mask: Boolean ``(days, lat, lon)`` mask of the event's days only.
@@ -216,7 +237,7 @@ def persistence_box(daily_mask: np.ndarray, box: Box, cell_area: np.ndarray,
     keep = (daily_mask.sum(axis=0) >= max(1, k_days)) & boxmask
     if not keep.any():
         keep = ever
-    cols = _arc_cols(keep, nx)
+    cols = _measure_arc(keep.any(axis=0), box, nx)
     sub = keep[:, cols]
     area = cell_area[:, cols]
     i_lo = c_lo = 0
@@ -236,7 +257,7 @@ def persistence_box(daily_mask: np.ndarray, box: Box, cell_area: np.ndarray,
         i_lo = max(0, i0)
         c_lo = max(0, c0)
         if not sub.any():        # the trim cut through every row or column
-            cols = _arc_cols(ever, nx)
+            cols = _measure_arc(ever.any(axis=0), box, nx)
             sub = ever[:, cols]
             i_lo = c_lo = 0
     rr = np.flatnonzero(sub.any(axis=1))
@@ -286,12 +307,24 @@ class Params:
         seed_valid_only: A new candidate's footprint and first box are the
             labelled region's valid cells only, never its closing-filled
             bridge cells. False keeps the original whole-region seeding.
-        merge_keep_box: When objects claim the same cells the survivor - the
-            group's OLDEST QUALIFIED member, or its oldest candidate when no
-            member qualified (review round 3 #1) - keeps its own box and every
-            other member's claim is clipped into it; the survivor keeps
-            growing its box by its own claims, and qualification is never
-            inherited. False keeps the original oldest-survivor box-union.
+        merge_keep_box: When objects claim the same cells the survivor (see
+            ``merge_survivor``) keeps its own box and every other member's
+            claim is clipped into it; the survivor keeps growing its box by
+            its own claims, and qualification is never inherited. False keeps
+            the original oldest-survivor box-union.
+        merge_survivor: Which member of a merge group carries the group on,
+            only meaningful with ``merge_keep_box=True`` (SPEC §2 step 4;
+            the round-4 candidates, measured in ``notes/footprint_tracker.md``):
+            ``"oldest_qualified"`` is the group's oldest qualified member, or
+            its oldest candidate when nothing qualified (the shipped rule);
+            ``"largest"`` the qualified member holding the largest footprint
+            that day (ties: oldest); ``"largest_close"`` as ``"largest"``, but
+            a qualified member already ``min_days`` old is closed and published
+            (``end`` = merge day) instead of vanishing unpublished; ``"separate"``
+            never merges qualified events - each keeps its own claim, contested
+            cells go to the larger event (ties: oldest), and only unqualified
+            candidates are absorbed. Ignored when ``merge_keep_box=False``
+            (legacy: always the oldest member).
         publish_box: The rectangle a scan publishes for the event:
             ``"persistence"`` = :func:`persistence_box` over the event's days,
             ``"tracker"`` = the cumulative tracker box.
@@ -318,6 +351,8 @@ class Params:
     claim_valid_only: bool = True
     seed_valid_only: bool = True
     merge_keep_box: bool = True
+    merge_survivor: Literal["oldest_qualified", "largest", "largest_close",
+                            "separate"] = "oldest_qualified"
     publish_box: Literal["persistence", "tracker"] = "persistence"
     publish_min_fraction: float = 0.5
     publish_trim: float | None = 0.02
@@ -425,77 +460,58 @@ class Tracker:
             if ev.qualified is not None and self.ending(ev, hits[k], labels, valid, weighted, day):
                 hits[k] = set()  # release its regions so they cannot block a neighbour
         groups = merge_groups(hits, [ev.box for ev in self.active], self.fits, nx)
-        # Under ``merge_keep_box`` the survivor is the group's OLDEST QUALIFIED
-        # member: a merge never inherits a qualification onto an unqualified
+        # Each group is carried on by one or more SURVIVOR units (see
+        # _group_units); every other member is absorbed into its unit's
+        # survivor. A merge never inherits a qualification onto an unqualified
         # candidate, which would clip the qualified member's cells into the
         # candidate's small box and publish a sub-floor "event" (review round
         # 3 #1). Only a group with no qualified member keeps its oldest
         # candidate. The legacy rule keeps the oldest member (SPEC §2 step 4).
-        surv = [next((k for k in g if self.active[k].qualified is not None),
-                     g[0]) if p.merge_keep_box else g[0] for g in groups]
+        units = [self._group_units(g, hits, labels, valid, weighted)
+                 for g in groups]
         order = sorted(range(len(groups)),
-                       key=lambda g: (self.active[surv[g]].qualified is None,
+                       key=lambda g: (self.active[units[g][0][0]].qualified is None,
                                       groups[g][0]))
         taken = np.zeros((ny, nx), bool)
         kept: list[TrackedEvent] = []
         ended: list[TrackedEvent] = []
         for gi in order:
-            group = groups[gi]
-            ev = self.active[surv[gi]]
-            # the survivor keeps its own claim of its own regions ...
-            share = self.claim(ev, hits[surv[gi]], labels, valid) & ~taken
-            for k in group:
-                if k == surv[gi]:
-                    continue
-                other = self.active[k]
-                if p.merge_keep_box:
-                    # ... a merge only clips the OTHER member's claim into the
-                    # survivor's box; the survivor's own drift cells stay free
-                    # to grow it (SPEC §2 step 4, review round 1 #2). An
-                    # absorbed unqualified candidate disappears; qualification
-                    # is never inherited - a qualified day is a day the
-                    # survivor's OWN footprint reached the floor (round 3 #1).
-                    share |= (self.claim(other, hits[k], labels, valid)
-                              & ev.box.mask(ny, nx) & ~taken)
-                else:
-                    if other.qualified is not None and (
-                            ev.qualified is None or other.qualified < ev.qualified):
-                        # legacy: the survivor publishes the earlier
-                        # qualification (its core clock keeps its own start;
-                        # under the pinned start clock nothing reads it)
-                        ev.qualified = other.qualified
-                    ev.box = ev.box.union(other.box, nx)
-                    share |= self.claim(other, hits[k], labels, valid) & ~taken
-            if share.any():
-                grown = ev.box.union(Box.from_mask(share), nx)
-                if self.fits(grown):
-                    ev.box = grown
-                else:
-                    share &= ev.box.mask(ny, nx)
-            if share.any():
-                ev.footprint = share
-            footprint_area = float(weighted[share].sum())
-            box_area = float(weighted[ev.box.mask(ny, nx)].sum())
-            if ev.qualified is None:
-                if footprint_area >= p.qualify_area_km2:
-                    ev.qualified = day
-                    ev.core_clock_start = day
-                elif not share.any() or (day - ev.start).days >= p.max_ramp_days:
-                    continue
-            if (p.anchor_day is not None and ev.anchor is None
-                    and (day - ev.start).days + 1 >= p.anchor_day
-                    and self.anchor_released(ev)):
-                ev.anchor = ev.box
-            core_area = self.core_area(ev, ev.anchor or ev.box, day, weighted)
-            if ev.qualified is not None and core_area < p.end_area_km2:
-                ev.end = day
-                ended.append(ev)
-                continue
-            taken |= share
-            ev.footprint_area_km2.append(footprint_area)
-            ev.box_area_km2.append(box_area)
-            ev.core_area_km2.append(core_area)
-            kept.append(ev)
+            for sv, absorbed in units[gi]:
+                ev = self.active[sv]
+                # the survivor keeps its own claim of its own regions ...
+                share = self.claim(ev, hits[sv], labels, valid) & ~taken
+                for k in absorbed:
+                    other = self.active[k]
+                    if p.merge_keep_box:
+                        if (p.merge_survivor == "largest_close"
+                                and other.qualified is not None
+                                and other.duration_days >= p.min_days):
+                            # close and PUBLISH an aged qualified member rather
+                            # than letting its history vanish unpublished; its
+                            # claim still goes to the survivor (end is
+                            # exclusive - the merge day is the survivor's)
+                            other.end = day
+                            ended.append(other)
+                        # ... a merge only clips the OTHER member's claim into
+                        # the survivor's box; the survivor's own drift cells
+                        # stay free to grow it (SPEC §2 step 4, review round
+                        # 1 #2). An absorbed unqualified candidate disappears;
+                        # qualification is never inherited - a qualified day
+                        # is a day the survivor's OWN footprint reached the
+                        # floor (round 3 #1).
+                        share |= (self.claim(other, hits[k], labels, valid)
+                                  & ev.box.mask(ny, nx) & ~taken)
+                    else:
+                        if other.qualified is not None and (
+                                ev.qualified is None or other.qualified < ev.qualified):
+                            # legacy: the survivor publishes the earlier
+                            # qualification (its core clock keeps its own start;
+                            # under the pinned start clock nothing reads it)
+                            ev.qualified = other.qualified
+                        ev.box = ev.box.union(other.box, nx)
+                        share |= self.claim(other, hits[k], labels, valid) & ~taken
+                if self._advance(ev, share, day, weighted, taken, ended):
+                    kept.append(ev)
 
         occupied = np.zeros((ny, nx), bool)
         for ev in kept:
@@ -531,6 +547,88 @@ class Tracker:
             kept.append(ev)
         self.active = sorted(kept, key=lambda e: (e.start, e.id))
         return ended
+
+    def _group_units(self, group: list[int], hits: list[set[int]],
+                     labels: np.ndarray, valid: np.ndarray,
+                     weighted: np.ndarray) -> list[tuple[int, list[int]]]:
+        """Split a merge group into ``(survivor index, absorbed indices)`` units.
+
+        ``Params.merge_survivor`` picks the rule (SPEC §2 step 4). The legacy
+        path and ``"oldest_qualified"`` give a single unit; ``"largest"`` and
+        ``"largest_close"`` move the survivor to the qualified member holding
+        the largest claim today (ties: oldest); ``"separate"`` keeps every
+        qualified member as its own unit - processing them largest-first over
+        the shared ``taken`` mask is what hands contested cells to the larger
+        event - and absorbs the unqualified candidates into the largest one.
+        """
+        p = self.params
+        if not p.merge_keep_box:
+            sv = group[0]
+            return [(sv, [k for k in group if k != sv])]
+        qualified = [k for k in group if self.active[k].qualified is not None]
+        if not qualified:
+            sv = group[0]
+            return [(sv, [k for k in group if k != sv])]
+        if p.merge_survivor == "oldest_qualified":
+            sv = qualified[0]
+            return [(sv, [k for k in group if k != sv])]
+        area = {k: float(weighted[self.claim(self.active[k], hits[k], labels,
+                                             valid)].sum())
+                for k in qualified}
+        # qualified is oldest-first (groups and self.active are sorted), so a
+        # stable sort by descending area breaks ties toward the oldest event
+        by_area = sorted(qualified, key=lambda k: -area[k])
+        if p.merge_survivor != "separate":
+            sv = by_area[0]
+            return [(sv, [k for k in group if k != sv])]
+        units: list[list[int]] = [[k, []] for k in by_area]
+        for k in group:
+            if self.active[k].qualified is None:
+                units[0][1].append(k)
+        return [(int(u[0]), [int(k) for k in u[1]]) for u in units]
+
+    def _advance(self, ev: TrackedEvent, share: np.ndarray, day: dt.date,
+                 weighted: np.ndarray, taken: np.ndarray,
+                 ended: list[TrackedEvent]) -> bool:
+        """Grow, qualify, anchor and end-check one open object on today's claim.
+
+        Returns True when the object stays open (its day is recorded and its
+        cells enter ``taken``); on False it ended today (``ended``) or was
+        dropped (ramp-up failed). :meth:`step` calls this once per survivor
+        unit, so a ``"separate"`` merge advances several events per day.
+        """
+        p = self.params
+        ny, nx = weighted.shape
+        if share.any():
+            grown = ev.box.union(Box.from_mask(share), nx)
+            if self.fits(grown):
+                ev.box = grown
+            else:
+                share &= ev.box.mask(ny, nx)
+        if share.any():
+            ev.footprint = share
+        footprint_area = float(weighted[share].sum())
+        box_area = float(weighted[ev.box.mask(ny, nx)].sum())
+        if ev.qualified is None:
+            if footprint_area >= p.qualify_area_km2:
+                ev.qualified = day
+                ev.core_clock_start = day
+            elif not share.any() or (day - ev.start).days >= p.max_ramp_days:
+                return False
+        if (p.anchor_day is not None and ev.anchor is None
+                and (day - ev.start).days + 1 >= p.anchor_day
+                and self.anchor_released(ev)):
+            ev.anchor = ev.box
+        core_area = self.core_area(ev, ev.anchor or ev.box, day, weighted)
+        if ev.qualified is not None and core_area < p.end_area_km2:
+            ev.end = day
+            ended.append(ev)
+            return False
+        taken |= share
+        ev.footprint_area_km2.append(footprint_area)
+        ev.box_area_km2.append(box_area)
+        ev.core_area_km2.append(core_area)
+        return True
 
     def claim(self, ev: TrackedEvent, hits: set[int], labels: np.ndarray,
               valid: np.ndarray) -> np.ndarray:
