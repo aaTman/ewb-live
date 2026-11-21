@@ -75,8 +75,8 @@ M_FSS3, M_FSS5 = "FractionsSkillScore", "FractionsSkillScore5"
 M_BIAS, M_PEAK = "PrecipAreaBias", "PeakPrecipError"
 FLOOD_METRICS = (M_CSI, M_POD, M_FAR, M_FSS3, M_FSS5, M_BIAS, M_PEAK)
 SIGNED_METRICS = (M_BIAS, M_PEAK)
-UNSUPPORTED_REASON = ("flood scoring needs forecast precipitation: only the GraphCast family "
-                      "(graphcast, graphcast_gfs) carries it in the MLWP store (GraphCast only)")
+# <= 120 chars: pipeline.public_reason truncates published pair_status reasons there
+UNSUPPORTED_REASON = "no precipitation in the MLWP store: only the GraphCast family carries it (GraphCast only)"
 
 
 # =============================================================================
