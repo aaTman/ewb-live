@@ -504,6 +504,69 @@ def test_ending_grows_only_over_the_claim_rule():
     assert not tracker_with(old).ending(ev, {1}, labels, valid, weighted, day)
 
 
+# --------------------------------------------- C3 versions of the LEGACY-pinned cases ---
+# Same scenarios as the LEGACY-pinned cap / capped-neighbour / release / anchor
+# tests above, run with the C3 defaults (review #9: those outcomes were only
+# pinned under the legacy knobs). Each C3 outcome is the intended one under
+# the claim/seed/merge rule; the one-line comment says why it differs.
+
+def test_c3_capped_event_hands_the_drift_path_to_a_successor():
+    frames = [block(slice(10, 15), slice(10 + 2 * t, 15 + 2 * t))
+              for t in range(5)] + [cells(0)]
+    evs = run(frames, dataclasses.replace(PARAMS, max_box_area_km2=35e4))
+    # C3: the capped survivor ends where its box stops it, and the freed
+    # drift path seeds its own successor (legacy kept one event by claiming
+    # whole regions a capped box cannot grow into)
+    assert [(ev.start, ev.end, ev.box) for ev in evs] == [
+        (DAY0, DAY0 + dt.timedelta(days=3), Box(10, 14, 10, 16)),
+        (DAY0 + dt.timedelta(days=2), DAY0 + dt.timedelta(days=5),
+         Box(10, 14, 16, 22))]
+
+
+def test_c3_capped_neighbour_scenario_keeps_three_objects():
+    a = block(slice(10, 15), slice(10, 15))
+    b_seed = block(slice(10, 12), slice(22, 25))
+    region = block(slice(10, 15), slice(10, 26))   # touches both; A+B would pass the cap
+    frames = [a, a | b_seed, region, region, region, cells(0)]
+    evs = run(frames, dataclasses.replace(PARAMS, max_box_area_km2=60e4))
+    # C3: three objects, not legacy's two - A creeps into the region only at
+    # its claim reach (box 10..20), the seed survives separately (clipped out
+    # of A's box instead of merging whole-region into it) and the region's
+    # body holds its own object; the cap keeps them from ever welding
+    assert len(evs) == 3
+    assert evs[0].box == Box(10, 14, 10, 20)
+
+
+def test_c3_release_keeps_the_dates_and_clips_the_box():
+    a = block(slice(10, 15), slice(10, 15))
+    b_seed = block(slice(10, 12), slice(22, 25))
+    region = block(slice(10, 14), slice(16, 28))   # touches A's grown footprint
+    frames = [a, a, a | b_seed, region, region, cells(0)]
+    evs = run(frames, dataclasses.replace(PARAMS, max_box_area_km2=60e4))
+    # C3: same starts and same end day as legacy; B's box reaches 18 not 16 -
+    # it claims valid cells at its own drift reach, never the whole region
+    assert [ev.start for ev in evs] == [DAY0, DAY0 + dt.timedelta(days=2)]
+    assert evs[0].end == DAY0 + dt.timedelta(days=3)
+    assert evs[1].qualified == DAY0 + dt.timedelta(days=3)
+    assert evs[1].box == Box(10, 13, 18, 27)
+
+
+def test_c3_anchor_rule_ends_the_drift_and_the_hot_spot_survives():
+    a = block(slice(10, 15), slice(10, 15))
+    hot_spot = block(slice(10, 12), slice(22, 24))       # 40k every day, too small to seed
+    reach = block(slice(10, 15), slice(15, 22))          # day 5: the event reaches it
+    frames = [a | hot_spot] * 4 + [a | reach | hot_spot] + [hot_spot] * 2 + [cells(0)]
+    evs = run(frames, PARAMS)
+    # C3: the anchored drift ends on DAY0+5 (same day as legacy's anchored
+    # event); the body A left unclaimed seeds its own object on day 5 and
+    # runs to DAY0+7 on the hot spot's core - legacy's whole-box claim kept
+    # the single event alive to DAY0+7 instead
+    assert [(ev.start, ev.end) for ev in evs] == [
+        (DAY0, DAY0 + dt.timedelta(days=5)),
+        (DAY0 + dt.timedelta(days=4), DAY0 + dt.timedelta(days=7))]
+    assert evs[0].anchor == Box(10, 14, 10, 14)
+
+
 def test_persistence_box_keeps_the_persistent_cells_and_trims_outliers():
     m = np.zeros((5, 10, 60), bool)
     m[:, 2:9, 5:41] = True                 # a spell that sits still, 5 days
