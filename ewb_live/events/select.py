@@ -59,6 +59,9 @@ distinct events are forbidden. Curation therefore runs three phases:
 3. greedy order: candidates are consumed in global percentile order up
    to top_n per type, so a drop frees the slot for the next candidate
    under the same rules (refill).
+4. continuations (heat, freeze, cold snap): a passed-over fragment that
+   starts within a day of a selected same-type event's end, on the same
+   region, is kept as its own event outside the quota (owner 2026-11-21).
 """
 
 from __future__ import annotations
@@ -302,6 +305,7 @@ def _passes_floor(e) -> bool:
 
 MERGE_GAP_DAYS = 1.0      # same-type fragments may touch by at most this
 MERGE_MIN_IOU = float(os.environ.get("EWB_LIVE_MERGE_MIN_IOU", "0.3"))
+CONTINUATION_TYPES = {"heat_wave", "freeze", "cold_snap"}  # see _add_continuations
 # merged-duration caps = upstream events.yaml per-type p90 duration
 # (measured 2026-11-06: AR p90 9 d, heat_wave p90 16 d, freeze p90 16 d)
 MERGE_CAP_DAYS = {
@@ -621,6 +625,38 @@ def _resolve_conflicts(merged_by_type: dict[str, list], top_n_map: dict[str, int
     return accepted
 
 
+def _add_continuations(selected: list, pool: list, decisions: list[dict]) -> list:
+    """Keep a passed-over temperature fragment that directly continues a
+    selected event (owner 2026-11-21): same type, starting 0..MERGE_GAP_DAYS
+    after that event ends, bbox IoU >= MERGE_MIN_IOU, and no time+space overlap
+    with anything kept. One hop only, and outside the per-type quota: the event
+    stays its own row, so the merged-duration cap cannot hide its days."""
+    import dataclasses
+
+    exclusions = _load_exclusions()
+    used = {e.id for e in selected}
+    for d in decisions:
+        if d.get("action") == "merge":
+            used.update(d.get("members") or [])
+    parents = sorted((e for e in selected if e.event_type in CONTINUATION_TYPES),
+                     key=lambda e: (e.start, e.id))
+    accepted = list(selected)
+    candidates = (e for e in pool if e.event_type in CONTINUATION_TYPES
+                  and e.id not in used and e.id not in exclusions)
+    for c in sorted(candidates, key=lambda e: (e.start, e.id)):
+        parent = next((s for s in parents if s.event_type == c.event_type
+                       and 0.0 <= (c.start - s.end).total_seconds() / 86400.0 <= MERGE_GAP_DAYS
+                       and _bbox_iou(c.bbox, s.bbox) >= MERGE_MIN_IOU), None)
+        if parent is None or any(_overlaps(a, c) for a in accepted):
+            continue
+        accepted.append(dataclasses.replace(
+            c, details={**(c.details or {}), "continues": parent.id}))
+        decisions.append({"action": "continuation", "event_type": c.event_type,
+                          "id": c.id, "continues": parent.id})
+        logger.info("curation CONTINUATION %s %s continues %s", c.event_type, c.id, parent.id)
+    return accepted
+
+
 def rank_and_cap(events, top_n: int | dict[str, int] = DEFAULT_TOP_N,
                  decisions: list[dict] | None = None) -> list:
     """Floor, merge same-type chains, resolve cross-type conflicts with
@@ -651,6 +687,8 @@ def rank_and_cap(events, top_n: int | dict[str, int] = DEFAULT_TOP_N,
     n_map = {t: max(n_map.get(t, DEFAULT_TOP_N), TOP_N_BY_TYPE.get(t, 0))
              for t in merged_by_type}
     selected = _resolve_conflicts(merged_by_type, n_map, decisions)
+    selected = _add_continuations(selected, [e for evs in by_type.values() for e in evs],
+                                  decisions)
     for e in selected:
         e.details = {**(e.details or {}), "severity_rank_score": round(severity(e), 2)}
     LAST_DECISIONS[:] = decisions

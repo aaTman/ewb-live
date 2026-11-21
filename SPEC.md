@@ -135,6 +135,11 @@ def score_event(event: Event, models: list[str]) -> pd.DataFrame
      pin `"oldest_qualified"` and are byte-unchanged (`notes/footprint_tracker.md`).
      **Missing truth:** a day whose ERA5 field is entirely NaN keeps only the cells valid
      on both neighbouring days, so one missing day cannot end an event by itself.
+     **Continuations (curation, owner 2026-11-21):** a heat, freeze or cold-snap fragment
+     passed over by selection is still published, as its own event outside the per-type
+     quota, when it starts within `MERGE_GAP_DAYS` of a selected same-type event's end,
+     has bbox IoU >= `MERGE_MIN_IOU` with it, and overlaps nothing kept. One hop only;
+     `details.continues` names the parent.
      Qualification is never inherited: an event's `qualified_date` is a
      day *its own* footprint reached the floor, so a candidate that never reached it
      is absorbed like any younger member and leaves no event (round-3 review fix,
