@@ -4172,3 +4172,14 @@ Miss rate (honesty check, "looks pathological?" = no): 24 / 48 / 72 / 96 h `ifs_
 Same pattern as TC (the AI models' shallower lows fail the 3 hPa closed contour first). Cells above 50 % are greyed by the dashboard rule (most of 96 h, incl. `ifs_hres` at 50.6 %).
 Headline (mean km, 24 h): aurora 87, graphcast 88, pangu 100, ifs_hres 106, fcn 107, `_gfs` twins 119-129. PeakDepthError (24 h): ifs_hres -1.2 hPa (deeper), MLWP -0.1..+1.6 (shallower).
 Bomb: detected 24 h ifs 83 % vs 59-73 % MLWP (n 27-35 windows; n = 3-4 at 72 h, tiny), false-alarm rate <= 1-2 %. GraphCast (IFS-init) has no 24 h bomb window (lead 0 is fill; first at 30 h).
+
+## [scoring-wp2] 2026-11-21 15:10 UTC — WP2 DONE: MLC lane scored, PR to develop
+
+**Tests (box, private preview tree `/opt/ewb-preview-mlc`, never the live tree).** Unit suite (`tests`, e2e + `test_fcn_humidity.py` + 28 network-marked excluded): **714 passed, 2 failed** = the 2 known box
+failures (`test_cold_snap_severity_and_merge_envelope_follow_freeze`, `test_imerg::test_s3_credentials_parses_and_caches`). New offline `tests/test_score_mlc.py` 17 tests (+ `test_score_tc/track_verif/lane_guard` green:
+116 passed together). e2e (8 files, server on :8063): first full run 225 passed, 1 skipped, 2 failed (a new MLC e2e that counted roster models without rows as cells: test bug, fixed); after the fix
+`test_tracklane_fe.py` + `test_dashboard_fe.py` (incl. the rebased #18 test) 111 passed. Browser check of the real preview data at 1440 and 390 px, light and dark (Pi script, screenshots in the gitignored
+`notes/screenshots/`): no JS errors, no horizontal page overflow, no "Not scored", header truth `ERA5 track` on the MLC tab / `ERA5 + IBTrACS (TC)` on all types / `IBTrACS` on TC, 44 greyed cells (all 96 h track-error cells +
+3 d for fcn, tracker-dependent only; Peak depth / bomb cells never greyed), tooltip of Peak depth has no "tracked N of M". Found + fixed: the phone tooltip left the viewport (shared `moveTip`, pre-existing, 1 line).
+**Not changed (pre-existing, flagged):** `aifs_single`/`aigfs` rows are all em dashes on every lane; the MLC event-detail panel still uses the TC wind legend and labels the weakest low as the peak.
+**Open:** not deployed, not merged; the weekly run will score MLC after the EWB jobs and the TC pool (~16 min extra, peak pool RSS 16 GB); preview unit `ewb-preview-mlc-web` (port 8063) left running.
