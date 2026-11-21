@@ -188,7 +188,7 @@ def main() -> int:
                 srt = sorted(times)
 
                 def pct(q: float) -> float:
-                    return srt[min(len(srt) - 1, int(round(q * (len(srt) - 1))))]
+                    return srt[min(len(srt) - 1, round(q * (len(srt) - 1)))]
 
                 med = statistics.median(times)
                 mean = statistics.fmean(times)
