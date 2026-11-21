@@ -714,6 +714,29 @@ rows exist on the box).
   wire pipeline and dashboard, test as listed, run the 80-event backfill through `ops/lane_backfill.sh`, PR to
   develop."
 
+* **As built (WP2, 2026-11-21).** Metric definitions fixed by the implementation (`ewb_live/scoring/mlc.py`):
+  * MLC-A = the shared core with `MLC_PARAMS` (5 degrees per 6-h step, 3 hPa closed contour within 6 degrees); inits are every 00/12Z with a
+    fix at init and one 6 h later (D2 as written, nothing "not verified"); leads whose valid time has no ERA5 fix (the truth edge) are never samples.
+  * MLC-B, one read shared with MLC-A. `PeakDepthError` (hPa, **signed**, > 0 = forecast too shallow) = the forecast's lowest MSLP in a
+    +/-8 degree window (longitude widened by 1/cos lat, wrap-aware) around the OBSERVED centre at the valid time minus the ERA5 central pressure;
+    one row per `(init, lead)`, no tracker so it has no misses and the 50 % grey rule does not apply to it.
+    Bomb check: for every verifying `(init, lead >= 24 h)` where the observed track has fixes at `t` and `t - 24 h` and the forecast window
+    minimum exists at both, the observed and forecast 24 h falls of that central pressure are compared with the threshold
+    `24 hPa * sin|lat| / sin 60` at the observed latitude at `t` (the rule `mlc_track.bomb_ratio` tags bombs with). A window whose OBSERVED fall reaches
+    the threshold is an observed-bomb window and emits `BombDetected` (1 = the forecast fell at bomb rate too, else 0, so the cell mean is the hit
+    rate / POD); every other window emits `BombFalseAlarm` (1 = the forecast claimed a bomb the analysis did not have; the cell mean is the share of
+    non-bomb windows with a false claim, i.e. a false-alarm rate, not a false-alarm ratio). Two 0/1 rows are the contingency form that
+    `build_scorecard` and the table render with no special case (like `TrackMiss`). `BombDetected` is higher-is-better, `PeakDepthError` is signed
+    (skill vs the baseline suppressed).
+  * Truth tag `era5_arco` is constant for the lane (the published track is an ERA5 analysis whatever the ARCO-vs-HRES reach of the event window).
+  * Dashboard leads 24/48/72/96 h (D8), model ranking on `TrackPositionError` only, miss rate beside every tracker-dependent error.
+  * **Known limitations of the MLC lane.** (1) The peak-depth window minimum can latch onto a different, deeper low inside the +/-8 degree box
+    (ambiguity noted in 4.3); it reads as a deeper-than-observed bias, never a miss. (2) The tracker misses lows near the end of their life
+    (the ERA5 track stops where the same 3 hPa closed-contour recipe stops finding the low; a shallower AI forecast fails it first), so the miss rate
+    climbs with lead, as measured in `notes/scoring_pilot.md` section 4. (3) Bomb rows exist only where both the forecast window minimum and the
+    observed fix at `t - 24 h` exist (GraphCast's IFS-initialised lead 0 is fill, so its first bomb window is lead 30 h). (4) Same fingerprint /
+    search-window / ECMWF-lead-drop limitations as the TC lane (8.3).
+
 ### 8.5 WP3: EWB landfall classes for TC
 
 * **Goal:** `landfall_displacement`, `landfall_time_me`, `landfall_intensity_mae` rows for the storms

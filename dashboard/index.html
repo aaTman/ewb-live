@@ -441,6 +441,20 @@
       gets no error value (never imputed); a cell where more than half the steps are misses is
       greyed because its error rests on the storms the model kept.</li>
     </ul>
+    <h3>Scoring mid-latitude cyclones</h3>
+    <p>Mid-latitude cyclones are scored against the ERA5 mean-sea-level-pressure track each low
+    was detected on &mdash; the same 0.25&deg; grid the models run on, so central pressure has no
+    resolution floor here. <b>Track error</b>, <b>along-track</b>, <b>cross-track</b> and
+    <b>miss rate</b> use the same definitions as above, against that ERA5 position.</p>
+    <ul>
+      <li><b>Peak depth</b> (hPa, signed) &mdash; the lowest forecast pressure within 8&deg; of
+      the observed centre minus the ERA5 central pressure; positive = forecast too shallow.
+      It needs no tracking, so it has no miss rate and is never greyed.</li>
+      <li><b>Bombs detected</b> &mdash; the share of observed 24&nbsp;h bomb-rate deepenings
+      (Sanders&ndash;Gyakum, scaled by latitude) that the forecast also showed; higher is
+      better. <b>Bomb false alarms</b> &mdash; the share of non-bomb windows where the forecast
+      showed one anyway; lower is better. Both are rates beside their metric names.</li>
+    </ul>
     <details class="repro repro-track">
       <summary>How the track errors are computed, in Python</summary>
       <p class="dlg-note">The formulas above in a few lines:

@@ -78,15 +78,17 @@ def _lane_status_meta() -> dict:
 def _track_verification_meta(events) -> dict:
     """meta.track_verification: per track lane how many 00/12Z inits are verified and
     how many are shown as not verified. Fail-soft like the other meta notes."""
+    out: dict = {}
     try:
+        from .scoring import mlc as mlc_lane
         from .scoring import tc as tc_lane
 
-        if not any(e.event_type == tc_lane.EVENT_TYPE for e in events):
-            return {}
-        return {tc_lane.EVENT_TYPE: tc_lane.verification_summary(events)}
+        for lane in (tc_lane, mlc_lane):
+            if any(e.event_type == lane.EVENT_TYPE for e in events):
+                out[lane.EVENT_TYPE] = lane.verification_summary(events)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("track verification summary failed (meta.track_verification={}): %s", exc)
-        return {}
+        logger.warning("track verification summary failed (meta.track_verification partial): %s", exc)
+    return out
 
 
 def public_meta(meta: dict) -> dict:
@@ -110,14 +112,16 @@ def public_reason(text) -> str:
     t = _re.sub(r"\s+", " ", t).strip()
     return (t[:117] + "...") if len(t) > 120 else t
 PARTS = Path("data/cache/score_parts")
-HIGHER_IS_BETTER = {"CriticalSuccessIndex", "Accuracy", "EarlySignal"}
+HIGHER_IS_BETTER = {"CriticalSuccessIndex", "Accuracy", "EarlySignal",
+                    "BombDetected"}   # mlc lane: share of observed bombs the forecast reproduced
 # science-review D6: a signed-error metric's cell mean is signed, so
 # lower-is-better on it can score LARGER |error| as positive skill
 # (aurora +82% heat duration). Skill suppressed; signed mean stays as `mean`.
 SIGNED_ERROR_METRICS = {"DurationMeanError",
                         # track lanes (notes/scoring_design.md section 6): signed bias
                         # components, skill vs the baseline is meaningless for them
-                        "AlongTrackError", "CrossTrackError", "CentralPressureError"}
+                        "AlongTrackError", "CrossTrackError", "CentralPressureError",
+                        "PeakDepthError"}      # mlc lane: signed depth bias
 BASELINE = "ifs_hres"
 PEAK_WINDOW_METRICS = ("MaximumMeanAbsoluteError",
                        "MaximumLowestMeanAbsoluteError",
@@ -309,9 +313,7 @@ def _score_job(event_dict: dict, models: list[str], truth_source: str,
         if event.event_type in lane_pool.LANE_TYPES:
             # track lanes are not EWB-evaluate scored: serial in-process track
             # verification (production runs go through lane_pool's worker pool)
-            from ewb_live.scoring import tc as tc_lane
-
-            df, _st = tc_lane.score_tc_event(event, models, status_out=status_out)
+            df, _st = lane_pool.score_event_serial(event, models, status_out=status_out)
         else:
             df = score_event(event, models, truth_source=truth_source,
                              status_out=status_out)
@@ -931,8 +933,6 @@ def run(
     # (mirrors how a model with no 2 m temperature on heat/freeze is documented,
     # not left missing).
     _UNSCORED_REASON = {
-        "midlat_cyclone": "no EWB benchmark for tracked mid-latitude lows "
-                          "(midlat_cyclone is published, not scored)",
         "flood": "no EWB benchmark for IMERG-accumulation events "
                  "(flood is published, not scored)",
     }
@@ -1324,7 +1324,7 @@ def run(
         # track lanes (tropical_cyclone): their own worker pool (R4), after the EWB
         # jobs so the two pools never share the box's memory budget
         truths = dict(truth_by_event)
-        pairs: list = []
+        pairs_by_lane: dict = {}                       # lane key -> [(event, model)]
         for e, ms in lane_todo:
             for m in ms:
                 p = _part_path(e, m, truths[e.id])
@@ -1333,8 +1333,8 @@ def run(
                     continue
                 if lane_terminal(_pair(e.id, m), e, truths[e.id]):
                     continue                           # documented no_data / empty for this fingerprint
-                pairs.append((e, m))
-        if pairs:
+                pairs_by_lane.setdefault(lane_pool.LANE_KEY_BY_EVENT_TYPE[e.event_type], []).append((e, m))
+        for lane_key, pairs in pairs_by_lane.items():
             last_pub = [_t.monotonic()]
 
             def _lane_pair(e, model, df, st):
@@ -1352,16 +1352,16 @@ def run(
 
             with _heartbeat_beat("lane"):
                 lane_stats = run_lanes(
-                    pairs, lane_key="tc", truth_of=lambda e: truths[e.id], on_pair=_lane_pair,
+                    pairs, lane_key=lane_key, truth_of=lambda e: truths[e.id], on_pair=_lane_pair,
                     workers=int(os.environ.get("EWB_LIVE_SCORING_WORKERS", "12")),
                     recycle=int(os.environ.get("EWB_LIVE_SCORING_RECYCLE", "30")),
                     dask_threads=int(os.environ.get("EWB_LIVE_LANE_DASK_THREADS", "2")),
                     rss_cap_gb=float(os.environ.get("EWB_LIVE_SCORING_RSS_CAP_GB", "40")))
-            perf_stats["lane_tc"] = {k: lane_stats.get(k) for k in (
+            perf_stats[f"lane_{lane_key}"] = {k: lane_stats.get(k) for k in (
                 "workers", "recycle", "jobs", "pairs_done", "wall_s", "peak_total_rss_gb",
                 "peak_worker_rss_gb", "retries", "errors", "mean_job_s_store", "mean_job_s_ifs")}
             if lane_stats.get("abort"):
-                failed_after_retry.add("lane_tc")
+                failed_after_retry.add(f"lane_{lane_key}")
         _persist_pair_status()
 
     n_rows = _write_outputs(new_frames)

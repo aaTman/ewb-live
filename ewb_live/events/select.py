@@ -106,9 +106,10 @@ SELF_SOURCE_TYPES = {"tropical_cyclone", "flood"}
 # documented ``unsupported`` pair status per (event, model) instead of leaving
 # phantom blockers in pair_coverage. EWB ships no metric set for best-track
 # storms, for tracked pressure minima, or for IMERG-accumulation floods.
-# tropical_cyclone left this set in WP1 (notes/scoring_design.md 8.3): it is scored
-# by the track-verification lane (scoring/tc.py + scoring/lane_pool.py), not by EWB.
-UNSCORED_TYPES = (TRACK_TYPES - {"tropical_cyclone"}) | {"flood"}
+# tropical_cyclone left this set in WP1 (notes/scoring_design.md 8.3) and midlat_cyclone in
+# WP2 (8.4): they are scored by the track-verification lanes (scoring/tc.py, scoring/mlc.py,
+# scoring/lane_pool.py), not by EWB.
+UNSCORED_TYPES = (TRACK_TYPES - {"tropical_cyclone", "midlat_cyclone"}) | {"flood"}
 # per-type quota overrides: a 90-day window is not 15 events.
 #  * tropical_cyclone: measured on IBTrACS v04r01 on 2026-11-17, the trailing
 #    90 days held 43 qualifying storms (16 NE Pacific, 14 NW Pacific, 7
