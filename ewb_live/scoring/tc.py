@@ -33,7 +33,10 @@ from . import track_verif as tv
 logger = logging.getLogger("ewb_live.scoring.tc")
 
 EVENT_TYPE = "tropical_cyclone"
-TRUTH_TAG = "ibtracs"                 # truth_source recorded in scores.parquet / part keys
+# truth_source recorded in scores.parquet / part keys. The "+landfall1" suffix versions the lane
+# output: parts and cached rows written before the EWB landfall rows existed carry "ibtracs" and are
+# invalidated by the pipeline's truth-source check, so the first run after deploy rescores the TC pairs.
+TRUTH_TAG = "ibtracs+landfall1"
 MIN_WIND_KT = 34.0                    # D2 (amended 2026-11-21): verify from the first fix >= 34 kt
 BASELINE_MODEL = "ifs_hres"           # D4: read through the ECMWF-direct path
 PARAMS = tv.TC_PARAMS

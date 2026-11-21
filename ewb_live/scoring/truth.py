@@ -46,7 +46,8 @@ def truth_source_for_event(event, cutoff: dt.datetime) -> str:
     valid instant scored is end - 1h; ARCO covering that instant suffices.
     """
     if getattr(event, "event_type", None) == "tropical_cyclone":
-        return "ibtracs"      # track lane: truth is the IBTrACS best track, not an ERA5 field
+        from .tc import TRUTH_TAG      # track lane: truth is the IBTrACS best track, not an ERA5 field
+        return TRUTH_TAG
     return "era5_arco" if event.end - dt.timedelta(hours=1) <= cutoff else "ifs_hres_analysis"
 
 
