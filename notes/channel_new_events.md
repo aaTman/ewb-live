@@ -4099,3 +4099,17 @@ rsync -a --delete $R/results/ data/results/ && systemctl restart ewb-live-web
 4. MLC (WP2), landfall classes (WP3) and flood (WP4) scoring still unscored.
 5. `/opt/ewb-live/_rollback_20261121_tc` (154 MB) can be deleted after the Monday weekly has run clean.
 6. Dev/preview trees (`/opt/ewb-preview-tc` :8062 etc.) untouched.
+## 2026-11-21 WP3 (EWB landfall classes for TC) - IN PROGRESS (agent: wp3-landfall)
+
+Branch `feat/scoring-tc-landfall`, private preview tree `/opt/ewb-preview-lf` on the ewb LXC (not /opt/ewb-live, not -dev). Built `ewb_live/scoring/landfall.py`
+(our followed tracks -> EWB `(lead_time, valid_time)` layout; target = the storm's own IBTrACS series keyed by `details.sid`, so no name filter is involved),
+rows `landfall_displacement` (km) / `landfall_time_me` (h, + = late) / `landfall_intensity_mae` (hPa) / `landfall_miss` (0/1), only for storms with an observed landfall.
+Finding: `calc.find_landfalls` de-duplicates forecast landfalls within 50 km ACROSS the inits it is given, so a pooled call (as EWB's pipeline makes) drops most inits' landfalls
+(synthetic case: 1 of 3 paired pooled, 3 of 3 per init); we call `LandfallMetric` once per init. Grunt (dashboard cells, synthetic tests, storm listing) delegated to Pi `fleet/agent`.
+
+### WP3 DONE (2026-11-21, agent: wp3-landfall) - PR to develop, not merged, not deployed
+14 of 44 storms have an observed landfall (EWB detector; the 24-of-44 proxy over-counted), 13 get rows (Olana's landfall precedes its first >= 34 kt init). Preview backfill
+(`/opt/ewb-preview-lf`, port 8071, 44 x 9 pairs): 381 `landfall_displacement` + 381 `landfall_time_me` + 381 `landfall_intensity_mae` + 996 `landfall_miss` rows; per-model landfall miss 0.43 (ifs_hres) .. 0.78.
+Unit: 4 failures fixed (truth-tag literal), 2 known box failures left; e2e on the preview 215 passed / 1 skipped; browser check at 1440 and 390 px (no page overflow, grey cells, honest note).
+**Deploy note:** `TRUTH_TAG` is now `ibtracs+landfall1`, so the first run after deploy invalidates the cached TC rows/parts and rescores the TC lane (~50 min at 12 workers, via `ops/lane_backfill.sh tc`).
+Details: notes/landfall_validation.md. Landfall time errors are quantised by the 6-h / 0.25 degree tracks (Nolo: -2.44 h for all 9 models).

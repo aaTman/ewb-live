@@ -33,7 +33,10 @@ from . import track_verif as tv
 logger = logging.getLogger("ewb_live.scoring.tc")
 
 EVENT_TYPE = "tropical_cyclone"
-TRUTH_TAG = "ibtracs"                 # truth_source recorded in scores.parquet / part keys
+# truth_source recorded in scores.parquet / part keys. The "+landfall1" suffix versions the lane
+# output: parts and cached rows written before the EWB landfall rows existed carry "ibtracs" and are
+# invalidated by the pipeline's truth-source check, so the first run after deploy rescores the TC pairs.
+TRUTH_TAG = "ibtracs+landfall1"
 MIN_WIND_KT = 34.0                    # D2 (amended 2026-11-21): verify from the first fix >= 34 kt
 BASELINE_MODEL = "ifs_hres"           # D4: read through the ECMWF-direct path
 PARAMS = tv.TC_PARAMS
@@ -248,6 +251,12 @@ def score_init(track: tv.ObservedTrack, model: str, init: dt.datetime, leads: li
         flat, flon, fp, ok, nod = tv.follow_track(
             fld, lat, lon, float(track.lat[i0]), float(track.lon[i0]), PARAMS)
         rec["samples"] = tv.verify_init(track, init, leads, offset, flat, flon, fp, ok, nod)
+        # the followed track itself (true init / true leads), for the EWB landfall classes
+        rec["fc_track"] = {"init_true": (init - dt.timedelta(hours=offset)).isoformat(),
+                           "lead_true": [float(h + offset) for h in leads],
+                           "lat": [float(x) if o else float("nan") for x, o in zip(flat, ok)],
+                           "lon": [float(x) if o else float("nan") for x, o in zip(flon, ok)],
+                           "p": [float(x) if o else float("nan") for x, o in zip(fp, ok)]}
         rec.update(offset_h=offset, read_s=round(t1 - t0, 3), track_s=round(time.perf_counter() - t1, 3))
     except (NoData, KeyError) as exc:          # a store gap; any other FileNotFoundError is a read error
         rec.update(status="no_data", reason=str(exc)[:160])
@@ -286,9 +295,30 @@ def finalize_pair(event, model: str, plan: dict, init_results: list[dict]):
     note = f"verified{since}: {n_planned - len(gaps)}/{n_planned} inits"
     if gaps:
         note += f" ({len(gaps)} missing from the store, not counted as misses)"
+    lf_info = _landfall_info(event, model, plan["track"], init_results)
+    if lf_info["status"] == "error":     # EWB side failed: retried next run, blocks full_run_complete
+        return None, {"status": "read_error", "rows": 0, "reason": "landfall classes failed: " + lf_info["reason"]}
+    lf_df = lf_info.pop("df")
+    if len(lf_df):
+        df = pd.concat([df, lf_df], ignore_index=True)
     return df, {"status": "scored", "rows": int(len(df)), "reason": note + skipped,
                 "n_inits": n_planned - len(gaps), "n_inits_no_data": len(gaps),
-                "n_inits_not_verified": n_nv}
+                "n_inits_not_verified": n_nv, "landfall": lf_info}
+
+
+def _landfall_info(event, model: str, track, init_results: list[dict]) -> dict:
+    """Landfall rows of one pair (``df``) + a small status dict; ``status == "error"`` when the
+    EWB side raised (the pair is then a ``read_error``, rescored next run)."""
+    from . import landfall
+
+    fc_tracks = [r["fc_track"] for r in init_results if r["status"] == "scored" and r.get("fc_track")]
+    try:
+        df, info = landfall.landfall_rows(event, model, track, fc_tracks)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("landfall (%s, %s) failed: %s: %s", event.id, model, type(exc).__name__, str(exc)[:200])
+        return {"df": pd.DataFrame(columns=tv.SCORE_COLUMNS), "status": "error",
+                "reason": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    return {"df": df, **info}
 
 
 def score_tc_event(event, models: list[str], reader: Callable | None = None,

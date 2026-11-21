@@ -166,6 +166,12 @@ function trackLaneNote(etype, n) {
     + 'the forecast is ahead of the storm, cross-track positive to its right. A forecast that loses the '
     + 'storm counts toward the miss rate and gets no error; cells above 50% misses are greyed. '
     + 'Central pressure is a signed bias at 0.25\u00b0 resolution, not a skill ranking.';
+  /* the landfall block only exists when the build carries its score rows */
+  if (scRows().some((r) => r.event_type === etype && r.metric.indexOf('landfall_') === 0)) {
+    s += ' The landfall block is scored by EWB\u2019s own landfall classes: only storms with an observed '
+      + 'landfall are included, a model that forecasts no paired landfall counts as a miss, and those '
+      + 'cells rest on few storms (n is shown in the tooltip).';
+  }
   if (tv && Number.isFinite(tv.n_inits_not_verified)) {
     s += ` Verification starts at each storm\u2019s first \u2265${tv.min_wind_kt} kt fix: `
       + `${tv.n_inits_verified} 00/12 UTC inits verified, ${tv.n_inits_not_verified} earlier ones not verified `
@@ -222,6 +228,12 @@ const FALLBACK_METRICS = {
   CrossTrackError:                 { label: 'Cross-track', units: 'km', higher_is_better: false, dir: 'zero' },
   CentralPressureError:            { label: 'Central pressure', units: 'hPa', higher_is_better: false, dir: 'zero' },
   TrackMiss:                       { label: 'Miss rate', units: '', higher_is_better: false },
+  /* landfall scores (EWB's landfall classes; only storms with an observed landfall).
+     The three value metrics are greyed by `landfall_miss`, the same 50 % rule. */
+  landfall_displacement:           { label: 'Landfall position', units: 'km', higher_is_better: false },
+  landfall_time_me:                { label: 'Landfall timing', units: 'h', higher_is_better: false, dir: 'zero' },
+  landfall_intensity_mae:          { label: 'Landfall intensity', units: 'hPa', higher_is_better: false },
+  landfall_miss:                   { label: 'Landfall miss rate', units: '', higher_is_better: false },
 };
 /* leads shown per track lane (D8): the store keeps every 6-hourly lead */
 const TYPE_LEADS = { tropical_cyclone: [24, 48, 72, 96, 120] };
@@ -235,15 +247,27 @@ function leadsForType(etype, leads) {
    (a ratio of tiny biases is not a skill) and the miss rate is read beside the error (D5). */
 function skillRanked(etype, met) { return !TYPE_LEADS[etype] || met === 'TrackPositionError'; }
 /* D5: a track-error cell whose model lost more than half its samples at that lead is greyed, and a
-   greyed cell feeds neither the verdict banner, the model order nor the Mean colour. */
+   greyed cell feeds neither the verdict banner, the model order nor the Mean colour.
+   The landfall value metrics use the same rule against their own miss rate (landfall_miss);
+   a miss-rate cell IS the evidence and is never greyed. */
+const LANDFALL_VALUE_METRICS = ['landfall_displacement', 'landfall_time_me', 'landfall_intensity_mae'];
+/* which 0/1 miss metric greys this one; null for the miss-rate cells themselves */
+function missSource(met) {
+  if (LANDFALL_VALUE_METRICS.includes(met)) return 'landfall_miss';
+  return met === 'TrackMiss' || met === 'landfall_miss' ? null : 'TrackMiss';
+}
 function missGreyed(idx, etype, met, lead, model) {
-  if (!TYPE_LEADS[etype] || met === 'TrackMiss') return false;
-  const mc = (idx.get(`${etype}|TrackMiss|${lead}`) || {})[model];
+  if (!TYPE_LEADS[etype]) return false;
+  const src = missSource(met);
+  if (!src) return false;
+  const mc = (idx.get(`${etype}|${src}|${lead}`) || {})[model];
   return !!(mc && Number.isFinite(mc.mean) && mc.mean > MISS_GREY);
 }
 /* D5: a cell whose miss rate is above this is greyed (its error rests on the storms the model kept) */
 const MISS_GREY = 0.5;
-const TRACK_METRIC_ORDER = ['TrackPositionError', 'TrackMiss', 'AlongTrackError', 'CrossTrackError', 'CentralPressureError'];
+/* the landfall metrics trail the track block as its second group (storms that reached land) */
+const TRACK_METRIC_ORDER = ['TrackPositionError', 'TrackMiss', 'AlongTrackError', 'CrossTrackError', 'CentralPressureError',
+  'landfall_displacement', 'landfall_time_me', 'landfall_intensity_mae', 'landfall_miss'];
 const BINARY_METRICS = new Set(['csi', 'CriticalSuccessIndex', 'Accuracy', 'EarlySignal']);
 
 /* ------------------------------------------------------------------ */
@@ -359,7 +383,7 @@ function fmtVal(metricId, v) {
   if (v === null || v === undefined || !Number.isFinite(v)) return '—';
   const u = metricMeta(metricId).units;
   if (BINARY_METRICS.has(metricId)) return v.toFixed(2).replace('-', '\u2212');
-  if (metricId === 'TrackMiss') return Math.round(v * 100) + '%';
+  if (metricId === 'TrackMiss' || metricId === 'landfall_miss') return Math.round(v * 100) + '%';
   const a = Math.abs(v);
   let s;
   if (a >= 100) s = v.toFixed(0);
@@ -1529,11 +1553,12 @@ function attachTip(td, etype, met, c) {
     }
     /* track lanes: how many verified samples the error rests on vs the samples tried */
     if (TYPE_LEADS[etype] && c.kind === 'lead') {
-      const mc = (idx0(etype, 'TrackMiss', c.lead) || {})[model || state.baseline];
-      if (met === 'TrackMiss' && Number.isFinite(c.ns)) {
+      const src = missSource(met) || met;   // landfall values pair against landfall_miss
+      const mc = (idx0(etype, src, c.lead) || {})[model || state.baseline];
+      if ((met === 'TrackMiss' || met === 'landfall_miss') && Number.isFinite(c.ns)) {
         rows.push(`<div class="t-row"><span>samples</span><b>${c.ns}</b></div>`);
       } else if (mc && Number.isFinite(mc.ns) && Number.isFinite(c.ns)) {
-        rows.push(`<div class="t-row"><span>tracked</span><b>${c.ns} of ${mc.ns} samples</b></div>`);
+        rows.push(`<div class="t-row"><span>${src === 'landfall_miss' ? 'landfall-paired' : 'tracked'}</span><b>${c.ns} of ${mc.ns} samples</b></div>`);
       }
       if (c.greyed) {
         rows.push(`<div class="t-row t-small"><span>miss rate</span><b class="t-warn">above ${Math.round(MISS_GREY * 100)}% \u00b7 greyed</b></div>`);
