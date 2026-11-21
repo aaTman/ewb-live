@@ -416,6 +416,20 @@ def _merge_component(members: list, decisions: list[dict]):
                 if (m.details or {}).get(key) is not None]
 
     det = dict(core.details or {})
+    # Per-box provenance (fill / daily_fill / the two box areas / anchor_box)
+    # describes the CORE's own published rectangle. When the merged bbox is
+    # the union of members' boxes those numbers are a lie for the rectangle
+    # the map draws and the scorer scores (review #3: -20260909 boxes scored
+    # against a partner's fill). The masks are not available this far
+    # downstream, so drop the fields and record it (per_box_voided); the
+    # core-fallback merge keeps them - there the bbox IS the core's box.
+    if tuple(bbox) != tuple(core.bbox):
+        voided = [k for k in ("fill", "daily_fill", "published_box_area_km2",
+                              "tracker_box_area_km2", "anchor_box") if k in det]
+        for k in voided:
+            det[k] = None
+        if voided:
+            det["per_box_voided"] = voided
     if _vals("max_consecutive_days"):
         det["max_consecutive_days"] = max(_vals("max_consecutive_days"))
     if _vals("peak_area_km2"):

@@ -310,3 +310,43 @@ def test_adjudicated_exclusion_drops_event(tmp_path, monkeypatch):
     assert [e.id for e in out] == [b.id]
     drop = [d for d in decisions if d["action"] == "drop" and d["id"] == a.id]
     assert drop and "post-tropical cyclone" in drop[0]["reason"]
+
+
+# ------------------------------------------------- merged per-box provenance
+
+def test_merged_event_voids_the_per_box_provenance():
+    """Review #3: the merged union bbox must not ship the core's per-box fields."""
+    d0 = dt.date(2026, 9, 1)
+    core = mk("heat_wave", d0, 4, (10.0, 20.0, 0.0, 10.0), 40.0, sev=5,
+              fill=0.9, daily_fill=0.7, published_box_area_km2=1.0e6,
+              tracker_box_area_km2=1.2e6, anchor_box=[10.0, 20.0, 0.0, 10.0])
+    mate = mk("heat_wave", d0 + dt.timedelta(days=3), 4,
+              (11.0, 19.0, 4.0, 14.0), 38.0, sev=3)
+    out = select.rank_and_cap([core, mate], top_n=15)
+    assert len(out) == 1
+    merged = out[0]
+    assert merged.bbox == (10.0, 20.0, 0.0, 14.0)      # the union
+    for key in ("fill", "daily_fill", "published_box_area_km2",
+                "tracker_box_area_km2", "anchor_box"):
+        assert merged.details[key] is None, key
+    assert sorted(merged.details["per_box_voided"]) == sorted(
+        ["fill", "daily_fill", "published_box_area_km2",
+         "tracker_box_area_km2", "anchor_box"])
+    assert merged.details["merged_count"] == 2
+
+
+def test_core_fallback_merge_keeps_the_per_box_provenance():
+    """The core-fallback bbox IS the core's box - its fields stay valid."""
+    d0 = dt.date(2026, 9, 1)
+    # the severity-ordered union spans 41 deg of latitude -> over
+    # CAP_LAT_SPAN, so _merge_component falls back to the core's own bbox
+    core = mk("heat_wave", d0, 4, (0.0, 39.0, 0.0, 60.0), 40.0, sev=5,
+              fill=0.9, published_box_area_km2=1.0e6)
+    far = mk("heat_wave", d0 + dt.timedelta(days=3), 4,
+             (1.0, 41.0, 0.0, 60.0), 38.0, sev=3)
+    decisions: list[dict] = []
+    merged = select._merge_component([core, far], decisions)
+    assert merged.bbox == core.bbox                    # core-fallback bbox
+    assert merged.details["fill"] == 0.9
+    assert merged.details["published_box_area_km2"] == 1.0e6
+    assert "per_box_voided" not in merged.details
