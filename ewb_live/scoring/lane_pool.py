@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from . import mlc as mlc_lane
 from . import tc as tc_lane
 from . import track_verif as tv
 
@@ -79,13 +80,45 @@ def tc_models(models: list) -> tuple[list, dict]:
     return ok, why
 
 
+def mlc_models(models: list) -> tuple[list, dict]:
+    """The MLC lane scores the same 8 MLWP-store models and the ``ifs_hres`` baseline (D4)."""
+    ok, why = tc_models(models)
+    why = {m: "midlat_cyclone scores the 8 MLWP-store models and the ifs_hres baseline "
+              "(track lane, MSLP only)" for m in why}
+    return ok, why
+
+
 LANES: dict[str, Lane] = {
     "tc": Lane(event_type=tc_lane.EVENT_TYPE, truth=tc_lane.TRUTH_TAG, models=tc_models,
                plan=tc_lane.plan_for, init_job=tc_lane.score_init, finalize=tc_lane.finalize_pair,
                label="tropical cyclone"),
+    "mlc": Lane(event_type=mlc_lane.EVENT_TYPE, truth=mlc_lane.TRUTH_TAG, models=mlc_models,
+                plan=mlc_lane.plan_for, init_job=mlc_lane.score_init, finalize=mlc_lane.finalize_pair,
+                label="mid-latitude cyclone"),
 }
 LANE_BY_EVENT_TYPE = {ln.event_type: ln for ln in LANES.values()}
+LANE_KEY_BY_EVENT_TYPE = {ln.event_type: key for key, ln in LANES.items()}
 LANE_TYPES = frozenset(LANE_BY_EVENT_TYPE)
+
+
+def score_event_serial(event, models: list[str], status_out: dict | None = None, reader=None):
+    """In-process ``(DataFrame, {model: status})`` of one event of a lane (the production path is
+    the pool; this is ``pipeline._score_job``'s fallback and the tests' equivalent)."""
+    import pandas as pd
+
+    lane = LANE_BY_EVENT_TYPE[event.event_type]
+    plan = lane.plan(event)
+    frames, status = [], {}
+    for m in models:
+        recs = [lane.init_job(plan["track"], m, init, leads, *([reader] if reader else []))
+                for init, leads in plan["verified"]]
+        df, st = lane.finalize(event, m, plan, recs)
+        status[m] = st
+        if df is not None:
+            frames.append(df)
+    if status_out is not None:
+        status_out.update(status)
+    return (pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=tv.SCORE_COLUMNS)), status
 
 
 # =============================================================================
