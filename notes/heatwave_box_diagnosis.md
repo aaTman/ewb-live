@@ -511,12 +511,32 @@ single frame inside the published rectangle reaches the 200 k km² floor
 publish-box question, not a tracking one, and it predates this change.
 
 **The split is real.** Of the 31, 16 have a live event that starts exactly on
-the closing day and overlaps the closed spell's box (15 heat, 1 freeze), i.e. in
-half the cases the region really did seed a successor the same day. Under C3
-only 2 of those 15 pairs are covered by a single replay object; under the
-qualification clock 11 of 15 are (10 heat, 1 freeze) — the other five are
+the closing day and overlaps the closed spell's box (15 heat waves, 1 freeze),
+i.e. in half the cases the region really did seed a successor the same day. Under
+C3 only 2 of those 16 pairs are covered by a single replay object; under the
+qualification clock 11 of 16 are (10 heat, 1 freeze) - the other five are
 genuinely separate systems, and the remaining 15 of the 31 events never had a
 successor: they were simply cut short on their best day.
+
+**Ongoing ids stay stable.** `scripts/review/hb04_ongoing_ids.py` (W1
+2026-08-21..11-02, then the two things a weekly run does - extend +7 d at the
+same start, and extend +7 d with the 90-day start slid +7 d), per ruleset
+`shipped` / `c3_core_from_start` / `c3_qualify` (= production now):
+
+| ruleset | ongoing at the cut | pairable in the next week | same id, anchor basis (shipped) | same id, published-box basis (old) |
+| --- | --- | --- | --- | --- |
+| shipped | 5 | 5 / 5 | 5, then 4 (slid start) | 3, 3 |
+| C3, core from start | 6 | 5 / 6 | 5, 5 | 3, 3 |
+| C3 + qualification clock | 7 | 6 / 7 | **6, 6** | 4, 4 |
+
+Every ongoing spell that can be followed keeps its id under the shipped
+anchor-basis hash on both weekly moves - which is the property the id was given
+the anchor basis for - while the old published-box hash keeps 4 of 7. One of the
+7 does not pair at all: with the anchor frozen at qualification it is a bigger
+box, and over +7 d its far edge moved more than the 3-cell pairing tolerance in
+`hb04` (the same single loss appears in the C3-from-start ruleset, so this is the
+pairing rule's tolerance, not the clock's). Worth a look if the owner wants
+ongoing continuity to be total; not retuned here.
 
 **Freeze was being measured on the wrong population** (round-2 review item): the
 replay scripts fed the lane's p15 bits to the tracker for both freeze and
@@ -538,13 +558,13 @@ largest merged window 42 d, 3 pairs over the 16-day `select.MERGE_CAP_DAYS`
 envelope (3 under C3 as well), none over the 45-day hard cap. Freeze and
 cold_snap: 1 mergeable pair each.
 
-**The cost is catalogue size.** The heat replay goes 162 → 163 → **189** events:
-spells that used to be ended at their qualifying day either survive past
-`min_days` or no longer re-seed a successor, so the published catalogue grows
-about 17 % and the churn against the shipped rule is 48 lost / 75 gained (C3 was
-45 / 46). More events means more scoring jobs per weekly run and a one-off id
-re-hash on top of the C3 re-hash; boxes and fills all improve at the same time
-(fill median 0.83, box median 1.05 M km², box p90 3.11 M km²). If +38 heat waves
-is not wanted, the lever is the publish side (`min_days`, or the per-type curation
-top-N), not a threshold in the core rule — reported for the owner's call rather
-than tuned here.
+**The cost is membership churn, not workload.** The raw replay goes 162 → 163 →
+**189** heat events: spells that used to be ended at their qualifying day either
+survive past `min_days` or no longer re-seed a successor, and the churn against
+the shipped rule is 48 lost / 75 gained (C3 was 45 / 46). What the dashboard and
+the scorecard see is capped by curation - `select.rank_and_cap` keeps 15 heat
+waves per window (`DEFAULT_TOP_N`; the live selection is 15 heat / 5 freeze /
+8 cold snaps) - so weekly scoring volume does not change; which events occupy
+those slots does, and the release re-hashes ids once on top of the C3 re-hash.
+Boxes and fills all improve at the same time (fill median 0.83, box median 1.05
+M km², box p90 3.11 M km²).

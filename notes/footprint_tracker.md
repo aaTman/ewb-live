@@ -105,13 +105,16 @@ The qualification clock is not a box-size change — C3 already fixed the boxes 
 it is a *spell-continuity* change, and it makes every metric above better or
 level: the events that used to be cut off at their own qualifying day now live
 long enough to be valid at all, which is where the +26 heat waves come from
-(163 → 189; the published catalogue would carry 151 → ~189 heat events, more
-scoring jobs per week, and 48/75 lost/gained membership vs the shipped rule).
-Nothing breaks a duration gate: the longest heat spell is 31 days against the
-45-day publish ceiling (`validate.MAX_DURATION_DAYS`), and no replayed event
-exceeds it. Curation merge pressure barely moves (20 mergeable heat pairs,
-largest merged window 42 d, 3 over the 16-day `select.MERGE_CAP_DAYS` envelope
-— three in the C3 replay too, and still under the 45-day hard cap).
+(163 → 189, churn 48 lost / 75 gained against the shipped rule, C3 was 45 / 46).
+Curation caps what ships — `select.rank_and_cap` keeps 15 heat waves per window
+(`DEFAULT_TOP_N`; the live selection is 15 heat / 5 freeze / 8 cold snaps) — so
+this changes which events are scored, not how many, on top of the one-off id
+re-hash the release already carries. Nothing breaks a duration gate: the longest
+heat spell is 31 days against the 45-day publish ceiling
+(`validate.MAX_DURATION_DAYS`), and no replayed event exceeds it. Curation merge
+pressure barely moves (20 mergeable heat pairs, largest merged window 42 d, 3
+over the 16-day `select.MERGE_CAP_DAYS` envelope — three in the C3 replay too,
+and still under the 45-day hard cap).
 
 ## The 2026-11-20 box-size change (strategy `C3_valid_box_persist`)
 

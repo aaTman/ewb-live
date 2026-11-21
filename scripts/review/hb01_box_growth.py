@@ -982,7 +982,6 @@ def successor_audit(path: Path, w: Window, rows_by_stage: dict[str, list[dict]],
         if str(det.get("qualified_date") or "") != str(d["end"][:10]):
             continue
         qd = dt.date.fromisoformat(str(d["end"][:10]))
-        box = box_from_bbox(w, tuple(d["bbox"]))
         closed = {"id": d["id"], "start": d["start"][:10], "end": d["end"][:10],
                   "bbox": list(d["bbox"])}
         succ = [x for x in live
