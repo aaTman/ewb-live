@@ -209,6 +209,32 @@ def test_a_cold_snap_without_a_freeze_survives(tmp_path, monkeypatch):
     assert decisions == []
 
 
+def test_subsumption_on_the_smaller_c3_boxes():
+    """C3's persistence boxes are smaller: the overlap decision follows the
+    published rectangles, so a side-by-side spell that shared a legacy
+    mega-box now survives, while a real (small-box) overlap still subsumes."""
+    from ewb_live.events.types import Event
+
+    def ev(id_, etype, bbox):
+        return Event(id=id_, event_type=etype, title=etype,
+                     start=dt.datetime(2026, 9, 1), end=dt.datetime(2026, 9, 4),
+                     bbox=bbox, peak_value=0.0)
+
+    # a freeze persistence box next door (10..12E) and a cold snap at 14..16E:
+    # under a legacy union-style box both sat inside one rectangle; the C3
+    # rectangles do not intersect, so the cold snap is published
+    frz = ev("f1", "freeze", (40.0, 45.0, 10.0, 12.0))
+    cold = ev("c1", "cold_snap", (40.0, 45.0, 14.0, 16.0))
+    kept = cs.subsume_freeze_overlaps([cold, frz], [])
+    assert [e.id for e in kept] == ["c1", "f1"]
+    # one degree of box overlap (time+space) is still subsumed
+    near = ev("c2", "cold_snap", (40.0, 45.0, 11.0, 16.0))
+    decisions: list[dict] = []
+    kept = cs.subsume_freeze_overlaps([near, frz], decisions)
+    assert [e.id for e in kept] == ["f1"]
+    assert decisions[0]["reason"] == "freeze-subsumed"
+
+
 def test_subsumption_only_ever_removes_cold_snaps(tmp_path, monkeypatch):
     """Freeze and heat members pass through untouched, in input order."""
     from ewb_live.events.types import Event

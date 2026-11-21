@@ -60,8 +60,11 @@ the old rule is reproducible):
   dilate(footprint, move_cells)`; kills H3/H4/H5 growth).
 * `seed_valid_only` — a candidate's first footprint/box is the region's valid
   cells, never its closing-filled bridge cells.
-* `merge_keep_box` — the older object keeps its box on a merge; the group's
-  claimed cells are clipped into it. A merge never unions two boxes.
+* `merge_keep_box` — the older object keeps its box on a merge; each YOUNGER
+  member's claim is clipped into it, while the survivor keeps growing by its
+  own valid claims within `move_cells` (round-1 fix — clipping the survivor's
+  own drift cells too split drifting spells in two). A merge never unions
+  two boxes.
 * `publish_box="persistence"` (+ `publish_min_fraction=0.5`, `publish_trim=0.02`)
   — the published Event bbox is `persistence_box()`: the bbox of the cells
   valid on ≥ `max(2, ⌈0.5 × days⌉)` days, trimmed to their area-weighted 2–98 %
@@ -71,6 +74,18 @@ the old rule is reproducible):
 
 The flood lane (`FloodParams`) pins the tracking knobs to the shipped rules —
 the change was designed and measured for heat/freeze only.
+
+Test coverage (`tests/test_event_tracker.py`): the C3 knobs are pinned per
+rule (`test_claim_takes_only_valid_cells_inside_the_drift_window`,
+`test_footprint_and_seed_box_hold_only_valid_cells`,
+`test_merge_keeps_the_older_box`), the merge fix has its drift/split repro
+(`test_drifting_event_keeps_its_own_cells_when_a_merge_is_clipped`) and the
+`ending()`-vs-claim agreement its own test
+(`test_ending_grows_only_over_the_claim_rule`); the shipped-knob versions of
+the cap / capped-neighbour / release / anchor cases are the
+`test_c3_*`/`test_c3_capped_*` tests, each annotated with why the C3 outcome
+differs from the LEGACY-pinned one; the publish rule has the
+`test_persistence_box_*` and seam cases.
 
 Measured on the live window (LXC replay, `scripts/review/hb01_box_growth.py`;
 see `notes/heatwave_box_diagnosis.md` §4 and "Implementation result"): heat
