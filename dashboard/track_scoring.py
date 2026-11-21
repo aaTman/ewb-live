@@ -27,6 +27,25 @@ For one verified sample = (storm, model, init, lead):
   TrackMiss = 1 when the model has no closed low to follow at that step (two
   steps in a row without one lose the track for the rest of the run), else 0.
   A miss gets no error value: it is counted in the miss rate, never imputed.
+
+Landfall scores (EWB's own landfall classes, for storms that make landfall only).
+The observed landfall is the best-track crossing of the coast; the forecast
+landfall is the model track's own crossing paired to it. A sample = (storm,
+init); its lead_time_hours is the hours from the init to the OBSERVED landfall
+(rounded to 6 h), so the cells share the track columns 24 / 48 / 72 / 96 / 120.
+
+  landfall_displacement   great-circle km between the forecast and the observed
+                          landfall point. Lower is better.
+  landfall_time_me        forecast landfall time - observed landfall time (h);
+                          positive = the forecast lands later than the storm did.
+                          Read as a bias to 0, like the cross-track component.
+  landfall_intensity_mae  |forecast MSLP - best-track pressure| at the landfall
+                          point (hPa). Lower is better.
+  landfall_miss           1 when an observed landfall lay ahead within the horizon
+                          but the model produced no paired landfall (no landfall
+                          forecast, the track was lost, or the timing was off by
+                          more than 24 h), else 0. A miss is counted in the miss
+                          rate, never imputed — the same rule as TrackMiss.
 """
 import math
 
