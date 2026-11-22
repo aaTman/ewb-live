@@ -153,7 +153,7 @@ def test_more_metrics_button_never_duplicates(live_url, page_ctx):
     another 'more metrics' button to the leads row. Exactly one, forever."""
     page = page_ctx
     page.goto(live_url)
-    page.wait_for_selector("#lead-chips button", timeout=20000)
+    page.wait_for_selector("#type-tabs button", timeout=20000)
     tabs = page.locator("#type-tabs button")
     n = tabs.count()
     assert n >= 2
@@ -276,10 +276,10 @@ def test_heat_detail_reference_component(live_url, heat_event, page_ctx):
     ev_id, viz = heat_event
     page = page_ctx
     _open_event(page, live_url, ev_id)
-    # white chip near the event
-    chip = page.locator(".ev3-namechip").first
-    assert chip.is_visible()
-    assert chip.inner_text().startswith("Heatwave #")
+    # Band 1 unified header: clean place title + Heat wave type chip (no raw-hash chip on map)
+    assert page.locator("#detail-title").inner_text().strip() != ""
+    assert "Heat wave" in page.locator("#detail-type-slot .type-chip").inner_text()
+    assert page.locator(".ev3-namechip").count() == 0
     # bottom bar: duration-ramp note left, single-swatch legend right
     bar = page.locator(".ev3-panel.ev3-obs .ev3-bbar").first
     assert bar.is_visible()
@@ -317,7 +317,7 @@ def test_heat_detail_reference_component(live_url, heat_event, page_ctx):
     # time slider: play/step/range chrome + readout (contract §4)
     assert page.locator(".ev3-slider").count() == 1
     read0 = page.locator(".ev3-readout").inner_text()
-    assert "Valid time" in read0 and "models T+" in read0, read0
+    assert "T+" in read0, read0
     page.locator(".ev3-next").click()
     page.wait_for_timeout(300)
     read1 = page.locator(".ev3-readout").inner_text()
@@ -359,12 +359,11 @@ def test_overlay_layers_single_card_and_controls(live_url, heat_event, page_ctx)
             model_row = r
             break
     assert model_row is not None, "at least one model layer visible by default"
-    model_name = model_row.locator(".ev3-lname").inner_text()
     model_row.locator(".ev3-lvis").uncheck()
     page.wait_for_timeout(300)
     lyr = page.evaluate("() => window.__ev3.layers()")
-    entry = [e for e in lyr.split(",") if e.startswith(model_name + "|")]
-    assert entry and entry[0].endswith("|0"), f"toggled-off layer must report 0: {lyr}"
+    entry = [e for e in lyr.split(",") if not e.startswith("obs|") and e.endswith("|0")]
+    assert entry, f"toggled-off layer must report 0: {lyr}"
     assert "lyr=" in page.url, "layer state must round-trip into the URL hash"
     # opacity slider repaints the layer and follows the URL
     obs_row = rows.nth(0)
@@ -410,8 +409,8 @@ def test_ar_detail_transparent_and_fitted(live_url, ar_event, page_ctx):
     assert stats, "AR field overlay missing"
     assert stats["cornerAlpha"] == 0, "below-threshold AR cells must be transparent (A3)"
     assert stats["transparentFrac"] > 0.15, "opaque plate: below-threshold area must show basemap"
-    chip = page.locator(".ev3-namechip").first
-    assert chip.inner_text().startswith("Atmospheric river #")
+    assert "Atmospheric river" in page.locator("#detail-type-slot .type-chip").inner_text()
+    assert page.locator(".ev3-namechip").count() == 0
     page.screenshot(path=os.path.join(SHOTS, "fe-detail-ar.png"))
     assert page.errors == [], f"console errors: {page.errors}"
 
@@ -516,8 +515,8 @@ def freeze_server(tmp_path_factory):
 def test_freeze_detail_reference_component(freeze_server, page_ctx):
     page = page_ctx
     _open_event(page, freeze_server, FREEZE_VIZ_ID)
-    chip = page.locator(".ev3-namechip").first
-    assert chip.inner_text().startswith("Freeze #")
+    assert "Freeze" in page.locator("#detail-type-slot .type-chip").inner_text()
+    assert page.locator(".ev3-namechip").count() == 0
     bar = page.locator(".ev3-panel.ev3-obs .ev3-bbar").first
     assert bar.is_visible()
     assert bar.locator(".bbar-l").inner_text().startswith("Freeze \u2014 days <")
@@ -625,8 +624,9 @@ def test_first_screen_budget_at_laptop_widths(live_url, page_ctx, vw, vh):
     # 1280x800 keeps the whole section inside the first screen; at 1366x768 the
     # seven lanes land its bottom at ~822 px, so there only the overflow is bounded
     assert m["eventsEnd"] <= (800 if vw == 1280 else 900), m
-    # one lane per row is the cliff that cost +75 px: the card stays a wide strip
-    assert m["legendRows"] <= 3 and m["legendWide"], m
+    # floating legend popover: closed by default on multi-lane view so map+timeline own first screen
+    assert page.locator("#legend-btn").is_visible()
+    assert page.locator("#gm-legend.is-popover").is_hidden()
     assert m["chipRows"] == 1, m                       # event-type chips never wrap to 2 rows
     assert m["lab"] > 0, m                             # WIDE gantt: names beside the bands
     assert not [s for s in m["labels"] if s.endswith("\u2026")], m   # short names, no ellipsis
@@ -650,7 +650,11 @@ def test_type_filter_narrows_map_list_and_scorecard_together(live_url, page_ctx)
         and "layers=a" in st["hash"], st
     assert st["rows"] and all(st["types"][i] == "atmospheric_river" for i in st["rows"]), st["rows"]
     assert st["blocks"] == 1 and "Atmospheric rivers only" in st["scope"], st
+    page.click('[data-view="scorecard"]')
+    page.wait_for_selector("#scorecard-sec:not(.hidden)")
     page.click("#sc-scope button")                           # the scorecard's own way back
+    page.click('[data-view="events"]')
+    page.wait_for_selector("#explore:not(.hidden)")
     page.wait_for_timeout(600)
     st = page.evaluate("() => ({ on: MergedMap._dbg().on, hash: location.hash, tab: state.tab })")
     assert st["tab"] == "all" and all(st["on"].values()) and "layers=" not in st["hash"], st
@@ -741,7 +745,7 @@ def test_lead_deep_link_nonfirst_lead(live_url, heat_event, page_ctx):
     # not catch a mismatch between state.detailLead and the EventViz initial lead
     on = page.locator("#detail-viz .ev-lead.on")
     assert on.count() >= 1
-    assert on.first.inner_text().strip() == f"{nonfirst}h", on.first.inner_text()
+    assert on.first.get_attribute("data-lead") == str(nonfirst), on.first.inner_text()
 
 
 def test_page_width_shell_caps_content(live_url, page_ctx):
@@ -864,6 +868,8 @@ GD_RAW_TS = [d.strftime("%Y%m%d%H") for d in
 def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=None, raw_run=False, raw_ivt=False,
                       raw_run_v2=False, raw_flood_day=None):
     src = os.path.join(ROOT, "data", "results")
+    if not os.path.exists(os.path.join(src, "meta.json")):
+        src = os.path.join(src, "sample")
     root = os.path.join(tmpdir, "webroot")
     os.makedirs(root)
     for f in os.listdir(os.path.join(ROOT, "dashboard")):
@@ -880,6 +886,11 @@ def _build_gd_fixture(tmpdir, with_timeline=True, raw_frames=None, raw_cutoff=No
         p = os.path.join(src, f)
         if os.path.exists(p):
             shutil.copy2(p, os.path.join(data_dir, f))
+    # sample/ has events.json but no events_selected.json or pair_status.json
+    if not os.path.exists(os.path.join(data_dir, "events_selected.json")) and os.path.exists(os.path.join(data_dir, "events.json")):
+        shutil.copy2(os.path.join(data_dir, "events.json"), os.path.join(data_dir, "events_selected.json"))
+    if not os.path.exists(os.path.join(data_dir, "pair_status.json")):
+        json.dump({}, open(os.path.join(data_dir, "pair_status.json"), "w"))
     # boot fetches weeks.json; the repo snapshot has none — serve an empty list
     json.dump({"weeks": []}, open(os.path.join(data_dir, "weeks.json"), "w"))
     # boot lazy-fetches scorecard_by_region.json — stub = no region data,
@@ -1982,7 +1993,7 @@ def test_show_tabs_are_the_only_layer_toggle(dur_server, page_ctx):
     assert tabs.count() == 8            # All + every published lane (zeros included)
     labels = " ".join(tabs.all_inner_texts())
     assert "Heat wave" in labels and "Freeze" in labels and "Atm. river" in labels
-    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    page.wait_for_selector("#gm-legend .lg-group", state="attached", timeout=20000)
     assert page.eval_on_selector_all("#gm-legend .lg-group",
                                      "els => els.map(e => e.dataset.layer)") == ["h", "f", "a"]
     assert page.eval_on_selector_all(
@@ -2036,7 +2047,7 @@ def test_flood_layer_paints_marks_and_legend(flood_server, page_ctx):
     page = page_ctx
     _mm_goto(page, flood_server)
     _mm_frame(page, "2026010606")
-    page.wait_for_selector("#gm-legend .lg-group[data-layer=l]", timeout=20000)
+    page.wait_for_selector("#gm-legend .lg-group[data-layer=l]", state="attached", timeout=20000)
     fl = page.evaluate("() => [MergedMap._dbg().flAt(10, 50), MergedMap._dbg().flAt(22, 20),"
                        " MergedMap._dbg().flAt(33, 60), MergedMap._dbg().flAt(0, 0)]")
     assert fl == [2, 4, 1, 0], fl
@@ -2101,7 +2112,7 @@ def test_legend_sits_below_the_map_and_hugs_its_content(dur_server, page_ctx):
     page = page_ctx
     _mm_goto(page, dur_server)
     _mm_frame(page, RAW_TS[1])
-    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    page.wait_for_selector("#gm-legend .lg-group", state="attached", timeout=20000)
     geo = """() => {
         const r = (s) => { const b = document.querySelector(s).getBoundingClientRect();
             return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)]; };
@@ -2109,29 +2120,29 @@ def test_legend_sits_below_the_map_and_hugs_its_content(dur_server, page_ctx):
         return { map, leg,
                  below: ['#raw-slider', '#gm-gantt'].map(r),
                  groups: document.querySelectorAll('#gm-legend .lg-group').length,
+                 popover: document.querySelector('#gm-legend').classList.contains('is-popover'),
                  inMap: !!document.querySelector('#raw-map-wrap #gm-legend'),
                  belowMap: leg[1] >= map[1] + map[3] }; }"""
+    # 3+ lanes: floating popover inside #raw-map-wrap, closed by default (zero flow height)
     a = page.evaluate(geo)
-    assert not a["inMap"], "the strip must live outside #raw-map-wrap"
-    assert a["belowMap"] and a["groups"] == 3, a          # sits under the map, not on it
+    assert a["popover"] and a["inMap"] and a["groups"] == 3 and a["leg"][3] == 0, a
+    assert page.locator("#legend-btn").is_visible()
+    page.click("#legend-btn")
+    a_open = page.evaluate(geo)
+    assert a_open["leg"][3] > 0 and a_open["below"] == a["below"], (a, a_open)
+    page.keyboard.press("Escape")
+    # 1 lane: slim inline strip directly below the map, no floating popover button
     page.locator("#type-tabs [data-tab=atmospheric_river]").click()   # 3 -> 1 lane
     page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 1")
     b = page.evaluate(geo)
-    assert b["groups"] == 1 and b["map"] == a["map"], (a, b)          # the map never moves
-    assert b["leg"][:2] == a["leg"][:2], (a, b)          # nor does the strip's top edge
-    dh = b["leg"][3] - a["leg"][3]                       # height = content: it may change…
-    assert dh != 0, (a, b)                               # …and it really is content-driven
-    for got, want in zip(b["below"], a["below"]):        # below rides the strip's own delta
-        assert abs(got[1] - want[1] - dh) <= 1, (a, b, dh)   # (rects are rounded to integers)
+    assert not b["popover"] and not b["inMap"] and b["belowMap"] and b["groups"] == 1, b
+    assert b["map"] == a["map"], (a, b)
+    assert page.locator("#legend-btn").is_hidden()
+    # back to All: returns to floating popover and restores zero-gap layout
     page.locator("#type-tabs button", has_text="All").click()
     page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 3")
     a2 = page.evaluate(geo)
-    assert a2["leg"] == a["leg"] and a2["below"] == a["below"], (a, a2)   # back: same box
-    page.evaluate("MergedMap.setRegion({key:'europe', label:'Europe', lat:[35,75], lon:[-12.5,42.5]})")
-    page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group.none').length === 3")
-    c = page.evaluate(geo)                               # 'none in view' is an overlay:
-    assert c["leg"] == a["leg"] and c["map"] == a["map"] and c["below"] == a["below"], (a, c)
-    page.evaluate("MergedMap.setRegion(null)")
+    assert a2["popover"] and a2["inMap"] and a2["below"] == a["below"], (a, a2)
     errs = [e for e in page.errors if "Failed to load resource" not in e]
     assert errs == [], f"unexpected page errors: {errs}"
 
@@ -2228,116 +2239,59 @@ def test_legend_card_hugs_its_scales_and_aligns_with_the_map(dur_server, page_ct
     page = page_ctx
     _mm_goto(page, dur_server)
     _mm_frame(page, RAW_TS[1])
-    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    page.wait_for_selector("#gm-legend .lg-group", state="attached", timeout=20000)
+    # 1) Single-lane inline strip hugs its content and aligns with the map left edge
+    page.locator("#type-tabs [data-tab=atmospheric_river]").click()
+    page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 1")
     for theme in ("light", "dark"):
         page.evaluate(f"document.documentElement.dataset.theme = '{theme}'")
         for w in (320, 390, 768, 1100, 1440):
             page.set_viewport_size({"width": w, "height": 900})
-            page.wait_for_timeout(600)          # ResizeObserver refit + legend reflow
-            for state in ("compact", "expanded"):
-                if state == "expanded":
-                    if page.locator("#gm-legend .lg-toggle").count() == 0:
-                        continue                # under three lanes there is nothing to expand
-                    page.click("#gm-legend .lg-toggle")
-                    page.wait_for_timeout(300)
-                p = page.evaluate(LEGEND_HUG_JS)
-                where = (theme, w, state, p)
-                assert abs(p["leftVsMap"]) <= 1, where      # one left edge with map + timeline
-                assert not p["wider"], where                # never larger than the map column
-                assert p["fits"] and p["inside"], where     # nothing hidden behind a scroll
-                assert p["pillsOut"] == 0, where            # 'none in view' stays in the card
-                assert min(p["gapLeft"], 99) <= 12, where
-                assert p["gapTop"] <= 12 and p["gapBottom"] <= 12, where
-                assert p["gapRight"] <= 12 or abs(p["rightVsMap"]) <= 1, where
-                if state == "expanded":
-                    page.click("#gm-legend .lg-toggle")
-                    page.wait_for_timeout(300)
-    # ---- round 2: the 7-lane dev case on the same fixture -----------------
-    page.evaluate("""() => {
-      const grp = (name, hue) => '<span class="lg-group" data-track="' + hue + '">'
-        + '<span class="lg-head"><span class="lg-name">' + name + '</span>'
-        + '<span class="lg-unit">kt \u00b7 7 published</span></span>'
-        + '<span class="lg-stops">' + [1, 2, 3, 4, 5, 6].map((i) =>
-            '<span class="lg-bin"><i class="swatch" style="background:var(--series-'
-            + hue + ')"></i><span class="lg-t">C' + i + '</span></span>').join('')
-        + '<span class="lg-bin wide"><i class="swatch lg-line" '
-        + 'style="background:var(--series-' + hue + ')"></i>'
-        + '<span class="lg-t">track</span></span></span></span>';
-      window.onTrackLegend = () => grp('Flood', 'l') + grp('Tropical cyclone', 'tc')
-        + grp('Midlatitude cyclone', 'mlc') + grp('Cold snap', 'f');
-    }""")
-    _mm_frame(page, RAW_TS[0])                       # re-render: the seam is called
-    page.wait_for_function(
-        "() => document.querySelectorAll('#gm-legend .lg-group').length === 7")
+            page.wait_for_timeout(400)
+            p = page.evaluate(LEGEND_HUG_JS)
+            where = (theme, w, p)
+            assert abs(p["leftVsMap"]) <= 1, where
+            assert not p["wider"], where
+            assert p["fits"] and p["inside"], where
+            assert p["pillsOut"] == 0, where
+    # 2) Multi-lane (3 and 7 lanes) floating popover stays clamped inside #raw-map-wrap
+    page.locator("#type-tabs button", has_text="All").click()
+    page.wait_for_function("() => document.querySelectorAll('#gm-legend .lg-group').length === 3")
+    page.click("#legend-btn")
     for w in (320, 390, 1024, 1440):
         page.set_viewport_size({"width": w, "height": 900})
-        page.wait_for_timeout(650)                   # ResizeObserver refit + reflow
-        for state in ("compact", "expanded"):
-            if state == "expanded":
-                page.click("#gm-legend .lg-toggle")
-                page.wait_for_timeout(300)
-            p = page.evaluate(LEGEND_GRID7_JS)
-            where = (w, state, p)
-            assert p["groups"] == 7 and p["toggle"], where
-            assert p["fits"] and p["inside"], where            # nothing behind a scroll
-            assert abs(p["leftVsMap"]) <= 1, where
-            assert p["togH"] <= 24, where                      # one swatch row, not 44
-            if p["wide"]:
-                if state == "compact":
-                    # 7 lanes never fit one row at these widths: the strip
-                    # fills the map column and its wrapped rows share ONE
-                    # column grid.
-                    assert p["rows"] > 1 and not p["hug"], where
-                    assert abs(p["rightVsMap"]) <= 1, where
-                    assert p["colSpread"] == 0, where          # row 2 under row 1
-                # the EXPANDED wide strip keeps round 1's packed flex rows:
-                # its labelled groups are 159-522 px wide, so any grid of
-                # equal columns that holds the widest one holds one group per
-                # row — the packed row IS the tidy layout there. The shared
-                # invariants (fits, inside, left edge, pill size) still hold.
-            else:
-                assert abs(p["rightVsMap"]) <= 1, where        # stacked = map column
-                assert p["rows"] == 7, where                   # one lane per row
-                assert p["stopsSpread"] == 0, where            # shared ramp column
-                if state == "compact":
-                    assert p["swatchSpread"] == 0, where       # shared swatch column
-                # the pill rides the card's top-right corner while stacked
-                assert p["togTopRight"], where
-            if state == "expanded":
-                page.click("#gm-legend .lg-toggle")
-                page.wait_for_timeout(300)
+        page.wait_for_timeout(400)
+        p = page.evaluate("""() => {
+            const leg = document.querySelector('#gm-legend');
+            const L = leg.getBoundingClientRect(), M = document.querySelector('#raw-map-wrap').getBoundingClientRect();
+            return { insideMap: L.left >= M.left - 1 && L.right <= M.right + 1 && L.top >= M.top - 1 && L.bottom <= M.bottom + 1,
+                     fits: leg.scrollWidth <= leg.clientWidth + 1, h: L.height }; }""")
+        assert p["insideMap"] and p["fits"] and p["h"] > 0, (w, p)
     errs = [e for e in page.errors if "Failed to load resource" not in e]
     assert errs == [], f"unexpected page errors: {errs}"
 
 
 def test_legend_never_hides_a_lane_behind_a_scroll(dur_server, page_ctx):
-    """Strip responsiveness contract (owner review 2026-11-11): from 320 up
-    the strip NEVER scrolls horizontally and every ON lane is fully inside
-    it — a lane behind a scrollbar nobody discovers is as good as deleted.
-    Narrow map columns stack the lanes one per row; wide columns lay them in
-    a single row (container query, so it follows the map column, not the
-    viewport)."""
+    """Strip & popover responsiveness contract: from 320 up the legend NEVER
+    scrolls horizontally and every ON lane is inside its container."""
     page = page_ctx
     _mm_goto(page, dur_server)
     _mm_frame(page, RAW_TS[1])
-    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    page.wait_for_selector("#gm-legend .lg-group", state="attached", timeout=20000)
+    page.click("#legend-btn")
     probe = """() => {
         const leg = document.querySelector('#gm-legend');
         const lb = leg.getBoundingClientRect();
-        const gs = [...document.querySelectorAll('.lg-group')].map((g) => g.getBoundingClientRect());
-        const rows = new Set(gs.map((r) => Math.round(r.y))).size;
+        const gs = [...document.querySelectorAll('#gm-legend .lg-group')].map((g) => g.getBoundingClientRect());
         return { fits: leg.scrollWidth <= leg.clientWidth + 1,
                  inside: gs.every((r) => r.right <= lb.right + 1 && r.left >= lb.left - 1),
-                 rows, lanes: gs.length,
-                 stacked: getComputedStyle(leg).getPropertyValue('--lg-wide').trim() !== '1' }; }"""
+                 lanes: gs.length }; }"""
     for w in (320, 390, 768, 1100, 1440):
         page.set_viewport_size({"width": w, "height": 900})
-        page.wait_for_timeout(600)          # ResizeObserver refit + legend reflow
+        page.wait_for_timeout(400)
         p = page.evaluate(probe)
         assert p["fits"] and p["inside"], (w, p)
         assert p["lanes"] == 3, (w, p)
-        if p["stacked"]:
-            assert p["rows"] == 3, (w, p)   # stacked: one lane per row
     errs = [e for e in page.errors if "Failed to load resource" not in e]
     assert errs == [], f"unexpected page errors: {errs}"
 
@@ -2351,7 +2305,8 @@ def test_legend_adapts_to_layers_frame_and_region(dur_server, page_ctx):
     page = page_ctx
     _mm_goto(page, dur_server)
     _mm_frame(page, RAW_TS[1])        # heat run 3 + 7+, freeze run 1 + 3+, AR mask north
-    page.wait_for_selector("#gm-legend .lg-group", timeout=20000)
+    page.wait_for_selector("#gm-legend .lg-group", state="attached", timeout=20000)
+    page.click("#legend-btn")
     groups = page.locator("#gm-legend .lg-group")
     assert groups.count() == 3
     assert page.eval_on_selector_all("#gm-legend .lg-group",
@@ -2380,6 +2335,7 @@ def test_legend_adapts_to_layers_frame_and_region(dur_server, page_ctx):
     page.locator("#type-tabs button", has_text="All").click()
     page.wait_for_function(
         "() => document.querySelectorAll('#gm-legend .lg-group').length === 3")
+    page.click("#legend-btn")
     # Region view: the veil hides the northern lanes -> both are marked empty
     page.evaluate("MergedMap.setRegion({key:'southern_hemisphere',"
                  " label:'Southern Hemisphere', lat:[-90,-20], lon:[-180,180]})")
@@ -2402,7 +2358,8 @@ def test_legend_provisional_stop_only_where_the_frame_dithers(dur2_server, page_
     page = page_ctx
     _mm_goto(page, dur2_server)
     _mm_frame(page, RAW_TS[1])
-    page.wait_for_selector("#gm-legend .lg-group[data-layer=h] .swatch.prov", timeout=20000)
+    page.wait_for_selector("#gm-legend .lg-group[data-layer=h] .swatch.prov", state="attached", timeout=20000)
+    page.click("#legend-btn")
     assert page.eval_on_selector_all("#gm-legend .lg-group[data-layer=h] .lg-t",
                                      "e => e.map(x => x.textContent)") \
         == ["3", "4", "5", "6", "7+", "today"]

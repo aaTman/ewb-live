@@ -708,6 +708,72 @@
       : 'Storm ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
   };
   const stormName = (ev) => (ev.track && ev.track.name) || shortTitle(ev);
+  /* A storm the sources actually NAMED (a TC from IBTrACS) versus a low the
+     detector only located (an ERA5 MSLP minimum: `Storm Oct 5`). In `All` mode
+     the difference is the whole label policy — six anonymous “Storm Sep 3”s
+     beside each other carry no information, they are noise (AC-4.2). */
+  const isNamedStorm = (ev) => !!(ev && ev.track && ev.track.name
+    && !/^unnamed$/i.test(String(ev.track.name).trim()));
+
+  /* One storm's name, on a pill (AC-4.3). The label used to be painted in the
+     lane's own hue with a paper halo: over the light map that read fine, over
+     the dark ocean in dark mode a dark purple TC name was simply invisible.
+     Ink on paper is the pair that clears in BOTH themes, so the name now sits on
+     a rounded --paper plate with a --border hairline and --text ink, and the
+     lane hue rides on the pill's leading edge — coloured by lane, readable in
+     either theme, and never a second marker competing with the dot. */
+  function drawLabel(g, st, p, payload, placed, on, force) {
+    const ev = st.ev, lane = LANES[ev.type];
+    const lab = labelBox(st, p, payload.fit, placed, force);
+    if (!lab) return null;
+    const wrap = document.createElementNS(NS, 'g');
+    wrap.setAttribute('class', 'gm-mark-labwrap');
+    const bg = document.createElementNS(NS, 'rect');
+    bg.setAttribute('class', 'gm-mark-lab-bg');
+    bg.setAttribute('x', lab.bx.toFixed(1)); bg.setAttribute('y', lab.by.toFixed(1));
+    bg.setAttribute('width', lab.w.toFixed(1)); bg.setAttribute('height', lab.bh.toFixed(1));
+    bg.setAttribute('rx', '3.5');
+    // pointer-events: none — a label is not a target. The old text carried the
+    // same rule; a FILLED plate would otherwise swallow the clicks of any
+    // weaker storm it overlaps (labels are drawn per marker, so one pill can
+    // sit on another storm's dot), and only the SELECTED storm's pill is ever
+    // promoted to a click target below.
+    bg.setAttribute('style', 'fill: var(--paper); fill-opacity: .94;'
+      + ' stroke: var(--border); stroke-width: 1; pointer-events: none');
+    wrap.appendChild(bg);
+    // the lane's hue, as a tick on the edge that faces the marker
+    const acc = document.createElementNS(NS, 'rect');
+    acc.setAttribute('class', 'gm-mark-lab-acc');
+    acc.setAttribute('x', (lab.right ? lab.bx + 1 : lab.bx + lab.w - 3.5).toFixed(1));
+    acc.setAttribute('y', (lab.by + 2).toFixed(1));
+    acc.setAttribute('width', '2.5'); acc.setAttribute('height', (lab.bh - 4).toFixed(1));
+    acc.setAttribute('rx', '1.25');
+    acc.setAttribute('fill', `var(--series-${lane.css})`);
+    acc.setAttribute('pointer-events', 'none');
+    wrap.appendChild(acc);
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('class', 'gm-mark-lab' + (on ? ' is-open' : ''));
+    t.setAttribute('x', lab.ax.toFixed(1)); t.setAttribute('y', lab.y.toFixed(1));
+    t.setAttribute('text-anchor', lab.right ? 'start' : 'end');
+    t.setAttribute('style', 'fill: var(--text)');
+    t.textContent = stormName(ev);
+    wrap.appendChild(t);
+    g.appendChild(wrap);
+    if (on) {
+      // select ≠ open — the map's own contract (an event box has an in-box
+      // pill for the same reason): the SELECTED storm's name is the click-through,
+      // and the pill the name sits on is part of that target
+      const open = (e) => { e.stopPropagation(); openEvent(ev.id); };
+      t.addEventListener('click', open);
+      bg.addEventListener('click', open);
+      acc.addEventListener('click', open);
+      bg.style.cursor = 'pointer';
+      bg.style.pointerEvents = 'auto';
+      acc.style.cursor = 'pointer';
+      acc.style.pointerEvents = 'auto';
+    }
+    return wrap;
+  }
 
   function markOne(payload, st, p, placed, anySel) {
     const ev = st.ev, lane = LANES[ev.type], m = st.last;
@@ -741,20 +807,27 @@
     dot.setAttribute('r', 3);
     dot.setAttribute('fill', binColor(ev.type, m.bin));
     g.appendChild(dot);
-    const lab = labelBox(st, p, payload.fit, placed, on || payload.previewId === ev.id);
-    if (lab) {
-      const t = document.createElementNS(NS, 'text');
-      t.setAttribute('class', 'gm-mark-lab' + (on ? ' is-open' : ''));
-      t.setAttribute('x', lab.x.toFixed(1)); t.setAttribute('y', lab.y.toFixed(1));
-      t.setAttribute('text-anchor', lab.right ? 'start' : 'end');
-      t.setAttribute('style', `fill: var(--series-${lane.css})`);
-      t.textContent = stormName(ev);
-      g.appendChild(t);
-      if (on) {
-        // select ≠ open — the map's own contract (an event box has an in-box
-        // pill for the same reason): the SELECTED storm's name is the click-through
-        t.addEventListener('click', (e) => { e.stopPropagation(); openEvent(ev.id); });
-      }
+    /* `All` mode is seven lanes deep: only a storm the sources NAMED wears its
+       name permanently there (AC-4.2). An anonymous midlatitude low still draws
+       its ring and dot, stays clickable, hoverable, focusable, tooltip- and
+       aria-labelled in full, and simply reveals its label on hover, on keyboard
+       focus, on selection — or when the user filters to its own tab, where every
+       system in view is one of its kind and the name is what tells them apart. */
+    const reveal = on || payload.previewId === ev.id;
+    if (reveal || (payload.tab || 'all') !== 'all' || isNamedStorm(ev)) {
+      drawLabel(g, st, p, payload, placed, on, reveal);
+    } else {
+      /* No label element at all until it is earned: a hidden one would still be
+         a text node for assistive tech and still measure for a collision slot.
+         Built on hover/focus and dropped on leave/blur, in place — repainting the
+         marks under the pointer would drop the element being hovered. */
+      let tmp = null;
+      const show = () => { if (!tmp) tmp = drawLabel(g, st, p, payload, placed, on, true); };
+      const hide = () => { if (tmp) { tmp.remove(); tmp = null; } };
+      g.addEventListener('pointerenter', show);
+      g.addEventListener('focus', show);
+      g.addEventListener('pointerleave', hide);
+      g.addEventListener('blur', hide);
     }
     const onDot = (e) => {
       const r = cv.getBoundingClientRect(), k = payload.fit.W / (r.width || 1);
@@ -817,29 +890,34 @@
   /* One label per storm, to the right unless the marker sits near the right
      edge, and only where nothing is already written: a cheap greedy test
      against the boxes placed so far, with three rows to fall back on. A label
-     that cannot fit INSIDE the map is not drawn at all — #gm-track-marks
-     overflows visibly (like #gm-boxes), and a name written over the event list
-     is worse than no name (the tooltip and the aria-label still carry it). */
+     never leaves the map at all (AC-4.3): the pill is CLAMPED inside
+     [4, W-4] x [14, H-6] rather than dropped, because on a 390 px phone the
+     old rule put most names off-screen — the box the reservation describes IS
+     the pill that gets drawn (text inset `pad` from each end, baseline 3 px
+     above the bottom edge), so the collision test accounts for the backdrop
+     and no two pills can overlap. */
   function labelBox(st, p, fit, placed, force) {
     const name = stormName(st.ev);
     if (!name) return null;
-    const w = Math.min(110, name.length * 6.4 + 6), h = 11;
+    const w = Math.min(116, name.length * 6.5 + 14), h = 15;
+    const bh = h + 5, pad = 5;                 // pill: [y-h-2, y+3], ink inset 5
+    const clamp = (v, lo, hi) => (hi < lo ? (lo + hi) / 2 : Math.min(Math.max(v, lo), hi));
     const right = p[0] < fit.W - w - 18;
-    const x = p[0] + (right ? 10 : -10);
-    if (right ? x + w > fit.W - 4 : x - w < 4) return null;
-    let y = p[1] - 7;
+    const bx = clamp(right ? p[0] + 10 - pad : p[0] - 10 - w + pad, 4, Math.max(4, fit.W - 4 - w));
+    const yLo = 14 + h + 2, yHi = fit.H - 6 - 3;
+    let y = clamp(p[1] - 7, yLo, yHi);
     for (let tries = 0; tries < 4; tries++) {
-      const box = { x: right ? x : x - w, y: y - h, w, h };
+      const box = { x: bx, y: y - h - 2, w, h: bh };
       if (!placed.some((b) => !(box.x + box.w < b.x || b.x + b.w < box.x
         || box.y + box.h < b.y || b.y + b.h < box.y))) {
         placed.push(box);
-        return { x, y, right };
+        return { ax: right ? bx + pad : bx + w - pad, y, right, w, h, bh, bx, by: box.y };
       }
-      y += 11;
+      y = clamp(y + h - 4, yLo, yHi);
     }
     if (!force) return null;
-    placed.push({ x: right ? x : x - w, y: y - h, w, h });
-    return { x, y, right };
+    placed.push({ x: bx, y: y - h - 2, w, h: bh });
+    return { ax: right ? bx + pad : bx + w - pad, y, right, w, h, bh, bx, by: y - h - 2 };
   }
 
   /* ---------------- tooltip (the page's single #tooltip) ---------------- */

@@ -234,14 +234,52 @@ function floodLaneNote(etype, n) {
     + 'peak error are forecast minus truth in mm over the event footprint (negative = '
     + 'forecast too dry); scores are conditional on a truth exceedance existing. '
     + 'No baseline model scores flood, so cells carry no skill colour. '
-    + 'The ECMWF-initialised graphcast has no 1 d cell (its first 6 h of precipitation are fill); '
-    + 'graphcast_gfs inits missing from the store are counted as no data, not rescued from a 12Z run. ';
+    + 'The ECMWF-initialised ' + displayModelName('graphcast') + ' has no 1 d cell (its first 6 h of precipitation are fill); '
+    + `graphcast_gfs inits missing from the store are counted as no data, not rescued from a 12Z run. `;
   s += (Array.isArray(fs.unsupported_models) && fs.unsupported_models.length)
-    ? `No flood rows for ${fs.unsupported_models.join(', ')}.`
+    ? `No flood rows for ${fs.unsupported_models.map((m) => displayModelName(m)).join(', ')}.`
     : 'Every other model carries no precipitation in the store.';
   p.textContent = s;
   return p;
 }
+
+/* ------------------------------------------------------------------ */
+/* HUMAN MODEL NAMES (ux contract §2) — written once, read everywhere a  */
+/* model is printed: scorecard tables, the KPI leader strip, the model    */
+/* pills, Plotly legends, the per-event mini table, tooltips and About.   */
+/* The snake_case ids stay in the data (state.allModels, cell.dataset     */
+/* .model, score rows) and never reach the page as text.                 */
+/* ------------------------------------------------------------------ */
+const MODEL_NAME = {
+  ifs_hres: 'IFS HRES', aifs: 'AIFS', aifs_single: 'AIFS Single',
+  pangu_weather: 'Pangu-Weather', fourcastnet: 'FourCastNet',
+  fourcastnet_v2: 'FourCastNet v2', graphcast: 'GraphCast',
+  aurora: 'Aurora', aigfs: 'AIGFS',
+};
+const GFS_SUFFIX = '_gfs';
+const gfsForced = (id) => String(id || '').toLowerCase().endsWith(GFS_SUFFIX);
+function displayModelName(id) {
+  const raw = String(id == null ? '' : id);
+  if (!raw) return '';
+  const forced = gfsForced(raw);
+  const base = forced ? raw.slice(0, -GFS_SUFFIX.length) : raw;
+  let name = MODEL_NAME[base];
+  if (!name) {
+    name = base.split(/[_\s]+/).filter(Boolean)
+      .map((w) => (/^v?\d+$/.test(w) ? w.toUpperCase()
+        : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
+  }
+  return forced ? `${name} (GFS)` : name;
+}
+/* HTML form: the GFS forcing rides a badge instead of prose. */
+function displayModelHtml(id) {
+  const raw = String(id == null ? '' : id);
+  const forced = gfsForced(raw);
+  return esc(displayModelName(forced ? raw.slice(0, -GFS_SUFFIX.length) : raw))
+    + (forced ? ' <span class="m-tag">GFS</span>' : '');
+}
+window.displayModelName = displayModelName;
+window.displayModelHtml = displayModelHtml;
 
 const MODEL_COLORS = {
   ifs_hres: '#8f9bb3', graphcast: '#4f8ff7', pangu_weather: '#21b8a0',
@@ -351,6 +389,7 @@ const BINARY_METRICS = new Set(['csi', 'CriticalSuccessIndex', 'Accuracy', 'Earl
 const state = {
   meta: null, events: [], scores: [], scorecard: [], pairStatus: {},
   tab: 'all',                      // 'all' | event_type
+  view: 'events',                  // 'events' | 'scorecard' — the two page views (#view=)
   region: 'global',                // regions.json key (OWB-style Region dropdown)
   regionData: null,                // parsed data/results/scorecard_by_region.json (null = no region data)
   regionHit: null,                 // in-flight lazy load promise of that file (boot/week-switch guard)
@@ -366,6 +405,7 @@ const state = {
   lastViewedEvent: null,   // box highlighted on return to the catalog list
   modelOrder: [],                  // global model order from last renderScorecard
   search: '',
+  evScope: 'all',                  // 'all' | 'map' — does the list follow the map frame?
   leadsMore: false,                // lead pill row disclosure
   scMore: false,                   // scorecard: show all metrics (hero shows headline only)
   detailLead: null,                // lead currently shown by the detail viz
@@ -452,7 +492,11 @@ function modelColor(m, i) {
 function metricMeta(id) {
   const fromMeta = state.meta && state.meta.metrics && state.meta.metrics[id];
   const fb = FALLBACK_METRICS[id] || { label: id.replace(/_/g, ' '), units: '', higher_is_better: false };
-  return Object.assign({}, fb, fromMeta || {});
+  const m = Object.assign({}, fb, fromMeta || {});
+  /* A dimensionless metric publishes the unit '1'; printed after a value it reads
+     as a second number ("0.37 1"), so a unitless metric carries no unit text. */
+  if (m.units === '1' || m.units === '-') m.units = '';
+  return m;
 }
 function fmtVal(metricId, v) {
   if (v === null || v === undefined || !Number.isFinite(v)) return '—';
@@ -604,14 +648,18 @@ function parseRegionJson(hit) {
 }
 
 async function loadData(week) {
-  const [meta, eventsSel, eventsAll, scores, scorecard, pairStatus] = await Promise.all([
+  const [meta, eventsSel, scores, scorecard, pairStatus] = await Promise.all([
     loadJSON('meta.json', week),
     loadJSON('events_selected.json', week),   // curated/scored set — shown by default
-    loadJSON('events.json', week),            // raw candidates — fallback
     loadJSON('scores.json', week),
     loadJSON('scorecard.json', week),
     loadJSON('pair_status.json', week),       // ewb per-pair bench status (reasons)
   ]);
+  /* The raw candidate list is only a fallback for a build without the curated
+     set, so it is fetched when it is actually needed — production ships both
+     files, and probing a third every boot was a wasted request (and a logged
+     404 wherever events_selected.json is the only published list). */
+  const eventsAll = eventsSel ? null : await loadJSON('events.json', week);
   const events = eventsSel || eventsAll;
   if (!events && !scores && !scorecard) throw new Error('no data files found');
   state.meta = (meta && meta.json) || {};
@@ -779,7 +827,10 @@ function renderHeader() {
   const days = m.window && Number.isFinite(m.window.days) ? m.window.days
     : (m.window && parseISO(m.window.start) && parseISO(m.window.end)
       ? Math.round((parseISO(m.window.end) - parseISO(m.window.start)) / 86400000) : null);
-  const nModels = new Set(state.scores.map((r) => r.model)).size;
+  const nModels = new Set([
+    ...state.scores.map((r) => r.model),
+    ...state.scorecard.map((r) => r.model),
+  ].filter(Boolean)).size;
   const rosterN = Math.max(state.allModels.length,
     Array.isArray(m.models) ? m.models.length : 0);
   const truthShort = truthShortFor(truth.text.split(' \u00b7 ')[0]);
@@ -808,9 +859,9 @@ function renderAboutModels() {
   if (!host) return;
   // plain names only (forcing is explained once in the note below); the
   // baseline is named up front, so it isn't repeated as a chip
-  host.innerHTML = `Baseline <b>${esc(state.baseline)}</b> \u00b7 ` +
+  host.innerHTML = `Baseline <b>${displayModelHtml(state.baseline)}</b> \u00b7 ` +
     state.allModels.filter((m) => m !== state.baseline)
-      .map((m) => `<span class="chip">${esc(m)}</span>`).join(' ');
+      .map((m) => `<span class="chip">${displayModelHtml(m)}</span>`).join(' ');
 }
 
 function renderWeekPicker() {
@@ -939,8 +990,9 @@ function renderControls() {
   tabs.innerHTML = '';
   const inReg = (e) => state.region === 'global' || inRegion(e);
   const mkTab = (id, tabLabel, n, iconKey, slot) => {
+    const unscored = id !== 'all' && state.scorecard.length > 0 && !laneHasScores(id);
     const b = el('button', 'etype-tab' + (iconKey === 'all' ? ' is-all' : '')
-      + (n === 0 ? ' zero' : ''),
+      + (n === 0 ? ' zero' : '') + (unscored ? ' unscored' : ''),
       typeIcon(iconKey) + `<span class="t-label">${esc(tabLabel)}</span>`
       + `<span class="n">${n}</span>`);
     b.type = 'button';
@@ -1014,10 +1066,10 @@ function renderControls() {
   state.allModels.forEach((m, i) => {
     const on = state.models.has(m);
     const p = el('button', 'pill' + (on ? '' : ' off'),
-      `<span class="dot" style="--c:${modelColor(m, i)}"></span>${esc(m)}`);
+      `<span class="dot" style="--c:${modelColor(m, i)}"></span>${displayModelHtml(m)}`);
     p.type = 'button';
     p.setAttribute('aria-pressed', String(on));
-    p.title = 'toggle model';
+    p.title = `toggle ${displayModelName(m)}`;
     p.onclick = () => {
       if (state.models.has(m)) { if (state.models.size > 1) state.models.delete(m); }
       else state.models.add(m);
@@ -1229,149 +1281,517 @@ function metricColumns(idx, etype, met, leads) {
   return null; // no data at all
 }
 
-/* Verdict strip (design.md P1.4): answer-first summary above the tables.
-   For each active event type, find the model with the best mean relative skill
-   over the currently visible metric × lead cells, and how many cells it wins.
-   Recomputed on every scorecard render so it follows tab/model/lead filters. */
-function renderVerdictStrip(idx) {
-  const host = $('#verdict-strip');
-  if (!host) return;
+/* ------------------------------------------------------------------ */
+/* UNIFIED SCORECARD (ux redesign AC-1.3 / AC-1.4 / AC-1.5)                */
+/*  • KPI leader strip — one card per scored hazard; a card drills the     */
+/*    tables into that hazard (and back to the overview if re-clicked).    */
+/*  • `All` — ONE Models × Hazards overview matrix: a column per scored    */
+/*    hazard at its headline metric, the baseline row printing the raw     */
+/*    mean everything is measured against, AI rows printing colour-coded    */
+/*    mean relative skill. Seven stacked per-hazard tables used to sit      */
+/*    here, which read as a wall of numbers.                               */
+/*  • one hazard — that hazard's lead-by-lead table; model rows with zero   */
+/*    finite values on the lane are hidden and named in one quiet           */
+/*    footnote, and any lane methodology prose is folded away.              */
+/* ------------------------------------------------------------------ */
+
+/* the metric each lane is read by in the overview (the pipeline's headline) */
+const HEADLINE_METRIC = {
+  heat_wave: 'RootMeanSquaredError', cold_snap: 'RootMeanSquaredError',
+  freeze: 'RootMeanSquaredError', atmospheric_river: 'CriticalSuccessIndex',
+  flood: 'CriticalSuccessIndex', tropical_cyclone: 'TrackPositionError',
+  midlat_cyclone: 'TrackPositionError',
+};
+let scSmallN = false;   // any rendered cell rests on < minSample() events
+
+/* Published event count for one lane in the current view. The region
+   contract's n_events/by_type is a SCORED split (centroid rule owned by
+   ewb_live/regions.py), so it answers 0 for a lane this build never scored —
+   for those the honest number is the published count through the same region
+   map the tables were built from. */
+function laneEventCount(etype) {
+  const re = regionEntry();
+  if (re) {
+    const bt = (re.by_type || {})[etype];
+    if (bt) return bt;
+    return state.events.filter((e) => e.event_type === etype && inRegion(e)).length;
+  }
+  return state.events.filter((e) => e.event_type === etype).length;
+}
+
+/* Scored lanes for the overview: etype + its headline metric + its leads. */
+function overviewLanes(idx) {
+  const leads = state.allLeads.filter((h) => state.leads.has(h));
+  const out = [];
+  for (const etype of TYPE_ORDER) {
+    if (!laneHasScores(etype)) continue;
+    const have = [...new Set(scRows().filter((r) => r.event_type === etype).map((r) => r.metric))];
+    const pref = HEADLINE_METRIC[etype];
+    const met = (pref && have.includes(pref)) ? pref : (metricsFor(etype)[0] || have[0]);
+    if (!met) continue;
+    const laneLeads = leadsForType(etype, leads);
+    if (!metricColumns(idx, etype, met, laneLeads)) continue;
+    out.push({ etype, met, leads: laneLeads });
+  }
+  return out;
+}
+
+/* One model's mean over a lane's visible leads: the value, the mean relative
+   skill, the sample behind it, and whether every contributing lead is greyed
+   (>50 % misses — an error that rests on the storms the model kept). */
+function laneMeanCell(idx, etype, met, model, leads) {
+  let sum = 0, n = 0, grey = 0, rsum = 0, rn = 0;
+  for (const h of leads) {
+    const g = idx.get(`${etype}|${met}|${h}`);
+    const c = g && g[model];
+    if (!c || !Number.isFinite(c.mean)) continue;
+    sum += c.mean; n += 1;
+    if (missGreyed(idx, etype, met, h, model)) { grey += 1; continue; }
+    if (Number.isFinite(c.rel)) { rsum += c.rel; rn += 1; }
+  }
+  if (!n) return null;
+  return { mean: sum / n, rel: rn ? rsum / rn : null, nLeads: n,
+    n: meanSample(idx, etype, met, model, leads), greyed: grey > 0 && grey === n };
+}
+
+/* Every model this view should account for: what the run declared plus what the
+   data carries, minus the ones the model filter hid (a hidden model is a choice,
+   not a missing score). Used for the "unscored" footnotes. */
+function modelUniverse() {
+  const declared = Array.isArray(state.meta.models) ? state.meta.models : [];
+  const out = [];
+  for (const m of new Set([...declared, ...state.allModels])) {
+    if (!state.allModels.includes(m) || state.models.has(m)) out.push(m);
+  }
+  return out;
+}
+
+/* B1: roving tabindex — the first tip-cell of each row is the tab stop. */
+function roveTips(tbody) {
+  tbody.querySelectorAll('tr').forEach((tr) => {
+    let first = true;
+    tr.querySelectorAll('td[data-tip]').forEach((td) => {
+      td.tabIndex = first ? 0 : -1; first = false;
+    });
+  });
+}
+
+/* horizontal-scroll affordance: a fade hint while the table is wider than its box */
+function scrollHint(wrap) {
+  const upd = () => {
+    const over = wrap.scrollWidth - wrap.clientWidth > 4;
+    wrap.classList.toggle('scrollable', over);
+    wrap.classList.toggle('at-end', over && wrap.scrollLeft >= wrap.scrollWidth - wrap.clientWidth - 2);
+  };
+  requestAnimationFrame(() => { upd(); wrap.addEventListener('scroll', upd, { passive: true }); });
+}
+
+/* Per-lane leader: the model with the best mean relative skill over the
+   visible metric × lead cells, and how many cells it wins. A lane no
+   baseline model scores (flood) cannot rank and says so. */
+function laneLeader(idx, etype) {
   const B = state.baseline;
   const leads = state.allLeads.filter((h) => state.leads.has(h));
   const visible = state.allModels.filter((m) => state.models.has(m));
-  const parts = [];
-  for (const etype of activeTypes()) {
-    // metric × lead cells that actually have data for this lane
-    const cols = [];
-    for (const met of metricsFor(etype)) {
-      const c = metricColumns(idx, etype, met, leadsForType(etype, leads));
-      if (c) cols.push({ met, columns: c });
-    }
-    if (!cols.length) continue;
-    // accumulate relative skill per model over visible cells
-    const acc = {};
-    for (const m of visible) if (m !== B) acc[m] = { s: 0, n: 0, wins: 0 };
-    let cellN = 0;
-    for (const { met, columns } of cols) {
-      if (!skillRanked(etype, met)) continue;   // track lanes: only the track error ranks models
-      for (const c of columns) {
-        if (c.kind === 'mean') continue;   // mean duplicates lead data
-        const lead = c.kind === 'lead' ? c.lead : null;
-        const g = idx.get(`${etype}|${met}|${lead}`);
-        if (!g) continue;
-        const rels = {};
-        for (const m of visible) {
-          if (m === B) continue;
-          const cell = g[m];
-          if (!cell || !Number.isFinite(cell.rel)) continue;
-          if (missGreyed(idx, etype, met, lead, m)) continue;   // >50% misses: not a ranking input
-          rels[m] = cell.rel;
-          acc[m].s += cell.rel; acc[m].n += 1;
-        }
-        const scored = Object.keys(rels);
-        if (!scored.length) continue;
-        cellN += 1;
-        const best = scored.reduce((a, b) => (rels[b] > rels[a] ? b : a));
-        acc[best].wins += 1;
-      }
-    }
-    const ranked = Object.keys(acc).filter((m) => acc[m].n > 0)
-      .sort((a, b) => (acc[b].s / acc[b].n) - (acc[a].s / acc[a].n));
-    if (!ranked.length) {
-      /* flood lane: GraphCast only, and no baseline model scores flood, so nothing can
-         rank — the banner says that rather than claim a vs-baseline verdict or vanish. */
-      if (etype === 'flood') parts.push({ etype, unranked: true });
-      continue;
-    }
-    const leader = ranked[0];
-    const meanRel = acc[leader].s / acc[leader].n;
-    const cells = acc[leader].wins;
-    /* track lanes: the ranking is track error ONLY, so say it and put the miss rates beside it
-       (a model that loses more storms than the baseline can still win on the storms it keeps) */
-    let missNote = '';
-    if (TYPE_LEADS[etype]) {
-      const lds = leadsForType(etype, leads);
-      const mm = (m) => meanVisible(idx, etype, 'TrackMiss', m, lds);
-      const a = mm(leader), b = mm(B);
-      if (a !== null && b !== null) {
-        missNote = ` \u00b7 ranks track error only \u00b7 misses ${Math.round(a * 100)}% vs ${Math.round(b * 100)}%`
-          + (a > MISS_GREY ? ` (>${Math.round(MISS_GREY * 100)}% misses)` : '');
-      } else missNote = ' \u00b7 ranks track error only';
-    }
-    parts.push({
-      etype, model: leader, meanRel, cells, total: cellN, missNote,
-    });
+  const cols = [];
+  for (const met of metricsFor(etype)) {
+    const c = metricColumns(idx, etype, met, leadsForType(etype, leads));
+    if (c) cols.push({ met, columns: c });
   }
-  if (!parts.length) { host.hidden = true; host.innerHTML = ''; return; }
-  host.hidden = false;
-  host.innerHTML = parts.map((p) => {
-    const chip = typeChipHtml(p.etype);
-    if (p.unranked) {   // no baseline scores this lane: never print a vs-baseline claim
-      return `<span class="verdict-item">${chip}<span class="v-text">GraphCast only - not ranked</span></span>`;
+  if (!cols.length) return null;
+  const acc = {};
+  for (const m of visible) if (m !== B) acc[m] = { s: 0, n: 0, wins: 0 };
+  let cellN = 0;
+  for (const { met, columns } of cols) {
+    if (!skillRanked(etype, met)) continue;   // track lanes: only the track error ranks
+    for (const c of columns) {
+      if (c.kind === 'mean') continue;        // the mean duplicates lead data
+      const lead = c.kind === 'lead' ? c.lead : null;
+      const g = idx.get(`${etype}|${met}|${lead}`);
+      if (!g) continue;
+      const rels = {};
+      for (const m of visible) {
+        if (m === B) continue;
+        const cell = g[m];
+        if (!cell || !Number.isFinite(cell.rel)) continue;
+        if (missGreyed(idx, etype, met, lead, m)) continue;   // >50 % misses: not a ranking input
+        rels[m] = cell.rel;
+        acc[m].s += cell.rel; acc[m].n += 1;
+      }
+      const scored = Object.keys(rels);
+      if (!scored.length) continue;
+      cellN += 1;
+      acc[scored.reduce((a, b) => (rels[b] > rels[a] ? b : a))].wins += 1;
     }
-    const sign = p.meanRel >= 0 ? '+' : '';
-    const txt = `<b>${esc(p.model)}</b> best · ${sign}${p.meanRel.toFixed(1)}% vs ${esc(B)}` +
-      ` · won ${p.cells}/${p.total} cells${p.missNote || ""}`;
-    return `<span class="verdict-item">${chip}<span class="v-text">${txt}</span></span>`;
-  }).join('');
+  }
+  const ranked = Object.keys(acc).filter((m) => acc[m].n > 0)
+    .sort((a, b) => (acc[b].s / acc[b].n) - (acc[a].s / acc[a].n));
+  if (!ranked.length) return { unranked: true };
+  const leader = ranked[0];
+  const out = { model: leader, meanRel: acc[leader].s / acc[leader].n,
+    cells: acc[leader].wins, total: cellN };
+  /* track lanes rank on track error ONLY, so say it and put the miss rates
+     beside it (a model that loses more storms than the baseline can still win
+     on the storms it keeps) */
+  if (TYPE_LEADS[etype]) {
+    const lds = leadsForType(etype, leads);
+    const mm = (m) => meanVisible(idx, etype, 'TrackMiss', m, lds);
+    const a = mm(leader), b = mm(B);
+    out.missNote = a !== null && b !== null
+      ? `ranks track error · misses ${Math.round(a * 100)}% vs ${Math.round(b * 100)}%`
+        + (a > MISS_GREY ? ` (>${Math.round(MISS_GREY * 100)}%)` : '')
+      : 'ranks track error only';
+  }
+  return out;
 }
 
-function renderScorecard() {
-  const host = $('#scorecard-tables');
+/* KPI leader strip (replaces the multi-sentence verdict line): the answer per
+   hazard in one glanceable card. */
+function renderKpiStrip(idx) {
+  const host = $('#kpi-strip');
+  if (!host) return;
   host.innerHTML = '';
-  let anySmallN = false;      // any rendered cell rests on < minSample() events
-  // partial-results badge: shows until every meta-declared model has scores
-  // (or the run declares itself complete). Auto-clears when the full run lands.
-  const badge = $('#scorecard-status');
-  if (badge) {
-    const declared = Array.isArray(state.meta.models) ? state.meta.models : [];
-    const scored = new Set(state.scores.map((r) => r.model));
-    const complete = state.meta.full_run_complete === true
-      || (declared.length > 0 && declared.every((m) => scored.has(m)));
-    badge.textContent = complete ? ''
-      : `partial results — ${scored.size} of ${declared.length} models scored`;
-    badge.classList.toggle('hidden', complete);
-  }
-  const scope = $('#sc-scope');
-  if (scope) {
-    scope.innerHTML = '';
-    const re = regionEntry();
-    if (re) {
-      scope.appendChild(el('span', '', `in ${esc(re.label)} \u00b7 `));
-      const g = el('button', 'linkbtn', 'all regions');
-      g.type = 'button';
-      g.onclick = () => setRegion('global', true);
-      scope.appendChild(g);
-    }
-    if (state.tab !== 'all') {
-      scope.appendChild(el('span', '', `${esc(TYPE_META[state.tab].label)} only \u00b7 `));
-      const all = el('button', 'linkbtn', 'show all types');
-      all.type = 'button';
-      all.onclick = () => setTab('all');
-      scope.appendChild(all);
-    }
-  }
-  const idx = scIndex();
-  tooltipIdx = idx;
-  renderVerdictStrip(idx);
-  const leads = state.allLeads.filter((h) => state.leads.has(h));
   const B = state.baseline;
+  for (const etype of TYPE_ORDER) {
+    if (!laneHasScores(etype)) continue;    // unscored lanes: one quiet line under the table
+    const n = laneEventCount(etype);
+    const lead = laneLeader(idx, etype);
+    const on = state.tab === etype;
+    const card = el('button', 'kpi-card' + (on ? ' on' : ''));
+    card.type = 'button';
+    card.setAttribute('aria-pressed', String(on));
+    const short = TYPE_TAB_LABEL[etype] || TYPE_META[etype].short;
+    let body, sub;
+    if (!lead || lead.unranked) {
+      body = `<span class="kpi-model">${displayModelHtml('graphcast')}</span>`
+        + `<span class="kpi-skill na">only</span>`;
+      sub = 'no baseline scores this lane';
+      card.title = `${TYPE_META[etype].label}: only ${displayModelName('graphcast')} carries the field `
+        + 'this lane is scored against, and no baseline model does — so nothing ranks.';
+    } else {
+      body = `<span class="kpi-model">${displayModelHtml(lead.model)}</span>`
+        + `<span class="kpi-skill ${lead.meanRel >= 0 ? 'pos' : 'neg'}">`
+        + `${lead.meanRel >= 0 ? '+' : '\u2212'}${Math.abs(lead.meanRel).toFixed(1)}%</span>`;
+      sub = lead.missNote
+        ? `best of ${state.models.size} · won ${lead.cells}/${lead.total} · track error`
+        : `best of ${state.models.size} · won ${lead.cells}/${lead.total} cells`;
+      card.title = `${TYPE_META[etype].label}: ${displayModelName(lead.model)} leads the visible cells `
+        + `by ${lead.meanRel >= 0 ? '+' : '\u2212'}${Math.abs(lead.meanRel).toFixed(1)}% mean skill vs `
+        + `${displayModelName(B)}, winning ${lead.cells} of ${lead.total} metric × lead cells`
+        + (lead.missNote ? ` (${lead.missNote})` : '') + '.';
+    }
+    card.innerHTML = `<span class="kpi-top">${typeChipHtml(etype)}`
+      + `<span class="kpi-n">${n} event${n === 1 ? '' : 's'}</span></span>`
+      + `<span class="kpi-lead">${body}</span>`
+      + `<span class="kpi-sub">${esc(sub)}</span>`;
+    card.onclick = () => setTab(state.tab === etype ? 'all' : etype);
+    host.appendChild(card);
+  }
+  host.hidden = !host.children.length;
+}
 
-  // columns per active event type, computed once
+/* View strip: Overview + one pill per hazard with events in this view. */
+function renderScViews() {
+  const host = $('#sc-views');
+  if (!host) return;
+  host.innerHTML = '';
+  const inReg = (e) => state.region === 'global' || inRegion(e);
+  const mk = (id, label, n, tip) => {
+    const b = el('button', 'sc-view' + (state.tab === id ? ' on' : ''),
+      `${esc(label)}<span class="n">${n}</span>`);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(state.tab === id));
+    if (tip) b.title = tip;
+    b.onclick = () => setTab(id);
+    host.appendChild(b);
+  };
+  mk('all', 'Overview', state.events.filter(inReg).length,
+    'One Models × Hazards overview — every scored lane in one table.');
+  for (const t of TYPE_ORDER) {
+    const n = state.events.filter((e) => e.event_type === t && inReg(e)).length;
+    if (!n) continue;
+    mk(t, TYPE_TAB_LABEL[t] || TYPE_META[t].short, n,
+      `${TYPE_META[t].label} — lead by lead. ${TYPE_META[t].rule || ''}`);
+  }
+}
+
+/* The overview matrix: Model × scored hazard. Baseline row = raw mean + unit;
+   AI rows = colour-coded mean relative skill (raw value where the lane has no
+   baseline at all, e.g. flood). Every cell keeps the full detail tooltip. */
+function renderOverviewMatrix(idx) {
+  const host = $('#scorecard-tables');
+  const lanes = overviewLanes(idx);
+  const B = state.baseline;
+  const block = el('div', 'sc-block sc-overview');
+  if (!lanes.length) {
+    block.appendChild(el('h3', '', 'Scorecard'));
+    const note = el('p', 'lane-empty');
+    note.textContent = state.region !== 'global'
+      ? `No scored events in ${regionEntry() ? regionEntry().label : 'this region'} this window`
+      : 'No score rows in this data release yet.';
+    block.appendChild(note);
+    host.appendChild(block);
+    return;
+  }
+  block.appendChild(el('h3', '', 'Models × hazards overview'));
+
+  const wrap = el('div', 'table-wrap');
+  const table = el('table', 'sc-matrix');
+  const head = el('tr');
+  head.appendChild(el('th', 'model-col', 'Model'));
+  for (const L of lanes) {
+    const mm = metricMeta(L.met);
+    const n = laneEventCount(L.etype);
+    const th = el('th', 'mx-head');
+    const b = el('button', 'mx-drill');
+    b.type = 'button';
+    b.innerHTML = `<span class="mx-name">${esc(TYPE_TAB_LABEL[L.etype] || TYPE_META[L.etype].short)}</span>`
+      + `<span class="mx-met">${esc(mm.label)}${mm.units ? ` [${esc(mm.units)}]` : ''}</span>`
+      + `<span class="mx-n">${n} event${n === 1 ? '' : 's'}</span>`;
+    b.title = `${TYPE_META[L.etype].label} — ${mm.label}${mm.units ? ` (${mm.units})` : ''}, `
+      + `mean over ${n} event${n === 1 ? '' : 's'} at the visible leads. Open the lead-by-lead table.`;
+    b.onclick = () => setTab(L.etype);
+    th.appendChild(b);
+    head.appendChild(th);
+  }
+  table.appendChild(el('thead')).appendChild(head);
+
+  /* "has any data at all" asks over EVERY lead, not just the selected ones: a
+     model hidden by the lead filter is not an unscored model. */
+  const hasAny = (m) => lanes.some((L) => laneMeanCell(idx, L.etype, L.met, m, state.allLeads));
+  const rows = state.modelOrder.filter(hasAny);
+  const quiet = modelUniverse().filter((m) => !hasAny(m));
+  const tbody = el('tbody');
+  for (const model of rows) {
+    const tr = el('tr', model === B ? 'baseline-row' : '');
+    const colorIdx = state.allModels.indexOf(model);
+    tr.appendChild(el('td', 'model-col',
+      `<span class="dot" style="--c:${model === B ? 'var(--ink-muted)' : modelColor(model, colorIdx)}"></span>`
+      + displayModelHtml(model)));   /* the baseline row is already tagged by
+                                         `tr.baseline-row .model-col::after` */
+    for (const L of lanes) {
+      const c = laneMeanCell(idx, L.etype, L.met, model, L.leads);
+      if (!c) { tr.appendChild(el('td', 'cell empty', '—')); continue; }
+      const mm = metricMeta(L.met);
+      const small = Number.isFinite(c.n) && c.n < minSample();
+      if (small && model !== B && !c.greyed) scSmallN = true;
+      const raw = model === B || !Number.isFinite(c.rel);
+      const td = el('td', 'cell mx-cell' + (model === B ? ' baseline' : '')
+        + (small ? ' small-n' : '') + (c.greyed ? ' miss-grey' : ''),
+      raw
+        ? `${fmtVal(L.met, c.mean)}${mm.units ? ` <span class="cell-u">${esc(mm.units)}</span>` : ''}`
+        : `${c.rel >= 0 ? '+' : '\u2212'}${Math.abs(c.rel).toFixed(1)}%`);
+      td.dataset.model = model;
+      if (!raw && !c.greyed) td.style.background = cellColor(c.rel);
+      if (c.greyed) td.title = 'miss rate > 50% at every visible lead';
+      attachTip(td, L.etype, L.met, { kind: 'mean', mean: c.mean, rel: c.rel,
+        nLeads: c.nLeads, n: c.n, small, greyed: c.greyed,
+        refMean: model === B ? null : (laneMeanCell(idx, L.etype, L.met, B, L.leads) || {}).mean,
+        laneNote: raw && model !== B ? 'no baseline on this lane — the raw value is shown' : '' });
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  roveTips(tbody);
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  block.appendChild(wrap);
+
+  /* Lanes with events but no score rows are not a column and not an empty
+     table — they are one quiet line saying where to find them. */
+  const unscored = TYPE_ORDER.filter((t) => !laneHasScores(t) && laneEventCount(t) > 0);
+  if (unscored.length) {
+    const p = el('p', 'sc-quiet');
+    p.textContent = 'Tracked on map (not yet benchmarked): '
+      + unscored.map((t) => `${TYPE_META[t].label} (${laneEventCount(t)})`).join(', ');
+    block.appendChild(p);
+  }
+  if (quiet.length) {
+    const p = el('p', 'sc-quiet');
+    p.textContent = `No score rows on any lane here: ${quiet.map((m) => displayModelName(m)).join(', ')}.`;
+    block.appendChild(p);
+  }
+  host.appendChild(block);
+  scrollHint(wrap);
+}
+
+/* One hazard's lead-by-lead table. Models with nothing to show on this lane
+   are hidden (a row of dashes reads as performance); they are named once,
+   below the table. */
+function renderHazardTable(idx, etype) {
+  const host = $('#scorecard-tables');
+  const B = state.baseline;
+  const leads = state.allLeads.filter((h) => state.leads.has(h));
+  const cols = new Map();
+  for (const met of metricsFor(etype)) {
+    const c = metricColumns(idx, etype, met, leadsForType(etype, leads));
+    if (c) cols.set(met, c);
+  }
+  const nEv = laneEventCount(etype);
+  const smallLane = nEv > 1 && nEv < minSample();
+  const block = el('div', 'sc-block');
+  block.appendChild(el('h3', '',
+    typeChipHtml(etype) +
+    `${nEv} event${nEv === 1 ? '' : 's'}` +
+    (nEv === 1 ? ' · indicative' : smallLane ? ' · small sample' : '')));
+
+  /* Owner 2026-11-07: an empty lane is a legitimate outcome, not a bug —
+     calm one-line note + criteria tooltip instead of a table of dashes. */
+  if (!nEv) {
+    const note = el('p', 'lane-empty');
+    const re2 = regionEntry();
+    const broken = laneStatusNote(etype);   // a failed lane outranks the region wording
+    note.textContent = broken
+      ? broken
+      : re2
+        ? `No ${TYPE_META[etype].label.toLowerCase()} in ${re2.label} this window`
+        : emptyLaneLine(etype);
+    note.title = re2 && !broken
+      ? 'Events are assigned to regions by the centroid of their bounding box'
+      : TYPE_CRITERIA[etype];
+    block.appendChild(note);
+    host.appendChild(block);
+    return;
+  }
+  if (!cols.size) {
+    /* No score columns for this lane in THIS build. Either it is published
+       without a scorecard by design (the observation lanes: no EWB benchmark)
+       or the release simply has no score rows for it. Say which. */
+    const note = el('p', 'lane-empty');
+    note.textContent = TYPE_META[etype]?.noScoresNote
+      ? TYPE_META[etype].noScoresNote(nEv)
+      : TYPE_META[etype]?.noScores
+        ? `Not scored — ${nEv} event${nEv === 1 ? '' : 's'}; no EWB benchmark for this lane yet.`
+        : `Not scored in this data release — ${nEv} published event${nEv === 1 ? '' : 's'}; no score rows for this lane yet.`;
+    note.title = TYPE_CRITERIA[etype];
+    block.appendChild(note);
+    host.appendChild(block);
+    return;
+  }
+
+  const wrap = el('div', 'table-wrap');
+  const table = el('table');
+  const grp = el('tr', 'grp');
+  grp.appendChild(el('th', 'model-col', 'Model'));
+  const leadRow = el('tr', 'lead');
+  leadRow.appendChild(el('th', 'model-col', `vs ${esc(displayModelName(B))}`));
+  for (const [met, columns] of cols) {
+    const mm = metricMeta(met);
+    const th = el('th', '', `${esc(mm.label)}${mm.units ? ` <span class="units">[${esc(mm.units)}]</span>` : ''}`);
+    th.colSpan = columns.length;
+    th.title = metricBlurb(met);
+    grp.appendChild(th);
+    for (const c of columns) {
+      leadRow.appendChild(el('th', c.kind === 'mean' ? 'mean-g' : (c.kind === 'event' ? 'event-col' : ''),
+        c.kind === 'lead' ? leadLabel(c.lead) : (c.kind === 'mean' ? 'Mean' : 'event')));
+    }
+  }
+  const thead = el('thead');
+  thead.appendChild(grp); thead.appendChild(leadRow);
+  table.appendChild(thead);
+
+  const laneLeads = leadsForType(etype, leads);
+  const hasAny = (model) => [...cols.keys()].some((met) => {
+    if (meanVisible(idx, etype, met, model, state.allLeads) !== null) return true;
+    // event-level metrics carry no lead: ask the null column directly
+    const g = idx.get(`${etype}|${met}|null`);
+    return !!(g && g[model] && Number.isFinite(g[model].mean));
+  });
+  const shown = state.modelOrder.filter(hasAny);
+  const skipped = modelUniverse().filter((m) => !hasAny(m));
+
+  const tbody = el('tbody');
+  for (const model of shown) {
+    const tr = el('tr', model === B ? 'baseline-row' : '');
+    const colorIdx = state.allModels.indexOf(model);
+    tr.appendChild(el('td', 'model-col',
+      `<span class="dot" style="--c:${modelColor(model, colorIdx)}"></span>${displayModelHtml(model)}`));
+    for (const [met, columns] of cols) {
+      let s = 0, n = 0, nCells = 0, nGrey = 0;
+      for (const c of columns) {
+        if (c.kind === 'mean') {
+          const mv = meanVisible(idx, etype, met, model, laneLeads);
+          const mN = meanSample(idx, etype, met, model, laneLeads);
+          const mSmall = mN !== null && mN < minSample();
+          const allGrey = nCells > 0 && nGrey === nCells;   // every contributing lead is >50% misses
+          const meanTd = el('td', 'cell mean' + (mSmall ? ' small-n' : '') + (allGrey ? ' miss-grey' : ''),
+            mv === null ? '—' : fmtVal(met, mv));
+          meanTd.dataset.model = model;
+          if (n && !allGrey) meanTd.style.background = model === B ? '' : cellColor(s / n);
+          if (allGrey) meanTd.title = 'miss rate > 50% at every lead';
+          if (mSmall && model !== B && !allGrey) scSmallN = true;
+          attachTip(meanTd, etype, met, { kind: 'mean', mean: mv, rel: n ? s / n : null,
+            nLeads: n, n: mN, small: mSmall, greyed: allGrey });
+          tr.appendChild(meanTd);
+          continue;
+        }
+        const lead = c.kind === 'lead' ? c.lead : null;
+        const g = idx.get(`${etype}|${met}|${lead}`);
+        const cell = g && g[model];
+        if (!cell || cell.mean === null || !Number.isFinite(cell.mean)) {
+          tr.appendChild(el('td', 'cell empty', '—'));
+          continue;
+        }
+        /* D5: a track-error cell whose miss rate is above 50 % is greyed, not
+           coloured by skill, and does not feed the Mean colour */
+        const greyed = missGreyed(idx, etype, met, lead, model);
+        nCells += 1; nGrey += greyed ? 1 : 0;
+        if (Number.isFinite(cell.rel) && !greyed) { s += cell.rel; n += 1; }
+        const small = Number.isFinite(cell.n) && cell.n < minSample();
+        if (small && model !== B && !greyed) scSmallN = true;
+        const td = el('td', 'cell' + (model === B ? ' baseline' : '')
+          + (small ? ' small-n' : '') + (greyed ? ' miss-grey' : ''), fmtVal(met, cell.mean));
+        td.dataset.model = model;
+        td.style.background = model === B || greyed ? '' : cellColor(cell.rel);
+        if (greyed) td.title = 'miss rate > 50%';
+        attachTip(td, etype, met, { kind: c.kind, lead, mean: cell.mean, rel: cell.rel,
+          n: cell.n, ns: cell.ns, lo: cell.lo, hi: cell.hi, small, greyed });
+        tr.appendChild(td);
+      }
+    }
+    tbody.appendChild(tr);
+  }
+  roveTips(tbody);
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  block.appendChild(wrap);
+
+  /* Models with nothing on this lane: one quiet line, not a row of dashes. */
+  if (skipped.length) {
+    const p = el('p', 'sc-quiet');
+    p.textContent = `Unscored on this lane: ${skipped.map((m) => displayModelName(m)).join(', ')}.`;
+    p.title = 'These models carry no finite value for this hazard in this run — '
+      + 'no score rows, not a score of zero.';
+    block.appendChild(p);
+  }
+  /* Lane methodology stays available but never open: these paragraphs are
+     8 lines long and used to push the next table off the screen. */
+  if (TYPE_LEADS[etype]) {
+    const fold = el('details', 'lane-notes-fold');
+    const sum = el('summary', '', 'Scoring &amp; verification notes');
+    fold.appendChild(sum);
+    fold.appendChild(etype === 'flood' ? floodLaneNote(etype, nEv) : trackLaneNote(etype, nEv));
+    block.appendChild(fold);
+  }
+  host.appendChild(block);
+  scrollHint(wrap);
+}
+
+function computeModelOrder(idx) {
+  const B = state.baseline;
   const etypeCols = new Map();
   for (const etype of activeTypes()) {
     const cols = new Map();
     for (const met of metricsFor(etype)) {
-      const c = metricColumns(idx, etype, met, leadsForType(etype, leads));
+      const c = metricColumns(idx, etype, met, leadsForType(etype, state.allLeads));
       if (c) cols.set(met, c);
     }
     if (cols.size) etypeCols.set(etype, cols);
   }
-
-  // ONE global model order for all tables (rows line up between event types):
-  // baseline first, then mean rel-skill over every visible cell of every table.
+  /* ONE global model order for all views (rows line up between hazards):
+     baseline first, then mean rel-skill over every visible cell. */
   const relSums = {};
-  for (const m of state.allModels) { relSums[m] = { s: 0, n: 0 }; }
+  for (const m of state.allModels) relSums[m] = { s: 0, n: 0 };
   for (const [key, g] of idx) {
     const [e2, met, hStr] = key.split('|');
     const cols = etypeCols.get(e2);
@@ -1392,203 +1812,57 @@ function renderScorecard() {
       const rb = relSums[b].n ? relSums[b].s / relSums[b].n : -1e9;
       return rb - ra;
     });
-  for (const etype of activeTypes()) {
-    const cols = etypeCols.get(etype);
-    // honest event counts: regions report the scored-event split from the data
-    // contract (n_events/by_type, centroid rule owned by ewb_live/regions.py);
-    // Global counts the curated catalog (same universe as before this feature).
-    const re = regionEntry();
-    /* Honest counts, two ways. The region contract's n_events/by_type is a
-       SCORED-event split (centroid rule owned by ewb_live/regions.py), so it can
-       only answer 0 for a lane this build has no score rows for — a track lane by
-       design (tc 2026-11-16), and equally a lane the current data release simply
-       never scored (cold_snap in a build made before it existed, or a dev tree
-       that re-publishes live score rows without new scoring). For those the
-       honest number is the published count through the same region map the tables
-       were built from; the block below then says "Not scored — …". Where the lane
-       DOES have score columns, the contract split is the right answer. */
-    const nEv = (re && (!cols || TYPE_META[etype]?.noScores))
-      ? state.events.filter((e) => e.event_type === etype && inRegion(e)).length
-      : re ? (re.by_type || {})[etype] || 0
-      : state.events.filter((e) => e.event_type === etype).length;
+}
 
-    const block = el('div', 'sc-block');
-    const smallLane = nEv > 1 && nEv < minSample();
-    block.appendChild(el('h3', '',
-      typeChipHtml(etype) +
-      `${nEv} event${nEv === 1 ? '' : 's'}` +
-      (nEv === 1 ? ' · indicative' : smallLane ? ' · small sample' : '')));
-
-    /* Owner 2026-11-07: an empty lane is a legitimate outcome, not a bug —
-       calm one-line note + criteria tooltip instead of a table of dashes. */
-    if (!nEv) {
-      const note = el('p', 'lane-empty');
-      const re2 = regionEntry();
-      const broken = laneStatusNote(etype);   // a failed lane outranks the region wording
-      note.textContent = broken
-        ? broken
-        : re2
-          ? `No ${TYPE_META[etype].label.toLowerCase()} in ${re2.label} this window`
-          : emptyLaneLine(etype);
-      note.title = re2 && !broken
-        ? 'Events are assigned to regions by the centroid of their bounding box'
-        : TYPE_CRITERIA[etype];
-      block.appendChild(note);
-      host.appendChild(block);
-      continue;
-    }
-    if (!cols) {
-      // No score columns for this lane in THIS build. Either it is published
-      // without a scorecard by design (the observation lanes: no EWB benchmark)
-      // or the release simply has no score rows for it (e.g. cold_snap against a
-      // scorecard built before the lane existed). Say which, instead of dropping
-      // the lane silently.
-      const note = el('p', 'lane-empty');
-      note.textContent = TYPE_META[etype]?.noScoresNote
-        ? TYPE_META[etype].noScoresNote(nEv)
-        : TYPE_META[etype]?.noScores
-          ? `Not scored — ${nEv} event${nEv === 1 ? '' : 's'}; no EWB benchmark for this lane yet.`
-          : `Not scored in this data release — ${nEv} published event${nEv === 1 ? '' : 's'}; no score rows for this lane yet.`;
-      note.title = TYPE_CRITERIA[etype];
-      block.appendChild(note);
-      host.appendChild(block);
-      continue;
-    }
-
-    const wrap = el('div', 'table-wrap');
-    const table = el('table');
-
-    // header rows
-    const grp = el('tr', 'grp');
-    grp.appendChild(el('th', 'model-col', 'Model'));
-    const leadRow = el('tr', 'lead');
-    leadRow.appendChild(el('th', 'model-col', `vs ${esc(B)}`));
-    for (const [met, columns] of cols) {
-      const mm = metricMeta(met);
-      const th = el('th', '', `${esc(mm.label)}${mm.units ? ` <span class="units">[${esc(mm.units)}]</span>` : ''}`);
-      th.colSpan = columns.length;
-      th.title = metricBlurb(met);
-      grp.appendChild(th);
-      for (const c of columns) {
-        leadRow.appendChild(el('th', c.kind === 'mean' ? 'mean-g' : (c.kind === 'event' ? 'event-col' : ''),
-          c.kind === 'lead' ? leadLabel(c.lead) : (c.kind === 'mean' ? 'Mean' : 'event')));
-      }
-    }
-    const thead = el('thead');
-    thead.appendChild(grp); thead.appendChild(leadRow);
-    table.appendChild(thead);
-
-    const ordered = state.modelOrder;
-
-    const tbody = el('tbody');
-    ordered.forEach((model) => {
-      const tr = el('tr', model === B ? 'baseline-row' : '');
-      const colorIdx = state.allModels.indexOf(model);
-      tr.appendChild(el('td', 'model-col',
-        `<span class="dot" style="--c:${modelColor(model, colorIdx)}"></span>${esc(model)}`));
-      for (const [met, columns] of cols) {
-        let s = 0, n = 0, any = false, nCells = 0, nGrey = 0;
-        for (const c of columns) {
-          if (c.kind === 'mean') {
-            const mv = meanVisible(idx, etype, met, model, leadsForType(etype, leads));
-            const mN = meanSample(idx, etype, met, model, leadsForType(etype, leads));
-            const mSmall = mN !== null && mN < minSample();
-            const allGrey = nCells > 0 && nGrey === nCells;       // every contributing lead is >50% misses
-            const meanTd = el('td', 'cell mean' + (mSmall ? ' small-n' : '') + (allGrey ? ' miss-grey' : ''),
-              mv === null ? '—' : fmtVal(met, mv));
-            meanTd.dataset.model = model;
-            if (n && !allGrey) meanTd.style.background = model === B ? '' : cellColor(s / n);
-            if (allGrey) {
-              meanTd.title = 'miss rate > 50% at every lead';
-            }
-            if (mSmall) anySmallN = true;
-            attachTip(meanTd, etype, met, { kind: 'mean', mean: mv, rel: n ? s / n : null,
-              nLeads: n, n: mN, small: mSmall, greyed: allGrey });
-            tr.appendChild(meanTd);
-            continue;
-          }
-          const lead = c.kind === 'lead' ? c.lead : null;
-          const g = idx.get(`${etype}|${met}|${lead}`);
-          const cell = g && g[model];
-          if (!cell || cell.mean === null || !Number.isFinite(cell.mean)) {
-            tr.appendChild(el('td', 'cell empty', '—'));
-            continue;
-          }
-          any = true;
-          /* D5: a track-error cell whose miss rate is above 50 % is greyed, not coloured by skill,
-             and does not feed the Mean colour */
-          const greyed = missGreyed(idx, etype, met, lead, model);
-          nCells += 1; nGrey += greyed ? 1 : 0;
-          if (Number.isFinite(cell.rel) && !greyed) { s += cell.rel; n += 1; }
-          const small = Number.isFinite(cell.n) && cell.n < minSample();
-          if (small) anySmallN = true;
-          const td = el('td', 'cell' + (model === B ? ' baseline' : '')
-            + (small ? ' small-n' : '') + (greyed ? ' miss-grey' : ''), fmtVal(met, cell.mean));
-          td.dataset.model = model;
-          td.style.background = model === B || greyed ? '' : cellColor(cell.rel);
-          if (greyed) {
-            td.title = 'miss rate > 50%';
-          }
-          attachTip(td, etype, met, { kind: c.kind, lead, mean: cell.mean, rel: cell.rel,
-            n: cell.n, ns: cell.ns, lo: cell.lo, hi: cell.hi, small, greyed });
-          tr.appendChild(td);
-        }
-        void any;
-      }
-      tbody.appendChild(tr);
-    });
-    /* B2 (DR2): roster models with zero score rows were silently dropped from
-       the tables — show them muted with an explanation instead. Roster =
-       meta-declared ∪ scored (same universe as the header kv), not the
-       lead-filtered display order. */
+function renderScorecard() {
+  const host = $('#scorecard-tables');
+  host.innerHTML = '';
+  scSmallN = false;
+  // partial-results badge: shows until every meta-declared model has scores
+  // (or the run declares itself complete). Auto-clears when the full run lands.
+  const badge = $('#scorecard-status');
+  if (badge) {
     const declared = Array.isArray(state.meta.models) ? state.meta.models : [];
-    const scoredSet = new Set(state.scores.map((r) => r.model));
-    const universe = new Set(declared);
-    state.allModels.forEach((m) => universe.add(m));
-    for (const model of universe) {
-      if (scoredSet.has(model)) continue;
-      const tr = el('tr', 'unscored-row');
-      tr.appendChild(el('td', 'model-col',
-        `<span class="dot" style="--c:var(--ink-muted)"></span>${esc(model)}`));
-      for (const [, columns] of cols) {
-        for (const c of columns) {
-          const td = el('td', 'cell empty', '—');
-          td.title = `${model}: no score rows in this run — the model ran but `
-            + 'produced no comparable data for these metrics (see About for model notes)';
-          tr.appendChild(td);
-        }
-      }
-      tbody.appendChild(tr);
-    }
-    table.appendChild(tbody);
-    /* B1: roving tabindex — first tip-cell of each row is the tab stop */
-    tbody.querySelectorAll('tr').forEach((tr) => {
-      let first = true;
-      tr.querySelectorAll('td[data-tip]').forEach((td) => {
-        td.tabIndex = first ? 0 : -1; first = false;
-      });
-    });
-    wrap.appendChild(table);
-    block.appendChild(wrap);
-    if (TYPE_LEADS[etype]) {
-      block.appendChild(etype === 'flood' ? floodLaneNote(etype, nEv) : trackLaneNote(etype, nEv));
-    }
-    host.appendChild(block);
-    // horizontal-scroll affordance: fade hint while the table is wider than its box
-    const updScroll = () => {
-      const over = wrap.scrollWidth - wrap.clientWidth > 4;
-      wrap.classList.toggle('scrollable', over);
-      wrap.classList.toggle('at-end', over && wrap.scrollLeft >= wrap.scrollWidth - wrap.clientWidth - 2);
-    };
-    requestAnimationFrame(() => { updScroll(); wrap.addEventListener('scroll', updScroll, { passive: true }); });
+    const scored = new Set(state.scores.map((r) => r.model));
+    const complete = state.meta.full_run_complete === true
+      || (declared.length > 0 && declared.every((m) => scored.has(m)));
+    badge.textContent = complete ? ''
+      : `partial results — ${scored.size} of ${declared.length} models scored`;
+    badge.classList.toggle('hidden', complete);
   }
+  const scope = $('#sc-scope');
+  if (scope) {
+    scope.innerHTML = '';
+    const re = regionEntry();
+    if (re) {
+      scope.appendChild(el('span', '', `in ${esc(re.label)} · `));
+      const g = el('button', 'linkbtn', 'all regions');
+      g.type = 'button';
+      g.onclick = () => setRegion('global', true);
+      scope.appendChild(g);
+    }
+    if (state.tab !== 'all') {
+      scope.appendChild(el('span', '', `${esc(TYPE_META[state.tab].label)} only · `));
+      const all = el('button', 'linkbtn', 'show all types');
+      all.type = 'button';
+      all.onclick = () => setTab('all');
+      scope.appendChild(all);
+    }
+  }
+  const idx = scIndex();
+  tooltipIdx = idx;
+  computeModelOrder(idx);
+  renderScViews();
+  renderKpiStrip(idx);
+  if (state.tab === 'all') renderOverviewMatrix(idx);
+  else renderHazardTable(idx, state.tab);
   /* Small-sample warning (owner 2026-11-10): cells under minSample() events get
      a red edge + glow; say what that means once, next to the tables, and only
      when the current view actually contains such a cell. */
   const note = $('#sc-sample-note');
   if (note) {
-    note.hidden = !anySmallN;
-    if (anySmallN) {
+    note.hidden = !scSmallN;
+    if (scSmallN) {
       const re = regionEntry();
       note.innerHTML = `<span class="sn-mark" aria-hidden="true"></span> Glowing cells rest on `
         + `<b>fewer than ${minSample()} events</b>`
@@ -1642,12 +1916,18 @@ function attachTip(td, etype, met, c) {
     const ref = c.kind === 'event' ? (idx0(etype, met, null) || {})[B]
       : (c.kind === 'lead' ? (idx0(etype, met, c.lead) || {})[B] : null);
     const model = td.dataset.model || undefined;
+    /* The baseline value beside a cell: from the same (metric, lead) group, or
+       handed in by a caller whose value is a mean over leads (the overview
+       matrix), which has no single group to look up. */
+    const refMean = ref ? ref.mean : (Number.isFinite(c.refMean) ? c.refMean : null);
     const rows = [`<div class="t-row"><span>mean value</span><b>${fmtVal(met, c.mean)} ${esc(mm.units)}</b></div>`];
-    if (ref && model !== B) rows.push(`<div class="t-row"><span>${esc(B)}</span><b>${fmtVal(met, ref.mean)} ${esc(mm.units)}</b></div>`);
+    if (refMean !== null && refMean !== undefined && model !== B) {
+      rows.push(`<div class="t-row"><span>${displayModelHtml(B)}</span><b>${fmtVal(met, refMean)} ${esc(mm.units)}</b></div>`);
+    }
     if (c.rel !== null && c.rel !== undefined && Number.isFinite(c.rel) && model !== B) {
-      rows.push(`<div class="t-row"><span>vs ${esc(B)}</span><b class="t-rel ${c.rel >= 0 ? 'pos' : 'neg'}">${c.rel >= 0 ? '+' : ''}${c.rel.toFixed(1)}%</b></div>`);
+      rows.push(`<div class="t-row"><span>vs ${displayModelHtml(B)}</span><b class="t-rel ${c.rel >= 0 ? 'pos' : 'neg'}">${c.rel >= 0 ? '+' : ''}${c.rel.toFixed(1)}%</b></div>`);
     } else if (model !== B) {
-      rows.push(`<div class="t-row"><span>vs ${esc(B)}</span><b class="t-rel na">no skill ref</b></div>`);
+      rows.push(`<div class="t-row"><span>vs ${displayModelHtml(B)}</span><b class="t-rel na">no skill ref</b></div>`);
     }
     if (Number.isFinite(c.lo) && Number.isFinite(c.hi) && c.kind !== 'mean') {
       rows.push(`<div class="t-row"><span>95% CI</span><b>${fmtVal(met, c.lo)} – ${fmtVal(met, c.hi)} ${esc(mm.units)}</b></div>`);
@@ -1679,11 +1959,12 @@ function attachTip(td, etype, met, c) {
     if (c.kind === 'mean' && Number.isFinite(c.nLeads)) {
       rows.push(`<div class="t-row"><span>over leads</span><b>${c.nLeads}</b></div>`);
     }
-    const who = td.dataset.model ? ` · <b>${esc(td.dataset.model)}</b>` : '';
+    const who = td.dataset.model ? ` · <b>${displayModelHtml(td.dataset.model)}</b>` : '';
     return `<div class="t-title">${esc(mm.label)}${mm.units ? ` [${esc(mm.units)}]` : ''} · ${esc(TYPE_META[etype].short)}${who}` +
       (c.kind === 'mean' ? ' · mean of visible leads'
         : c.kind === 'event' ? ' · event-level'
-        : ` · lead ${leadLabel(c.lead)}`) + `</div>` + rows.join('');
+        : ` · lead ${leadLabel(c.lead)}`) + `</div>` + rows.join('')
+      + (c.laneNote ? `<div class="t-note">${esc(c.laneNote)}</div>` : '');
   };
   const showAt = (x, y) => {
     tipEl = $('#tooltip');
@@ -1734,7 +2015,7 @@ function attachTip(td, etype, met, c) {
     }
   });
   const mm = metricMeta(met);
-  const parts = [td.dataset.model || TYPE_META[etype].short, mm.label,
+  const parts = [td.dataset.model ? displayModelName(td.dataset.model) : TYPE_META[etype].short, mm.label,
     `${fmtVal(met, c.mean)}${mm.units ? ' ' + mm.units : ''}`];
   if (Number.isFinite(c.n) && c.kind !== 'mean') parts.push('n ' + c.n);
   if (c.greyed) parts.push('miss rate > 50%');
@@ -1873,7 +2154,7 @@ function renderSkillCharts() {
         traces.push({
           x: pts.map((p) => p.lead_time_hours / 24), y: ys,
           customdata: pts.map((p) => leadLabel(p.lead_time_hours)),
-          name: model, type: 'scatter', mode: 'lines+markers',
+          name: displayModelName(model), type: 'scatter', mode: 'lines+markers',
           hovertemplate: '%{fullData.name} · lead %{data.customdata}<br>%{y:.2f}<extra></extra>',
           line: { color: modelColor(model, mIdx), width: model === state.baseline ? 2.4 : 1.8 },
           marker: { size: 4 },
@@ -1887,7 +2168,7 @@ function renderSkillCharts() {
       grid.appendChild(card);
 
       const binsX = [...new Set(state.allLeads)].sort((a, b) => a - b);
-      const layout = baseLayout(mode === 'rel' ? '% improvement vs ' + esc(state.baseline) : `${metricMeta(met).label}${metricMeta(met).units ? ' [' + metricMeta(met).units + ']' : ''}`, mode);
+      const layout = baseLayout(mode === 'rel' ? '% improvement vs ' + displayModelName(state.baseline) : `${metricMeta(met).label}${metricMeta(met).units ? ' [' + metricMeta(met).units + ']' : ''}`, mode);
       if (shown === 0) {
         layout.showlegend = true;
         layout.legend = { orientation: 'h', x: 0, y: 1.14, xanchor: 'left', yanchor: 'bottom',
@@ -2201,6 +2482,9 @@ function syncUrl(push) {
   if (state.detailDay != null) params.day = state.detailDay;
   if (state.region && state.region !== 'global') params.region = state.region;
   if (state.tab && state.tab !== 'all') params.tab = state.tab;   // type filter is shareable state
+  // the active view rides the hash; the default (Events) keeps it clean, and a
+  // detail is its own view — the rail's choice returns when it closes
+  if (state.view === 'scorecard' && !state.selectedEvent) params.view = 'scorecard';
   // the merged global map's #map/#layers/#sel ride along so Back from a
   // detail restores the slider/selection state (URL is the source of truth)
   if (window.MergedMap) Object.assign(params, MergedMap.urlParams());
@@ -2230,15 +2514,112 @@ function eventName(ev, viz) {
   // the track lane names its storm (IBTrACS NAME); the area lanes stay anonymous
   const nm = ev.details && ev.details.name;
   if (ev.event_type === 'tropical_cyclone' && nm && nm !== 'Unnamed') t += ' ' + nm;
-  let region;
-  if (viz) region = eventRegion(ev, viz);
-  else {
-    if (!ev._region || ev._regionRough !== !COUNTRIES) {
-      ev._region = eventRegion(ev, null); ev._regionRough = !COUNTRIES;
-    }
-    region = ev._region;
-  }
+  const region = viz ? eventRegion(ev, viz) : eventNameRegion(ev);
   return `${t} \u00b7 ${String(region).split(',')[0]}`;
+}
+/* Cached bbox/country vote for a list row (the viz, when loaded, is sharper). */
+function eventNameRegion(ev) {
+  if (!ev._region || ev._regionRough !== !COUNTRIES) {
+    ev._region = eventRegion(ev, null); ev._regionRough = !COUNTRIES;
+  }
+  return ev._region;
+}
+
+/* Band 1 title (contract §3): the place, or the storm's own name — NEVER the
+   event type, which sits beside it in #detail-type-slot. "Heat wave · Heat
+   wave · S. Sudan" was the header the owner sent back three times. */
+function eventPlaceName(ev, viz) {
+  const d = ev.details || {};
+  if (ev.event_type === 'tropical_cyclone' && d.name && d.name !== 'Unnamed') return d.name;
+  return String(viz ? eventRegion(ev, viz) : eventNameRegion(ev)).split(',')[0];
+}
+
+/* Band 1 fact pills: four labelled values — dates+length, the peak, the place,
+   the source/status — identical in shape for all seven lanes. */
+function detailMetaChips(ev, viz) {
+  const d = ev.details || {};
+  const short = (iso) => fmtDate(iso).replace(/, \d{4}$/, '');
+  const days = eventDurationDays(ev);
+  const num = (v) => (Number.isFinite(v)
+    ? (Math.abs(v) >= 100 ? Math.round(v).toLocaleString('en-US') : v.toFixed(1)) : null);
+  const extra = [];
+  let peakLabel = 'Peak', peakValue = null;
+  switch (ev.event_type) {
+    case 'tropical_cyclone':
+      peakLabel = 'Peak wind';
+      peakValue = num(ev.peak_value) === null ? null
+        : `${num(ev.peak_value)} kt${d.peak_category ? ' ' + d.peak_category : ''}`;
+      if (Number.isFinite(d.min_pressure_hpa)) extra.push(`${Math.round(d.min_pressure_hpa)} hPa`);
+      break;
+    case 'midlat_cyclone':
+      peakLabel = 'Min pressure';
+      peakValue = num(ev.peak_value) === null ? null : `${num(ev.peak_value)} hPa`;
+      if (Number.isFinite(d.displacement_km)) {
+        extra.push(`${Math.round(d.displacement_km).toLocaleString('en-US')} km travelled`);
+      }
+      if (d.bomb) extra.push(`bomb \u00d7${Number.isFinite(d.bomb_ratio) ? d.bomb_ratio.toFixed(1) : '1'}`);
+      break;
+    case 'atmospheric_river': {
+      peakLabel = 'Peak IVT';
+      const u = d.peak_value_units || 'kg m\u207b\u00b9 s\u207b\u00b9';
+      peakValue = num(ev.peak_value) === null ? null : `${num(ev.peak_value)} ${u}`;
+      const lf = parseISO(d.landfall_time);
+      if (lf) extra.push('landfall ' + lf.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }));
+      break;
+    }
+    case 'flood':
+      peakLabel = 'Peak 72 h';
+      peakValue = num(ev.peak_value) === null ? null : `${num(ev.peak_value)} mm`;
+      if (Number.isFinite(d.peak_daily_mm)) extra.push(`${Math.round(d.peak_daily_mm)} mm peak day`);
+      if (Number.isFinite(d.peak_area_km2)) extra.push(`${Math.round(d.peak_area_km2).toLocaleString('en-US')} km\u00b2 at peak`);
+      break;
+    default:
+      peakLabel = 'Peak daily-mean';
+      peakValue = num(ev.peak_value) === null ? null : `${num(ev.peak_value)} \u00b0C`;
+      // the map badge reads viz.obs.max_consec; merged events keep the core part's
+      // details.max_consecutive_days, so prefer the viz number once it is loaded (G-28)
+      {
+        const run = viz && viz.obs && Number.isFinite(viz.obs.max_consec)
+          ? viz.obs.max_consec : d.max_consecutive_days;
+        if (Number.isFinite(run)) extra.push(`${run} d max run`);
+      }
+  }
+  const placeFull = String(viz ? eventRegion(ev, viz) : eventNameRegion(ev));
+  const title = eventPlaceName(ev, viz);
+  /* The title already IS the place, so the pill only earns its seat with what the
+     title left out — the wider region. A TC is titled by its storm name, so its
+     basin always belongs here. */
+  let placeLabel = ev.event_type === 'tropical_cyclone' ? 'Basin' : 'Region';
+  const placeVal = ev.event_type === 'tropical_cyclone' ? placeFull
+    : (placeFull.startsWith(title + ',') ? placeFull.slice(title.length + 1).trim() : '');
+  const source = ev.event_type === 'tropical_cyclone'
+    ? [d.source || 'IBTrACS', d.wind_basis].filter(Boolean).join(' \u00b7 ')
+    : ev.event_type === 'midlat_cyclone' ? (d.source || 'ERA5 MSLP')
+      : ev.event_type === 'flood' ? (d.source_label || 'AI-estimated rain \u00b7 Google PARDIG')
+        : ev.event_type === 'atmospheric_river' ? 'ERA5 \u00b7 EWB AR mask'
+          : 'ERA5 daily mean';
+  const chips = [['Dates', `${short(ev.start)} \u2013 ${short(eventLastDay(ev))}${days ? ` \u00b7 ${days} d` : ''}`]];
+  if (peakValue) chips.push([peakLabel, [peakValue].concat(extra).join(' \u00b7 ')]);
+  if (placeVal) chips.push([placeLabel, placeVal]);
+  chips.push(['Source', source]);
+  return chips.map(([k, v]) =>
+    `<span class="det-meta-chip"><span class="k">${esc(k)}</span>${esc(v)}</span>`).join('');
+}
+
+/* One paint for the whole Band-1 header, re-run whenever a sharper place name
+   arrives (country table, then the viz landfall mask). */
+function paintDetailHeader(ev) {
+  const viz = state._vizFor === ev.id ? state._viz : null;
+  const h2 = $('#detail-title');
+  const place = eventPlaceName(ev, viz);
+  h2.textContent = place ? place.charAt(0).toUpperCase() + place.slice(1) : '';
+  h2.title = ev.title;
+  const slot = $('#detail-type-slot');
+  if (slot) slot.innerHTML = typeChipHtml(ev.event_type);
+  const chips = $('#detail-chips');
+  if (chips) chips.innerHTML = detailMetaChips(ev, viz);
+  const story = $('#detail-story');
+  if (story) story.textContent = storyLabel(ev, viz);   // story + map badge agree on max run
 }
 
 function matchesSearch(ev) {
@@ -2270,10 +2651,15 @@ function eventLastDay(ev) {
 function renderEventTable() {
   const tbody = $('#event-table tbody');
   tbody.innerHTML = '';
+  /* 'On map' narrows the list to the events the map paints at this very frame
+     (the merged map reports them through window.onMapEvents), so the table and
+     the picture on screen are the same set of events. */
+  const onMap = state.evScope === 'map' ? new Set(mapRowState.active) : null;
   let n = 0, drawn = 0;
   for (const ev of state.events) {
     if (state.tab !== 'all' && ev.event_type !== state.tab) continue;
     if (!inRegion(ev)) continue;   // Region dropdown: list follows the region
+    if (onMap && !onMap.has(ev.id)) continue;
     if (!matchesSearch(ev)) continue;
     n += 1;
     if (drawn >= EVENT_TABLE_MAX_ROWS) continue;   // count all, render a bounded prefix
@@ -2308,8 +2694,8 @@ function renderEventTable() {
     tr.innerHTML =
       `<td><span class="type-ic" data-etype="${esc(ev.event_type)}" title="${esc(ev.event_type.replace('_', ' '))}">${typeIcon(ev.event_type)}</span></td>` +
       `<td><span class="ev-name">${esc(eventName(ev))}</span>` +
-      `<span class="ev-sub">${short(ev.start)} \u2013 ${short(eventLastDay(ev))}${days ? ` \u00b7 ${days} day${days === 1 ? '' : 's'}` : ''}` +
-      `<span class="ev-live" hidden> \u00b7 on map now</span></span></td>` +
+      `<span class="ev-sub">${short(ev.start)} \u2013 ${short(eventLastDay(ev))}${days ? ` \u00b7 ${days}d` : ''}` +
+      `<span class="ev-live" hidden> \u00b7 on map</span></span></td>` +
       `<td class="num" title="${esc(peakUnitFull)}">${peak}</td>`;
     // list ⇄ map: pointing at a row outlines the event on the map and timeline
     tr.addEventListener('pointerenter', () => { if (window.MergedMap) MergedMap.preview(ev.id); });
@@ -2329,18 +2715,21 @@ function renderEventTable() {
     const searching = !!(state.search && state.search.trim());
     const re = regionEntry();
     const broken = state.tab === 'all' ? null : laneStatusNote(state.tab);
-    const note = searching ? 'No events match your search'
+    const note = onMap ? 'Nothing on the map in this frame \u2014 step the time, or pick All'
+      : searching ? 'No events match your search'
       : broken ? broken
       : re && state.tab === 'all' ? `No events in ${re.label} this window`
       : re ? `No ${TYPE_META[state.tab] ? TYPE_META[state.tab].label.toLowerCase() : ''} in ${re.label} this window`
       : emptyLaneLine(state.tab);
-    const crit = searching ? ''
+    const crit = onMap ? (searching ? '' : 'The map paints the events alive at the selected time step and inside the view')
+      : searching ? ''
       : re && !broken ? 'Events are assigned to regions by the centroid of their bounding box'
       : state.tab === 'all' ? 'Events must clear the detection criteria for their type in the 90-day window.' : TYPE_CRITERIA[state.tab];
     tr.innerHTML = `<td></td><td colspan="2"><span class="lane-empty"${crit ? ` title="${esc(crit)}"` : ''}>${esc(note)}${crit ? ' <span class="crit-mark" aria-hidden="true">ⓘ</span>' : ''}</span></td>`;
     tbody.appendChild(tr);
   }
   $('#event-count').textContent = `${n} event${n === 1 ? '' : 's'}`;
+  syncEvScopeUI();
   markMapRows();
   /* M7 (DR2): same horizontal-scroll affordance as the scorecard tables */
   const evWrap = tbody.closest('.table-wrap');
@@ -2379,13 +2768,37 @@ function renderEventTable() {
 }
 
 /* list ⇄ map: the merged map reports which events are on screen at the
-   current time step and which are selected; rows mirror that. */
+   current time step and which are selected; rows mirror that, and an 'On map'
+   list follows the frame as it plays. */
 let mapRowState = { active: [], sel: [] };
 window.onMapEvents = (active, sel) => {
+  sel = sel || [];   // mergedmap always passes both; the hook is public, so don't throw
   const scroll = sel.length && sel.join() !== mapRowState.sel.join();
+  const changed = active.join() !== mapRowState.active.join();
   mapRowState = { active, sel };
   markMapRows(scroll);
+  syncEvScopeUI();
+  if (changed && state.evScope === 'map' && !state.selectedEvent) renderEventTable();
 };
+/* The scope toggle says what 'On map' would show right now, and keeps the
+   pressed state after any re-render. */
+function syncEvScopeUI() {
+  const host = $('#ev-scope-toggle');
+  if (!host) return;
+  const cnt = $('#ev-map-count');
+  if (cnt) cnt.textContent = String(mapRowState.active.length);
+  host.querySelectorAll('[data-scope]').forEach((b) => {
+    const on = b.dataset.scope === state.evScope;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+}
+function setEvScope(scope) {
+  const s = scope === 'map' ? 'map' : 'all';
+  if (s === state.evScope) return;
+  state.evScope = s;
+  renderEventTable();
+}
 function markMapRows(scroll) {
   const act = new Set(mapRowState.active), sel = new Set(mapRowState.sel);
   let first = null;
@@ -2445,7 +2858,7 @@ function renderEventMini(ev) {
   const wrap = el('div', 'table-wrap mini-wrap');
   const table = el('table', 'mini-table');
   const head = el('tr');
-  head.appendChild(el('th', 'model-col', `this event · vs ${esc(B)}`));
+  head.appendChild(el('th', 'model-col', `this event · vs ${esc(displayModelName(B))}`));
   for (const met of metList) {
     const mm = metricMeta(met);
     const th = el('th', '', `${esc(mm.label)}${mm.units ? ` <span class="units">[${esc(mm.units)}]</span>` : ''}`);
@@ -2457,7 +2870,7 @@ function renderEventMini(ev) {
   for (const model of models) {
     const tr = el('tr', model === B ? 'baseline-row' : '');
     tr.appendChild(el('td', 'model-col',
-      `<span class="dot" style="--c:${modelColor(model, state.allModels.indexOf(model))}"></span>${esc(model)}`));
+      `<span class="dot" style="--c:${modelColor(model, state.allModels.indexOf(model))}"></span>${displayModelHtml(model)}`));
     for (const met of metList) {
       const g = byMet.get(met);
       const v = val(g, model), ref = val(g, B);
@@ -2465,8 +2878,8 @@ function renderEventMini(ev) {
       const rel = model === B ? null : relSkill(v, ref, met);
       const td = el('td', 'cell' + (model === B ? ' baseline' : ''), fmtVal(met, v));
       if (model !== B) td.style.background = cellColor(rel);
-      td.title = `${model}: ${fmtVal(met, v)}${rel !== null && Number.isFinite(rel)
-        ? ` (${rel >= 0 ? '+' : ''}${rel.toFixed(1)}% vs ${B})` : ''} — ${metricBlurb(met)}`;
+      td.title = `${displayModelName(model)}: ${fmtVal(met, v)}${rel !== null && Number.isFinite(rel)
+        ? ` (${rel >= 0 ? '+' : ''}${rel.toFixed(1)}% vs ${displayModelName(B)})` : ''} — ${metricBlurb(met)}`;
       tr.appendChild(td);
     }
     tbody.appendChild(tr);
@@ -2543,33 +2956,18 @@ function selectEvent(id, fromMap, nav) {
   syncUrl(nav.push && openingFromList);
   const sec = $('#detail-sec');
   sec.classList.remove('hidden');
-  // one primary view at a time (QA 2026-11-06): home sections yield to detail
-  $('#scorecard-sec').classList.add('hidden');
-  $('#events-sec').classList.add('hidden');
-  $('#global-sec').classList.add('hidden');   // one primary view at a time (QA 2026-11-06)
+  // one primary view at a time (QA 2026-11-06): both list views yield to the detail
   document.body.classList.add('detail-open');
-  syncRailActive();   // the section links are hidden here — nothing may stay marked
+  applyView();
   const ev = state.events.find((e) => e.id === id);
   if (!ev) return;
-  /* G-12: "Heat wave · S. Sudan" (type · region) — the dated data title stays in the data, the
-     dates are in the story line. Region upgrades once the country table is loaded. */
-  const h2 = $('#detail-title');
-  const humanTitle = () => eventName(ev, state._vizFor === id ? state._viz : null);
-  h2.textContent = humanTitle();
-  h2.title = ev.title;
-  const chips = $('#detail-chips');
-  /* The detail header carries the type as a lane chip (glyph + short label +
-     identity hue) — the chiclet surface the owner lists (2026-11-17). The story
-     line below still spells out type / region / dates / peak in words. */
-  chips.innerHTML = typeChipHtml(ev.event_type);
-  const d = ev.details || {};
-  void d;
-  const story = $('#detail-story');
-  story.textContent = storyLabel(ev);
-  loadCountries().then(() => {           // upgrade vague band → named country (storyLabel re-geocodes)
+  /* Band 1: title = the place or the storm, the type rides beside it as a chip,
+     and the dates/peak/place/source are four labelled pills. The sentence-form
+     story stays for screen readers only (zero visual repetition). */
+  paintDetailHeader(ev);
+  loadCountries().then(() => {           // upgrade vague band → named country
     if (state.selectedEvent !== id) return;
-    h2.textContent = humanTitle();
-    story.textContent = storyLabel(ev, state._vizFor === id ? state._viz : null);
+    paintDetailHeader(ev);
   });
   renderEventMini(ev);
   /* a11y: the row that had focus is hidden by now, which dropped focus to
@@ -2626,8 +3024,7 @@ function selectEvent(id, fromMap, nav) {
       vizHost.innerHTML = '';
       vizHost.style.minHeight = '';
       state._viz = viz; state._vizFor = id;
-      story.textContent = storyLabel(ev, viz);   // story + map badge must agree on max run
-      h2.textContent = humanTitle();             // landfall-mask region upgrades the title too
+      paintDetailHeader(ev);   // story + badge + title all upgrade with the mask
       // ponytail 2026-11-08: detailLead was already seeded from the hash in
       // selectEvent before syncUrl erased it — re-reading the hash here was dead
       EventViz.initialLead = state.detailLead;
@@ -2697,7 +3094,7 @@ function selectEvent(id, fromMap, nav) {
         traces.push({
           x: pts.map((p) => p[0] / 24), y: pts.map((p) => p[1]),
           customdata: pts.map((p) => leadLabel(p[0])),
-          name: model, type: 'scatter', mode: 'lines+markers',
+          name: displayModelName(model), type: 'scatter', mode: 'lines+markers',
           hovertemplate: '%{fullData.name} \u00b7 lead %{data.customdata}<br>%{y:.2f}<extra></extra>',
           line: { color: modelColor(model, mIdx), width: model === state.baseline ? 2.4 : 1.8 }, marker: { size: 4 },
         });
@@ -2732,9 +3129,7 @@ function closeDetail(nav) {
   syncUrl(!!nav.push);
   $('#detail-sec').classList.add('hidden');
   document.body.classList.remove('detail-open');
-  $('#scorecard-sec').classList.remove('hidden');
-  $('#events-sec').classList.remove('hidden');
-  syncWindowSections();   // week-aware re-show (ponytail 2026-11-08 16:15)
+  applyView();   // back to whichever view the rail has selected (week-aware re-show)
   const vh = $('#detail-viz'); if (vh) vh.innerHTML = '';
   const st = $('#detail-story'); if (st) st.textContent = '';
   const mini = $('#detail-mini'); if (mini) mini.innerHTML = '';
@@ -2804,58 +3199,66 @@ function setThemePref(p) {
 }
 
 /* ------------------------------------------------------------------ */
-/* rail: which section am I looking at                                 */
+/* VIEWS: Events and Scorecard are two views, not one long page.         */
+/* The rail switches between them (the inactive section is hidden, so     */
+/* neither scrolls the other away), the active view rides the URL hash    */
+/* (#view=scorecard; the default Events view keeps a clean hash), and the */
+/* two links stay usable while an event detail is open — from a detail    */
+/* either link closes it and goes to that view.                           */
 /* ------------------------------------------------------------------ */
-/* The rail's section links mark the section under the top of the viewport, not
-   the link you last clicked. Two sections and one probe line — a quarter of the
-   viewport down (below the sticky phone topbar) — and the answer is the last
-   section whose top has crossed it, so a section taller than the screen stays
-   marked while you read it. rAF-throttled on scroll, and the marker is frozen
-   during a click-jump (otherwise the smooth scroll walks the marker through
-   every section on the way down and lands back where you started). */
-const RAIL_SECTIONS = ['explore', 'scorecard-sec'];
-let railRaf = 0, railJumpLock = false, railJumpTimer = 0;
+let railRaf = 0;
 
-function railVisible(id) {
-  const s = document.getElementById(id);
-  return s && !s.classList.contains('hidden') && s.offsetParent !== null ? s : null;
-}
-function currentRailSection() {
-  if (state.selectedEvent) return null;      // detail view: the section links are hidden
-  const bar = document.querySelector('.mobile-topbar');
-  const barH = (bar && getComputedStyle(bar).display !== 'none')
-    ? bar.getBoundingClientRect().height : 0;
-  const line = barH + Math.min(160, window.innerHeight * 0.28);
-  let cur = null, first = null;
-  for (const id of RAIL_SECTIONS) {
-    const s = railVisible(id);
-    if (!s) continue;
-    if (!first) first = id;
-    if (s.getBoundingClientRect().top <= line) cur = id;
-  }
-  return cur || first;    // above the first section (the page title) = the first one
-}
 function paintRail(cur) {
   document.querySelectorAll('#rail [data-jump]').forEach((b) => {
     const on = b.dataset.jump === cur;
     b.classList.toggle('is-active', on);
-    if (on) b.setAttribute('aria-current', 'true');
+    if (on) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   });
 }
-function syncRailActive() { paintRail(currentRailSection()); }
+function syncRailActive() {
+  paintRail(state.selectedEvent ? null
+    : state.view === 'scorecard' ? 'scorecard-sec' : 'explore');
+}
 function syncRailSoon() {
-  if (railJumpLock || railRaf) return;
+  if (railRaf) return;
   railRaf = requestAnimationFrame(() => { railRaf = 0; syncRailActive(); });
 }
-/* A jump owns the marker until the scroll settles: mark the target now, hand
-   back to the scroll listener when the motion stops (or after 800 ms, whichever
-   comes first — a reduced-motion jump never fires a second scroll event). */
-function markRailJump(id) {
-  railJumpLock = true;
-  clearTimeout(railJumpTimer);
-  railJumpTimer = setTimeout(() => { railJumpLock = false; syncRailActive(); }, 800);
-  paintRail(id);
+
+/* Show exactly one view. Safe to call at any point in boot: it only moves
+   classes, so the first paint of a #view=scorecard or #event= link is right. */
+function applyView() {
+  const detail = !!state.selectedEvent;
+  const ev = !detail && state.view === 'events';
+  const sc = !detail && state.view === 'scorecard';
+  const explore = $('#explore'), scEl = $('#scorecard-sec'), evSec = $('#events-sec');
+  if (explore) explore.classList.toggle('hidden', !ev);
+  if (scEl) scEl.classList.toggle('hidden', !sc);
+  if (evSec) evSec.classList.toggle('hidden', !ev);
+  syncWindowSections();   // #global-sec: archived weeks and the detail view hide the map
+  syncRailActive();
+}
+
+function viewFromHash(h) {
+  const v = h.view;
+  if (v == null) return null;
+  return v === 'scorecard' || v === 'events' ? v : undefined;   // undefined = garbage in the bar
+}
+
+/* Switch views. From an open detail this closes it first (the detail is its own
+   view; the rail never goes dead), and the page starts at the top of whatever
+   view comes next instead of at the detail's scroll depth. */
+function setView(view, push = true) {
+  const v = view === 'scorecard' ? 'scorecard' : 'events';
+  const changed = state.view !== v || !!state.selectedEvent;
+  state.view = v;
+  if (state.selectedEvent) {
+    state.listReturn = null;        // the list's saved scroll belongs to the old visit
+    closeDetail({ push: false });
+  }
+  applyView();
+  syncUrl(!!push && changed);
+  if (changed) window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
 /* ------------------------------------------------------------------ */
@@ -2886,6 +3289,12 @@ async function boot() {
   const deepLink = !!(hashParams().event || new URLSearchParams(location.search).get('event'));
   if (deepLink) document.documentElement.classList.add('deeplink');
   restoreState();
+  /* The view is URL state (#view=scorecard): read it before anything paints, so
+     a shared Scorecard link never flashes the Events page first. */
+  { const v = viewFromHash(hashParams());
+    if (v === undefined) setHashParam('view', null);   // garbage never survives the bar
+    else if (v) state.view = v; }
+  applyView();
   applyTheme();
   document.querySelectorAll('#theme-ctl [data-pref]').forEach((b) => {
     b.onclick = () => setThemePref(b.dataset.pref);
@@ -2900,13 +3309,20 @@ async function boot() {
     }
   });
   $('#detail-close').onclick = () => closeDetail();
-  document.querySelectorAll('[data-jump]').forEach((b) => {   // buttons, not #anchors: the hash carries app state
-    b.onclick = () => {
-      markRailJump(b.dataset.jump);   // hold the marker still while the page glides down
-      document.getElementById(b.dataset.jump).scrollIntoView({
-        behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
-    };
+  /* The rail's two section links SWITCH VIEWS (AC-1.1) — they used to scroll one
+     very long page, which meant "Scorecard" landed anywhere from the map to the
+     middle of a table depending on where you had been reading. From an open
+     event detail either link closes it and goes to that view. */
+  document.querySelectorAll('[data-jump]').forEach((b) => {
+    b.onclick = () => setView(b.dataset.view
+      || (b.dataset.jump === 'scorecard-sec' ? 'scorecard' : 'events'));
   });
+  /* All | On map: the list can follow the map frame instead of the window. */
+  const scope = $('#ev-scope-toggle');
+  if (scope) scope.querySelectorAll('[data-scope]').forEach((b) => {
+    b.onclick = () => setEvScope(b.dataset.scope);
+  });
+  syncEvScopeUI();
   /* Skip link (WCAG 2.4.1). Intercepted rather than a plain #anchor: the hash is
      app state (#event=, #region=, #map=, #layers=), so pointing a real anchor at
      #main-content would wipe the current view's URL. */
@@ -2917,8 +3333,8 @@ async function boot() {
       block: 'start' });
     m.focus({ preventScroll: true });
   };
-  window.addEventListener('scroll', syncRailSoon, { passive: true });
-  window.addEventListener('resize', syncRailSoon);
+  /* The rail marks the active VIEW now (no scroll probe): which section is on
+     screen is a fact about state, not about the viewport. */
   syncRailSoon();
   /* Show-tabs: tablist keyboard over the wrapped grid (no scroller, so no edge
      fades and no wheel-capture — the whole row set is always visible). */
@@ -3040,6 +3456,10 @@ async function boot() {
     const src = e.target;   // never `el`/`t`: both names are taken in this file
     const typing = !!src && (src.tagName === 'INPUT' || src.tagName === 'SELECT'
       || src.tagName === 'TEXTAREA' || src.isContentEditable);
+    if (e.key === 'Escape' && window.MergedMap && MergedMap.isLegendOpen && MergedMap.isLegendOpen()) {
+      MergedMap.closeLegend(true);   // the popover owns Esc while it is open
+      return;
+    }
     if (e.key === 't' && !e.shiftKey && !typing && theaterBtn && theaterBtn.offsetParent !== null) {
       e.preventDefault();
       setTheater(!theaterOn());
@@ -3173,6 +3593,12 @@ async function boot() {
      (popstate) and a pasted/edited #event=… link (hashchange). App-initiated
      pushState/replaceState fire neither, so this never echoes. */
   const syncFromLocation = () => {
+    /* The view follows the URL on Back/Forward and pasted #view= links; an
+       unknown value falls back to the default view and never stays in the bar. */
+    const hv = viewFromHash(hashParams());
+    if (hv === undefined) setHashParam('view', null);
+    const wantView = hv || 'events';
+    if (wantView !== state.view) { state.view = wantView; applyView(); }
     /* The Show tab follows the URL on Back/Forward (and pasted #tab= links).
        syncUrl writes the tab from state, so an invalid value rewrites itself
        out via the next state write; here it just falls back to All. */

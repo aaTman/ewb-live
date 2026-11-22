@@ -177,9 +177,15 @@ def page_ctx(_pw):
 def dash(page_ctx, base):
     page, errs = page_ctx
     page.goto(base + "/", wait_until="domcontentloaded")
-    page.wait_for_selector("#scorecard-tables .sc-block", timeout=15000)
+    page.wait_for_selector("#event-table tbody tr", timeout=15000)
     page.wait_for_selector("#region-group:not(.hidden)", timeout=8000)
     yield page, errs, base
+
+
+def open_scorecard(page, tab=None):
+    h = "#view=scorecard" + (f"&tab={tab}" if tab else "")
+    page.evaluate(f"() => {{ location.hash = {json.dumps(h)}; }}")
+    page.wait_for_selector("#scorecard-sec:not(.hidden) #scorecard-tables .sc-block", timeout=10000)
 
 
 def region(page):
@@ -217,23 +223,30 @@ def test_dropdown_populates(dash):
 
 def test_region_renders_scorecard_with_honest_counts(dash):
     page, errs, _ = dash
+    open_scorecard(page)
     page.select_option("#region-select", "europe")
     page.wait_for_function("() => window.__debug.state.region === 'europe'")
-    assert "1 event" in lane(page, "Heat wave").locator("h3").inner_text()
-    assert "1 event" in lane(page, "Freeze").locator("h3").inner_text()
-    assert "No atmospheric rivers in Europe" in lane(page, "Atmospheric river").inner_text()
+    # overview matrix columns carry honest per-region counts
+    hdr = page.inner_text("#scorecard-tables .sc-overview thead")
+    assert "HEAT WAVE" in hdr.upper() and "1 event" in hdr
+    assert "FREEZE" in hdr.upper()
     # the scorecard echoes the region the way it echoes the type filter
     assert "in Europe" in page.inner_text("#sc-scope")
+    # drilling into an empty hazard shows the region-aware empty-lane note
+    page.evaluate("() => { location.hash = '#view=scorecard&region=europe&tab=atmospheric_river'; }")
+    page.wait_for_function("() => document.querySelector('#scorecard-tables').innerText.includes('No atmospheric rivers in Europe')", timeout=5000)
     # NH counts the multi-membership event (f_eu is NH *and* Europe); its empty
     # note names NH, not Europe
     page.select_option("#region-select", "northern_hemisphere")
     page.wait_for_function("() => window.__debug.state.region === 'northern_hemisphere'")
+    assert "No atmospheric rivers in Northern Hemisphere" in page.inner_text("#scorecard-tables")
+    page.locator("#sc-views button", has_text="Heat wave").click()
     assert "2 events" in lane(page, "Heat wave").locator("h3").inner_text()
-    assert "No atmospheric rivers in Northern Hemisphere" in lane(page, "Atmospheric river").inner_text()
     page.select_option("#region-select", "tropics")
     page.wait_for_function("() => window.__debug.state.region === 'tropics'")
+    assert "No heat waves in Tropics" in page.inner_text("#scorecard-tables")
+    page.locator("#sc-views button", has_text="Atm. river").click()
     assert "1 event" in lane(page, "Atmospheric river").locator("h3").inner_text()
-    assert "No heat waves in Tropics" in lane(page, "Heat wave").inner_text()
     assert errs == []
 
 
@@ -264,19 +277,19 @@ def test_merged_map_region_view(dash):
 
 def test_url_persistence_roundtrip(page_ctx, base):
     page, errs = page_ctx
-    page.goto(base + "/", wait_until="domcontentloaded")
+    page.goto(base + "/#view=scorecard", wait_until="domcontentloaded")
     page.wait_for_selector("#region-group:not(.hidden)", timeout=8000)
     page.select_option("#region-select", "europe")
     page.wait_for_function("() => location.hash.includes('region=europe')")
     page.reload(wait_until="domcontentloaded")
     page.wait_for_function("() => window.__debug.state.region === 'europe'", timeout=8000)
-    assert "No atmospheric rivers in Europe" in page.content()
+    assert "in Europe" in page.inner_text("#sc-scope")
     page.go_back()   # back to the no-region entry -> Global
     page.wait_for_function("() => window.__debug.state.region === 'global'", timeout=4000)
     page.go_forward()
     page.wait_for_function("() => window.__debug.state.region === 'europe'", timeout=4000)
     # an unknown region key is dropped from the URL, never silently kept
-    page.goto(base + "/#region=atlantis", wait_until="domcontentloaded")
+    page.goto(base + "/#view=scorecard&region=atlantis", wait_until="domcontentloaded")
     page.wait_for_selector("#scorecard-tables .sc-block", timeout=8000)
     page.wait_for_function("() => !location.hash.includes('atlantis')", timeout=8000)
     assert region(page) == "global"
@@ -285,7 +298,7 @@ def test_url_persistence_roundtrip(page_ctx, base):
 
 def test_archived_week_hides_dropdown(page_ctx, base):
     page, errs = page_ctx
-    page.goto(base + "/?week=2025-W52", wait_until="domcontentloaded")
+    page.goto(base + "/?week=2025-W52#view=scorecard", wait_until="domcontentloaded")
     page.wait_for_selector("#scorecard-tables .sc-block", timeout=8000)
     page.wait_for_timeout(1000)   # let the region 404 resolve (control stays hidden)
     assert page.is_hidden("#region-select")
@@ -334,11 +347,11 @@ def test_region_filters_lists_and_counts(dash):
 
 def test_region_deep_link_waits_for_lazy_file(page_ctx, base):
     page, errs = page_ctx
-    page.goto(base + "/#region=north_america", wait_until="domcontentloaded")
+    page.goto(base + "/#view=scorecard&region=north_america&tab=freeze", wait_until="domcontentloaded")
     # first paint (Global rows) lands before the lazy region file resolves; the
     # region view must apply once it does — no manual reload.
     page.wait_for_function("() => window.__debug && window.__debug.state.region === 'north_america'", timeout=8000)
-    assert "No freezes in North America" in page.content()
+    assert "No freezes in North America" in page.inner_text("#scorecard-tables")
     assert "region=north_america" in page.evaluate("() => location.hash")
     assert errs == []
 
@@ -349,6 +362,7 @@ def test_small_sample_cue_marks_cells_and_warns(dash):
     The fixture's Global rows carry n >= 5, so Global must show a clean table;
     every region slice is under 5, so Europe must show the whole cue."""
     page, errs, _ = dash
+    open_scorecard(page, tab="heat_wave")
     small_count = "() => document.querySelectorAll('td.cell.small-n').length"
     assert page.evaluate(small_count) == 0
     assert page.is_hidden("#sc-sample-note")

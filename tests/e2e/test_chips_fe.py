@@ -194,12 +194,11 @@ def _grid(page):
 
 
 @pytest.mark.parametrize("w,h,rows,dividers", [(1440, 900, [8], 2), (1366, 768, [8], 0),
-                                                (820, 1100, [6, 2], 0), (390, 844, [3, 3, 2], 0)])
+                                                (820, 1100, [6, 2], 0), (390, 844, [8], 0)])
 def test_chips_row_is_compact_never_scrolled_or_clipped(live_url, w, h, rows, dividers):
-    """Round 3 (owner 2026-11-19: COMPRESS the chips): content-sized chips on ONE
-    row at desktop widths (all 7 types + All visible, group captions become
-    hairline dividers from 1400 px), wrapping — never scrolling or truncating —
-    on narrower shells. The old equal-column 4x2 grid cost 108 px."""
+    """Desktop keeps all 8 chips on ONE row without scrolling; below 620px the
+    row becomes a smooth single-row horizontal swipe strip so chips never eat
+    three stacked rows of first-screen height on phones."""
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = browser.new_page(viewport={"width": w, "height": h})
@@ -207,9 +206,10 @@ def test_chips_row_is_compact_never_scrolled_or_clipped(live_url, w, h, rows, di
         page.wait_for_selector("#type-tabs [role=tab]")
         m = _grid(page)
         assert m["pageScroll"] <= 0, m                      # no horizontal page overflow
-        assert m["rowScroll"] == 0, m                       # the row cannot scroll at all
+        if w >= 620:
+            assert m["rowScroll"] == 0, m                   # desktop/tablet cannot scroll
+            assert not [c for r in m["rows"].values() for c in r if c["over"]], m
         assert [len(r) for r in m["rows"].values()] == rows, m
-        assert not [c for r in m["rows"].values() for c in r if c["over"]], m
         assert m["clipped"] == [], m                        # short labels, never truncated
         assert len(m["heights"]) == 1, m                    # one chip height per viewport
         assert m["caps"] == dividers, m                     # group dividers only on the one-line row

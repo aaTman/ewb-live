@@ -185,12 +185,12 @@ def test_tab_and_criteria_exist(page):
 def test_detail_uses_the_track_renderer(page):
     page.evaluate(f"() => location.hash = '#event={TC_EVENT['id']}'")
     page.wait_for_selector("#detail-sec:not(.hidden)", timeout=20000)
-    # the panel is TrackViz's, not the EventViz "no asset" fallback
+    # the panel is TrackViz's unified 5-band renderer, not the EventViz "no asset" fallback
     assert page.locator("#detail-viz .tv-svg").count() == 1
-    assert page.locator("#detail-viz .tv-legend .tv-sw").count() == 5
+    assert page.locator("#detail-viz .det-map-bar .swatch").count() == 5
     assert "not available" not in page.inner_text("#detail-viz").lower()
-    assert "Best track" in page.inner_text("#detail-viz")
-    story = page.inner_text("#detail-story")
+    assert "IBTrACS" in page.inner_text("#detail-viz")
+    story = page.locator("#detail-story").text_content() or ""
     assert "Fixture" in story and "kt" in story, story
     assert page._errs == [], page._errs
 
@@ -207,7 +207,8 @@ def test_close_detail_teardown(page):
 def test_scorecard_says_not_scored_when_the_build_has_no_tc_score_rows(page):
     """TC is a scored lane now (WP1): a data release WITHOUT its score rows says so
     ("Not scored in this data release"), not "no EWB benchmark"."""
-    page.wait_for_selector("#scorecard-sec .sc-block", timeout=20000)
+    page.evaluate("() => { location.hash = '#view=scorecard&tab=tropical_cyclone'; }")
+    page.wait_for_selector("#scorecard-sec:not(.hidden) .sc-block", timeout=20000)
     body = page.inner_text("#scorecard-sec")
     assert "Not scored" in body, body[:400]
     assert "no EWB benchmark for IBTrACS" not in body
@@ -321,7 +322,7 @@ def scored_page(base_scored, request):
         errs: list[str] = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg._errs = errs                      # type: ignore[attr-defined]
-        pg.goto(base_scored + "/index.html#tab=tropical_cyclone")
+        pg.goto(base_scored + "/index.html#view=scorecard&tab=tropical_cyclone")
         pg.wait_for_selector("#scorecard-sec .sc-block table", timeout=20000)
         yield pg
         b.close()
@@ -335,16 +336,16 @@ def test_tc_lane_renders_scored_table_with_miss_rate_beside_the_error(scored_pag
     leads = pg.eval_on_selector_all("#scorecard-sec .sc-block thead tr.lead th", "els => els.map(e => e.innerText)")
     assert [x for x in leads if x.endswith("d")] == ["1d", "2d", "3d", "4d", "5d", "1d", "2d", "3d", "4d", "5d"], leads
     # miss rate prints as a percentage, the error in km
-    cells = pg.inner_text("#scorecard-sec .sc-block tbody tr:has-text('graphcast')")
-    assert "10%" in cells and "60" not in cells.split("graphcast")[0]
+    cells = pg.inner_text("#scorecard-sec .sc-block tbody tr:has-text('GraphCast')")
+    assert "10%" in cells and "60" not in cells.split("GraphCast")[0]
     assert pg._errs == [], pg._errs
 
 
 def test_tc_cell_above_50pct_misses_is_greyed_and_says_why(scored_page):
     pg = scored_page
     grey = pg.locator("#scorecard-sec .sc-block td.cell.miss-grey")
-    assert grey.count() == 6, grey.count()                     # aurora: 5 error cells (miss rate 62 %) + the all-greyed Mean
-    assert all("aurora" in t for t in pg.eval_on_selector_all(
+    assert grey.count() == 6, grey.count()                     # Aurora: 5 error cells (miss rate 62 %) + the all-greyed Mean
+    assert all("aurora" in t.lower() for t in pg.eval_on_selector_all(
         "#scorecard-sec .sc-block td.cell.miss-grey", "els => els.map(e => e.closest('tr').innerText)"))
     grey.first.hover()
     pg.wait_for_selector("#tooltip:not(.hidden)", timeout=5000)
@@ -353,6 +354,9 @@ def test_tc_cell_above_50pct_misses_is_greyed_and_says_why(scored_page):
 
 
 def test_tc_note_states_the_rules_and_the_not_verified_count(scored_page):
+    fold = scored_page.locator("#scorecard-sec details.lane-notes-fold > summary")
+    if fold.count():
+        fold.first.click()
     note = scored_page.inner_text("#scorecard-sec .lane-note")
     assert "IBTrACS" in note and "ahead" in note and "right" in note
     assert "5 earlier ones not verified" in note and "12 00/12 UTC inits verified" in note
@@ -374,16 +378,16 @@ def test_tc_no_horizontal_page_scroll(scored_page):
 
 
 def test_tc_verdict_ranks_on_track_error_only(scored_page):
-    """The signed components and the miss rate must not feed the verdict strip: graphcast's
+    """The signed components and the miss rate must not feed the KPI leader card: GraphCast's
     track error is 20 % better than the baseline in the fixture, and that is the number quoted."""
     pg = scored_page
     pg.get_by_role("button", name="more metrics").click()       # signed metrics now in the table
     pg.wait_for_timeout(400)
-    strip = pg.inner_text("#verdict-strip")
-    assert "graphcast" in strip and "+20.0%" in strip and "won 5/5 cells" in strip, strip
-    # the banner says what it ranks and shows the miss rates beside it (owner review: every model
-    # missed more storms than the baseline while the banner only quoted the track error)
-    assert "ranks track error only" in strip and "misses 10% vs 5%" in strip, strip
+    card = pg.locator("#kpi-strip .kpi-card.on").first
+    strip = card.inner_text()
+    tip = card.get_attribute("title") or ""
+    assert "GraphCast" in strip and "+20.0%" in strip and "won 5/5" in strip, strip
+    assert "ranks track error" in tip and "misses 10% vs 5%" in tip, tip
 
 
 def _truth(pg):
@@ -394,15 +398,15 @@ def test_header_truth_is_lane_aware(scored_page):
     """The header said TRUTH ERA5 on the TC tab although TC is scored vs IBTrACS (owner review)."""
     pg = scored_page
     assert _truth(pg) == "IBTrACS"                                     # the page opens on #tab=tropical_cyclone
-    pg.locator("#type-tabs button", has_text="All").click()
+    pg.locator("#sc-views button", has_text="Overview").click()
     pg.wait_for_timeout(300)
     mix = _truth(pg)
     assert "ERA5" in mix and "IBTrACS" in mix, mix
-    pg.locator("#type-tabs [data-tab=atmospheric_river]").click()
+    pg.locator("#sc-views button", has_text="Atm. river").click()
     pg.wait_for_timeout(300)
     other = _truth(pg)
     assert "ERA5" in other and "IBTrACS" not in other, other           # other lanes unchanged
-    pg.locator("#type-tabs [data-tab=tropical_cyclone]").click()
+    pg.locator("#sc-views button", has_text="Trop. cyclone").click()
     pg.wait_for_timeout(300)
     assert _truth(pg) == "IBTrACS"
     assert "IBTrACS best track" in pg.get_attribute("#kv-line .kv:has(.k:text-is('truth')) .v", "title")
@@ -429,7 +433,7 @@ def real_page(base_real, request):
         errs: list[str] = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg._errs = errs                      # type: ignore[attr-defined]
-        pg.goto(base_real + "/index.html#tab=tropical_cyclone")
+        pg.goto(base_real + "/index.html#view=scorecard&tab=tropical_cyclone")
         pg.wait_for_selector("#scorecard-sec .sc-block table", timeout=20000)
         yield pg
         b.close()
@@ -438,8 +442,8 @@ def real_page(base_real, request):
 def test_real_shape_grey_rule_hits_exactly_the_over_50pct_cells(real_page):
     pg = real_page
     grey = pg.eval_on_selector_all("#scorecard-sec .sc-block td.cell.miss-grey",
-                                   "els => els.map(e => e.closest('tr').innerText.split('\\t')[0].trim())")
-    assert grey and set(grey) == {"fourcastnet_v2_gfs"} and len(grey) == 2, grey   # 96 h and 120 h track error
+                                   "els => els.map(e => e.closest('tr').querySelector('td.model-col').textContent.replace(/\\s+/g, ' ').trim())")
+    assert grey and set(grey) == {"FourCastNet v2 GFS"} and len(grey) == 2, grey   # 96 h and 120 h track error
     # the miss-rate cells themselves are never greyed (they ARE the evidence)
     assert pg.locator("#scorecard-sec .sc-block td.cell.miss-grey").count() == 2
     assert pg._errs == [], pg._errs
@@ -453,7 +457,7 @@ def test_real_shape_cross_track_group_and_skill_expander(real_page):
     cross = [h for h in heads if h.upper().startswith("CROSS-TRACK")]
     assert cross, heads
     # every model row has 5 numeric cross-track cells + a mean (signed values keep their sign)
-    row = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="graphcast").first
+    row = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="GraphCast").first
     cells = row.locator("td.cell").all_inner_texts()
     assert len(cells) == 6 * 5, cells                    # 5 metrics x (5 leads + mean)
     assert all(c.strip() != "" for c in cells[-12:-6]) and any("\u2212" in c for c in cells), cells
@@ -491,7 +495,7 @@ def greyed_page(base_greyed):
         errs: list[str] = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg._errs = errs                      # type: ignore[attr-defined]
-        pg.goto(base_greyed + "/index.html#tab=tropical_cyclone")
+        pg.goto(base_greyed + "/index.html#view=scorecard&tab=tropical_cyclone")
         pg.wait_for_selector("#scorecard-sec .sc-block table", timeout=20000)
         yield pg
         b.close()
@@ -499,24 +503,26 @@ def greyed_page(base_greyed):
 
 def test_greyed_cells_do_not_feed_the_banner_or_the_mean_colour(greyed_page):
     pg = greyed_page
-    strip = pg.inner_text("#verdict-strip")
-    # aurora wins its 24/48 h cells (+50 %) and loses most storms later: the +90 % of its greyed 72-120 h
-    # cells is NOT averaged in, and the banner says the leader's mean miss rate is above 50 %
-    assert "aurora best" in strip and "+50.0%" in strip and "won 2/" in strip, strip
-    assert "(>50% misses)" in strip and "misses 59%" in strip, strip
-    grey = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="aurora").first.locator("td.cell.miss-grey")
+    card = pg.locator("#kpi-strip .kpi-card.on").first
+    strip = card.inner_text()
+    tip = card.get_attribute("title") or ""
+    # Aurora wins its 24/48 h cells (+50 %) and loses most storms later: the +90 % of its greyed 72-120 h
+    # cells is NOT averaged in, and the tooltip says the leader's mean miss rate is above 50 %
+    assert "Aurora" in strip and "+50.0%" in strip and "won 2/" in strip, strip
+    assert "(>50%" in tip and "misses 59%" in tip, tip
+    grey = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="Aurora").first.locator("td.cell.miss-grey")
     assert grey.count() == 3, grey.count()                       # 72, 96, 120 h; the mean is not all-greyed
     cell = grey.first
     assert cell.get_attribute("title") == "miss rate > 50%"
     assert "miss rate > 50%" in cell.get_attribute("aria-label")
-    mean = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="aurora").first.locator("td.cell.mean").first
+    mean = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="Aurora").first.locator("td.cell.mean").first
     assert "miss-grey" not in mean.get_attribute("class")
     assert pg._errs == [], pg._errs
 
 
 def test_scored_fixture_all_greyed_mean(scored_page):
     pg = scored_page
-    row = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="aurora").first
+    row = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="Aurora").first
     assert row.locator("td.cell.miss-grey").count() == 6      # 5 leads + the Mean
     assert "at every lead" in row.locator("td.cell.mean").first.get_attribute("title")
 
@@ -538,20 +544,23 @@ def test_landfall_block_renders_and_greys_on_its_own_miss_rate(scored_page):
     head = pg.inner_text("#scorecard-sec .sc-block thead").upper()
     for label in ("LANDFALL POSITION", "LANDFALL TIMING", "LANDFALL INTENSITY", "LANDFALL MISS RATE"):
         assert label in head, head
+    fold = pg.locator("#scorecard-sec details.lane-notes-fold > summary")
+    if fold.count():
+        fold.first.click()
     note = pg.inner_text("#scorecard-sec .lane-note")
     assert "landfall classes" in note and "observed landfall" in note and "no paired landfall" in note, note
-    # the aurora row is 9 metric groups x (5 leads + Mean). Its TrackMiss (62 %) greys the
+    # the Aurora row is 9 metric groups x (5 leads + Mean). Its TrackMiss (62 %) greys the
     # four track-error groups (cells 0-5, 12-29); landfall_miss 60 % @72 h adds exactly the
     # three landfall VALUE cells (32, 38, 44). The two miss-rate groups are never greyed.
     idxs = pg.eval_on_selector_all(
         "#scorecard-sec .sc-block tbody tr",
         """rows => {
-             const r = rows.find((x) => x.innerText.includes('aurora'));
+             const r = rows.find((x) => x.innerText.includes('Aurora'));
              return [...r.querySelectorAll('td.cell')]
                .map((c, i) => (c.classList.contains('miss-grey') ? i : -1)).filter((i) => i >= 0);
            }""")
     assert idxs == [*range(0, 6), *range(12, 30), 32, 38, 44], idxs
-    cells = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="aurora").first.locator("td.cell")
+    cells = pg.locator("#scorecard-sec .sc-block tbody tr", has_text="Aurora").first.locator("td.cell")
     miss72 = cells.nth(8 * 6 + 2)                              # landfall miss rate at 72 h
     assert "60%" in miss72.inner_text(), miss72.inner_text()   # prints as a percent, like TrackMiss
     assert "miss-grey" not in (miss72.get_attribute("class") or "")
@@ -563,18 +572,18 @@ def test_landfall_block_renders_and_greys_on_its_own_miss_rate(scored_page):
 
 
 def test_landfall_metrics_stay_out_of_the_verdict_and_the_model_order(scored_page):
-    """The verdict still counts only the five track-error cells, and no landfall cell moves
-    a row: aurora's track error is fully miss-greyed here (unranked band), yet its 24/48 h
+    """The KPI card still counts only the five track-error cells, and no landfall cell moves
+    a row: Aurora's track error is fully miss-greyed here (unranked band), yet its 24/48 h
     landfall values would average ~+56 % — if landfall fed the ranking it would jump to 2."""
     pg = scored_page
     pg.get_by_role("button", name="more metrics").click()
     pg.wait_for_timeout(400)
-    strip = pg.inner_text("#verdict-strip")
-    assert "graphcast" in strip and "+20.0%" in strip and "won 5/5 cells" in strip, strip
+    strip = pg.locator("#kpi-strip .kpi-card.on").first.inner_text()
+    assert "GraphCast" in strip and "+20.0%" in strip and "won 5/5" in strip, strip
     order = pg.eval_on_selector_all("#scorecard-sec .sc-block tbody tr .model-col",
-                                    "els => els.map(e => e.innerText.trim())")
-    assert order[0] == "ifs_hres" and order[1] == "graphcast", order
-    assert order.index("aurora") > order.index("graphcast"), order
+                                    "els => els.map(e => e.textContent.replace(/\\s+/g, ' ').trim())")
+    assert order[0] == "IFS HRES" and order[1] == "GraphCast", order
+    assert order.index("Aurora") > order.index("GraphCast"), order
     assert pg._errs == [], pg._errs
 
 
@@ -646,7 +655,7 @@ def mlc_page(base_mlc, request):
         errs: list[str] = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg._errs = errs                      # type: ignore[attr-defined]
-        pg.goto(base_mlc + "/index.html#tab=midlat_cyclone")
+        pg.goto(base_mlc + "/index.html#view=scorecard&tab=midlat_cyclone")
         pg.wait_for_selector("#scorecard-sec .sc-block table", timeout=20000)
         yield pg
         b.close()
@@ -712,14 +721,14 @@ def test_mlc_lane_renders_a_scored_table(mlc_page):
 
 
 def test_mlc_grey_rule_greys_track_error_not_peak_depth(mlc_page):
-    """graphcast misses 60 % of its 96 h samples: its 96 h track error is greyed, its
+    """GraphCast misses 60 % of its 96 h samples: its 96 h track error is greyed, its
     96 h Peak depth is NOT — that metric does not depend on the tracker keeping the low."""
     pg = mlc_page
     pg.get_by_role("button", name="more metrics").click()
     pg.wait_for_timeout(500)
-    tr96 = pg.evaluate(_MLC_CELL_JS, ["TRACK ERROR", "4d", "graphcast"])
+    tr96 = pg.evaluate(_MLC_CELL_JS, ["TRACK ERROR", "4d", "GraphCast"])
     assert tr96.get("grey") is True, tr96
-    pd96 = pg.evaluate(_MLC_CELL_JS, ["PEAK DEPTH", "4d", "graphcast"])
+    pd96 = pg.evaluate(_MLC_CELL_JS, ["PEAK DEPTH", "4d", "GraphCast"])
     assert pd96.get("grey") is False, pd96
     # greyed cells in the whole block: exactly the four tracker-dependent errors at 96 h
     # (track/along/cross/central); the miss rate itself and the three tracker-free
@@ -733,6 +742,9 @@ def test_mlc_header_truth_is_the_era5_track(mlc_page):
 
 
 def test_mlc_note_states_the_truth_and_the_new_metrics(mlc_page):
+    fold = mlc_page.locator("#scorecard-sec details.lane-notes-fold > summary")
+    if fold.count():
+        fold.first.click()
     note = mlc_page.inner_text("#scorecard-sec .lane-note")
     assert "ERA5 MSLP track" in note and "Peak depth" in note, note
     assert "18 00/12 UTC inits verified" in note, note

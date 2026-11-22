@@ -255,8 +255,12 @@ def test_no_dom_or_listener_growth_over_open_close_cycles(pg, base):
         pg.wait_for_timeout(700)
         pg.click("#detail-close")
         pg.wait_for_selector("#detail-sec", state="hidden")
+        pg.click('[data-view="scorecard"]')
+        pg.wait_for_selector("#scorecard-sec:not(.hidden)")
         pg.click("#metrics-more")
         pg.click("#metrics-more")
+        pg.click('[data-view="events"]')
+        pg.wait_for_selector("#explore:not(.hidden)")
 
     for i in range(3):          # warm-up: lazy singletons (Plotly hooks, tooltips) settle
         cycle(i)
@@ -326,13 +330,14 @@ def test_default_models_are_all_scored_models(pg, base):
 
 
 def test_scorecard_tooltip_has_ci_and_direction(pg, base):
-    _boot(pg, base)
-    cell = pg.locator("td[data-tip]").nth(3)
+    _boot(pg, base, "/#view=scorecard&tab=heat_wave")
+    pg.wait_for_selector("#scorecard-sec:not(.hidden) td[data-tip]", timeout=15000)
+    cell = pg.locator("#scorecard-sec td[data-tip]").nth(3)
     cell.hover()
     pg.wait_for_timeout(300)
     tip = pg.inner_text("#tooltip")
     assert re.search(r"(higher|lower|closer to 0) is better", tip), tip
-    if pg.evaluate("state.scorecard.some(r => Number.isFinite(r.ci_lo))"):
+    if pg.evaluate("state.scorecard.some(r => r.event_type === 'heat_wave' && Number.isFinite(r.ci_lo))"):
         assert "95% CI" in tip, tip
 
 
@@ -693,6 +698,10 @@ def _dateline_page(engine, base, ev, patch=None, strip_footprint=False):
         page.route("**/data/results/*.json", handler)
     tl_entry = next((e for e in _json_get(base, "global_timeline.json")["events"] if e["id"] == ev["id"]), None)
     q = (tl_entry or {}).get("qualified_at") or ev["start"][:10].replace("-", "") + "00"
+    end_ts = ((tl_entry or {}).get("end") or ev["end"])[:10].replace("-", "") + "00"
+    frames = _json_get(base, "raw_exceedance/index.json").get("frames") or []
+    if frames and q not in frames:
+        q = next((f for f in frames if q <= f < end_ts), q)
     page.goto(base + f"/#map={q}&sel={ev['id']}", wait_until="load")
     wait_js(page, "typeof state !== 'undefined' && state.events && state.events.length > 0")
     wait_js(page, "typeof MergedMap !== 'undefined' && MergedMap._dbg().mounted === true", timeout=20000)
@@ -905,8 +914,9 @@ def test_detail_heading_is_type_and_region(pg, base):
     pg.evaluate("selectEvent(state.events[0].id, false)")
     pg.wait_for_selector("#detail-sec:not(.hidden)")
     pg.wait_for_timeout(800)
-    h = pg.inner_text("#detail-title")
-    assert " · " in h and not re.search(r"\d{4}-\d{2}-\d{2}", h), h
+    h = pg.inner_text("#detail-title").strip()
+    chip = pg.inner_text("#detail-type-slot .type-chip").strip()
+    assert h and chip and not re.search(r"\d{4}-\d{2}-\d{2}", h), (h, chip)
 
 
 # --------------------------------------------------------------------------
