@@ -165,7 +165,7 @@ def flood_page(base_flood, request):
         pg.on("requestfailed", lambda r: errs.append(f"requestfailed {r.url}"))
         pg.on("console", _on_console)
         pg._errs = errs                      # type: ignore[attr-defined]
-        pg.goto(base_flood + "/index.html#tab=flood")
+        pg.goto(base_flood + "/index.html#view=scorecard&tab=flood")
         pg.wait_for_selector("#scorecard-sec .sc-block table", timeout=20000)
         yield pg
         b.close()
@@ -181,15 +181,18 @@ def test_flood_lane_renders_a_scored_table_not_a_not_scored_note(flood_page):
                                     "els => els.map(e => e.innerText)")
     assert [x for x in leads if x.endswith("d")] == ["1d", "2d", "3d", "4d", "5d",
                                                      "1d", "2d", "3d", "4d", "5d"], leads
-    # only the two GraphCast members carry numbers; the rest of the roster is dashes
-    rows = pg.eval_on_selector_all("#scorecard-sec .sc-block tbody tr",
-                                   "els => els.map(e => e.innerText.split('\\t')[0].trim())")
-    assert any(r == "graphcast" for r in rows) and any(r == "graphcast_gfs" for r in rows), rows
+    # only the two GraphCast members carry numbers; unscored models move to the footnote
+    rows = pg.eval_on_selector_all("#scorecard-sec .sc-block tbody tr td.model-col",
+                                   "els => els.map(e => e.textContent.replace(/\\s+/g, ' ').trim())")
+    assert "GraphCast" in rows and "GraphCast GFS" in rows, rows
     assert pg._errs == [], pg._errs
 
 
 def test_flood_lane_note_says_what_is_scored_and_against_what(flood_page):
     pg = flood_page
+    fold = pg.locator("#scorecard-sec details.lane-notes-fold > summary")
+    if fold.count():
+        fold.first.click()
     note = pg.inner_text("#scorecard-sec .lane-note")
     assert "GraphCast only" in note, note
     assert "AI-estimated" in note and "PARDIG" in note, note
@@ -201,7 +204,7 @@ def test_flood_lane_note_says_what_is_scored_and_against_what(flood_page):
     assert "negative = forecast too dry" in note, note
     # no baseline -> no skill colour, and the unsupported models are named (meta list)
     assert "No baseline model scores flood, so cells carry no skill colour." in note, note
-    assert "pangu_weather" in note, note
+    assert "Pangu-Weather" in note, note
     assert pg._errs == [], pg._errs
 
 
@@ -215,11 +218,11 @@ def test_flood_header_truth_is_pardig(flood_page):
     assert _truth(pg) == "PARDIG (AI-estimated precip)", _truth(pg)
     tip = pg.get_attribute("#kv-line .kv:has(.k:text-is('truth')) .v", "title")
     assert tip and "PARDIG" in tip, tip
-    pg.locator("#type-tabs button", has_text="All").click()
+    pg.locator('#sc-views button[data-tab="all"]').click()
     pg.wait_for_timeout(300)
     mix = _truth(pg)
     assert "ERA5" in mix and "PARDIG (flood)" in mix, mix       # the 'all' mix names both lanes
-    pg.locator("#type-tabs [data-tab=heat_wave]").click()
+    pg.locator('#sc-views button[data-tab="heat_wave"]').click()
     pg.wait_for_timeout(300)
     other = _truth(pg)
     assert "ERA5" in other and "PARDIG" not in other, other     # other lanes unchanged
@@ -242,7 +245,7 @@ def test_signed_flood_cells_print_a_real_minus(flood_page):
     pg = flood_page
     pg.get_by_role("button", name="more metrics").click()
     pg.wait_for_timeout(500)
-    row = pg.locator('#scorecard-sec .sc-block tbody tr:has(td.model-col:text-is("graphcast"))')
+    row = pg.locator('#scorecard-sec .sc-block tbody tr:has(td.model-col:text-is("GraphCast"))')
     cells = row.first.locator("td.cell").all_inner_texts()
     minus = [c for c in cells if "\u2212" in c]
     assert len(minus) == 12, cells          # PrecipAreaBias + PeakPrecipError: 5 leads + mean
@@ -264,11 +267,12 @@ def test_no_flood_cell_carries_a_skill_colour(flood_page):
 
 
 def test_verdict_banner_makes_no_baseline_claim(flood_page):
-    """No ifs_hres rows exist for flood: the banner must not rank against it —
-    it says 'GraphCast only - not ranked'."""
+    """No ifs_hres rows exist for flood: the KPI card must not rank against it —
+    it says GraphCast only / no baseline scores this lane."""
     pg = flood_page
-    strip = pg.inner_text("#verdict-strip")
-    assert "GraphCast only - not ranked" in strip, strip
+    card = pg.locator("#kpi-strip .kpi-card.on").first
+    strip = card.inner_text()
+    assert "GraphCast" in strip and "only" in strip and "no baseline" in strip.lower(), strip
     assert "ifs" not in strip.lower(), strip
     assert pg._errs == [], pg._errs
 

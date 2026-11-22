@@ -83,14 +83,15 @@ def test_tablist_semantics_and_grouped_order(live_url, page_ctx):
             tab: e.tabIndex, controls: e.getAttribute('aria-controls'),
             text: e.textContent.replace(/\s+/g, ' ').trim(),
             labelled: e.hasAttribute('aria-label'),
-            etype: e.dataset.etype, glyph: !!e.querySelector('svg') }))""")
+            etype: e.dataset.etype, swatch: !!e.querySelector('.sw') }))""")
     assert len(info) == 1 + len(TYPE_KEYS)          # All + every published lane
-    # every tab: the count rides the visible text (the accessible name) and a
-    # glyph + aria-controls naming BOTH regions the filter changes
+    # every tab: the count rides the visible text (the accessible name),
+    # aria-controls names BOTH regions, and every hazard tab carries a lane swatch
     for t in info:
         assert t["controls"] and "explore" in t["controls"] and "scorecard-sec" in t["controls"], t
         assert not t["labelled"] and t["text"] and t["text"][-1].isdigit(), t
-        assert t["glyph"], t                        # identity never colour-alone
+        if t["etype"] != "all":
+            assert t["swatch"], t
     # exactly one tab is in the tab order, and it is the selected one
     assert [t["tab"] for t in info].count(0) == 1
     assert info[[t["tab"] for t in info].index(0)]["sel"] == "true"
@@ -131,7 +132,7 @@ def test_keyboard_nav_and_url_selection(live_url, page_ctx):
     assert page.evaluate("document.activeElement.getAttribute('aria-selected')") == "true"
     # Home / End
     page.keyboard.press("End")
-    assert "cyclone" in page.evaluate("document.activeElement.textContent")
+    assert page.evaluate("document.activeElement.dataset.tab") == "midlat_cyclone"
     page.keyboard.press("Home")
     assert page.evaluate("document.activeElement.textContent").strip().startswith("All")
     # deep link: the URL wins, and an unknown value falls back and self-clears
@@ -193,13 +194,12 @@ def _grid(page):
                      e.querySelector('.n').getBoundingClientRect().right - box(e).right)))] }; }""")
 
 
-@pytest.mark.parametrize("w,h,rows,dividers", [(1440, 900, [8], 2), (1366, 768, [8], 0),
-                                                (820, 1100, [6, 2], 0), (390, 844, [3, 3, 2], 0)])
+@pytest.mark.parametrize("w,h,rows,dividers", [(1440, 900, [8], 3), (1366, 768, [8], 3),
+                                                (820, 1100, [8], 3), (390, 844, [8], 3)])
 def test_chips_row_is_compact_never_scrolled_or_clipped(live_url, w, h, rows, dividers):
-    """Round 3 (owner 2026-11-19: COMPRESS the chips): content-sized chips on ONE
-    row at desktop widths (all 7 types + All visible, group captions become
-    hairline dividers from 1400 px), wrapping — never scrolling or truncating —
-    on narrower shells. The old equal-column 4x2 grid cost 108 px."""
+    """Segmented underline rail keeps all 8 tabs + 3 family dividers on ONE crisp
+    row down to tablet widths without scrolling; below 620 px it becomes a smooth
+    single-row horizontal swipe rail with 44 px touch targets."""
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = browser.new_page(viewport={"width": w, "height": h})
@@ -207,18 +207,19 @@ def test_chips_row_is_compact_never_scrolled_or_clipped(live_url, w, h, rows, di
         page.wait_for_selector("#type-tabs [role=tab]")
         m = _grid(page)
         assert m["pageScroll"] <= 0, m                      # no horizontal page overflow
-        assert m["rowScroll"] == 0, m                       # the row cannot scroll at all
+        if w >= 620:
+            assert m["rowScroll"] == 0, m                   # desktop/tablet cannot scroll
+            assert not [c for r in m["rows"].values() for c in r if c["over"]], m
         assert [len(r) for r in m["rows"].values()] == rows, m
-        assert not [c for r in m["rows"].values() for c in r if c["over"]], m
         assert m["clipped"] == [], m                        # short labels, never truncated
-        assert len(m["heights"]) == 1, m                    # one chip height per viewport
-        assert m["caps"] == dividers, m                     # group dividers only on the one-line row
+        assert len(m["heights"]) == 1, m                    # one tab height per viewport
+        assert m["caps"] == dividers, m                     # All | Temperature | Water | Storms dividers
         browser.close()
 
 
 def test_chips_leave_room_for_the_first_screen(live_url):
-    """The point of the compression: chips + legend + Region leave the map and
-    the event list inside 900 px at 1440x900 (see the dashboard first-screen test)."""
+    """The point of the compression: segmented rail + floating legend leave the
+    map and event list inside 900 px at 1440x900."""
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = browser.new_page(viewport={"width": 1440, "height": 900})
@@ -227,7 +228,7 @@ def test_chips_leave_room_for_the_first_screen(live_url):
         m = page.evaluate("""() => ({
             chips: document.querySelector('#type-tabs').getBoundingClientRect().height,
             list: document.querySelector('#events-sec').getBoundingClientRect().bottom })""")
-        assert m["chips"] <= 36, m                          # one 30 px row (was 108)
+        assert m["chips"] <= 42, m                          # one compact segmented rail
         assert m["list"] <= 900, m
         browser.close()
 
@@ -244,11 +245,9 @@ def test_phone_touch_targets_are_44px(live_url):
 
 
 def test_arrow_keys_walk_the_chips(live_url):
-    """Left/Right step a chip; Up/Down step to the chip in the visual row
-    above/below and stay put when there is none (one row at 1440 -> no row)."""
+    """Left/Right step a tab; Home/End jump to ends; Up/Down stay put on one row."""
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
-        # one row: Down/Up have nowhere to go
         page = browser.new_page(viewport={"width": 1440, "height": 900})
         page.goto(live_url, wait_until="networkidle")
         page.wait_for_selector("#type-tabs [role=tab]")
@@ -258,19 +257,6 @@ def test_arrow_keys_walk_the_chips(live_url):
             page.keyboard.press(key)
             seq.append(page.evaluate("document.activeElement.dataset.tab"))
         assert seq == ["heat_wave", "heat_wave", "heat_wave", "all", "midlat_cyclone"], seq
-        page.close()
-        # two rows (820 wide: 6 + 2): Down from a first-row chip reaches the
-        # second row, Up returns to the first
-        page = browser.new_page(viewport={"width": 820, "height": 1100})
-        page.goto(live_url, wait_until="networkidle")
-        page.wait_for_selector("#type-tabs [role=tab]")
-        page.evaluate("document.querySelector('#type-tabs [role=tab][data-tab=flood]').focus()")
-        top0 = page.evaluate("document.activeElement.getBoundingClientRect().top")
-        page.keyboard.press("ArrowDown")
-        top1 = page.evaluate("document.activeElement.getBoundingClientRect().top")
-        assert top1 > top0, (top0, top1)
-        page.keyboard.press("ArrowUp")
-        assert page.evaluate("document.activeElement.getBoundingClientRect().top") == top0
         browser.close()
 
 
@@ -323,5 +309,5 @@ def test_chips_share_one_component_metric(live_url, page_ctx):
         heights: [...new Set([...document.querySelectorAll('#type-tabs [role=tab]')]
             .map((e) => Math.round(e.getBoundingClientRect().height)))], })""")
     assert st["inline"] == 0 and st["tagInline"] == 0, st   # tokens, not inline hexes
-    assert st["radius"] == st["tagRadius"] == "999px", st
+    assert st["radius"] == "5px" and st["tagRadius"] == "999px", st
     assert len(st["heights"]) == 1, st                      # one height, one rhythm

@@ -193,6 +193,8 @@
     }
     return leads[0] || '24';
   }
+  /* clean lead-pill label (contract §3 Band 2): 24 -> '1d', 36 -> '36h' */
+  function fmtLead(h) { h = +h; return h >= 24 && h % 24 === 0 ? (h / 24) + 'd' : h + 'h'; }
   function notifyLeadHook(leadHours) {
     try { if (window.EventViz && window.EventViz.onLead) window.EventViz.onLead(+leadHours); }
     catch (e) { /* host hook must never break the viz */ }
@@ -284,64 +286,107 @@
     s.id = STYLE_ID;
     s.textContent = [
       '.ev3-root{margin:0}',
-      '.ev3-panel{background:var(--bg-panel);border:1px solid var(--border);border-radius:10px;' +
-        'padding:8px;min-width:0;box-shadow:var(--shadow)}',
-      '.ev3-head{display:flex;align-items:baseline;gap:6px;margin:0 2px 6px}',
-      '.ev3-head b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:auto}',
-      '.ev3-fsbtn{flex:none;width:22px;height:22px;line-height:1;padding:0;border-radius:6px;cursor:pointer;' +
-        'background:var(--bg-inset);border:1px solid var(--border);color:var(--text-dim);font-size:12px}',
-      '.ev3-fsbtn:hover{color:var(--text);border-color:var(--accent)}',
-      '.ev3-map{height:460px;border-radius:7px;overflow:hidden;background:var(--bg-inset)}',
-      '.ev3-obsblock .ev3-panel{width:100%}',
-      '.ev3-obsblock{margin-bottom:12px}',
-      '.ev3-panel.ev3-obs .ev3-map{height:500px}',
-      '.ev3-panel.ev3-obs{max-width:780px;margin-inline:auto}',
-      '.ev3-layers{display:flex;flex-direction:column;gap:4px;margin:8px 2px 0;font-size:11.5px}',
-      '.ev3-layer{display:flex;align-items:center;gap:8px;min-width:0}',
-      '.ev3-layer.off .ev3-lop{opacity:.45},.ev3-layer.off .ev3-lsw{filter:grayscale(.8)}',  // axe: never dim text (contrast)
-      '.ev3-lsw{display:flex;align-items:center;gap:6px;flex:none}',
-      '.ev3-lcol{width:22px;height:18px;padding:0;border:1px solid var(--border);border-radius:4px;' +
-        'background:none;cursor:pointer}',
-      '.ev3-lname{font-size:11.5px;max-width:16ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-      '.ev3-lop{width:90px;flex:none}',
-      '.ev3-lopv{font-size:10.5px;color:var(--text-dim);width:3.5ch;flex:none;font-variant-numeric:tabular-nums}',
-      '.ev3-lsum{font-size:10.5px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-      '.ev3-layer.dis .ev3-lsw,.ev3-layer.dis .ev3-lop{opacity:.55}',
+      /* Band 2 — unified control bar (contract §3): themed bar, `Lead` micro-
+         label + pills left (crisp inverted-fill active state — contract §1
+         bans the inset crescent shadow), time controls right. */
+      '.ev3-root .det-toolbar{display:flex;align-items:center;justify-content:space-between;' +
+        'gap:8px 14px;flex-wrap:wrap;padding:8px 12px;margin-bottom:12px;' +
+        'background:var(--bg-inset);border:1px solid var(--border);border-radius:6px}',
+      '.ev3-root .det-tb-left,.ev3-root .det-tb-right{display:flex;align-items:center;' +
+        'gap:8px;min-width:0;flex-wrap:wrap}',
+      '.ev3-root .ev-tool-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;' +
+        'color:var(--ink-muted);margin-right:0}',
+      '.ev3-root .ev-lead{border-radius:999px}',
+      '.ev3-root .ev-lead.on{background:var(--matte-black);color:var(--canvas);' +
+        'border-color:var(--matte-black);box-shadow:none;font-weight:500}',
       '.ev3-slider{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}',
       '.ev3-srange{width:min(220px,36vw)}',
-      '.ev3-readout{font-size:11.5px;color:var(--text-dim);font-variant-numeric:tabular-nums;white-space:nowrap}',
-      '.ev3-cbrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:2px 2px 4px;padding-bottom:18px}',
-      '.ev3-cb{position:relative;width:min(300px,60vw)}',
-      '.ev3-cb canvas{display:block;width:100%;height:12px;border:1px solid var(--border);border-radius:6px}',
-      '.ev3-cb .tick{position:absolute;top:15px;font-size:10px;color:var(--text-dim);' +
-        'transform:translateX(-50%);font-variant-numeric:tabular-nums}',
-      '.ev3-cb .tick.key{color:var(--text);font-weight:700;white-space:nowrap}',
-      '.ev3-cb-units{font-size:11px;color:var(--text-dim)}',
-      '.ev3-cb-label{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}',
+      '.ev3-readout{font-size:11.5px;color:var(--ink-secondary);font-variant-numeric:tabular-nums;white-space:nowrap}',
+      /* Band 3 — split stage: map card left, overlay rail right (1 col < 900px) */
+      '.ev3-root .det-stage{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(260px,1fr);' +
+        'gap:12px;align-items:stretch}',
+      '@media (max-width:900px){.ev3-root .det-stage{grid-template-columns:1fr}}',
+      '.ev3-root .det-map-col{display:flex;flex-direction:column;position:relative;min-width:0;' +
+        'background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;overflow:hidden}',
+      '.ev3-map{flex:none;height:400px;min-width:0;background:var(--bg-inset)}',
+      '@media (max-width:760px){.ev3-map{height:320px}}',
+      '.ev3-fsbtn{position:absolute;top:8px;right:8px;z-index:1200;width:24px;height:24px;' +
+        'line-height:1;padding:0;border-radius:6px;cursor:pointer;font-size:13px;' +
+        'background:var(--bg-panel);border:1px solid var(--border);color:var(--text-dim)}',
+      '.ev3-fsbtn:hover{color:var(--text);border-color:var(--matte-black)}',
       '.ev3-panel .leaflet-control-attribution{font-size:9px}',
-      '.ev3-cb-note{font-size:11px;font-style:italic;color:var(--text-dim);max-width:60ch}',
+      /* integrated bottom legend bar — part of the card, never a floating chip */
+      '.ev3-root .det-map-bar{display:flex;justify-content:space-between;align-items:center;' +
+        'gap:6px 10px;flex-wrap:wrap;margin:0;padding:6px 10px;font-size:11px;' +
+        'color:var(--ink-secondary);background:var(--bg-inset);border:0;border-top:1px solid var(--border)}',
+      '.ev3-root .det-map-bar .bbar-l{min-width:0}',
+      '.ev3-root .det-map-bar .bbar-r{display:flex;align-items:center;gap:6px;white-space:nowrap}',
+      '.det-map-bar.has-cb{padding-bottom:20px}',
+      '.det-map-bar .ev3-cb{position:relative;width:min(240px,44vw);flex:none}',
+      '.det-map-bar .ev3-cb canvas{display:block;width:100%;height:12px;border:1px solid var(--border);border-radius:3px}',
+      '.det-map-bar .ev3-cb .tick{position:absolute;top:15px;font-size:10px;color:var(--ink-secondary);' +
+        'transform:translateX(-50%);font-variant-numeric:tabular-nums}',
+      '.det-map-bar .ev3-cb .tick.key{color:var(--text);font-weight:700;white-space:nowrap}',
+      '.det-map-bar .ev3-cb-units{font-size:11px;color:var(--ink-secondary);white-space:nowrap}',
+      '.ev3-swatch{width:12px;height:12px;border-radius:3px;border:1px solid rgba(127,127,127,.45);' +
+        'display:inline-block;flex:none}',
+      '.ev3-crisp{image-rendering:pixelated}',
+      /* tier colors are theme tokens; canvas fills need literal colors — keep
+         these in sync via css() (heatwave_reference.png lineage). */
+      'html{--tier-heat:#d9663c;--tier-freeze:#2171b5}',
+      'html[data-theme="dark"]{--tier-heat:#f0895c;--tier-freeze:#6ea3dd}',
+      /* Band 3 right — overlay rail: rows ONLY for layers with live data */
+      '.ev3-root .det-side-col{background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;' +
+        'padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}',
+      '.ev3-root .det-side-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;' +
+        'padding-bottom:8px;border-bottom:1px solid var(--border)}',
+      '.ev3-root .det-side-head b{font-size:12.5px;font-weight:600}',
+      '.ev3-root .det-side-head span{font-size:11px;color:var(--ink-muted);font-variant-numeric:tabular-nums}',
+      '.ev3-layers{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:11.5px}',
+      '.ev3-layer{display:grid;grid-template-columns:auto auto minmax(0,1fr) minmax(70px,110px) auto;' +
+        'gap:4px 8px;align-items:center;min-width:0}',
+      '.ev3-layer.off .ev3-lop,.ev3-layer.off .ev3-lcol{opacity:.45}',
+      '.ev3-linfo{min-width:0}',
+      '.ev3-lname{display:block;font-size:11.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.ev3-lsum{display:block;font-size:10.5px;color:var(--ink-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.ev3-lvis{width:15px;height:15px;margin:0;flex:none}',
+      '.ev3-lcol{width:22px;height:18px;padding:0;border:1px solid var(--border);border-radius:4px;' +
+        'background:none;cursor:pointer;margin:0;flex:none}',
+      '.ev3-lopv{font-size:10.5px;color:var(--ink-secondary);width:3.5ch;justify-self:end;font-variant-numeric:tabular-nums}',
+      /* themed form controls (contract §1): accent-color + custom track/thumb
+         so zero OS-default bright blue range/checkboxes ever render; all
+         colors are theme tokens so dark mode keeps AA contrast */
+      '.ev3-root input[type="checkbox"]{accent-color:var(--matte-black)}',
+      '.ev3-root input[type="range"]{accent-color:var(--matte-black);background:transparent;height:18px;margin:0;cursor:pointer}',
+      '.ev3-root input[type="range"]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:var(--alabaster-mid)}',
+      '.ev3-root input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;' +
+        'width:13px;height:13px;border-radius:50%;background:var(--matte-black);border:2px solid var(--bg-panel);' +
+        'box-shadow:0 0 0 1px var(--matte-black);margin-top:-4.5px}',
+      '.ev3-root input[type="range"]::-moz-range-track{height:4px;border-radius:2px;background:var(--alabaster-mid)}',
+      '.ev3-root input[type="range"]::-moz-range-thumb{width:11px;height:11px;border-radius:50%;' +
+        'background:var(--matte-black);border:2px solid var(--bg-panel);box-shadow:0 0 0 1px var(--matte-black)}',
+      /* unavailable-at-lead models: one collapsible line in the rail footer */
+      '.ev3-root .det-unavail{border-top:1px solid var(--border);padding-top:8px;font-size:11px;color:var(--ink-secondary)}',
+      '.ev3-root .det-unavail summary{cursor:pointer;color:var(--ink-muted);outline-offset:2px}',
+      '.ev3-root .det-unavail ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:3px}',
+      '.ev3-root .det-unavail li{display:flex;justify-content:space-between;gap:10px;min-width:0}',
+      '.ev3-root .det-unavail li b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.ev3-root .det-unavail li span{text-align:right;white-space:nowrap;color:var(--ink-muted)}',
+      /* Band 4 — summary strip (.ev-dur loses its own card chrome inside it) */
+      '.ev3-root .det-summary-strip{margin-top:12px;padding:12px 14px;' +
+        'background:var(--bg-panel);border:1px solid var(--border);border-radius:6px}',
+      '.ev3-root .det-summary-strip .ev-dur{background:none;border:0;border-radius:0;padding:0}',
+      /* the AR delta readout is longer than a duration \u0394 \u2014 give the value
+         column room to stay on one line on desktop and wrap gracefully on phones */
+      '.ev3-root .det-summary-strip .ev-bar{grid-template-columns:120px minmax(0,1fr) minmax(176px,auto)}',
+      '.ev3-root .det-summary-strip .ev-bar-ruler{grid-template-columns:120px minmax(0,1fr) minmax(176px,auto)}',
+      '.ev3-root .det-summary-strip .ev-bar-num{white-space:nowrap}',
+      '@media (max-width:560px){.ev3-root .det-summary-strip .ev-bar,.ev3-root .det-summary-strip .ev-bar-ruler{grid-template-columns:96px minmax(0,1fr) auto}.ev3-root .det-summary-strip .ev-bar-num{white-space:normal}}',
+      '.ev3-root .det-summary-strip[hidden]{display:none}',
+      /* fullscreen: the map card covers the screen; Esc exits (keydown hook) */
       '.ev3-panel.ev3-fs{position:fixed;inset:16px;z-index:2600;display:flex;flex-direction:column;margin:0}',
       '.ev3-panel.ev3-fs .ev3-map{flex:1;height:auto;min-height:0}',
       '.ev3-panel.ev3-fs .leaflet-container{font:inherit}',
-      /* B (owner 2026-11-07, heatwave_reference.png): single-tier categorical
-         heat/freeze overlay — crisp cell edges (no bilinear), white label
-         chip near the event, bottom bar (valid time left, one-swatch legend
-         right). Tier colors are theme tokens; canvas fills need literal
-         colors, so keep these in sync via css(). */
-      'html{--tier-heat:#d9663c;--tier-freeze:#2171b5}',
-      'html[data-theme="dark"]{--tier-heat:#f0895c;--tier-freeze:#6ea3dd}',
-      '.ev3-crisp{image-rendering:pixelated}',
-      '.ev3-namechip{background:var(--bg-panel);color:var(--text);border:1px solid var(--border);' +
-        'border-radius:8px;box-shadow:var(--shadow);font:inherit;font-size:12.5px;font-weight:600;' +
-        'padding:4px 10px;white-space:nowrap}',
-      '.ev3-namechip.leaflet-tooltip-top:before{border-top-color:var(--border)}',
-      '.ev3-namechip.leaflet-tooltip-bottom:before{border-bottom-color:var(--border)}',
-      '.ev3-bbar{display:flex;justify-content:space-between;align-items:center;gap:10px;' +
-        'margin:6px 2px 0;font-size:11px;color:var(--text-dim);background:var(--bg-inset);' +
-        'border:1px solid var(--border);border-radius:8px;padding:5px 10px}',
-      '.ev3-bbar .bbar-r{display:flex;align-items:center;gap:6px;white-space:nowrap}',
-      '.ev3-swatch{width:12px;height:12px;border-radius:3px;border:1px solid rgba(127,127,127,.45);' +
-        'display:inline-block;flex:none}',
     ].join('\n');
     document.head.appendChild(s);
   }
@@ -618,46 +663,35 @@
       } catch (e) { /* keep the anchor day */ }
       return d;
     })();
-    /* ---- scaffolding: root, toolbar (lead + time slider), AR colorbar row,
-       the single map card block ---- */
+    /* ---- scaffolding (unified 5-band contract §3): Band 2 control bar,
+       Band 3 split stage (map card + overlay rail), Band 4 summary strip ---- */
     const root = document.createElement('div'); root.className = 'ev3-root';
     host.appendChild(root);
-    const toolbar = document.createElement('div'); toolbar.className = 'ev-toolbar';
+    const toolbar = document.createElement('div'); toolbar.className = 'det-toolbar ev-toolbar';
+    const tbLeft = document.createElement('div'); tbLeft.className = 'det-tb-left';
+    const tbRight = document.createElement('div'); tbRight.className = 'det-tb-right';
+    toolbar.appendChild(tbLeft); toolbar.appendChild(tbRight);
     root.appendChild(toolbar);
-    /* colorbar row (AR only — heat/freeze use the single-swatch tier legend +
-       ramp note in the map's bottom bar; owner 2026-11-07 reference) */
-    const cbRow = document.createElement('div'); cbRow.className = 'ev3-cbrow';
-    if (isAR) {
-      const cb = { vmin: AR_FLOOR, vmax: AR_CAP, units: 'kg m\u207b\u00b9 s\u207b\u00b9' };
-      const lb = document.createElement('span'); lb.className = 'ev3-cb-label';
-      lb.textContent = 'scale';
-      const bar = document.createElement('div'); bar.className = 'ev3-cb';
-      const cv = document.createElement('canvas'); bar.appendChild(cv);
-      drawColorbar(cv, ramp);
-      // Owner 2026-11-08: AR ticks fixed at 250/400/600/800/1000 with the
-      // 400 detector threshold marked 'AR mask ≥400'.
-      [250, 400, 600, 800, 1000].forEach(function (v) {
-        const pct = 100 * (v - cb.vmin) / (cb.vmax - cb.vmin);
-        const s = document.createElement('span'); s.className = 'tick';
-        s.style.left = pct + '%';
-        if (Math.abs(v - arThr) < 1) {
-          s.classList.add('key');
-          s.textContent = v + '·mask';
-          s.title = 'AR mask threshold: IVT \u2265 ' + v + ' kg m\u207b\u00b9 s\u207b\u00b9';
-        } else s.textContent = tickLabel(v);
-        bar.appendChild(s);
-      });
-      const u = document.createElement('span'); u.className = 'ev3-cb-units';
-      u.textContent = cb.units;
-      cbRow.appendChild(lb); cbRow.appendChild(bar); cbRow.appendChild(u);
-    }
-    const obsBlock = document.createElement('div'); obsBlock.className = 'ev3-obsblock';
-    const ui = { lead: initialLead, day: isAR ? null : anchorDay, sel: initialSel.slice() };
+    const stage = document.createElement('div'); stage.className = 'det-stage';
+    root.appendChild(stage);
+    /* Band 4: duration-vs-observed (heat/cold/freeze/flood) or footprint-vs-
+       observed (AR) bars; shown only once there is observed data to compare. */
+    const strip = document.createElement('div'); strip.className = 'det-summary-strip';
+    strip.hidden = true;
     const dur = document.createElement('div'); dur.className = 'ev-dur';
-    root.appendChild(cbRow);
-    if (!isAR) cbRow.style.display = 'none';   // B: single-swatch tier legend replaces the ramp scale
-    root.appendChild(obsBlock);
-    if (!isAR) root.appendChild(dur);   // §6 KEEP: cross-model duration bars
+    strip.appendChild(dur);
+    root.appendChild(strip);
+    const ui = { lead: initialLead, day: isAR ? null : anchorDay, sel: initialSel.slice() };
+    /* Band 3 right: the overlay rail. Rows are built by layerRows() (live
+       layers only); models without data at the lead collapse into one fold. */
+    const sideCol = document.createElement('div'); sideCol.className = 'det-side-col';
+    const sideHead = document.createElement('div'); sideHead.className = 'det-side-head';
+    sideHead.innerHTML = '<b>Active overlays</b>';
+    const sideCount = document.createElement('span');
+    sideHead.appendChild(sideCount);
+    const sideBody = document.createElement('div'); sideBody.className = 'det-side-body ev3-layers';
+    const unavailEl = document.createElement('details'); unavailEl.className = 'det-unavail';
+    sideCol.appendChild(sideHead); sideCol.appendChild(sideBody);
 
     /* view box: event box (bbox if available) padded ×1.9 */
     const box = (function () {
@@ -686,54 +720,9 @@
       return { rect: fieldBounds, rects: null };
     })();
 
-    /* B: white label chip text + anchor — centroid of the observed occupied
-       cells (stable while scrubbing valid time), matching the reference's
-       'Heatwave #<id>' chip. */
-    const chip = (function () {
-      if (!ev || !ev.id || !viz.grid) return null;
-      const name = viz.event_type === 'heat_wave' ? 'Heatwave'
-        : viz.event_type === 'freeze' ? 'Freeze'
-        : viz.event_type === 'cold_snap' ? 'Cold snap'
-        : viz.event_type === 'flood' ? 'Flood' : 'Atmospheric river';
-      let lat = 0, lon = 0, k = 0, anchor = null;
-      try {
-        let rows = isAR
-          ? (viz.obs && viz.obs.mask ? unpackMask(viz.obs.mask, ny) : null)
-          : (viz.obs && viz.obs.consec ? unpackU8(viz.obs.consec) : null);
-        if (!rows && viz.obs && viz.obs.daily) {
-          // schema 3: occupancy = union of the per-day tier masks
-          const d = viz.obs.daily;
-          rows = [];
-          for (let j = 0; j < ny; j++) {
-            let any = 0;
-            for (let r = 0; r < d.length; r++) {
-              const row = d[r] && d[r][j];
-              if (row && row.indexOf('1') >= 0) { any = 1; break; }
-            }
-            rows.push(any);
-          }
-        }
-        if (!rows) return null;
-        for (let j = 0; j < ny; j++) {
-          const row = rows[j]; if (!row) continue;
-          for (let i = 0; i < nx; i++) {
-            if (!(isAR || viz.obs.consec ? row[i] > 0 : row[i])) continue;
-            let lo = grid.lon[i];
-            if (anchor === null) anchor = lo;
-            while (lo - anchor > 180) lo -= 360;
-            while (anchor - lo > 180) lo += 360;
-            lat += grid.lat[j]; lon += lo; k += 1;
-          }
-        }
-      } catch (e) { return null; }
-      if (!k) return null;
-      // G-35: anchor on the TOP EDGE (mid-longitude) of the event box so the label sits
-      // outside the exceedance (it used to cover the field centre) and clear of the zoom
-      // control; centroid when there is no box
-      const nw = box.rects ? [box.rects[0][1][0], (box.rects[0][0][1] + box.rects[0][1][1]) / 2] : null;
-      return { label: name + ' #' + String(ev.id).slice(0, 6), at: nw || [lat / k, lon / k] };
-    })();
-
+    /* Band 3 (contract §3): the old raw-hash map chip ('Heatwave #806ecb')
+       is retired — an internal hex id painted over the map is clutter, not
+       information; the shared event header already names the event. */
 
     /* ---- instance bookkeeping ---- */
     const maps = [];                 // live Leaflet maps (teardown + sync)
@@ -816,20 +805,24 @@
 
     /* ---- panel factory + shared-view wiring ---- */
     function makePanel(opts) {
+      /* Band 3 left: the map card. The `.ev3-panel.ev3-obs` hook (fullscreen
+         + CSS) and the `.ev3-bbar` class (bottom bar) stay for compatibility. */
       const el = document.createElement('div');
-      el.className = 'ev3-panel' + (opts.obs ? ' ev3-obs' : '');
-      el.innerHTML = '<div class="ev3-head"><b>' + esc(opts.title) + '</b>' +
-        '<button class="ev3-fsbtn" type="button" title="zoom to fullscreen">⤢</button></div>';
+      el.className = 'det-map-col ev3-panel ev3-obs';
       const mapEl = document.createElement('div'); mapEl.className = 'ev3-map';
-      const layersEl = document.createElement('div'); layersEl.className = 'ev3-layers';
-      /* B: bottom bar — 'Valid time: …' left, single-swatch tier legend right
-         (hidden until setBar; AR panels keep the continuous colorbar instead). */
-      const bar = document.createElement('div'); bar.className = 'ev3-bbar'; bar.style.display = 'none';
+      const fsBtn = document.createElement('button');
+      fsBtn.type = 'button'; fsBtn.className = 'ev3-fsbtn det-fsbtn';
+      fsBtn.textContent = '\u2922';
+      fsBtn.title = 'fullscreen the map (Esc exits)';
+      fsBtn.setAttribute('aria-label', 'toggle fullscreen map');
+      /* integrated bottom legend bar — always visible inside the card:
+         description left, tier swatch (or AR colorbar) right. */
+      const bar = document.createElement('div'); bar.className = 'det-map-bar ev3-bbar';
       const barL = document.createElement('span'); barL.className = 'bbar-l';
       const barR = document.createElement('span'); barR.className = 'bbar-r';
       bar.appendChild(barL); bar.appendChild(barR);
-      el.appendChild(layersEl); el.appendChild(mapEl); el.appendChild(bar);
-      obsBlock.appendChild(el);
+      el.appendChild(mapEl); el.appendChild(fsBtn); el.appendChild(bar);
+      stage.appendChild(el);
 
       const map = L.map(mapEl, {
         worldCopyJump: true, zoomControl: true, scrollWheelZoom: true,
@@ -850,16 +843,7 @@
       if (box.rects) box.rects.forEach(function (r) {
         L.rectangle(r, { color: css('--ink-secondary', '#6e6e60'), weight: 1.2, dashArray: '4 3', fill: false, interactive: false }).addTo(map);  // furniture, not data (design guardian G-26)
       });
-      // B: white rounded label chip near the event ('Heatwave #119e56').
-      // VERIFIED against this vendor build (1.1.1 label, 1.2-era code):
-      // Map.openTooltip(content, latlng, options) — overlay =
-      // new Tooltip(opts3).setContent(arg1).setLatLng(arg2). Passing the
-      // LatLng first made setContent(LatLng) → appendChild(LatLng) throw,
-      // which is the real cause of the "AR page shows no data" report.
-      if (opts.chip && opts.chipAt) {
-        map.openTooltip(String(opts.chip), opts.chipAt, { permanent: true, direction: 'top',
-          offset: [0, -4], className: 'ev3-namechip' });
-      }
+      // contract §3 (WP2): no raw-hash tooltip chip over the map.
 
       map.on('moveend', function () {
         drawGraticule(map, grat);
@@ -871,17 +855,16 @@
         }
         syncBusy = false;
       });
-      el.querySelector('.ev3-fsbtn').onclick = function () { setFs(fsPanel === panel ? null : panel); };
 
-      const panel = { el: el, map: map, layersEl: layersEl, overlays: [] };
+      const panel = { el: el, map: map, overlays: [] };
       maps.push(map);
+      fsBtn.onclick = function () { setFs(fsPanel === panel ? null : panel); };
       panel.clearOverlays = function () {
         panel.overlays.forEach(function (o) { map.removeLayer(o); });
         panel.overlays = [];
       };
       panel.setBar = function (left, legend, tip) {
-        if (!left && !legend) { bar.style.display = 'none'; return; }
-        bar.style.display = '';
+        bar.classList.remove('has-cb');
         barL.textContent = left || '';
         barL.title = tip || '';
         barR.innerHTML = '';
@@ -892,6 +875,17 @@
           barR.appendChild(sw); barR.appendChild(t);
         }
         barR.title = (legend && legend.tip) || '';
+      };
+      /* AR: the continuous IVT colorbar lives inside the SAME bottom bar, so
+         AR gets the identical card framing as every other event type. */
+      panel.setBarAr = function (left, cbEl) {
+        barL.textContent = left || '';
+        barR.innerHTML = '';
+        barR.appendChild(cbEl);
+        const u = document.createElement('span'); u.className = 'ev3-cb-units';
+        u.textContent = 'kg m\u207b\u00b9 s\u207b\u00b9';
+        barR.appendChild(u);
+        bar.classList.add('has-cb');
       };
       return panel;
     }
@@ -966,67 +960,91 @@
       const e = viz.models[k];
       return reasonOf((typeof e === 'string' ? e : (e && e.status)) || 'no data at this lead');
     }
+    function modelName(k) {
+      if (k === 'obs') return isAR ? 'Observed IVT' : obsLabel;
+      return (typeof window.displayModelName === 'function') ? window.displayModelName(k) : k;
+    }
     function layerSummary(L) {
       if (isAR) {
-        if (L.key === 'obs') return viz.obs ? 'covers ' + grp(viz.obs.area_cells) + ' cells' : 'no observations (post-cutoff)';
+        if (L.key === 'obs') return viz.obs ? grp(viz.obs.area_cells || 0) + ' cells' : 'no observations (post-cutoff)';
         const e = modelEntry(L.key); if (!e) return noDataReason(L.key);
-        return 'covers ' + grp(e.area_cells || 0) + ' cells' +
-          (viz.obs ? ' (obs ' + grp(viz.obs.area_cells) + ')' : '');
+        return grp(e.area_cells || 0) + ' cells';
       }
-      if (L.key === 'obs') return viz.obs ? 'covers ' + grp(viz.obs.footprint_cells) +
-        ' cells \u00b7 runs ' + viz.obs.max_consec + ' d' : '';
+      if (L.key === 'obs') return viz.obs ? grp(viz.obs.footprint_cells) + ' cells \u00b7 ' +
+        viz.obs.max_consec + 'd' : '';
       const e = modelEntry(L.key); if (!e) return noDataReason(L.key);
-      return 'covers ' + grp(e.footprint_cells) + ' cells (obs ' + grp(viz.obs.footprint_cells) +
-        ') \u00b7 runs ' + e.max_consec + ' d (obs ' + viz.obs.max_consec + ' d)';
+      const d = e.max_consec - (viz.obs ? viz.obs.max_consec : 0);
+      return grp(e.footprint_cells) + ' cells \u00b7 \u0394 ' + (d >= 0 ? '+' : '') + d + 'd';
+    }
+    function updateSideHead() {
+      const total = Object.keys(layers).length;
+      let on = 0;
+      Object.keys(layers).forEach(function (k) { if (layers[k].on) on += 1; });
+      sideCount.textContent = on + ' of ' + total;
     }
     function layerRows() {
-      const hostEl = obsPanel && obsPanel.layersEl;
-      if (!hostEl) return;
-      hostEl.innerHTML = '';
+      if (!sideBody) return;
+      sideBody.innerHTML = '';
+      /* ONLY layers with data at the active lead get a row — zero disabled
+         sliders or dead '0% no data at this lead' rows in the active list. */
       ['obs'].concat(allModels).forEach(function (k) {
-        const L = layers[k];   // absent when the model has no data at this lead
-        const name = L ? L.label : (k === 'obs' ? (isAR ? 'Observed IVT' : obsLabel) : k);
+        const L = layers[k];
+        if (!L) return;
+        const name = modelName(k);
         const row = document.createElement('div');
-        row.className = 'ev3-layer' + (L && L.on ? '' : ' off') + (L ? '' : ' dis');
-        const lbl = document.createElement('label');
-        lbl.className = 'ev3-lsw';
-        lbl.innerHTML = '<input type="checkbox" class="ev3-lvis"' + (L && L.on ? ' checked' : '') +
-          ' aria-label="show layer ' + esc(name) + '"' + (L ? '' : ' disabled') + '>' +
-          '<input type="color" class="ev3-lcol" value="' + (L ? L.color : '#808080') +
-          '" aria-label="colour of layer ' + esc(name) + '"' + (L ? '' : ' disabled') + '>' +
-          '<b class="ev3-lname">' + esc(name) + '</b>';
-        row.appendChild(lbl);
+        row.className = 'ev3-layer' + (L.on ? '' : ' off');
+        const vis = document.createElement('input');
+        vis.type = 'checkbox'; vis.className = 'ev3-lvis'; vis.checked = !!L.on;
+        vis.setAttribute('aria-label', 'show layer ' + name);
+        const col = document.createElement('input');
+        col.type = 'color'; col.className = 'ev3-lcol'; col.value = L.color;
+        col.setAttribute('aria-label', 'colour of layer ' + name);
+        const info = document.createElement('span'); info.className = 'ev3-linfo';
+        const nm = document.createElement('b'); nm.className = 'ev3-lname';
+        nm.textContent = name; nm.title = name;
+        const sum = document.createElement('span'); sum.className = 'ev3-lsum';
+        sum.textContent = layerSummary(L);
+        info.appendChild(nm); info.appendChild(sum);
         const rng = document.createElement('input');
         rng.type = 'range'; rng.className = 'ev3-lop'; rng.min = '0'; rng.max = '100'; rng.step = '5';
-        rng.value = String(L ? L.op : 50);
+        rng.value = String(L.op);
         rng.setAttribute('aria-label', 'opacity of layer ' + name + ', percent');
-        if (!L) rng.disabled = true;
         const pct = document.createElement('output'); pct.className = 'ev3-lopv';
-        pct.textContent = (L ? L.op : 0) + '%';
-        const sum = document.createElement('span'); sum.className = 'ev3-lsum';
-        sum.textContent = L ? layerSummary(L)
-          : (k === 'obs' ? 'no observations (post-cutoff)' : noDataReason(k));
-        row.appendChild(rng); row.appendChild(pct); row.appendChild(sum);
-        if (L) {
-          lbl.querySelector('.ev3-lvis').addEventListener('change', function (ev2) {
-            L.on = ev2.target.checked; customized = true;
-            row.classList.toggle('off', !L.on);
-            ui.sel = Object.keys(layers).filter(function (x) { return x !== 'obs' && layers[x].on; });
-            paintAll(); saveState();
-          });
-          lbl.querySelector('.ev3-lcol').addEventListener('input', function (ev2) {
-            L.color = ev2.target.value; customized = true;
-            paintLayer(L); paintBar(); saveState();
-          });
-          rng.addEventListener('input', function () {
-            L.op = +rng.value; pct.textContent = L.op + '%'; customized = true;
-            // raster PNG is opacity-independent: nudge overlays, don't re-encode (ponytail 17:45)
-            L.ovs.forEach(function (o) { if (o.setOpacity) o.setOpacity(L.op / 100); });
-            paintBar(); saveState();
-          });
-        }
-        hostEl.appendChild(row);
+        pct.textContent = L.op + '%';
+        row.appendChild(vis); row.appendChild(col); row.appendChild(info);
+        row.appendChild(rng); row.appendChild(pct);
+        vis.addEventListener('change', function (ev2) {
+          L.on = ev2.target.checked; customized = true;
+          row.classList.toggle('off', !L.on);
+          ui.sel = Object.keys(layers).filter(function (x) { return x !== 'obs' && layers[x].on; });
+          paintAll(); updateSideHead(); saveState();
+        });
+        col.addEventListener('input', function (ev2) {
+          L.color = ev2.target.value; customized = true;
+          paintLayer(L); paintBar(); saveState();
+        });
+        rng.addEventListener('input', function () {
+          L.op = +rng.value; pct.textContent = L.op + '%'; customized = true;
+          // raster PNG is opacity-independent: nudge overlays, don't re-encode (ponytail 17:45)
+          L.ovs.forEach(function (o) { if (o.setOpacity) o.setOpacity(L.op / 100); });
+          paintBar(); saveState();
+        });
+        sideBody.appendChild(row);
       });
+      /* models without data at this lead: one compact collapsible footer,
+         never a dead control in the active list */
+      const unavail = allModels.filter(function (m) { return !hasDataAt(m, ui.lead); });
+      if (unavail.length) {
+        unavailEl.innerHTML = '<summary>' + unavail.length + ' model' +
+          (unavail.length === 1 ? '' : 's') + ' unavailable at ' + fmtLead(ui.lead) +
+          '</summary><ul>' + unavail.map(function (m) {
+            return '<li><b>' + esc(modelName(m)) + '</b><span>' + esc(noDataReason(m)) + '</span></li>';
+          }).join('') + '</ul>';
+        if (unavailEl.parentNode !== sideCol) sideCol.appendChild(unavailEl);
+      } else {
+        unavailEl.innerHTML = '';
+        if (unavailEl.parentNode) unavailEl.parentNode.removeChild(unavailEl);
+      }
     }
     /* per-cell trailing run R(k) = R(k-1)+1 while the day-k bit is on, else 0
        (contract §2: the same rule as the front page; runs truncate at
@@ -1083,9 +1101,34 @@
         lay.ovs.push(addImg(lay, durRasterURL(run, ny, nx, rgb, viz.event_type === 'heat_wave'), alpha, 'ev3-crisp'));
       }
     }
+    /* compact continuous IVT colorbar for the AR bottom bar: ticks 250 /
+       400·mask / 600 / 800 / 1000 kg m⁻¹ s⁻¹ (owner 2026-11-08), with the
+       detector threshold flagged on the 400 tick. Built once, reused. */
+    let arCbEl = null;
+    function arColorbar() {
+      if (arCbEl) return arCbEl;
+      const box = document.createElement('div'); box.className = 'ev3-cb';
+      const cv = document.createElement('canvas'); box.appendChild(cv);
+      drawColorbar(cv, RAMPS.ivt);
+      [250, 400, 600, 800, 1000].forEach(function (v) {
+        const pct = 100 * (v - AR_FLOOR) / (AR_CAP - AR_FLOOR);
+        const s = document.createElement('span'); s.className = 'tick';
+        s.style.left = pct + '%';
+        if (Math.abs(v - arThr) < 1) {
+          s.classList.add('key'); s.textContent = v + '\u00b7mask';
+          s.title = 'AR mask threshold: IVT \u2265 ' + v + ' kg m\u207b\u00b9 s\u207b\u00b9';
+        } else s.textContent = tickLabel(v);
+        box.appendChild(s);
+      });
+      arCbEl = box;
+      return box;
+    }
     function paintBar() {
       if (!obsPanel) return;
-      if (isAR) { obsPanel.setBar(null, null); return; }
+      if (isAR) {
+        obsPanel.setBarAr('AR \u2014 IVT flux, dashed contour = mask \u2265 ' + arThr, arColorbar());
+        return;
+      }
       const legend = { color: layers.obs ? layers.obs.color : tierLegend.color,
                        label: tierLegend.label, tip: tierLegend.tip };
       const heat = viz.event_type === 'heat_wave';
@@ -1094,7 +1137,7 @@
         ? (viz.event_type === 'cold_snap' ? 'Cold snap' : 'Freeze') : 'Freeze';
       if (fl) {
         const p = viz.obs && viz.obs.series ? viz.obs.series[viz.obs.series.length - 1] : null;
-        obsPanel.setBar('Flood \u2014 days over the P' + tierQ + ' wet-day threshold', legend,
+        obsPanel.setBar('Flood \u2014 days > P' + tierQ + ' (' + (viz.source_label || 'Google PARDIG') + ')', legend,
           'Cells where rain (' + (viz.source_label || 'AI-estimated, Google PARDIG CC BY 4.0')
           + ') reaches the ERA5 ' + tierQ + 'th-percentile wet-day threshold AND '
           + 'the absolute floor (20 mm/day, 50 mm/72 h); darkest = 7+ days. '
@@ -1109,24 +1152,25 @@
     function paintAll() {
       Object.keys(layers).forEach(function (k) { paintLayer(layers[k]); });
       paintBar();
-      if (!isAR && viz.obs) drawDur();
+      if (isAR) drawArDur();
+      else if (viz.obs) drawDur();
     }
     /* duration-vs-observed bars (kept per contract §6): the currently VISIBLE
        model set — same roster the layer list shows as checked */
     function drawDur() {
       let html = '<div class="ev-dur-title">' + (leads.length
-        ? 'duration vs observed \u00b7 lead ' + ui.lead + 'h'
+        ? 'duration vs observed \u00b7 lead ' + fmtLead(+ui.lead)
         : 'longest spell inside the event (days)') + '</div>';
       const obsN = viz.obs.max_consec;
       const vals = [{ label: 'observed', n: obsN, c: css('--text-dim', '#5b6478') }];
       Object.keys(layers).forEach(function (k) {
         if (k === 'obs' || !layers[k].on) return;
         const entry = modelEntry(k);
-        if (entry && entry.status === 'ok') vals.push({ label: k, n: entry.max_consec, c: layers[k].color });
+        if (entry && entry.status === 'ok') vals.push({ label: modelName(k), n: entry.max_consec, c: layers[k].color });
       });
       const maxN = Math.max(7, obsN + 2);
       vals.forEach(function (v, i) {
-        const d = i === 0 ? '' : ' <b class="ev-bar-d">\u0394 ' + (v.n - obsN >= 0 ? '+' : '') + (v.n - obsN) + ' d vs obs</b>';
+        const d = i === 0 ? '' : ' <b class="ev-bar-d">\u0394 ' + (v.n - obsN >= 0 ? '+' : '') + (v.n - obsN) + 'd</b>';
         html += bar(v.label, v.n, maxN, v.c, d, true, obsN);
       });
       dur.innerHTML = html + (() => {
@@ -1134,7 +1178,64 @@
         for (let t = 0; t <= maxN; t++) r += '<b class="rtick" style="left:' + (100 * t / maxN) + '%">' + t + '</b>';
         return r + '</span><span></span></div>';
       })();
-      dur.style.display = '';
+      strip.hidden = false;
+    }
+    /* AR Band 4: forecast footprint vs observed mask area (cells) in the SAME
+       .ev-bar grammar — AR keeps identical 5-band parity. */
+    function cellBar(label, n, maxN, color, extra, obsN) {
+      const w = maxN > 0 ? Math.min(100, n > 0 ? Math.max(3, 100 * n / maxN) : 0) : 0;
+      let grid = '';
+      if (Number.isFinite(obsN) && obsN > 0 && obsN < maxN)
+        grid = '<u class="ev-bar-obs" style="left:' + (100 * obsN / maxN) + '%" title="observed ' +
+          grp(obsN) + ' cells"></u>';
+      return '<div class="ev-bar"><span class="ev-bar-label" title="' + esc(label) + '">' + esc(label) + '</span>' +
+        '<span class="ev-bar-track"><i style="width:' + w + '%;background:' + color + '"></i>' + grid + '</span>' +
+        '<span class="ev-bar-num">' + grp(n) + ' cells' + (extra || '') + '</span></div>';
+    }
+    function drawArDur() {
+      if (!viz.obs) { strip.hidden = true; dur.innerHTML = ''; return; }
+      const obsN = viz.obs.area_cells || 0;
+      // overlap % is measured against observed MASK occupancy (the cells
+      // `hit` actually counts), so it can never skew if area_cells drifts
+      // from mask occupancy in an asset
+      let obsCells = obsN;
+      if (arObsMask) {
+        let c = 0;
+        for (let j = 0; j < ny; j++) {
+          const b = arObsMask[j]; if (!b) continue;
+          for (let i = 0; i < b.length; i++) if (b[i]) c += 1;
+        }
+        if (c) obsCells = c;
+      }
+      const vals = [{ label: 'observed', n: obsN, c: css('--text-dim', '#5b6478'), extra: '' }];
+      let maxN = Math.max(1, obsN);
+      Object.keys(layers).forEach(function (k) {
+        if (k === 'obs' || !layers[k].on) return;
+        const e = modelEntry(k);
+        if (!e || e.status !== 'ok') return;
+        const n = e.area_cells || 0;
+        if (n > maxN) maxN = n;
+        let extra = '';
+        if (arObsMask && e.mask) {
+          const mm = unpackMask(e.mask, ny);
+          let hit = 0;
+          for (let j = 0; j < ny; j++) {
+            const a = mm[j], b = arObsMask[j];
+            if (!a || !b) continue;
+            for (let i = 0; i < a.length; i++) if (a[i] && b[i]) hit += 1;
+          }
+          const d = n - obsN;
+          const pct = obsCells > 0 ? Math.round(100 * hit / obsCells) : 0;
+          extra = ' <b class="ev-bar-d" title="overlap with observed: ' + grp(hit) + ' cells">' +
+            '\u0394 ' + (d >= 0 ? '+' : '\u2212') + grp(Math.abs(d)) + ' \u00b7 ' + pct + '% hit</b>';
+        }
+        vals.push({ label: modelName(k), n: n, c: layers[k].color, extra: extra });
+      });
+      let html = '<div class="ev-dur-title">forecast footprint vs observed \u00b7 lead ' +
+        (leads.length ? fmtLead(+ui.lead) : '\u2014') + '</div>';
+      vals.forEach(function (v) { html += cellBar(v.label, v.n, maxN, v.c, v.extra, obsN); });
+      dur.innerHTML = html;
+      strip.hidden = false;
     }
     function rebuildLayers() {
       Object.keys(layers).forEach(function (k) {
@@ -1148,27 +1249,31 @@
       allModels.forEach(function (m) { if (hasDataAt(m, ui.lead) && !layers[m]) layers[m] = mkLayer(m); });
       ui.sel = Object.keys(layers).filter(function (k) { return k !== 'obs' && layers[k].on; });
       layerRows();
+      updateSideHead();   // 'N of M' follows the lead change
     }
 
-    /* ---- toolbar ---- */
+    /* ---- Band 2 toolbar: `Lead` + lead pills left, time controls right ---- */
+    let sliderSync = function () {};
     if (leads.length) {
       const lab = document.createElement('span'); lab.className = 'ev-tool-label';
-      lab.textContent = 'forecast lead'; toolbar.appendChild(lab);
+      lab.textContent = 'Lead';
+      tbLeft.appendChild(lab);
       leads.forEach(function (l) {
         const b = document.createElement('button');
         b.className = 'mini ev-lead' + (l === ui.lead ? ' on' : '');
         b.type = 'button';
-        b.textContent = (+l) + 'h';
+        b.dataset.lead = String(l);           // deep-link + refresh truth (hours)
+        b.textContent = fmtLead(+l);          // clean label: 1d / 3d / 36h
         b.onclick = function () { ui.lead = l; notifyLeadHook(l); refreshLead(); };
-        toolbar.appendChild(b);
+        tbLeft.appendChild(b);
       });
     }
     /* time slider (contract §4, mimics the front-page raw slider): play/pause,
-       step, range over window.days, readout — ONE day index drives every layer
+       step, range over window.days, readout \u2014 ONE day index drives every layer
        (obs and model streams are valid-time indexed at the same day k). */
-    let sliderSync = function () {};
     if (!isAR && viz.obs && viz.window && viz.window.days.length) {
-      const sl = document.createElement('div'); sl.className = 'ev3-slider'; toolbar.appendChild(sl);
+      const sl = document.createElement('div'); sl.className = 'ev3-slider';
+      tbRight.appendChild(sl);
       const play = document.createElement('button');
       play.type = 'button'; play.className = 'mini ev3-play'; play.textContent = '\u25b6';
       play.setAttribute('aria-label', 'play valid-time animation');
@@ -1185,8 +1290,8 @@
       const ro = document.createElement('span'); ro.className = 'ev3-readout';
       let timer = null;
       function readout() {
-        ro.textContent = 'Valid time ' + fmtDay(viz.window.days[ui.day]) +
-          (leads.length ? ' \u00b7 models T+' + (+ui.lead) + ' h' : '');
+        ro.textContent = fmtDay(viz.window.days[ui.day]) +
+          (leads.length ? ' \u00b7 T+' + (+ui.lead) + 'h' : '');
       }
       function stopPlay() {
         if (!timer) return;
@@ -1212,11 +1317,21 @@
       readout();
       sliderSync = readout;   // lead text changes with the lead
       active.stopFn = stopPlay;   // teardown must kill the play interval (ponytail 00:10)
+    } else if (isAR) {
+      /* AR has no valid-time scrub: one concise anchor + lead readout */
+      const ro = document.createElement('span'); ro.className = 'ev3-readout';
+      tbRight.appendChild(ro);
+      const roFn = function () {
+        ro.textContent = (viz.obs && viz.obs.anchor_time
+          ? 'Anchor ' + fmtDay(viz.obs.anchor_time) + ' \u00b7 ' : '') + 'T+' + (+ui.lead) + 'h';
+      };
+      roFn();
+      sliderSync = roFn;
     }
 
     function refreshLead() {
       toolbar.querySelectorAll('.ev-lead').forEach(function (b) {
-        b.classList.toggle('on', b.textContent === ui.lead + 'h'); });
+        b.classList.toggle('on', b.dataset.lead === String(ui.lead)); });
       rebuildLayers();
       paintAll();
       sliderSync();
@@ -1224,11 +1339,8 @@
     }
 
     /* ---- build ---- */
-    obsPanel = makePanel({ obs: true,
-      title: viz.obs && viz.obs.series
-        ? ((viz.source_label ? viz.source_label : 'Observed · GPM IMERG') + ' — exceedance days')
-        : 'Observed + model overlays',
-      chip: chip ? chip.label : null, chipAt: chip ? chip.at : null });
+    obsPanel = makePanel({ obs: true });
+    stage.appendChild(sideCol);   // rail lands after the map card (grid order)
     rebuildLayers();
     paintAll();
     notifyLeadHook(ui.lead);   // sync host (deep link + re-render state) with the lead we picked

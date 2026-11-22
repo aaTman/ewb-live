@@ -355,7 +355,6 @@ html.rail-collapsed .rail-label { position: absolute; width: 1px; height: 1px; m
   .rail-toggle { width: 40px; height: 40px; }
   .rail-toggle .ic-rail { display: none; }
   .rail-toggle .ic-close { display: block; }
-  nav.controls { top: 52px; }   /* under the sticky topbar, not behind it */
   .nav-btn { flex: none; width: 40px; height: 40px; margin-left: auto; margin-right: -10px; padding: 0;
     border: 0; border-radius: 8px; background: none; color: var(--matte-black); cursor: pointer; line-height: 0;
     display: grid; place-items: center; }
@@ -464,13 +463,13 @@ button:hover { background: var(--tint); border-color: var(--border-strong); colo
 button.mini { font-size: var(--text-xs); padding: 2px 8px; border-radius: 3px; }
 
 /* ---------- controls ---------- */
-/* The scorecard's own toolbar: models / lead times / metrics only change the
-   tables under it, so it lives in that section and follows them on scroll. */
+/* The scorecard's own toolbar: models / lead times / metrics / view. It is
+   NOT sticky (AC-1.5): a sticky translucent bar used to slice the first table
+   rows and the `thead tr.grp` header line in half while you scrolled. */
 nav.controls {
   display: flex; gap: 8px 24px; align-items: center; flex-wrap: wrap;
   padding: 8px 12px; margin: 8px 0 12px; background: var(--bg-panel);
   border: 1px solid var(--border); border-radius: 6px;
-  position: sticky; top: 0; z-index: 20;
 }
 .ctl-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ctl-label {  /* micro-label */
@@ -513,52 +512,69 @@ nav.controls {
 .type-filter { display: block; }
 .type-filter > .ctl-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }   /* sr-only */
-#type-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 5px; min-width: 0; }
 
-.etype-tab { position: relative; display: inline-flex; align-items: center; gap: 6px;
-  flex: 0 1 auto; min-width: 0; height: 30px; padding: 0 9px;
-  border-radius: 999px; background: var(--bg-panel); border: 1px solid var(--border-strong);
-  color: var(--matte-black); font: 400 var(--text-sm)/1 var(--font-sans); cursor: pointer; }
+/* ---- Event-type segmented underline rail (Option B + segmented rail) ------
+   One quiet recessed tray replaces 8 separate pill borders. Inside the rail:
+   concise Gantt-matching labels, 8 px lane color squares, hairline family
+   dividers (All | Temperature | Water | Storms), and an elevated active
+   segment anchored by a 2.5 px hazard-colored underline bar. */
+#type-tabs {
+  display: inline-flex; flex-wrap: nowrap; align-items: stretch; gap: 2px;
+  max-width: 100%; min-width: 0; padding: 3px 4px;
+  background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px;
+}
+.etype-tab {
+  position: relative; display: inline-flex; align-items: center; gap: 6px;
+  flex: 0 0 auto; min-width: 0; height: 30px; padding: 0 10px 2px;
+  border-radius: 5px; background: transparent; border: 1px solid transparent;
+  color: var(--ink-secondary); font: 450 var(--text-sm)/1 var(--font-sans);
+  cursor: pointer; white-space: nowrap;
+  transition: background-color 110ms ease, color 110ms ease, border-color 110ms ease;
+}
 .etype-tab .t-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.etype-tab svg { width: 14px; height: 14px; flex: none; color: var(--etype, var(--stone-grey)); }
-.etype-tab.is-all svg { color: var(--stone-grey); }   /* "All" has no identity hue */
-.etype-tab:hover { background: var(--tint); border-color: var(--border-strong); }
-/* Selected = the page's one selected state (§5): alabaster wash + 3 px ink
-   key-line. Never an orange fill, never lane-coloured text. */
+.etype-tab .sw {
+  width: 8px; height: 8px; border-radius: 2px; flex: none;
+  background: var(--etype, var(--stone-grey)); opacity: 0.9;
+}
+.etype-tab.unscored .sw {
+  background: transparent; border: 1.5px solid var(--etype, var(--stone-grey));
+}
+.etype-tab:hover {
+  color: var(--matte-black);
+  background: color-mix(in srgb, var(--bg-panel) 60%, transparent);
+}
 .etype-tab[aria-selected="true"] {
-  background: var(--alabaster); border-color: var(--matte-black); color: var(--matte-black);
-  font-weight: 500; box-shadow: inset 0 0 0 0.5px var(--matte-black); }
-.etype-tab[aria-selected="true"]:hover { background: var(--alabaster); }
-.etype-tab .n { min-width: 2ch; text-align: right;                  /* counts don't jiggle (no CLS) */
+  background: var(--bg-panel); border-color: var(--border); color: var(--matte-black);
+  font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.etype-tab[aria-selected="true"]::after {
+  content: ""; position: absolute; left: 7px; right: 7px; bottom: 0; height: 2.5px;
+  border-radius: 2px 2px 0 0; background: var(--etype, var(--matte-black));
+}
+.etype-tab[aria-selected="true"]:hover { background: var(--bg-panel); }
+.etype-tab[aria-selected="true"] .sw { opacity: 1; }
+.etype-tab .n {
+  min-width: 1.5ch; text-align: right;
   font: 400 var(--text-xs)/1 var(--font-mono); font-variant-numeric: tabular-nums;
-  color: var(--ink-secondary); }                                    /* 5.4:1 on paper */
-.etype-tab[aria-selected="true"] .n { color: var(--matte-black); }  /* ink-secondary on the alabaster wash is 4.3 — the selected tab's count rides the label ink */
-.etype-tab.zero .n { color: var(--ink-muted); }                     /* honest zero: quieter, still selectable */
-/* Group captions: presentational only (role=none + aria-hidden), so the
-   tablist's owned set is unchanged and the roving-tabindex order skips them.
-   On the one-line desktop row each is a hairline divider (the text stays in the
-   DOM for the a11y-hidden caption, zero-sized visually); where chips wrap
-   (phone / narrow shells) the divider has no honest place and is not drawn. */
-.type-group { display: none; }
-@media (min-width: 1400px) {
-  .type-group { display: block; flex: none; width: 1px; height: 18px; margin: 0 3px;
-    background: var(--border-strong); font-size: 0; overflow: hidden; user-select: none; }
-  .type-group[data-group="temperature"] { display: none; }   /* nothing before the first group */
+  color: var(--ink-muted);
 }
-/* Mid widths (1100-1399): the shell is 75vw and the rail takes 220 px, so the Show
-   row has ~910 px at a 1280 laptop and the eight chips need ~965 at full padding —
-   they wrapped to a second row (+36 px of first screen, measured 2026-11-21). Tighter
-   chip padding/gaps (still 30 px tall, icon + label + count, nothing truncated) bring
-   it to ~880 px: one row from 1260 up. From 1400 the group dividers return and the
-   row has room at full size. */
-@media (min-width: 1100px) and (max-width: 1399px) {
-  #type-tabs { gap: 6px 4px; }
-  .etype-tab { gap: 4px; padding: 0 6px; }
+.etype-tab[aria-selected="true"] .n { color: var(--ink-secondary); }
+.etype-tab.zero .n { opacity: 0.7; }
+/* Hairline vertical dividers inside the rail separating All | Temp | Water | Storms */
+.type-group {
+  display: block; flex: none; align-self: center;
+  width: 1px; height: 15px; margin: 0 4px;
+  background: var(--border-strong); opacity: 0.65;
+  font-size: 0; overflow: hidden; user-select: none;
 }
-/* touch: 44 px targets (M7), same visual metrics; chips share the row evenly */
+@media (max-width: 760px) {
+  .etype-tab { padding: 0 8px 2px; gap: 5px; }
+  .type-group { margin: 0 2px; }
+}
+/* touch: 44 px targets (M7), smooth horizontal swipe rail on narrow screens */
 @media (pointer: coarse), (max-width: 479px) {
-  .etype-tab { height: 44px; flex: 1 1 auto; justify-content: center; }
-  #type-tabs { gap: 8px; }
+  .etype-tab { height: 44px; flex: 0 0 auto; justify-content: center; }
+  #type-tabs { gap: 2px; }
 }
 /* event-list rows: the glyph replaces the old colour dot (identity not colour-alone) */
 #event-table .type-ic { display: inline-flex; margin-top: 2px; color: var(--etype, var(--stone-grey)); }
@@ -589,9 +605,12 @@ nav.controls {
 
 #lead-chips button { border-radius: 999px; padding: 2px 10px; font-size: var(--text-xs); margin-right: 4px;
   font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+/* Selected pill (AC-1.5): a rounded button gets a clean INVERTED FILL, never an
+   inset bar — on a 999 px radius the 3 px bar landed on the curve and read as a
+   black crescent smudge stuck to the left of the chip. */
 #lead-chips button.on {
-  background: var(--alabaster); border-color: var(--border); color: var(--matte-black);
-  font-weight: 500; box-shadow: inset 3px 0 0 var(--matte-black);
+  background: var(--matte-black); border-color: var(--matte-black);
+  color: var(--canvas); font-weight: 500;
 }
 
 /* ---------- layout: 4px ladder, 24px gutter, 24px panel rhythm ---------- */
@@ -608,10 +627,11 @@ main { padding: 16px 24px 8px; width: 100%; max-width: var(--shell-max); margin:
 section { margin-bottom: 24px; }
 .sec-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .sec-note { color: var(--ink-muted); font-size: var(--text-xs); margin: 4px 0 12px; }
-/* segmented toggle: controls get 3px radius; selected step gets alabaster + bar */
+/* segmented toggle: controls get 3px radius; the selected step inverts (no
+   inset bar — see the #lead-chips note: on a rounded button it reads as a crescent) */
 .toggle button.on {
-  background: var(--alabaster); color: var(--matte-black); border-color: var(--border);
-  font-weight: 500; box-shadow: inset 3px 0 0 var(--matte-black);
+  background: var(--matte-black); color: var(--canvas); border-color: var(--matte-black);
+  font-weight: 500;
 }
 .toggle button { border-radius: 3px; }
 .toggle button:first-child { border-radius: 3px 0 0 3px; }
@@ -639,17 +659,8 @@ section { margin-bottom: 24px; }
 .sc-ticks .tick-labels { display: flex; justify-content: space-between; width: 128px;
   font-size: 10px; line-height: 1.1; }
 
-/* verdict strip (design.md P1.4): answer-first summary of visible cells */
-.verdict-strip { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline;
-  margin: 4px 0 16px; padding: 8px 12px; border: 1px solid var(--border);
-  border-radius: 6px; background: var(--bg-panel); font-size: var(--text-xs);
-  color: var(--ink-secondary); }
-.verdict-strip[hidden] { display: none; }
-.verdict-item { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; }
-.verdict-item b { color: var(--matte-black); font-weight: 500; }
-.verdict-item .v-text { font-variant-numeric: tabular-nums; }
-.verdict-item .v-cells { color: var(--ink-muted); font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums; }
+/* verdict-strip retired with the redesign: its dense multi-sentence line is
+   now the KPI leader strip (see "UNIFIED SCORECARD" at the end of this file). */
 
 /* kv-line (OWB kv-row): tracked micro-labels + mono values — the run summary */
 .kv-line { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 12px 0 16px; }
@@ -819,12 +830,26 @@ tbody tr:hover td.model-col { background: var(--tint); }
    above the box (z 1) / track (z 2-3) overlays. Hidden below 1100px, where the
    grid is already one column and expanding would do nothing (app.js reads the
    same fact off `offsetParent` before it lets `t` through). */
-#theater-btn { position: absolute; top: 8px; right: 8px; z-index: 4;
+/* Corner tools (AC-1.7): ONE overlay in the map's top-right corner holding the
+   colour-scale popover trigger and Theater mode, so the two never collide and
+   neither covers the scales or the timeline. Theater is hidden below 1100px,
+   where the grid is already one column and expanding would do nothing (app.js
+   reads the same fact off `offsetParent` before it lets `t` through). */
+#map-corner-tools { position: absolute; top: 8px; right: 8px; z-index: 4;
+  display: flex; align-items: center; gap: 6px; }
+#theater-btn, #legend-btn {
   display: none; width: 28px; height: 28px; padding: 0; place-items: center;
   border: 1px solid var(--border); border-radius: 6px; background: var(--paper);
-  color: var(--stone-grey); cursor: pointer; line-height: 0; }
-#theater-btn:hover { background: var(--tint); color: var(--matte-black); }
-#theater-btn[aria-pressed="true"] { background: var(--alabaster); color: var(--matte-black); }
+  color: var(--ink-secondary); cursor: pointer; line-height: 0; }
+/* the Legend trigger is JS-driven (its `hidden` attribute follows the lane count),
+   so it is usable at every width — the popover gives the phone map its height back too */
+#legend-btn { width: auto; padding: 0 9px; display: inline-flex; align-items: center;
+  gap: 5px; line-height: 1; font: 500 var(--text-2xs)/1 var(--font-sans);
+  letter-spacing: 0.04em; }
+#legend-btn[hidden] { display: none; }
+#theater-btn:hover, #legend-btn:hover { background: var(--tint); color: var(--matte-black); }
+#theater-btn[aria-pressed="true"], #legend-btn[aria-expanded="true"] {
+  background: var(--alabaster); color: var(--matte-black); }
 @media (min-width: 1100px) {
   .explore { grid-template-columns: minmax(0, 1fr) minmax(280px, 30%); }
   .explore-head { grid-column: 1 / -1; }
@@ -953,9 +978,10 @@ footer a:hover { color: var(--matte-black); }
 .detail-viz { margin: 12px 0 16px; }
 .ev-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
 .ev-tool-label { font-size: var(--text-xs); color: var(--ink-muted); margin-right: 4px; }
+/* selected lead/day pills invert — same rule as every other rounded button */
 .ev-lead.on, .ev-day.on {
-  background: var(--alabaster); color: var(--matte-black); border-color: var(--border);
-  font-weight: 500; box-shadow: inset 3px 0 0 var(--matte-black);
+  background: var(--matte-black); color: var(--canvas); border-color: var(--matte-black);
+  font-weight: 500;
 }
 .ev-days { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
 .ev-days .mini { font-size: var(--text-xs); padding: 2px 8px; font-family: var(--font-mono); }
@@ -999,7 +1025,7 @@ footer a:hover { color: var(--matte-black); }
   .ev-days { margin-left: 0; }
 }
 
-@media (max-width: 760px) { nav.controls { position: static; } }   /* wrapped toolbar is too tall to pin on phones */
+@media (max-width: 760px) { .detail-viz { font-size: var(--text-sm); } }   /* nothing to pin on phones */
 
 /* ---------- phone (≤620px): 16px gutter below 720 (§4) ---------- */
 @media (max-width: 620px) {
@@ -1101,7 +1127,7 @@ nav.controls .dd .dd-body {
    units; a stop the CURRENT frame does not paint dims with a dashed edge,
    and a lane with nothing in view says so. Swatches are uniform-width; each
    ramp's labels set one shared column width, centred under their swatch. */
-#global-sec { container-type: inline-size; }
+#global-sec { container-type: inline-size; position: relative; }   /* anchor for the legend popover */
 #gm-legend { display: grid; grid-template-columns:
     minmax(min-content, min(max-content, 42cqi)) 1fr auto;
   gap: 3px 8px; align-items: center; overflow-x: visible;
@@ -1110,12 +1136,15 @@ nav.controls .dd .dd-body {
   background: var(--bg-panel); border: 1px solid var(--border);
   border-radius: 6px;
   --lg-wide: 0; }   /* legendHug (mergedmap.js) reads this: rows vs columns */
-/* While EMPTY the strip is only a reservation (CLS: nothing below it may
-   jump when the first frame paints); the reservation is the height the
-   settled compact strip measures at that width, so filling it is a no-op.
-   It paints no chrome until it paints content. */
+/* The strip paints no chrome until it paints content. The old 160/85/60 px
+   EMPTY reservation is GONE (AC-1.7): in the 7-lane view the scales are a
+   popover under #legend-btn, so nothing sits between the map and the timeline
+   until the reader asks for it — the reservation was pure dead air there. */
 #gm-legend:empty { visibility: hidden; border-color: transparent; background: none;
-  min-height: 160px; }   /* stacked, 7 lanes: 6 groups + the toggle row (measured at 390) */
+  min-height: 0; padding-block: 0; }
+/* the popover state is driven by the `hidden` attribute, which display:grid on
+   the same element would otherwise override */
+#gm-legend[hidden] { display: none !important; }
 .gm-legend .swatch { width: 20px; height: 10px; border: 1px solid var(--border-strong);
   border-radius: 2px; display: block; }
 /* one group per lane, ONE GRID ROW: it spans the strip's label+swatch tracks
@@ -1159,7 +1188,7 @@ nav.controls .dd .dd-body {
 .lg-stops { display: flex; align-items: flex-start; gap: 3px; flex-wrap: wrap; }
 /* equal-width columns per ramp (widest label of that lane), label centred */
 .lg-bin { display: grid; justify-items: center; gap: 2px; width: 22px; }
-.lg-group[data-layer="a"] .lg-bin { width: 34px; }   /* '1250+' sets the IVT column */
+.lg-group[data-layer="a"] .lg-bin { min-width: 34px; width: auto; }   /* '1250+' sets the IVT column; flat 'AR mask' never overflows */
 .lg-group[data-layer="l"] .lg-bin { width: 50px; }   /* '200\u2013350' sets the flood mm column (F0) */
 .lg-bin.prov { width: 22px; margin-left: 8px; }   /* a texture, not the next step of the ramp */
 .lg-t { font-size: var(--text-2xs); color: var(--ink-muted); font-family: var(--font-mono);
@@ -1189,8 +1218,8 @@ nav.controls .dd .dd-body {
     flex-wrap: wrap; row-gap: 4px; }
   /* 7 lanes settle at 3 rows (85 px) in a 450-599 px map column and 2 rows (60 px) from
      600 px up, where the short TC/MLC names buy the third column (measured 2026-11-21,
-     1100-1920 px viewports: the old 35 px reservation shifted the timeline +25..+50 px) */
-  #gm-legend:empty { min-height: 85px; }
+     1100-1920 px viewports). No reservation any more: in the multi-lane view the strip
+     is a popover, so its height belongs to the moment it is opened. */
   .lg-group { display: flex; align-items: center; gap: 8px; flex: none;
     grid-column: auto; }
   .lg-bin.prov { width: auto; }
@@ -1229,7 +1258,7 @@ nav.controls .dd .dd-body {
     grid-row: auto; grid-column: auto; align-self: center; justify-self: start; }
 }
 
-@container (min-width: 600px) { #gm-legend:empty { min-height: 60px; } }
+@container (min-width: 600px) { /* (was a second :empty reservation — see above) */ }
 
 /* COMPACT legend (default whenever 3+ lanes share the strip — owner 2026-11-19,
    first-screen budget): lane name + its colour swatches on one line, numbers
@@ -1534,3 +1563,322 @@ html[data-theme="dark"] {
 .tv-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .tv-sw { width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--border); }
 .tv-note { font-size: var(--text-xs); color: var(--ink-muted); margin: 6px 0 0; }
+
+/* ==========================================================================
+   UX REDESIGN (notes/ux_redesign_contract.md) — shared component contract.
+   The unified Scorecard, the two-view shell, the floating legend, the About
+   accordion and the five-band event detail. Everything here is token-driven,
+   so light and dark need no per-component forks.
+   ========================================================================== */
+
+/* ---- human model names --------------------------------------------------
+   Every model label goes through displayModelName/displayModelHtml; the GFS
+   forcing rides a badge instead of a snake_case suffix in the running text. */
+.m-tag { display: inline-block; margin-left: 5px; padding: 1px 5px; border-radius: 3px;
+  background: var(--alabaster-mid); color: var(--matte-black);   /* inverted-role pair: AA
+     on the mid fill, where --ink-secondary would sit at 4.27:1 */
+  font: 500 var(--text-2xs)/1.35 var(--font-sans); letter-spacing: 0.08em;
+  text-transform: uppercase; vertical-align: 1px; }
+
+/* ---- scorecard view strip (same segmented underline rail as Events) ------ */
+.sc-views {
+  display: inline-flex; flex-wrap: nowrap; align-items: stretch; gap: 2px;
+  max-width: 100%; overflow-x: auto; scrollbar-width: none;
+  padding: 3px 4px; background: var(--bg-inset); border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.sc-views::-webkit-scrollbar { display: none; }
+.sc-div {
+  display: block; flex: none; align-self: center;
+  width: 1px; height: 14px; margin: 0 3px;
+  background: var(--border-strong); opacity: 0.65;
+}
+.sc-view {
+  position: relative; display: inline-flex; align-items: center; gap: 5px;
+  flex: 0 0 auto; height: 28px; padding: 0 9px 2px;
+  border-radius: 5px; background: transparent; border: 1px solid transparent;
+  color: var(--ink-secondary); font: 450 var(--text-xs)/1 var(--font-sans);
+  cursor: pointer; white-space: nowrap;
+  transition: background-color 110ms ease, color 110ms ease, border-color 110ms ease;
+}
+.sc-view .sw {
+  width: 7px; height: 7px; border-radius: 2px; flex: none;
+  background: var(--etype, var(--stone-grey)); opacity: 0.9;
+}
+.sc-view .n { font: 400 var(--text-2xs)/1 var(--font-mono); color: var(--ink-muted);
+  font-variant-numeric: tabular-nums; }
+.sc-view:hover {
+  color: var(--matte-black);
+  background: color-mix(in srgb, var(--bg-panel) 60%, transparent);
+}
+.sc-view.on {
+  background: var(--bg-panel); border-color: var(--border); color: var(--matte-black);
+  font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.sc-view.on::after {
+  content: ""; position: absolute; left: 6px; right: 6px; bottom: 0; height: 2.5px;
+  border-radius: 2px 2px 0 0; background: var(--etype, var(--matte-black));
+}
+.sc-view.on .n { color: var(--ink-secondary); }
+
+/* ---- KPI leader strip ----------------------------------------------------
+   One card per scored hazard: the lane, how many events, the model that leads
+   and by how much. A card IS the drill-into-that-hazard control. */
+.kpi-strip { display: grid; gap: 8px; margin: 4px 0 16px;
+  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); }
+.kpi-strip[hidden] { display: none; }
+.kpi-card { display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
+  min-width: 0; padding: 10px 12px; text-align: left; cursor: pointer;
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: var(--shadow); }
+.kpi-card:hover { background: var(--tint); border-color: var(--border-strong); }
+.kpi-card.on { background: var(--alabaster); border-color: var(--matte-black); }
+.kpi-top { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
+.kpi-n { margin-left: auto; font: 400 var(--text-2xs)/1 var(--font-mono);
+  color: var(--ink-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kpi-lead { display: flex; align-items: baseline; gap: 8px; min-width: 0; max-width: 100%; }
+.kpi-model { font-size: var(--text-base); font-weight: 500; letter-spacing: -0.01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kpi-skill { font: 500 var(--text-sm)/1 var(--font-mono); font-variant-numeric: tabular-nums;
+  white-space: nowrap; }
+.kpi-skill.pos { color: rgb(var(--better)); }
+.kpi-skill.neg { color: rgb(var(--worse)); }
+.kpi-skill.na { color: var(--ink-muted); font-weight: 400; }
+.kpi-sub { font-size: var(--text-2xs); color: var(--ink-muted); line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+
+/* ---- the overview matrix -------------------------------------------------
+   Model × hazard, one table for the whole `All` view: a column per scored
+   lane at its headline metric. The header cell is the drill-into-the-lane
+   button, so the matrix and the lead-by-lead table are one gesture apart. */
+.mx-head { padding: 0; vertical-align: bottom; }
+.mx-drill { display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
+  width: 100%; min-width: 92px; padding: 7px 10px; text-align: right; cursor: pointer;
+  background: none; border: 0; border-radius: 0; color: inherit;
+  font: inherit; }
+.mx-drill:hover { background: var(--tint); }
+.mx-drill .mx-name { font-size: var(--text-2xs); font-weight: 500; letter-spacing: 0.08em;
+  text-transform: uppercase; line-height: 1.1; color: var(--matte-black); white-space: nowrap; }
+.mx-drill .mx-met { font: 400 var(--text-2xs)/1.1 var(--font-sans); color: var(--ink-muted);
+  white-space: nowrap; }
+.mx-drill .mx-n { font: 400 var(--text-2xs)/1.1 var(--font-mono); color: var(--ink-muted);
+  font-variant-numeric: tabular-nums; }
+td.mx-cell { min-width: 92px; }
+td.cell .cell-u { display: block; margin-top: 2px; font-size: var(--text-2xs);
+  color: var(--ink-muted); font-family: var(--font-sans); }
+
+/* quiet footnotes under a table: unscored lanes and unscored models. They say
+   what is NOT here without pretending to be a result. */
+.sc-quiet { margin: 8px 2px 0; font-size: var(--text-xs); color: var(--ink-muted);
+  line-height: 1.4; max-width: 86ch; }
+details.lane-notes-fold { margin: 10px 2px 2px; max-width: 82ch; }
+details.lane-notes-fold > summary { cursor: pointer; list-style: none; display: inline-flex;
+  align-items: center; gap: 6px; font-size: var(--text-2xs); font-weight: 500;
+  letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.1;
+  color: var(--ink-secondary); padding: 4px 0; }
+details.lane-notes-fold > summary::-webkit-details-marker { display: none; }
+details.lane-notes-fold > summary::before { content: '\25b8'; color: var(--ink-muted); }
+details.lane-notes-fold[open] > summary::before { content: '\25be'; }
+details.lane-notes-fold > summary:hover { color: var(--matte-black); }
+details.lane-notes-fold .lane-note { margin-top: 4px; }
+
+/* ---- events list: All | On map ------------------------------------------ */
+.ev-scope { flex: none; gap: 0; }
+.ev-scope button { height: 26px; padding: 0 10px; font-size: var(--text-xs);
+  line-height: 1; display: inline-flex; align-items: center; gap: 5px; }
+.ev-scope button:first-child { border-radius: 3px 0 0 3px; }
+.ev-scope button + button { border-left: 0; border-radius: 0 3px 3px 0; }
+.ev-scope .n { font: 400 var(--text-2xs)/1 var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ---- floating colour-scale popover ---------------------------------------
+   Three or more lanes (the All view): #gm-legend becomes a crisp card under
+   #legend-btn, closed by default, so the map + timeline own the first screen.
+   It overrides the inline-strip layout wholesale (mergedmap sizes the strip for
+   the map column; in a card the lanes stack one per row). */
+#gm-legend.is-popover { position: absolute; top: 44px; right: 12px; z-index: 40;
+  width: min(460px, calc(100% - 24px)); max-height: min(70vh, 460px); overflow: auto;
+  display: flex; flex-flow: column nowrap; gap: 8px; padding: 10px 12px;
+  background: var(--paper); border: 1px solid var(--border-strong); border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(38, 38, 32, .22); scrollbar-width: thin;
+  container-type: normal; }
+/* One lane scale per row, the FULL card width. The inline strip sizes its groups
+   for the map column (and its column-wrap variant will happily start a second
+   column), so in a card every group is pinned to 100% — otherwise the last lane
+   paints beside the card instead of inside it. */
+#gm-legend.is-popover > .lg-group { flex: 0 0 auto; width: 100%; max-width: 100%; min-width: 0; }
+#gm-legend.is-popover.compact .lg-unit, #gm-legend.is-popover.compact .lg-t,
+#gm-legend.is-popover.compact .lg-bin.prov .lg-t { display: block; }
+#gm-legend.is-popover .lg-group,
+#gm-legend.is-popover.compact.cols .lg-group { display: flex; flex-wrap: wrap; align-items: center;
+  grid-column: auto; gap: 2px 8px; padding: 3px 0; border-bottom: 1px solid var(--alabaster-mid); }
+#gm-legend.is-popover .lg-group:last-of-type { border-bottom: 0; }
+#gm-legend.is-popover .lg-group + .lg-group::before { content: none; }
+#gm-legend.is-popover .lg-head { min-width: 96px; }
+#gm-legend.is-popover .lg-toggle { display: none; }   /* the popover IS the labelled scales */
+#gm-legend.is-popover .lg-none { position: static; margin-left: 6px; }
+
+/* ---- About drawer: one accordion per section -----------------------------
+   "What this is" stays open at the top as the drawer's lede; everything else is
+   a fold, so the drawer opens on an answer instead of on 900 words. */
+#about-dialog details.about-sec { margin: 0 0 2px; border-bottom: 1px solid var(--border); }
+#about-dialog details.about-sec > summary { list-style: none; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; padding: 10px 2px; }
+#about-dialog details.about-sec > summary::-webkit-details-marker { display: none; }
+#about-dialog details.about-sec > summary::before { content: '\25b8'; color: var(--ink-muted);
+  flex: none; font-size: var(--text-2xs); }
+#about-dialog details.about-sec[open] > summary::before { content: '\25be'; }
+#about-dialog details.about-sec > summary:hover h3 { color: var(--matte-black); }
+#about-dialog details.about-sec > summary h3 { margin: 0; }
+#about-dialog details.about-sec[open] > summary h3 { color: var(--matte-black); }
+#about-dialog details.about-sec > *:not(summary) { margin-inline: 0; }
+#about-dialog details.about-sec > details.repro { margin: 0 0 14px; }
+#about-dialog details.about-sec > .dlg-note,
+#about-dialog details.about-sec > p,
+#about-dialog details.about-sec > ul,
+#about-dialog details.about-sec > ol { margin-left: 18px; }
+
+/* ---- Band 1: the unified event-detail header ----------------------------
+   Back link, the place or storm name ALONE (the type sits beside it as a chip —
+   it used to be printed twice), then four labelled fact pills. */
+.det-header { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 24px;
+  margin-bottom: 4px; }
+.det-title-block { min-width: 0; }
+.det-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#detail-title { font-size: var(--text-lg); letter-spacing: -0.02em; line-height: 1.2;
+  margin: 0; }
+/* the header is focused programmatically when an event opens (a11y: focus must
+   move with the view) — a click must not leave a ring on it */
+#detail-title:focus { outline: none; }
+#detail-title:focus-visible { outline: 2px solid var(--accent-focus); outline-offset: 2px; }
+#detail-type-slot { display: inline-flex; }
+.det-meta-chip { display: inline-flex; align-items: baseline; gap: 7px; max-width: 100%;
+  padding: 3px 11px; border-radius: 999px; background: var(--bg-panel);
+  border: 1px solid var(--border); font-size: var(--text-sm); line-height: 1.35;
+  font-variant-numeric: tabular-nums; }
+.det-meta-chip .k { font-size: var(--text-2xs); font-weight: 500; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink-muted); white-space: nowrap; }
+.detail-chips { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 0; min-width: 0; }
+#detail-story { margin: 4px 0 8px; font-size: var(--text-sm); line-height: 1.4;
+  color: var(--ink-secondary); font-variant-numeric: tabular-nums; max-width: var(--measure, 68ch); }
+
+/* ---- Bands 2-5: the shared detail stage (all seven lanes) ---------------
+   One control bar, one split stage (map left / context right), one summary
+   strip. EventViz and TrackViz both render these classes; the CSS is here so
+   the temperature lanes and the two track lanes cannot drift apart. */
+.det-toolbar { display: flex; align-items: center; justify-content: space-between;
+  gap: 8px 14px; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 12px;
+  background: var(--bg-inset); border: 1px solid var(--border); border-radius: 6px; }
+.det-tb-left, .det-tb-right { display: flex; align-items: center; gap: 8px 10px;
+  flex-wrap: wrap; min-width: 0; }
+.det-tb-left > .ev-tool-label, .det-toolbar .ctl-label { margin-right: 2px; }
+.det-toolbar .ev-days { margin-left: 0; }
+.det-track-scope { display: inline-flex; }
+.det-track-scope button { height: 26px; padding: 0 10px; font-size: var(--text-xs); line-height: 1; }
+.det-track-scope button:first-child { border-radius: 3px 0 0 3px; }
+.det-track-scope button:last-child { border-left: 0; border-radius: 0 3px 3px 0; }
+.det-fsbtn, .ev3-fsbtn { flex: none; width: 28px; height: 28px; padding: 0;
+  display: inline-grid; place-items: center; line-height: 0;
+  border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-panel);
+  color: var(--stone-grey); cursor: pointer; }
+.det-fsbtn:hover, .ev3-fsbtn:hover { background: var(--tint); color: var(--matte-black); }
+
+.det-stage { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(260px, 1fr);
+  gap: 12px; align-items: stretch; }
+@media (max-width: 900px) { .det-stage { grid-template-columns: 1fr; } }
+.det-map-col { display: flex; flex-direction: column; position: relative; min-width: 0;
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 6px;
+  overflow: hidden; }
+.det-map-col .ev3-fsbtn, .det-map-col .det-fsbtn { position: absolute; top: 8px; right: 8px;
+  z-index: 600; background: var(--paper); }
+.det-map-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+  padding: 7px 10px; border-top: 1px solid var(--border); background: var(--bg-panel);
+  font-size: var(--text-2xs); color: var(--ink-secondary); line-height: 1.35; }
+.det-map-bar .lg-name, .det-map-bar .det-map-bar-k { font-size: var(--text-2xs);
+  font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); }
+.det-map-bar .swatch { width: 18px; height: 9px; border: 1px solid var(--border-strong);
+  border-radius: 2px; display: inline-block; vertical-align: -1px; margin-right: 4px; }
+.det-map-bar .det-map-bar-i { display: inline-flex; align-items: center; gap: 3px; }
+
+.det-side-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 12px;
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 6px; }
+.det-side-head { display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.det-side-head b { font-size: var(--text-base); font-weight: 500; letter-spacing: -0.01em; }
+.det-side-head span { font-size: var(--text-2xs); color: var(--ink-muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.det-side-body { display: flex; flex-direction: column; gap: 6px; min-width: 0;
+  overflow-x: auto; }
+details.det-unavail { margin-top: auto; border-top: 1px solid var(--border); padding-top: 6px; }
+details.det-unavail > summary { list-style: none; cursor: pointer; display: flex;
+  align-items: center; gap: 6px; font-size: var(--text-2xs); font-weight: 500;
+  letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.2;
+  color: var(--ink-secondary); padding: 4px 0; }
+details.det-unavail > summary::-webkit-details-marker { display: none; }
+details.det-unavail > summary::before { content: '\25b8'; color: var(--ink-muted); }
+details.det-unavail[open] > summary::before { content: '\25be'; }
+details.det-unavail > summary:hover { color: var(--matte-black); }
+details.det-unavail > *:not(summary) { font-size: var(--text-xs); color: var(--ink-secondary);
+  line-height: 1.45; margin: 2px 0 6px 14px; }
+
+.det-summary-strip { margin-top: 12px; padding: 12px 14px; background: var(--bg-panel);
+  border: 1px solid var(--border); border-radius: 6px; }
+.det-summary-strip.ev-dur { padding: 12px 14px; }
+.det-spark-wrap { width: 100%; }
+.det-spark-wrap svg { display: block; width: 100%; height: auto; }
+
+.det-kv-list { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.det-kv-row { display: flex; align-items: baseline; gap: 10px; font-size: var(--text-sm);
+  line-height: 1.35; }
+.det-kv-row > .k, .det-kv-row dt { flex: none; min-width: 88px; font-size: var(--text-2xs);
+  font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted); }
+.det-kv-row > .v, .det-kv-row dd { margin: 0; font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono); }
+
+/* ---- themed form controls inside the detail ------------------------------
+   EventViz builds its layer rows and its time slider in JS; without these the
+   browser paints OS-default blue checkboxes and sliders on an alabaster page.
+   `accent-color` is the floor (it themes what custom rules do not reach), and
+   the range rules above it follow the same recipe as #raw-slider. */
+#detail-viz input[type="range"], #detail-viz input[type="checkbox"],
+#detail-viz input[type="radio"], .det-toolbar input, .det-side-body input {
+  accent-color: var(--matte-black); }
+#detail-viz input[type="range"] { -webkit-appearance: none; appearance: none;
+  background: transparent; height: 20px; cursor: pointer; }
+#detail-viz input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+  background: var(--alabaster); }
+#detail-viz input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px;
+  background: var(--alabaster); }
+#detail-viz input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; margin-top: -5px; border-radius: 50%;
+  background: var(--matte-black); border: 2px solid var(--paper);
+  box-shadow: 0 0 0 1px var(--border-strong); }
+#detail-viz input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%;
+  background: var(--matte-black); border: 2px solid var(--paper);
+  box-shadow: 0 0 0 1px var(--border-strong); }
+#detail-viz input[type="range"]:focus-visible { outline: 2px solid var(--accent-focus);
+  outline-offset: 3px; border-radius: 4px; }
+#detail-viz .ev3-lop { width: 88px; }
+#detail-viz .ev3-srange { width: min(240px, 40vw); }
+#detail-viz .ev3-lvis { width: 15px; height: 15px; margin: 0; cursor: pointer; }
+/* the colour swatch a layer row carries is a control, not a chip */
+#detail-viz input[type="color"] { width: 22px; height: 20px; padding: 0; cursor: pointer;
+  background: none; border: 1px solid var(--border-strong); border-radius: 3px; }
+
+/* ---- the hazard filter rail on phones -----------------------------------
+   Desktop keeps the entire segmented rail on ONE crisp row; below 620 px the
+   rail becomes a smooth horizontal swipe strip with 44 px touch targets. */
+@media (max-width: 619px) {
+  #type-tabs { display: flex; width: 100%; flex-wrap: nowrap; overflow-x: auto;
+    overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: none;
+    -webkit-overflow-scrolling: touch; }
+  #type-tabs::-webkit-scrollbar { display: none; }
+  .etype-tab { flex: 0 0 auto; height: 44px; justify-content: center;
+    scroll-snap-align: start; }
+  .type-filter { min-height: 44px; }
+}
+
+/* ---- the Region filter now lives in the page header ---------------------
+   It filters both views, so it can no longer hide inside the Events section. */
+header.top .ctl-region { margin-left: auto; align-self: center; }
+@media (min-width: 620px) { header.top .shell { padding-inline: 24px 24px; } }
+.detail-open #region-group, .deeplink #region-group { display: none !important; }

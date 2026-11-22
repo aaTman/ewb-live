@@ -122,7 +122,7 @@ def page(server):
         b.close()
 
 
-def _fix_circles(pg, sel="circle:not([data-copy])"):
+def _fix_circles(pg, sel="circle.tv-fix:not([data-copy])"):
     """Primary circle per fix, in DOM order (the renderer paints context first,
     then the window, then the peak), keyed by its data-i fix index."""
     out = pg.eval_on_selector_all(f"#host {sel}",
@@ -137,11 +137,13 @@ def test_track_renders_every_fix(page):
     assert len(_fix_circles(page)) == len(TRACK), "one primary circle per track fix"
     assert n >= len(TRACK)
     assert page._errs == []
-    assert page.locator("#host svg").count() == 1
-    # head line, five legend swatches and the explanation are all present
-    assert "Best track" in page.inner_text(".tv-head")
-    assert page.locator(".tv-legend .tv-sw").count() == 5
-    assert "event window" in page.inner_text(".tv-note")
+    assert page.locator("#host .tv-map-wrap svg").count() == 1
+    assert page.locator("#host .det-spark-wrap svg").count() == 1
+    # toolbar, five legend swatches in the map bar, and collapsible track notes are all present
+    assert "IBTrACS" in page.inner_text(".det-toolbar")
+    assert page.locator(".det-map-bar .swatch").count() == 5
+    page.locator("details.det-unavail > summary").click()
+    assert "event window" in page.inner_text("details.det-unavail")
 
 
 def test_peak_and_window_marks(page):
@@ -210,10 +212,10 @@ def test_theme_tokens_resolve(page):
 
 def test_teardown_clears(page):
     page.evaluate("() => window.mount()")
-    assert page.locator("#host svg").count() == 1
+    assert page.locator("#host .tv-map-wrap svg").count() == 1
     page.evaluate("() => window.TrackViz.teardown()")
     assert page.locator("#host svg").count() == 0
-    assert page.locator("#host .tv-head").count() == 0
+    assert page.locator("#host .det-toolbar").count() == 0
 
 
 def test_screenshots(page):

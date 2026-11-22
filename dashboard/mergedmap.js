@@ -1271,7 +1271,42 @@
   const FLOOD_BINS_FALLBACK = [20, 50, 100, 200, 350];
   let legStats = null;                         // lane census of the painted frame
   let legHtml = '';                            // last rendered markup (playback: no reflow churn)
-  let legOpen = false;                         // "Scales" expanded (labelled ramps) vs compact swatches
+  let legOpen = false;                         // popover OPEN (3+ lanes) — closed by default
+  let legBtn = null;                           // floating `Legend ▾` toggle (created on demand)
+  let legHome = null;                          // where the page parked #gm-legend (parent, next)
+
+  /* Cold snap has no raster of its own — the P15 lane IS its mask (layersForTab).
+     Under the Cold snap tab the strip therefore has to say `Cold snap`: a lane
+     called `Freeze` next to a `Cold snap` chip reads as a missing layer. */
+  const COLD_SNAP_LEGEND = {
+    name: 'Cold snap', unit: 'days < P15',
+    flat: 'below P15',
+    flatTip: 'Below P15 — the duration sidecar is unavailable, so one flat colour paints every exceeded cell',
+    tip: 'Cold snap: the P15 lane is the cold-snap mask — consecutive COMPLETED UTC days '
+      + 'the cell fell below the P15 climatology at all four 6-hourly steps. A cold-snap '
+      + 'EVENT still needs the detector minimum; the shading starts at its first day for context.',
+  };
+
+  /* The floating popover (AC-4.1). Styles are inline on purpose: styles.css is
+     another workstream's file, and inline declarations beat the ID-selectors of
+     the stylesheet, so the popover renders correctly whichever revision of the
+     sheet ships beside this file. Colours are tokens, so light and dark need no
+     separate rule, and the box is clamped inside #raw-map-wrap (which clips with
+     overflow:hidden) so it can never hang off a 390 px map. */
+  let legPopTop = null;                        // cached px below the corner tools
+  let legCss = '';                             // last cssText written (no per-frame churn)
+  const legPopCss = (top) => 'position:absolute;top:' + top + 'px;right:8px;z-index:6;'
+    + 'box-sizing:border-box;max-width:min(440px,calc(100% - 16px));'
+    + 'max-height:calc(100% - ' + (top + 10) + 'px);overflow:auto;margin:0;'
+    + 'display:flex;flex-direction:column;align-items:stretch;gap:3px;'
+    + 'padding:7px 10px;border:1px solid var(--border);border-radius:6px;'
+    + 'background:var(--paper);color:var(--matte-black);'
+    + 'box-shadow:0 6px 20px rgba(0,0,0,.18);pointer-events:auto;text-align:left';
+  const LEG_BTN_CSS = 'display:none;align-items:center;gap:5px;padding:4px 8px;'
+    + 'border:1px solid var(--border);border-radius:6px;background:var(--paper);'
+    + 'color:var(--matte-black);font-family:var(--font-sans);font-size:var(--text-2xs);'
+    + 'font-weight:600;letter-spacing:.08em;line-height:1.4;white-space:nowrap;'
+    + 'cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.10)';
 
   const legStop = (bg, label, title, out, extraCls) =>
     `<span class="lg-bin${out ? ' out' : ''}">`
@@ -1395,7 +1430,8 @@
       LAYERS.forEach((L, li) => {
         if (!on[L.key]) return;                            // off the map → off the legend
         if (L.name === 'flood' && !raw.flood) return;      // no asset on this site: no phantom group
-        const M = LEGEND[L.name];
+        const cold = L.name === 'freeze' && pageTab() === 'cold_snap';
+        const M = cold ? COLD_SNAP_LEGEND : LEGEND[L.name];
         const n = cen ? cen.n[li] : null;                  // null = nothing painted yet
         const ramp = !cen || cen.ramp[L.name];
         const live = n ? n.reduce((a, b) => a + b, 0) : -1;  // stops present in this frame
@@ -1437,7 +1473,8 @@
           stops.push(legStop(`var(--series-${L.name})`, M.flat, M.flatTip, !!n && live === 0));
         }
         const none = !!n && live === 0;
-        const tip = (L.key === 'l' && raw && raw.flood && raw.flood.tip) || L.tip || M.name;
+        const tip = (cold ? COLD_SNAP_LEGEND.tip : null)
+          || (L.key === 'l' && raw && raw.flood && raw.flood.tip) || L.tip || M.name;
         groups.push(`<span class="lg-group${none ? ' none' : ''}" data-layer="${L.key}"`
           + ` title="${tip}">`
           + `<span class="lg-head"><span class="lg-name">${M.name}</span>`
@@ -1456,119 +1493,183 @@
         if (extra) groups.push(extra);
       } catch (err) { console.warn('track legend:', err.message); }
     }
-    /* COMPACT by default once three or more lanes share the strip (owner
-       2026-11-19: the 7-lane legend was 154 px of the first screen): only each
-       lane's name and its colour swatches — every swatch keeps its tooltip, the
-       lane's group keeps its own — and a "Scales" control opens the labelled ramps
-       (the old layout). One or two lanes (a type tab) are already one short row
-       and always show their labels. */
-    const compact = groups.length >= 3 && !legOpen;
-    const toggle = groups.length >= 3
-      ? `<button type="button" class="lg-toggle" aria-expanded="${legOpen}" `
-        + `title="${legOpen ? 'Hide' : 'Show'} the numbers under each colour scale">`
-        + `Scales <span aria-hidden="true">${legOpen ? '▴' : '▾'}</span></button>` : '';
-    const html = toggle + groups.join('');
-    leg.classList.toggle('compact', compact);
-    if (html === legHtml) return;              // same legend: no reflow per frame
-    legHtml = html;
-    leg.innerHTML = html;
-    // never display:none: an EMPTY strip keeps its CLS reservation (styles.css
-    // #gm-legend:empty) — a filled one is exactly as large as its rows — and
-    // "all layers off" cannot happen anyway
-    leg.classList.remove('hidden');
-    legendHug();
+    /* THREE OR MORE LANES (the `All` tab) no longer get a ~160 px card between
+       the map and the timeline (AC-4.1, owner 2026-11-21: the 7-lane strip ate
+       the first screen). The scales move into a FLOATING popover over the map's
+       top-right corner, opened by the `Legend ▾` button beside the theater
+       toggle and CLOSED by default, so the strip costs 0 px of height until it
+       is asked for. One or two lanes (a single hazard tab) stay a slim labelled
+       strip under the map — a row does not deserve a popover. The old
+       swatch-only `compact` strip is gone in every state: the popover shows the
+       numbers and units, because an unlabelled swatch is exactly the "what does
+       this colour mean" complaint the popover exists to answer. */
+    const pop = groups.length >= 3;
+    if (!pop) legOpen = false;                 // a tab switch always re-opens closed
+    const html = groups.join('');
+    if (html !== legHtml) {                    // same legend: no reflow per frame
+      legHtml = html;
+      leg.innerHTML = html;
+    }
+    applyLegendMode(pop);
+    if (!pop) legendHug();
   }
 
-  /* A compact strip whose WHOLE natural row fits the card hugs its scales in
-     one row (round 1's fit-content promise: a strip that fits must not pad
-     out to the map column); one that does not fits the map column in equal
-     aligned grid columns — its edges are the map's. "wide" is the CSS's call
-     (the --lg-wide custom property, set by the same container query that
-     switches the layout); "fits one row" is arithmetic over the children's
-     NATURAL widths: head and stops are content-sized flex items, so they
-     keep their natural width even while the grid stretches their group box.
-     The inline track list (repeat(<items>, max-content)) only ever lands on
-     the compact wide grid — every other state clears it. Runs on legend
-     rebuilds and on container resizes, never per animation frame. */
+  /* One place decides what the legend IS right now: where its node lives, which
+     classes and inline styles it carries, and what the floating button says.
+     Everything below is idempotent, so a playback frame that changed no markup
+     still lands in the right state without touching innerHTML. */
+  function applyLegendMode(pop) {
+    const leg = $('#gm-legend');
+    if (!leg) return;
+    legendAnchor(pop);
+    leg.classList.toggle('is-popover', pop);
+    leg.classList.remove('compact', 'hug', 'cols', 'abbr', 'hidden');
+    if (pop) {
+      // the popover floats over the map: it is never in the flow, so the space
+      // between the map and the timeline it used to eat is back on the first screen
+      leg.hidden = !legOpen;
+      const btn = legendBtnEl();
+      if (btn) {
+        btn.hidden = false;
+        btn.style.display = 'inline-flex';
+        btn.setAttribute('aria-expanded', String(legOpen));
+        btn.title = legOpen ? 'Hide the colour scales (Esc)' : 'Show the colour scales';
+        const chev = btn.querySelector('.lg-chev, span[aria-hidden="true"]');
+        if (chev) chev.textContent = legOpen ? '▴' : '▾';
+      }
+      if (legOpen && legPopTop === null) legPopTop = legAnchorTop(btn);
+      const css = legPopCss(legPopTop === null ? 44 : legPopTop)
+        + (legOpen ? '' : ';display:none');
+      if (css !== legCss) { legCss = css; leg.style.cssText = css; }
+    } else {
+      leg.hidden = false;
+      if (legCss !== '') { legCss = ''; leg.style.cssText = ''; }   // the sheet's inline strip again
+      const btn = $('#legend-btn');
+      if (btn) { btn.style.display = 'none'; btn.hidden = true; }   // one row explains itself
+    }
+  }
+
+  /* Where the popover hangs: just under the corner tools, measured once when it
+     opens (a live rect beats a magic number when another workstream owns the
+     button's size) and 44 px when there is nothing to measure. */
+  function legAnchorTop(btn) {
+    const wrap = $('#raw-map-wrap');
+    if (!btn || !wrap || !btn.offsetParent) return 44;
+    const t = Math.round(btn.getBoundingClientRect().bottom - wrap.getBoundingClientRect().top + 8);
+    return Number.isFinite(t) && t > 8 ? t : 44;
+  }
+
+  /* The strip is a popover ONLY while it floats, and a popover must be a child of
+     the box it is anchored to. #gm-legend may be parked either inside #raw-map-wrap
+     (the contract's shape) or as its next sibling (what the shipped index.html
+     does), so: move it in when it floats, and put it back where the page had it
+     when it does not — never a FLOW child of the wrap, whose height the map's own
+     ResizeObserver refits the projection from. */
+  function legendAnchor(pop) {
+    const wrap = $('#raw-map-wrap');
+    const leg = $('#gm-legend');
+    if (!wrap || !leg) return;
+    if (!legHome) legHome = { parent: leg.parentElement, next: leg.nextSibling };
+    if (pop) {
+      if (leg.parentElement !== wrap) wrap.appendChild(leg);
+      return;
+    }
+    let parent = legHome.parent, next = legHome.next;
+    if (parent === wrap) { parent = wrap.parentElement; next = wrap.nextSibling; }
+    if (!parent || leg.parentElement === parent) return;
+    parent.insertBefore(leg, next && next.parentElement === parent ? next : null);
+  }
+
+  /* The floating toggle: `Legend ▾`, in the map's top-right corner beside the
+     theater button. index.html already ships the `.map-corner-tools` row and the
+     button (WP1); creating them here is the fallback for a page that has not, so
+     the map works with either revision. Styles are only added where the sheet
+     left the element unstyled — an authored `.map-leg-btn` rule always wins, and
+     the corner row is only placed here when nothing else places it (the theater
+     button's own absolute corner rule must not fight a row that already sits in
+     the corner). */
+  function legendBtnEl() {
+    if (legBtn && legBtn.isConnected) return legBtn;
+    const wrap = $('#raw-map-wrap');
+    if (!wrap) return null;
+    let tools = wrap.querySelector('.map-corner-tools');
+    if (!tools) {
+      tools = document.createElement('div');
+      tools.className = 'map-corner-tools';
+      tools.style.cssText = 'position:absolute;top:8px;right:8px;z-index:7;'
+        + 'display:flex;align-items:center;gap:6px';
+      const th0 = $('#theater-btn');
+      if (th0 && th0.parentElement === wrap) tools.appendChild(th0);
+      wrap.appendChild(tools);
+    }
+    const tcs = getComputedStyle(tools);
+    if (tcs.position === 'static') {           // unplaced row: the map's top-right corner
+      tools.style.position = 'absolute'; tools.style.top = '8px';
+      tools.style.right = '8px'; tools.style.zIndex = '7';
+    }
+    if (/^(block|inline|inline-block)$/.test(tcs.display)) {
+      tools.style.display = 'flex'; tools.style.alignItems = 'center'; tools.style.gap = '6px';
+    }
+    const th = $('#theater-btn');
+    if (th && th.parentElement === tools && th.style.position !== 'static') {
+      th.style.position = 'static'; th.style.top = 'auto'; th.style.right = 'auto';
+    }
+    legBtn = $('#legend-btn');
+    if (!legBtn) {
+      legBtn = document.createElement('button');
+      legBtn.id = 'legend-btn';
+      legBtn.innerHTML = 'Legend <span class="lg-chev" aria-hidden="true">▾</span>';
+    }
+    legBtn.setAttribute('type', 'button');
+    legBtn.classList.add('map-leg-btn');
+    legBtn.setAttribute('aria-controls', 'gm-legend');
+    legBtn.setAttribute('aria-expanded', String(legOpen));
+    if (!legBtn.title) legBtn.title = 'Show the colour scales';
+    if (!legBtn.querySelector('span[aria-hidden="true"]')) {
+      const chev = document.createElement('span');
+      chev.setAttribute('aria-hidden', 'true');
+      chev.className = 'lg-chev';
+      chev.textContent = '▾';
+      legBtn.append(' ', chev);
+    }
+    const bcs = getComputedStyle(legBtn);
+    if ((bcs.backgroundColor === 'rgba(0, 0, 0, 0)' || bcs.backgroundColor === 'transparent')
+        && (bcs.borderTopStyle === 'none' || bcs.borderTopWidth === '0px')) {
+      legBtn.style.cssText = LEG_BTN_CSS;      // no sheet skin yet: a crisp paper chip
+    } else {
+      legBtn.style.position = 'static';        // the row places it, not the map
+    }
+    if (legBtn.parentElement !== tools) tools.appendChild(legBtn);
+    return legBtn;
+  }
+
+  function setLegOpen(v, refocus) {
+    const leg = $('#gm-legend');
+    if (!leg || !leg.classList.contains('is-popover')) { legOpen = false; return; }
+    legOpen = !!v;
+    if (legOpen) legPopTop = null;             // re-anchor: the tools may have moved
+    applyLegendMode(true);
+    // Esc hands focus back to the control it closed; a click-outside leaves the
+    // focus where the click put it (stealing it would break tab order)
+    if (!legOpen && refocus && legBtn && legBtn.isConnected) legBtn.focus({ preventScroll: true });
+  }
+
+  /* The strip that stays in the flow (one or two lanes under the map) has no
+     measured layout any more: the stylesheet owns its shape — `width:
+     fit-content` from the 450 px container query, the label|ramp grid below it —
+     because a one- or two-lane row never needs the column arithmetic the old
+     seven-lane compact strip did (that state is the floating popover now, which
+     hugs nothing). What is left is the cleanup those measured layouts used to
+     write, so an inline track list, a reserved corner or the short-name
+     abbreviation can never ride into the next state or fight the sheet. Runs on
+     legend rebuilds and on container resizes, never per animation frame. */
   function legendHug() {
     const leg = $('#gm-legend');
     if (!leg) return;
-    leg.classList.remove('abbr');
-    const full = fitLegend(leg);
-    // A wrapped strip whose lane names are long (Tropical / Midlatitude cyclone) tries
-    // their short forms (TC, MLC; the full name stays in the DOM for assistive tech and
-    // in the group's tooltip) and KEEPS them only when they buy a column — i.e. fewer
-    // rows on a 1100-1300 px laptop. Wide maps never see an abbreviation.
-    if (leg.classList.contains('cols') && leg.querySelector('.lg-abbr')) {
-      leg.classList.add('abbr');
-      if (fitLegend(leg) <= full) { leg.classList.remove('abbr'); fitLegend(leg); }
-    }
-  }
-  // Lays the strip out for its current names and returns how well it did: Infinity =
-  // one row, k = k column pairs, 0 = stacked/expanded (nothing to improve).
-  function fitLegend(leg) {
-    const groups = leg.querySelectorAll('.lg-group');
-    let single = false;
-    if (groups.length && leg.classList.contains('compact')
-        && getComputedStyle(leg).getPropertyValue('--lg-wide').trim() === '1') {
-      const cs = getComputedStyle(leg);
-      const px = (v) => parseFloat(v) || 0;
-      const colGap = px(cs.columnGap);           // between the strip's items
-      const headGap = px(getComputedStyle(groups[0]).columnGap);   // head|ramp
-      let need = px(cs.paddingLeft) + px(cs.paddingRight);
-      leg.querySelectorAll(':scope > *').forEach((el) => {
-        const head = el.querySelector('.lg-head');
-        const stops = el.querySelector('.lg-stops');
-        need += head && stops ? head.getBoundingClientRect().width + headGap
-                              + stops.getBoundingClientRect().width
-          : el.getBoundingClientRect().width;
-      });
-      need += colGap * (leg.children.length - 1);
-      single = need <= leg.clientWidth + 1;
-    }
-    leg.classList.toggle('hug', single);
-    // a wrapped compact strip lays its lanes in k PAIRS of `label | swatches`
-    // tracks (each group a subgrid over its pair), so every row's swatches start
-    // at the same x within a column; the toggle rides in the reserved top-right
-    // corner instead of opening a row of its own
-    let cols = 0;
-    const toggle = leg.querySelector(':scope > .lg-toggle');
-    if (!single && groups.length > 1 && leg.classList.contains('compact')
-        && getComputedStyle(leg).getPropertyValue('--lg-wide').trim() === '1') {
-      const px = (v) => parseFloat(v) || 0;
-      const cs = getComputedStyle(leg);
-      const gap = px(cs.columnGap);
-      const heads = [], stopsW = [];
-      groups.forEach((g) => {
-        heads.push(g.querySelector('.lg-head').getBoundingClientRect().width);
-        stopsW.push(g.querySelector('.lg-stops').getBoundingClientRect().width);
-      });
-      const reserve = toggle ? toggle.getBoundingClientRect().width + 16 : px(cs.paddingRight);
-      const avail = leg.clientWidth - px(cs.paddingLeft) - reserve;
-      // Lanes fill the grid row-major, so column c holds lanes c, c+k, c+2k…; its
-      // `label | swatches` pair is as wide as ITS widest head + ITS widest ramp. The
-      // largest k whose pairs (+ the 2k-1 gaps) fit is the layout — measuring the
-      // real columns instead of k copies of the widest head+ramp is what lets two
-      // columns hold seven lanes in a ~600 px map column (1280 laptops) instead of
-      // stacking six rows.
-      const need = (k) => {
-        let w = (2 * k - 1) * gap;
-        for (let c = 0; c < k; c++) {
-          let h = 0, s = 0;
-          for (let i = c; i < groups.length; i += k) { h = Math.max(h, heads[i]); s = Math.max(s, stopsW[i]); }
-          w += h + s;
-        }
-        return w;
-      };
-      cols = 1;
-      for (let k = groups.length; k >= 2; k--) if (need(k) <= avail) { cols = k; break; }
-      leg.style.paddingRight = reserve + 'px';
-    } else leg.style.paddingRight = '';
-    leg.classList.toggle('cols', cols > 0);
-    leg.style.gridTemplateColumns = single
-      ? `repeat(${leg.children.length}, max-content)`
-      : (cols ? `repeat(${cols}, max-content minmax(max-content, 1fr))` : '');
-    return single ? Infinity : cols;
+    if (leg.classList.contains('is-popover')) return;   // a floating box hugs nothing
+    leg.classList.remove('abbr', 'hug', 'cols', 'compact');
+    leg.style.gridTemplateColumns = '';
+    leg.style.paddingRight = '';
   }
 
   /* ---------------- boot ---------------- */
@@ -1583,11 +1684,23 @@
     if (mounted) return;
     const slider = $('#raw-slider');
     $('#raw-play').onclick = togglePlay;
-    $('#gm-legend').addEventListener('click', (ev) => {     // the "Scales" expander
-      if (!ev.target.closest('.lg-toggle')) return;
-      legOpen = !legOpen;
-      legHtml = '';                                          // force the repaint
-      renderLegend();
+    /* The floating `Legend ▾` (AC-4.1): the button toggles the popover, a click
+       outside it closes it, Escape closes it and hands focus back. The strip
+       itself no longer carries a click handler — the in-card "Scales" expander
+       it served is gone, the popover shows its numbers from the start. */
+    const lbtn = legendBtnEl();
+    if (lbtn) lbtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      setLegOpen(!legOpen);
+    });
+    document.addEventListener('click', (ev) => {
+      if (!legOpen) return;
+      const t = ev.target, cur = $('#gm-legend');
+      if (t instanceof Node && ((cur && cur.contains(t)) || (legBtn && legBtn.contains(t)))) return;
+      setLegOpen(false);
+    });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && legOpen) setLegOpen(false, true);
     });
     $('#raw-prev').onclick = () => { stopPlay(); if (idx > 0) { idx--; writeUrl(false); render(); } };
     $('#raw-next').onclick = () => { stopPlay(); if (idx < (raw && raw.frames.length - 1)) { idx++; writeUrl(true); render(); } };
@@ -1720,7 +1833,7 @@
       new ResizeObserver(() => {
         cancelAnimationFrame(raf);
         raf = requestAnimationFrame(() => {
-          if (mounted) { fitProjection(); render(); legendHug(); }
+          if (mounted) { legPopTop = null; fitProjection(); render(); legendHug(); }
         });
       }).observe($('#raw-map-wrap'));
     }
@@ -1742,6 +1855,8 @@
 
   window.MergedMap = { mount, urlParams, applyUrl,
     preview,
+    isLegendOpen: () => legOpen,
+    closeLegend: (refocus) => setLegOpen(false, refocus),
     /* the two ways another layer may act on the map (tracklayer.js): select an
        event (the same multi-highlight + #sel= a box click does) and open its
        detail page; hover mirrors the box ↔ event-list row highlight. */
