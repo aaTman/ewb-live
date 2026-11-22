@@ -515,15 +515,35 @@ the specification; the sections above are written to match them.
 | # | Decision | Accepted answer |
 |---|---|---|
 | D1 | TC forecast-track method | **Hybrid (TC-A).** Our own storm-following tracker on the store's MSLP gives forecast positions, along/cross-track, central pressure and misses; EWB's landfall classes are fed the same tracks. The pure EWB pipeline (TC-B) is kept only as a validation reference for the landfall numbers. |
-| D2 | Which inits are verified | Only inits at or after the storm's first IBTrACS (TC) or ERA5-tracker (MLC) fix, i.e. the storm exists at init. **Pre-genesis inits are excluded** (genesis forecasting is a separate future lane). |
+| D2 | Which inits are verified | Only inits at or after the storm's first ERA5-tracker (MLC) fix, i.e. the storm exists at init. **TC: amended 2026-11-21 (below): verification starts at the first observed fix with wind >= 34 kt, not the first IBTrACS fix.** Pre-genesis inits are excluded (genesis forecasting is a separate future lane). |
 | D3 | TC intensity | **Central-pressure error (MSLP) only**, published as a signed bias with the 0.25 degree resolution warning. **No 10 m wind error is published.** |
 | D4 | Model set and baseline for TC/MLC | The 8 virtual-store models **plus `ifs_hres` read through the existing ECMWF-direct path as the baseline**, so skill colouring works. This is the one non-virtual read and is approved for TC and MLC. |
 | D5 | Row granularity and misses | **One row per `(event, model, init, lead)`** (same granularity as AR/heat); the miss rate is shown beside every error metric; a cell whose miss rate exceeds **50 %** is greyed. Misses are never imputed and never dropped silently. |
 | D6 | Flood scope | **GraphCast only** (`graphcast`, `graphcast_gfs`) from the store, plus **ECMWF-direct `tp` for `ifs_hres` as the baseline**. The six models without precipitation are documented `unsupported`. Copy says "vs AI-estimated precipitation (PARDIG)", never "observed rain". |
 | D7 | MLC metrics | **MLC-A** (track position, along/cross-track, central pressure, miss) with the published ERA5 (ARCO) track as truth, **plus MLC-B** (peak-depth error, deepening/bomb hit-miss) as a cheap add-on. |
 | D8 | Leads shown in tables | All 6-hourly leads are stored; the dashboard columns are 24/48/72/96/120 h for TC, 24/48/72/96 h for MLC, 24-120 h (daily) for flood. |
-| D9 | Compute window | A 2.5-3 h TC backfill on the LXC is approved, 12 workers, own pool, **<= 40 GB total RSS**, **never overlapping the weekly run** (section 8, rule R1), after the pilot's measured memory number. |
+| D9 | Compute window | A TC backfill on the LXC is approved, 12 workers, own pool, **<= 40 GB total RSS**, **never overlapping the weekly run** (section 8, rule R1), after the pilot's measured memory number. **Pool design amended 2026-11-21 (below): one pool with worker recycling.** (The 2.5-3 h estimate was replaced by the WP0 pilot's ~25 min, `notes/scoring_pilot.md`.) |
 | D10 | Sign convention and motion | **Along-track > 0 = forecast ahead of the observed storm; cross-track > 0 = right of the observed track** (Leonardo & Colle 2017), observed motion from the centered 6 h + 6 h difference of observed positions, one-sided at the first/last fix, 2 km/h stationary cutoff, exactly as section 3.4. |
+
+**Amendments (owner, 2026-11-21, after the WP0 pilot, `notes/scoring_pilot.md`).** Both are in force for WP1
+and are implemented in this PR.
+
+* **D9 (pool): ONE worker pool with worker recycling every 30 jobs, no split pool.** The pilot's 4-worker run of the
+  full 9-model job mix projected 40.66 GB at 12 workers (3.347 GB per worker), marginally over the 40 GB cap; the cause
+  is slow per-worker growth with the number of jobs a worker has run, and `max_tasks_per_child=30` measured 2.433 GB per
+  worker, **29.7 GB projected at 12 workers**, at no wall-clock cost (338 s vs 405 s). The alternative (a 12-worker store
+  pool plus a separate 2-worker `ifs_hres` pool) is not built: `ifs_hres` stays in the same pool as the eight store models.
+  `scoring/lane_pool.py` asserts the cap (stops and drains above `EWB_LIVE_SCORING_RSS_CAP_GB`, default 40; exit 6).
+* **D2 (TC only): verification starts at the FIRST observed fix with wind >= 34 kt, not at the first IBTrACS fix.** 00/12Z
+  inits before that fix are excluded from scoring and reported as *not verified* (`meta.track_verification`, and the
+  note under the TC table); pre-genesis misses are never counted. Reason (pilot 3.1): for inits issued while the storm is
+  still a < 34 kt disturbance the miss rate is 80 % (7 % from hurricane-stage inits), because no 0.25 degree model
+  carries a closed low yet, so those inits measured genesis, not track skill. The MLC lane keeps D2 as written (first
+  ERA5-tracker fix). Inits with a fix at the init time and one 6 h later remain the other conditions.
+
+Implementation notes that follow from the pilot (WP1): store gaps (4 `_gfs` models at 5 inits) are `no_data` inits, never
+misses; S3 reads are retried (4 attempts, linear backoff; ~4 % of reads fail once); the sample records the TRUE init and
+TRUE lead when the nearest-earlier-init rule supplied the forecast.
 
 ---------------------------------------------------------------------------------------------
 
@@ -531,19 +551,28 @@ the specification; the sections above are written to match them.
 
 ### 8.0 Rules for every work package
 
+> Amended 2026-11-20: R1 is state-based now. The weekly unit's `TimeoutStartSec` is **24 h**
+> (`ops/ewb-live-weekly.service`, merged) and the last weekly run took **~9 h**, so the fixed clock window of
+> Monday 06:00-13:00 UTC it was originally sized from (old 6 h timeout) is retired.
+
 * **R1: backfills never overlap the weekly run.** `ewb-live-weekly.timer` fires **Monday 07:00 UTC**
-  (`Persistent=true`, `TimeoutStartSec=6h`), and the last weekly run peaked at **183.8 GB** total RSS on a
-  256 GB box (`data/perf.json`); a 40 GB backfill pool on top leaves no headroom. Therefore:
-  * No backfill/pilot job may run, or be allowed to still be running, between **Monday 06:00 UTC and
-    Monday 13:00 UTC** (one hour before the timer, the full 6 h timeout after). Start a long job
-    only if `now + its hard wall-clock cap` is before the next Monday 06:00 UTC.
-  * Every backfill is launched through one guard (WP1 adds `ops/lane_backfill.sh`): it refuses to start
-    inside the blocked window, refuses if `systemctl is-active ewb-live-weekly.service` (a Persistent catch-up
-    can fire at any time) or the weekly/deploy flock is held, sets `timeout` to the hard cap, and
-    re-checks every 5 minutes inside the job: if the weekly service becomes active or the blocked window is
-    reached it stops the pool and exits cleanly, leaving a resumable partial result (part files are
-    keyed by `(event, model, fingerprint, truth)`, so a rerun resumes).
-  * Pilot runs (< 15 min, < 10 GB) are exempt from the 40 GB cap but not from the window.
+  (`Persistent=true`, so a catch-up can fire at any time), `ewb-live-weekly.service` is `Type=oneshot` with
+  **`TimeoutStartSec=24h`**, and the last weekly run took **~9 h** wall clock and peaked at **183.8 GB**
+  total RSS on a 256 GB box (`data/perf.json`); a 40 GB backfill pool on top leaves no headroom. A weekly run
+  of unknown length can be live at any hour, so the guard reads **state, not the clock**:
+  * **Never start** a backfill/pilot job while the weekly run is live or pending: refuse if
+    `systemctl is-active ewb-live-weekly.service` is `active` or `activating`, or the weekly/deploy flock is
+    held (`/opt/ewb-live/.deploy.lock`, `flock -n`).
+  * **Refuse from Monday 06:30 UTC until Monday 14:00 UTC** while the weekly service is not yet active - it
+    may be about to start - unless it has already run that week, i.e. `systemctl show
+    ewb-live-weekly.service -p ActiveExitTimestamp` is a time at or after this Monday 07:00 UTC. Outside
+    those 7 h there is no clock restriction at all: the state checks alone decide.
+  * Every backfill is launched through one guard (WP1 adds `ops/lane_backfill.sh`): it runs the two checks
+    above, sets `timeout` to the hard cap, and **polls the same state every 30 s** while the job runs. If the
+    weekly service becomes active or the flock is taken, it sends **SIGTERM** to the pool, waits for it to
+    exit and leaves a resumable partial result (part files are keyed by `(event, model, fingerprint,
+    truth)`, so a rerun resumes).
+  * Pilot runs (< 15 min, < 10 GB) are exempt from the 40 GB cap but not from the guard.
 * **R2: LXC only for compute**, via `ops/remote.sh`; every foreground command under `timeout` (<= 10 min),
   anything longer in the background with a log polled by short commands; unit tests with tiny synthetic
   data may run locally (`.venv/bin/python -m pytest tests -q`).
@@ -613,8 +642,16 @@ rows exist on the box).
     window around the track, `msl` only for tracking), `score_tc_event(event, models) -> DataFrame, status`.
   * `ewb_live/scoring/lane_pool.py`: the dedicated worker pool and RSS sampler (R4), reused by WP2/WP4.
   * `ops/lane_backfill.sh`: the R1 guard and launcher (`ops/lane_backfill.sh <lane> [--models ...]`).
+    Guard behaviour is state-based (R1, amended): refuse to start when `systemctl is-active
+    ewb-live-weekly.service` is `active`/`activating` or the weekly/deploy flock `/opt/ewb-live/.deploy.lock`
+    is held (`flock -n`); refuse between Monday 06:30 UTC and Monday 14:00 UTC while the weekly service is
+    not yet active, unless `systemctl show ewb-live-weekly.service -p ActiveExitTimestamp` shows a run that
+    finished at or after this Monday 07:00 UTC; no other clock window. Then run the lane under `timeout`
+    with the hard cap, **poll those same checks every 30 s**, and on a positive poll send **SIGTERM** to the
+    worker pool's process group, wait for it to drain, and exit 0: completed part files
+    (`event, model, fingerprint, truth`) let the next run resume.
   * `tests/test_track_verif.py`, `tests/test_score_tc.py`, `tests/test_lane_guard.py` (R1 guard logic with a
-    fake clock and fake `systemctl`).
+    fake clock, fake `systemctl` output and a fake lock file).
 * **Files to touch (minimal, additive):** `ewb_live/pipeline.py` (`_score_job` dispatch by `event_type`; import
   of `UNSCORED_TYPES`; `SIGNED_ERROR_METRICS`, `HIGHER_IS_BETTER`; the `_UNSCORED_REASON` entry for TC is
   dropped), `ewb_live/events/select.py` (`UNSCORED_TYPES` loses `tropical_cyclone`),
@@ -641,6 +678,21 @@ rows exist on the box).
   `notes/scoring_design.md` sections 3 and 6 (formulas in 3.4, D1-D10 are decided), wire the pipeline and
   dashboard, add `ops/lane_backfill.sh` with the R1 weekly-overlap guard, test as listed, backfill via the
   guard, PR to develop."
+* **Known limitations of the WP1 TC lane** (independent review of PR #16; documented, not changed):
+  * *Fingerprint.* A part file is keyed by `(event, model, fingerprint, truth)` and the fingerprint is
+    `start|end|bbox`. A best-track revision inside the same window (changed fixes, same start / end / bbox)
+    reuses the old part files until the storm's window changes or `--force`. IBTrACS revisions after the
+    first days are rare but not zero.
+  * *Search window.* The MSLP read window is the observed track +/- 15 degrees from the init. A forecast low further
+    away than that is clipped out of the field and shows up as a miss, not as a large position error, so the largest
+    errors are truncated (as EWB's 5 degree mask truncates them, at a larger radius).
+  * *ECMWF lead drop.* `ecmwf.open_forecast` drops a lead whose index or object cannot be fetched without an error
+    (`_read_lead` returns None). Such leads become "no data" samples of `ifs_hres`, so the baseline's sample count can
+    shrink silently (8563 `ifs_hres` samples vs 8504 graphcast in the first backfill); the common-set numbers in
+    `notes/scoring_tc_miss_rate.md` are unaffected, the per-cell `n` is.
+  * *10-day skill-vs-lead.* The "Skill vs lead" charts show every stored lead out to 240 h; beyond about 120 h few storms
+    have a verifying fix, so the curves are sparse (miss rates reach 1.0 on a handful of samples). The table is limited to
+    24-120 h (D8).
 
 ### 8.4 WP2: MLC lane
 
@@ -661,6 +713,29 @@ rows exist on the box).
 * **Agent brief:** "Add the MLC lane scorer on top of `track_verif.py` (MLC-A and MLC-B per sections 4 and 6),
   wire pipeline and dashboard, test as listed, run the 80-event backfill through `ops/lane_backfill.sh`, PR to
   develop."
+
+* **As built (WP2, 2026-11-21).** Metric definitions fixed by the implementation (`ewb_live/scoring/mlc.py`):
+  * MLC-A = the shared core with `MLC_PARAMS` (5 degrees per 6-h step, 3 hPa closed contour within 6 degrees); inits are every 00/12Z with a
+    fix at init and one 6 h later (D2 as written, nothing "not verified"); leads whose valid time has no ERA5 fix (the truth edge) are never samples.
+  * MLC-B, one read shared with MLC-A. `PeakDepthError` (hPa, **signed**, > 0 = forecast too shallow) = the forecast's lowest MSLP in a
+    +/-8 degree window (longitude widened by 1/cos lat, wrap-aware) around the OBSERVED centre at the valid time minus the ERA5 central pressure;
+    one row per `(init, lead)`, no tracker so it has no misses and the 50 % grey rule does not apply to it.
+    Bomb check: for every verifying `(init, lead >= 24 h)` where the observed track has fixes at `t` and `t - 24 h` and the forecast window
+    minimum exists at both, the observed and forecast 24 h falls of that central pressure are compared with the threshold
+    `24 hPa * sin|lat| / sin 60` at the observed latitude at `t` (the rule `mlc_track.bomb_ratio` tags bombs with). A window whose OBSERVED fall reaches
+    the threshold is an observed-bomb window and emits `BombDetected` (1 = the forecast fell at bomb rate too, else 0, so the cell mean is the hit
+    rate / POD); every other window emits `BombFalseAlarm` (1 = the forecast claimed a bomb the analysis did not have; the cell mean is the share of
+    non-bomb windows with a false claim, i.e. a false-alarm rate, not a false-alarm ratio). Two 0/1 rows are the contingency form that
+    `build_scorecard` and the table render with no special case (like `TrackMiss`). `BombDetected` is higher-is-better, `PeakDepthError` is signed
+    (skill vs the baseline suppressed).
+  * Truth tag `era5_arco` is constant for the lane (the published track is an ERA5 analysis whatever the ARCO-vs-HRES reach of the event window).
+  * Dashboard leads 24/48/72/96 h (D8), model ranking on `TrackPositionError` only, miss rate beside every tracker-dependent error.
+  * **Known limitations of the MLC lane.** (1) The peak-depth window minimum can latch onto a different, deeper low inside the +/-8 degree box
+    (ambiguity noted in 4.3); it reads as a deeper-than-observed bias, never a miss. (2) The tracker misses lows near the end of their life
+    (the ERA5 track stops where the same 3 hPa closed-contour recipe stops finding the low; a shallower AI forecast fails it first), so the miss rate
+    climbs with lead, as measured in `notes/scoring_pilot.md` section 4. (3) Bomb rows exist only where both the forecast window minimum and the
+    observed fix at `t - 24 h` exist (GraphCast's IFS-initialised lead 0 is fill, so its first bomb window is lead 30 h). (4) Same fingerprint /
+    search-window / ECMWF-lead-drop limitations as the TC lane (8.3).
 
 ### 8.5 WP3: EWB landfall classes for TC
 
@@ -711,6 +786,28 @@ rows exist on the box).
   daily exceedance contingency/FSS/areal accumulation against PARDIG on the event's own ERA5-p95 threshold
   for graphcast, graphcast_gfs and ifs_hres, document the six unsupported models, test as listed, backfill
   via the guard, PR to develop."
+
+* **WP4 as built (flood lane; deviations from the plan above, owner brief 2026-11-21).**
+  * *Scope:* GraphCast only (`graphcast`, `graphcast_gfs`); the `ifs_hres` ECMWF-`tp` baseline of D6 is **not built**, so flood has no skill
+    colour and the dashboard says "GraphCast only - not ranked". The other nine registered models are documented `unsupported` pairs
+    ("no precipitation in the MLWP store ... (GraphCast only)"). `sources/registry.py`, `aiwp.py` and `ecmwf.py` are untouched: the scorer reads
+    `apcp` straight from `open_init`, like the TC lane reads `msl`.
+  * *Metrics (row per event, model, 00Z init, verified day):* `CriticalSuccessIndex`, `ProbabilityOfDetection`, `FalseAlarmRatio`,
+    `FractionsSkillScore` (3x3 cells), `FractionsSkillScore5` (5x5), `PrecipAreaBias` (mm, signed, footprint mean forecast - truth),
+    `PeakPrecipError` (mm, signed). Contingency/FSS are on the **daily lane** (`max(ERA5 wet-day p95, 20 mm)` per cell and day of year) even
+    though all 40 events have the 72 h lane as lane of record; the footprint is the event's own union (daily OR 72 h) exceedance mask.
+    A day without a defined denominator emits no row for that metric (FAR needs a forecast exceedance: n is smaller than for CSI).
+  * *Data facts the plan had wrong:* `apcp` fill is `9.97e36`, not NaN, and only some IFS-initialised inits have it in the first 6 h (so the
+    IFS member has **no 24 h cell** in any event: its first complete day is lead 48 h); ~15-30 % of cells are small negatives (clipped at 0).
+  * *No nearest-earlier-init rescue.* A rescued 12Z init emits leads 36, 60, ... which the dashboard bins into the 1 d / 3 d columns; a missing 00Z
+    init is `no_data` instead. The upstream GFS-initialised store lacks the 00Z init on ~1/3 of days (21 % of the planned `graphcast_gfs` inits).
+  * *Known limitations:* AI-estimated truth that also defines the events (POD/CSI conditional on a truth exceedance); GraphCast was trained on ERA5
+    (low-biased rain); two members of one model family; the 24 h column is empty for `graphcast`; a forced rerun of a lane needs the part files
+    AND the cached rows/statuses of its pairs dropped to be re-merged (`--force` rewrites parts, but publish-only keeps cached rows for pairs
+    already marked done).
+  * *Measured (LXC, private tree, 40 events x 2 models, 80 pairs, 1458 jobs, 12 workers recycle 30):* pool 340-355 s, total 10 min 18 s - 10 min
+    59 s through `ops/lane_backfill.sh` (serial planning of the 40 events, ~5 s each, is the rest), peak pool RSS 16.1 GB, 1.39 GB per worker,
+    1.8-1.9 s per store job; 36,388 flood rows.
 
 ---------------------------------------------------------------------------------------------
 

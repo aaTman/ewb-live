@@ -818,7 +818,7 @@
   const G_RIGHT = 12;     // trailing inset = slider thumb half-width (see styles.css)
   const G_MIN_W = 240;    // never shrink the axis below this
   const GUT = 2;          // x gutter between bars in one sub-row
-  const NARROW_W = 600;   // below this container width, labels move ABOVE their lane
+  const NARROW_W = 440;   // below this container width, labels move ABOVE their lane
   const G_CAP = 11;       // the caption row a narrow strip puts each lane name on
   const G_LAB_MIN = 40, G_LAB_MAX = 150, G_LAB_FRAC = 0.34;   // label column limits
   // a lane's band height from its packed row count (>= 1) in bars-mode
@@ -1493,6 +1493,20 @@
   function legendHug() {
     const leg = $('#gm-legend');
     if (!leg) return;
+    leg.classList.remove('abbr');
+    const full = fitLegend(leg);
+    // A wrapped strip whose lane names are long (Tropical / Midlatitude cyclone) tries
+    // their short forms (TC, MLC; the full name stays in the DOM for assistive tech and
+    // in the group's tooltip) and KEEPS them only when they buy a column — i.e. fewer
+    // rows on a 1100-1300 px laptop. Wide maps never see an abbreviation.
+    if (leg.classList.contains('cols') && leg.querySelector('.lg-abbr')) {
+      leg.classList.add('abbr');
+      if (fitLegend(leg) <= full) { leg.classList.remove('abbr'); fitLegend(leg); }
+    }
+  }
+  // Lays the strip out for its current names and returns how well it did: Infinity =
+  // one row, k = k column pairs, 0 = stacked/expanded (nothing to improve).
+  function fitLegend(leg) {
     const groups = leg.querySelectorAll('.lg-group');
     let single = false;
     if (groups.length && leg.classList.contains('compact')
@@ -1524,21 +1538,37 @@
       const px = (v) => parseFloat(v) || 0;
       const cs = getComputedStyle(leg);
       const gap = px(cs.columnGap);
-      let head = 0, stops = 0;
+      const heads = [], stopsW = [];
       groups.forEach((g) => {
-        head = Math.max(head, g.querySelector('.lg-head').getBoundingClientRect().width);
-        stops = Math.max(stops, g.querySelector('.lg-stops').getBoundingClientRect().width);
+        heads.push(g.querySelector('.lg-head').getBoundingClientRect().width);
+        stopsW.push(g.querySelector('.lg-stops').getBoundingClientRect().width);
       });
       const reserve = toggle ? toggle.getBoundingClientRect().width + 16 : px(cs.paddingRight);
       const avail = leg.clientWidth - px(cs.paddingLeft) - reserve;
-      cols = Math.max(1, Math.min(groups.length,
-        Math.floor((avail + gap) / (head + stops + 2 * gap))));
+      // Lanes fill the grid row-major, so column c holds lanes c, c+k, c+2k…; its
+      // `label | swatches` pair is as wide as ITS widest head + ITS widest ramp. The
+      // largest k whose pairs (+ the 2k-1 gaps) fit is the layout — measuring the
+      // real columns instead of k copies of the widest head+ramp is what lets two
+      // columns hold seven lanes in a ~600 px map column (1280 laptops) instead of
+      // stacking six rows.
+      const need = (k) => {
+        let w = (2 * k - 1) * gap;
+        for (let c = 0; c < k; c++) {
+          let h = 0, s = 0;
+          for (let i = c; i < groups.length; i += k) { h = Math.max(h, heads[i]); s = Math.max(s, stopsW[i]); }
+          w += h + s;
+        }
+        return w;
+      };
+      cols = 1;
+      for (let k = groups.length; k >= 2; k--) if (need(k) <= avail) { cols = k; break; }
       leg.style.paddingRight = reserve + 'px';
     } else leg.style.paddingRight = '';
     leg.classList.toggle('cols', cols > 0);
     leg.style.gridTemplateColumns = single
       ? `repeat(${leg.children.length}, max-content)`
       : (cols ? `repeat(${cols}, max-content minmax(max-content, 1fr))` : '');
+    return single ? Infinity : cols;
   }
 
   /* ---------------- boot ---------------- */

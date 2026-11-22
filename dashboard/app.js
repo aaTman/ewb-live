@@ -14,16 +14,11 @@ const TYPE_META = {
   atmospheric_river:  { label: 'Atmospheric rivers', short: 'Atmospheric river',
                         rule: 'IVT peaking at ≥400 kg m⁻¹ s⁻¹ with a ridge criterion; starts over ocean and makes landfall.' },
   tropical_cyclone:   { label: 'Tropical cyclones',  short: 'Tropical cyclone',
-                        rule: 'One IBTrACS storm: ≥3 fixes at tropical-storm force (≥34 kt) spanning ≥12 h. Published, not scored.',
-                        noScores: true,      // observation lane: published, not benchmarked
-                        noScoresNote: (n) => tcNotScoredNote(n) },
+                        rule: 'One IBTrACS storm: ≥3 fixes at tropical-storm force (≥34 kt) spanning ≥12 h. Scored on track error against the best track, from the first ≥34 kt fix.' },
   flood:              { label: 'Floods',             short: 'Flood',
-                        rule: 'AI-estimated daily or 72 h rain (Google PARDIG, CC BY 4.0) past the ERA5 p95 wet-day climatology AND ≥20 mm/day. Published, not scored. (IMERG rain is the fallback source.)',
-                        noScores: true,      // observation lane (PARDIG/IMERG): published, not benchmarked
-                        noScoresNote: (n) => `Not scored — ${n} flood${n === 1 ? '' : 's'} tracked from AI-estimated precipitation (Google PARDIG, CC BY 4.0); no EWB benchmark for this lane yet.` },
+                        rule: 'AI-estimated daily or 72 h rain (Google PARDIG, CC BY 4.0) past the ERA5 p95 wet-day climatology AND at least 20 mm/day (50 mm/72 h). Scored vs AI-estimated precipitation, GraphCast only. (IMERG rain is the fallback source.)' },
   midlat_cyclone:     { label: 'Midlatitude cyclones', short: 'Midlatitude cyclone',
-                        rule: 'A closed ERA5 MSLP low ≤990 hPa living ≥48 h and travelling ≥1000 km, born between 25° and 70°. Track lane — no scorecard yet.',
-                        noScores: true },   // mlc track lane: published, not benchmarked
+                        rule: 'A closed ERA5 MSLP low ≤990 hPa living ≥48 h and travelling ≥1000 km, born between 25° and 70°. Scored on track error, central pressure, peak depth and bomb detection against that ERA5 track.' },
 };
 /* AR green (design 2026-11-08, owner request): all type colors resolve
    through CSS tokens — dual-theme values, no hardcoded hex in JS. */
@@ -100,9 +95,9 @@ const TYPE_CRITERIA = {
   cold_snap: 'Every 6-hourly step of a UTC day has 2 m temperature below the 15th percentile of the ERA5 1990-2019 climatology (per day of year and hour), over land — the freeze rule without its ≤0 °C requirement. A region ≥50,000 km² becomes an event once its footprint reaches 200,000 km², and ends when the cells that have counted every day since it began hold under 100,000 km² (at least 3 days). Where a freeze covers the same window and box the freeze is published instead of the cold snap, so the two never double-count a spell. The cold-snap lane has no raw layer of its own — it reads the same P15 layer as freeze, shading cells from their first consecutive COMPLETED day (dithered = today so far on a cell with at least one completed day).',
   atmospheric_river: 'Integrated water-vapour transport peaking at ≥400 kg m⁻¹ s⁻¹ and reaching land.',
   // observation lane (PARDIG rain by default — AI-estimated, not ERA5): published, never scored — EWB has no flood benchmark
-  flood: 'Rain from Google PARDIG-NRT — an AI-estimated precipitation product (CC BY 4.0), 15-minute instantaneous rates summed to a daily total and averaged up onto the ERA5 0.25° land lattice; GPM IMERG remains a supported fallback source. A cell exceeds when its daily total or its trailing 72 h accumulation reaches the 95th percentile of that calendar day in the ERA5 1990–2019 wet-day climatology AND at least 20 mm/day (or 50 mm per 72 h) — the floor is mandatory because the rain product and ERA5 are different instruments. Cells with no ERA5 percentile (hyper-arid) can never exceed, ocean cells are excluded, and a day whose frames are incomplete is dropped rather than read as dry. A region ≥10,000 km² becomes an event once its footprint reaches 50,000 km² and ends under 10,000 km². There is no EWB benchmark for flood, so floods are published and mapped but no model is scored on them.',
+  flood: 'Rain from Google PARDIG-NRT — an AI-estimated precipitation product (CC BY 4.0), 15-minute instantaneous rates summed to a daily total and averaged up onto the ERA5 0.25° land lattice; GPM IMERG remains a supported fallback source. A cell exceeds when its daily total or its trailing 72 h accumulation reaches the 95th percentile of that calendar day in the ERA5 1990–2019 wet-day climatology AND at least 20 mm/day (or 50 mm per 72 h) — the floor is mandatory because the rain product and ERA5 are different instruments. Cells with no ERA5 percentile (hyper-arid) can never exceed, ocean cells are excluded, and a day whose frames are incomplete is dropped rather than read as dry. A region ≥10,000 km² becomes an event once its footprint reaches 50,000 km² and ends under 10,000 km². Floods are scored against that same AI-estimated rain, GraphCast only (see About).',
   tropical_cyclone: 'One IBTrACS best-track storm = one event: at least 3 track fixes at tropical-storm force (≥34 kt sustained) spanning at least 12 hours, extratropical/mixed fixes excluded. The wind is the archive’s 1-minute best estimate (USA/JTWC-informed) and one storm never mixes averaging periods — a storm only an RSMC reports is published on that agency’s basis and says so (details.wind_basis). Peak value is the strongest sustained wind in the tropical-storm window (kt); the detail view draws the full track, coloured by intensity. Best-track observations, so there is no model scorecard for this lane yet.',
-  midlat_cyclone: 'A closed low in 6-hourly ERA5 mean sea level pressure: a centre that is the lowest pressure within 6° with a +3 hPa isobar closing around it inside 6°, tracked forward while it stays within 6° per step (gaps up to 12 h are bridged). It becomes an event when it lives ≥48 h, travels ≥1000 km, reaches ≤990 hPa, was born between 25–70° and under 500 m elevation, and did not start as a tropical cyclone. Peak value is the lowest central pressure (hPa); a bomb tag marks a fall of ≥24 hPa in 24 h at 60° latitude. Tracked from ERA5, so there is no model scorecard for this lane yet.',
+  midlat_cyclone: 'A closed low in 6-hourly ERA5 mean sea level pressure: a centre that is the lowest pressure within 6° with a +3 hPa isobar closing around it inside 6°, tracked forward while it stays within 6° per step (gaps up to 12 h are bridged). It becomes an event when it lives ≥48 h, travels ≥1000 km, reaches ≤990 hPa, was born between 25–70° and under 500 m elevation, and did not start as a tropical cyclone. Peak value is the lowest central pressure (hPa); a bomb tag marks a fall of ≥24 hPa in 24 h at 60° latitude. Forecasts are scored against this ERA5 track: position, along/cross-track, central pressure, peak depth and bomb detection.',
 };
 /* ------------------------------------------------------------------ */
 /* EMPTY-LANE COPY — ONE PLACE (owner rule 2026-11-17 / mlc-fix 2026-11-18)     */
@@ -152,28 +147,100 @@ function tcEmptyNote() {
   return `No qualifying storm in the IBTrACS archive through ${d} — best-track publication lags real time (the archive runs ~${ib.lag_days} days behind today).`;
 }
 
-/* TC lane, non-empty (ne-fix-tc 2026-11-19, audit TC-3/4). The old line printed
-   the published count and called it "storms tracked" — those are different
-   numbers: the archive's storm universe, the published events and the systems
-   still live at the archive's edge (too new for the ≥3-fix/≥12-h rule to be
-   judged) are three things, and meta.ibtracs now carries all three. `n` is the
-   published count IN THE CURRENT VIEW, so it is quoted as events here. */
-function tcNotScoredNote(n) {
-  const ib = (state.meta || {}).ibtracs;
-  const here = `${n} tropical cyclone${n === 1 ? '' : 's'} here`;
-  if (!ib || !Number.isFinite(ib.storms_in_window)) {
-    return `Not scored — ${here}; no EWB benchmark for IBTrACS best-track events yet.`;
+/* TC lane, scored (WP1, notes/scoring_design.md 8.3). The IBTrACS archive lags real time by
+   days, so the note still says how many storms it holds and which systems are too new to
+   judge (ne-fix-tc 2026-11-19, audit TC-3/4), and now also states what is verified: inits are
+   scored from the first >=34 kt fix, earlier ones are shown as not verified (owner decision
+   2026-11-21), and a lost track is a miss, never an imputed error. `n` is the published count
+   IN THE CURRENT VIEW, so it is quoted as events here. */
+function trackLaneNote(etype, n) {
+  const p = el('p', 'lane-note');
+  const tv = ((state.meta || {}).track_verification || {})[etype];
+  if (etype === 'midlat_cyclone') {
+    p.textContent = mlcLaneNote(n, tv);
+    return p;
   }
-  const d = String(ib.latest_fix || '').slice(0, 10);
-  let s = `Not scored — ${here}; the IBTrACS archive holds ${ib.storms_in_window} storm`
-    + `${ib.storms_in_window === 1 ? '' : 's'} for this window through ${d}`
-    + ` (~${ib.lag_days} days behind today). No EWB benchmark for best-track events yet.`;
-  if (Number.isFinite(ib.pending) && ib.pending > 0) {
-    const who = (ib.pending_names || []).filter(Boolean).join(', ');
-    s += ` ${ib.pending} system${ib.pending === 1 ? '' : 's'} still live at the archive's edge`
-      + `${who ? ` (${who})` : ''} cannot be judged until the next publication.`;
+  const ib = (state.meta || {}).ibtracs;
+  let s = `Scored against the IBTrACS best track (provisional until the archive catches up)`
+    + `${n ? ` \u00b7 ${n} storm${n === 1 ? '' : 's'} in this view` : ''}. `
+    + 'Track error is the great-circle distance to the best-track position; along-track is positive when '
+    + 'the forecast is ahead of the storm, cross-track positive to its right. A forecast that loses the '
+    + 'storm counts toward the miss rate and gets no error; cells above 50% misses are greyed. '
+    + 'Central pressure is a signed bias at 0.25\u00b0 resolution, not a skill ranking.';
+  /* the landfall block only exists when the build carries its score rows */
+  if (scRows().some((r) => r.event_type === etype && r.metric.indexOf('landfall_') === 0)) {
+    s += ' The landfall block is scored by EWB\u2019s own landfall classes: only storms with an observed '
+      + 'landfall are included, a model that forecasts no paired landfall counts as a miss, and those '
+      + 'cells rest on few storms (n is shown in the tooltip).';
+  }
+  if (tv && Number.isFinite(tv.n_inits_not_verified)) {
+    s += ` Verification starts at each storm\u2019s first \u2265${tv.min_wind_kt} kt fix: `
+      + `${tv.n_inits_verified} 00/12 UTC inits verified, ${tv.n_inits_not_verified} earlier ones not verified `
+      + '(a pre-storm disturbance is not a missed forecast).';
+  }
+  if (ib && Number.isFinite(ib.storms_in_window)) {
+    const d = String(ib.latest_fix || '').slice(0, 10);
+    s += ` The archive holds ${ib.storms_in_window} storm${ib.storms_in_window === 1 ? '' : 's'} for this window through ${d}`
+      + ` (~${ib.lag_days} days behind today).`;
+    if (Number.isFinite(ib.pending) && ib.pending > 0) {
+      const who = (ib.pending_names || []).filter(Boolean).join(', ');
+      s += ` ${ib.pending} system${ib.pending === 1 ? '' : 's'} still live at the archive\u2019s edge`
+        + `${who ? ` (${who})` : ''} cannot be judged until the next publication.`;
+    }
+  }
+  p.textContent = s;
+  return p;
+}
+
+/* MLC lane, scored: truth is the ERA5 MSLP track each low was detected on, so the same
+   track-error/along/cross/miss definitions apply, plus peak depth (signed) and the two
+   bomb-detection rates. The tracker-free metrics have no miss rate and are never greyed. */
+function mlcLaneNote(n, tv) {
+  let s = 'Scored against the ERA5 MSLP track each low was detected on '
+    + '(0.25\u00b0, the same grid as the models, so central pressure has no resolution floor)'
+    + `${n ? ` \u00b7 ${n} storm${n === 1 ? '' : 's'} in this view` : ''}. `
+    + 'Track error is the great-circle distance to that position; along-track is positive when '
+    + 'the forecast is ahead of the low, cross-track positive to its right. A forecast that loses '
+    + 'the low counts toward the miss rate and gets no error; cells above 50% misses are greyed. '
+    + 'Peak depth compares the forecast\u2019s lowest pressure within 8\u00b0 of the observed centre '
+    + 'with the ERA5 central pressure (positive = forecast too shallow); it needs no tracking, so '
+    + 'it has no miss rate. Bombs detected is the share of observed 24-h bomb-rate deepenings '
+    + '(Sanders\u2013Gyakum, scaled by latitude) that the forecast also showed; false alarms is the '
+    + 'share of non-bomb windows where it showed one.';
+  if (tv && Number.isFinite(tv.n_inits_verified)) {
+    s += ` ${tv.n_inits_verified} 00/12 UTC inits verified from each low\u2019s first ERA5 fix.`;
   }
   return s;
+}
+
+/* FLOOD lane, scored (flood lane, GraphCast only): the truth is Google PARDIG — an
+   AI-estimated precipitation product, not observed rain — and the events themselves are
+   defined from that same product, so every number here is conditional on a truth
+   exceedance existing (owner rule: the table says it beside itself). GraphCast only: the
+   store carries no precipitation for the other models and ECMWF tp is not wired, so the
+   lane has no baseline and no skill colour. meta.flood_scoring (pipeline) may override
+   the truth label and the unsupported-model list; `n` is the published count here. */
+function floodLaneNote(etype, n) {
+  const p = el('p', 'lane-note');
+  const fs = (state.meta || {}).flood_scoring || {};
+  const truth = fs.truth_label || 'vs AI-estimated precipitation (Google PARDIG)';
+  let s = `Scored ${truth} \u00b7 GraphCast only`
+    + `${n ? ` \u00b7 ${n} flood${n === 1 ? '' : 's'} in this view` : ''}. `
+    + 'PARDIG is a model estimate of rain \u2014 not observed rain \u2014 and the events are '
+    + 'defined by the same product. '
+    + 'Hit/miss is the daily exceedance of the event\u2019s own threshold (ERA5 wet-day p95, '
+    + 'at least 20 mm/day) per land cell and day; CSI = hits/(hits+misses+false alarms); '
+    + 'FSS compares exceedance fractions in 3x3 / 5x5 cell neighbourhoods; area bias and '
+    + 'peak error are forecast minus truth in mm over the event footprint (negative = '
+    + 'forecast too dry); scores are conditional on a truth exceedance existing. '
+    + 'No baseline model scores flood, so cells carry no skill colour. '
+    + 'The ECMWF-initialised graphcast has no 1 d cell (its first 6 h of precipitation are fill); '
+    + 'graphcast_gfs inits missing from the store are counted as no data, not rescued from a 12Z run. ';
+  s += (Array.isArray(fs.unsupported_models) && fs.unsupported_models.length)
+    ? `No flood rows for ${fs.unsupported_models.join(', ')}.`
+    : 'Every other model carries no precipitation in the store.';
+  p.textContent = s;
+  return p;
 }
 
 const MODEL_COLORS = {
@@ -203,12 +270,80 @@ const FALLBACK_METRICS = {
   MaximumLowestMeanAbsoluteError:  { label: 'Lowest-max MAE', units: 'K', higher_is_better: false },
   DurationMeanError:               { label: 'Duration error', units: 'h', higher_is_better: false, dir: 'zero' },
   MeanError:                       { label: 'Bias', units: 'K', higher_is_better: false, dir: 'zero' },
-  CriticalSuccessIndex:            { label: 'CSI', units: '', higher_is_better: true },
+  CriticalSuccessIndex:            { label: 'Critical success index', units: '', higher_is_better: true },
   spatial_displacement:            { label: 'Spatial displacement', units: 'km', higher_is_better: false },
   EarlySignal:                     { label: 'Early signal', units: '', higher_is_better: true },
   Accuracy:                        { label: 'Accuracy', units: '', higher_is_better: true },
+  /* track lanes (notes/scoring_design.md section 6): signed components are bias-to-zero */
+  TrackPositionError:              { label: 'Track error', units: 'km', higher_is_better: false },
+  AlongTrackError:                 { label: 'Along-track', units: 'km', higher_is_better: false, dir: 'zero' },
+  CrossTrackError:                 { label: 'Cross-track', units: 'km', higher_is_better: false, dir: 'zero' },
+  CentralPressureError:            { label: 'Central pressure', units: 'hPa', higher_is_better: false, dir: 'zero' },
+  TrackMiss:                       { label: 'Miss rate', units: '', higher_is_better: false },
+  /* landfall scores (EWB's landfall classes; only storms with an observed landfall).
+     The three value metrics are greyed by `landfall_miss`, the same 50 % rule. */
+  landfall_displacement:           { label: 'Landfall position', units: 'km', higher_is_better: false },
+  landfall_time_me:                { label: 'Landfall timing', units: 'h', higher_is_better: false, dir: 'zero' },
+  landfall_intensity_mae:          { label: 'Landfall intensity', units: 'hPa', higher_is_better: false },
+  landfall_miss:                   { label: 'Landfall miss rate', units: '', higher_is_better: false },
+  /* MLC lane extras: peak depth is signed (zero is ideal); the bomb metrics are 0/1 rates */
+  PeakDepthError:                  { label: 'Peak depth', units: 'hPa', higher_is_better: false, dir: 'zero' },
+  BombDetected:                    { label: 'Bombs detected', units: '', higher_is_better: true },
+  BombFalseAlarm:                  { label: 'Bomb false alarms', units: '', higher_is_better: false },
+  /* flood lane (GraphCast-only precipitation scores): 0..1 exceedance scores and signed
+     mm errors — the signed pair is bias-to-zero, exactly like the TC components */
+  ProbabilityOfDetection:          { label: 'Hit rate (POD)', units: '', higher_is_better: true },
+  FalseAlarmRatio:                 { label: 'False alarm ratio', units: '', higher_is_better: false },
+  FractionsSkillScore:             { label: 'Fractions skill score (3x3)', units: '', higher_is_better: true },
+  FractionsSkillScore5:            { label: 'Fractions skill score (5x5)', units: '', higher_is_better: true },
+  PrecipAreaBias:                  { label: 'Area rain bias', units: 'mm', higher_is_better: false, dir: 'zero' },
+  PeakPrecipError:                 { label: 'Peak rain error', units: 'mm', higher_is_better: false, dir: 'zero' },
 };
-const BINARY_METRICS = new Set(['csi', 'CriticalSuccessIndex', 'Accuracy', 'EarlySignal']);
+/* leads shown per track lane (D8): the store keeps every 6-hourly lead. MLC publishes on the
+   1-4 d window; flood scores on the same 1-5 d window as the TC lane (D8). */
+const TYPE_LEADS = { tropical_cyclone: [24, 48, 72, 96, 120], midlat_cyclone: [24, 48, 72, 96],
+                     flood: [24, 48, 72, 96, 120] };
+function leadsForType(etype, leads) {
+  const want = TYPE_LEADS[etype];
+  if (!want) return leads;
+  const have = want.filter((h) => state.allLeads.includes(h));
+  return have.length ? have : leads;
+}
+/* Track lanes rank models on the track error only: the signed components are bias-to-zero
+   (a ratio of tiny biases is not a skill) and the miss rate is read beside the error (D5). */
+function skillRanked(etype, met) { return !TYPE_LEADS[etype] || met === 'TrackPositionError'; }
+/* D5: a track-error cell whose model lost more than half its samples at that lead is greyed, and a
+   greyed cell feeds neither the verdict banner, the model order nor the Mean colour.
+   The landfall value metrics use the same rule against their own miss rate (landfall_miss);
+   a miss-rate cell IS the evidence and is never greyed. */
+const LANDFALL_VALUE_METRICS = ['landfall_displacement', 'landfall_time_me', 'landfall_intensity_mae'];
+/* which 0/1 miss metric greys this one; null for the miss-rate cells themselves */
+function missSource(met) {
+  if (LANDFALL_VALUE_METRICS.includes(met)) return 'landfall_miss';
+  return met === 'TrackMiss' || met === 'landfall_miss' ? null : 'TrackMiss';
+}
+function missGreyed(idx, etype, met, lead, model) {
+  if (!TYPE_LEADS[etype] || TRACKER_FREE_METRICS.has(met)) return false;
+  const src = missSource(met);
+  if (!src) return false;
+  const mc = (idx.get(`${etype}|${src}|${lead}`) || {})[model];
+  return !!(mc && Number.isFinite(mc.mean) && mc.mean > MISS_GREY);
+}
+/* D5: a cell whose miss rate is above this is greyed (its error rests on the storms the model kept) */
+const MISS_GREY = 0.5;
+/* one order for both track lanes: metricsFor() keeps only what the lane scores, so the
+   landfall group (TC only) and the MLC extras never show in each other's table */
+const TRACK_METRIC_ORDER = ['TrackPositionError', 'TrackMiss', 'AlongTrackError', 'CrossTrackError', 'CentralPressureError',
+  'landfall_displacement', 'landfall_time_me', 'landfall_intensity_mae', 'landfall_miss',
+  'PeakDepthError', 'BombDetected', 'BombFalseAlarm'];
+/* 0/1 rates shown as percent (the miss rates and the MLC bomb rates) */
+const RATE_METRICS = new Set(['TrackMiss', 'landfall_miss', 'BombDetected', 'BombFalseAlarm']);
+/* metrics that do not depend on the tracker keeping the low/storm: the 50%-miss grey rule
+   and the "tracked N of M samples" tooltip row never apply to them */
+const TRACKER_FREE_METRICS = new Set(['PeakDepthError', 'BombDetected', 'BombFalseAlarm']);
+const BINARY_METRICS = new Set(['csi', 'CriticalSuccessIndex', 'Accuracy', 'EarlySignal',
+  /* flood lane: the five 0..1 exceedance scores print at 2 decimals */
+  'ProbabilityOfDetection', 'FalseAlarmRatio', 'FractionsSkillScore', 'FractionsSkillScore5']);
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -323,6 +458,7 @@ function fmtVal(metricId, v) {
   if (v === null || v === undefined || !Number.isFinite(v)) return '—';
   const u = metricMeta(metricId).units;
   if (BINARY_METRICS.has(metricId)) return v.toFixed(2).replace('-', '\u2212');
+  if (RATE_METRICS.has(metricId)) return Math.round(v * 100) + '%';
   const a = Math.abs(v);
   let s;
   if (a >= 100) s = v.toFixed(0);
@@ -422,6 +558,7 @@ function normScRow(r) {
     ci_lo: firstDefined(r.ci95_lo, r.ci_lo),
     ci_hi: firstDefined(r.ci95_hi, r.ci_hi),
     n_events: Number.isFinite(r.n_events) ? r.n_events : null,
+    n_samples: Number.isFinite(r.n_samples) ? r.n_samples : null,
     rel: firstDefined(r.relative_skill_vs_ifs_pct, r.skill_vs_ifs_pct),
   };
 }
@@ -595,6 +732,43 @@ function metricBlurb(id) {
     : mm.higher_is_better ? 'Higher is better.' : 'Lower is better.';
   return (METRIC_BLURB[id] ? METRIC_BLURB[id] + ' ' : '') + dir;
 }
+/* The header "truth" is lane-aware: tropical cyclones are scored against the IBTrACS best
+   track, not ERA5 (owner review 2026-11-21). One lane tab -> that lane's truth; "all types"
+   -> the mix, named only when the TC lane has score rows in this build. Other lanes keep the
+   run's truth_source. */
+const LANE_TRUTH = { tropical_cyclone: { short: 'IBTrACS', title: 'Tropical cyclones are scored against the IBTrACS best track (provisional until the archive catches up), not ERA5.' },
+  midlat_cyclone: { short: 'ERA5 track', title: 'Mid-latitude cyclones are scored against the ERA5 MSLP track each low was detected on (0.25\u00b0, same grid as the models).' },
+  flood: { short: 'PARDIG (AI-estimated precip)', title: 'Floods are scored against Google PARDIG, an AI-estimated precipitation product (not observed rain), not ERA5.' } };
+function laneHasScores(etype) { return state.scorecard.some((r) => r.event_type === etype); }
+function tcHasScores() { return laneHasScores('tropical_cyclone'); }
+/* Which non-ERA5 truths have score rows in THIS build, in the order the header
+   names them (the 'all' tab lists every lane that actually carries rows). */
+function truthMix() {
+  const mix = [];
+  if (tcHasScores()) mix.push('IBTrACS (TC)');
+  if (laneHasScores('flood')) mix.push('PARDIG (flood)');
+  return mix;
+}
+function truthShortFor(base) {
+  const lt = LANE_TRUTH[state.tab];
+  if (lt) return lt.short;
+  if (state.tab === 'all') {
+    const mix = truthMix();
+    if (mix.length) return `${base} + ${mix.join(' + ')}`;
+  }
+  return base;
+}
+function truthTitleFor(base) {
+  const lt = LANE_TRUTH[state.tab];
+  if (lt) return lt.title;
+  if (state.tab === 'all') {
+    const bits = [];
+    if (tcHasScores()) bits.push('tropical cyclones, which are scored against the IBTrACS best track');
+    if (laneHasScores('flood')) bits.push('floods, which are scored against Google PARDIG (AI-estimated precipitation)');
+    if (bits.length) return `${base} \u2014 except ${bits.join(' and ')}.`;
+  }
+  return base;
+}
 function renderHeader() {
   const m = state.meta;
   $('#m-updated').textContent = m.last_updated ? fmtDate(m.last_updated) : '\u2014';
@@ -608,7 +782,7 @@ function renderHeader() {
   const nModels = new Set(state.scores.map((r) => r.model)).size;
   const rosterN = Math.max(state.allModels.length,
     Array.isArray(m.models) ? m.models.length : 0);
-  const truthShort = truth.text.split(' \u00b7 ')[0];
+  const truthShort = truthShortFor(truth.text.split(' \u00b7 ')[0]);
   const reg = regionEntry();
   const kv = (k, v, title) =>
     `<span class="kv"><span class="k">${k}</span>` +
@@ -622,7 +796,7 @@ function renderHeader() {
       'models with score rows vs models declared for this run'),
     kv('window', days ? `${days} d` : '\u2014',
       m.window ? `${fmtDate(m.window.start)} \u2013 ${fmtDate(m.window.end)}` : ''),
-    kv('truth', esc(truthShort), truth.title || truth.text),
+    kv('truth', esc(truthShort), truthTitleFor(truth.title || truth.text)),
   ].join('');
 
   renderWeekPicker();
@@ -709,7 +883,7 @@ function saveState() {
 /* The event-type filter is the one page-wide control: it narrows the map
    (layers + boxes), the timeline, the event list and the scorecard together. */
 function setTab(id) {
-  state.tab = id; saveState(); renderControls(); renderAll();
+  state.tab = id; saveState(); renderHeader(); renderControls(); renderAll();
   if (window.MergedMap) MergedMap.onTabChange(id);
   syncUrl(false);   // the type filter is URL state, like Region and the date (2026-11-17)
 }
@@ -1005,7 +1179,7 @@ function scIndex() {
     const key = `${r.event_type}|${r.metric}|${r.lead_time_hours}`;
     let g = idx.get(key);
     if (!g) { g = {}; idx.set(key, g); }
-    g[r.model] = { mean: r.mean_value, rel: r.rel, n: r.n_events, lo: r.ci_lo, hi: r.ci_hi };
+    g[r.model] = { mean: r.mean_value, rel: r.rel, n: r.n_events, ns: r.n_samples, lo: r.ci_lo, hi: r.ci_hi };
   }
   for (const [key, g] of idx) {
     const met = key.split('|')[1];
@@ -1033,6 +1207,12 @@ function metricsFor(etype) {
   const pref = { heat_wave: 'RootMeanSquaredError', freeze: 'RootMeanSquaredError',
     cold_snap: 'RootMeanSquaredError',
     atmospheric_river: 'CriticalSuccessIndex' }[etype];
+  if (TYPE_LEADS[etype]) {
+    /* track lane: the miss rate always sits beside the headline error (D5) */
+    const ord = TRACK_METRIC_ORDER.filter((m) => all.includes(m))
+      .concat(all.filter((m) => !TRACK_METRIC_ORDER.includes(m)));
+    return state.scMore ? ord : ord.slice(0, 2);
+  }
   if (!state.scMore && all.length > 1) return [all.includes(pref) ? pref : all[0]];
   return all;
 }
@@ -1064,7 +1244,7 @@ function renderVerdictStrip(idx) {
     // metric × lead cells that actually have data for this lane
     const cols = [];
     for (const met of metricsFor(etype)) {
-      const c = metricColumns(idx, etype, met, leads);
+      const c = metricColumns(idx, etype, met, leadsForType(etype, leads));
       if (c) cols.push({ met, columns: c });
     }
     if (!cols.length) continue;
@@ -1073,6 +1253,7 @@ function renderVerdictStrip(idx) {
     for (const m of visible) if (m !== B) acc[m] = { s: 0, n: 0, wins: 0 };
     let cellN = 0;
     for (const { met, columns } of cols) {
+      if (!skillRanked(etype, met)) continue;   // track lanes: only the track error ranks models
       for (const c of columns) {
         if (c.kind === 'mean') continue;   // mean duplicates lead data
         const lead = c.kind === 'lead' ? c.lead : null;
@@ -1083,6 +1264,7 @@ function renderVerdictStrip(idx) {
           if (m === B) continue;
           const cell = g[m];
           if (!cell || !Number.isFinite(cell.rel)) continue;
+          if (missGreyed(idx, etype, met, lead, m)) continue;   // >50% misses: not a ranking input
           rels[m] = cell.rel;
           acc[m].s += cell.rel; acc[m].n += 1;
         }
@@ -1095,21 +1277,41 @@ function renderVerdictStrip(idx) {
     }
     const ranked = Object.keys(acc).filter((m) => acc[m].n > 0)
       .sort((a, b) => (acc[b].s / acc[b].n) - (acc[a].s / acc[a].n));
-    if (!ranked.length) continue;
+    if (!ranked.length) {
+      /* flood lane: GraphCast only, and no baseline model scores flood, so nothing can
+         rank — the banner says that rather than claim a vs-baseline verdict or vanish. */
+      if (etype === 'flood') parts.push({ etype, unranked: true });
+      continue;
+    }
     const leader = ranked[0];
     const meanRel = acc[leader].s / acc[leader].n;
     const cells = acc[leader].wins;
+    /* track lanes: the ranking is track error ONLY, so say it and put the miss rates beside it
+       (a model that loses more storms than the baseline can still win on the storms it keeps) */
+    let missNote = '';
+    if (TYPE_LEADS[etype]) {
+      const lds = leadsForType(etype, leads);
+      const mm = (m) => meanVisible(idx, etype, 'TrackMiss', m, lds);
+      const a = mm(leader), b = mm(B);
+      if (a !== null && b !== null) {
+        missNote = ` \u00b7 ranks track error only \u00b7 misses ${Math.round(a * 100)}% vs ${Math.round(b * 100)}%`
+          + (a > MISS_GREY ? ` (>${Math.round(MISS_GREY * 100)}% misses)` : '');
+      } else missNote = ' \u00b7 ranks track error only';
+    }
     parts.push({
-      etype, model: leader, meanRel, cells, total: cellN,
+      etype, model: leader, meanRel, cells, total: cellN, missNote,
     });
   }
   if (!parts.length) { host.hidden = true; host.innerHTML = ''; return; }
   host.hidden = false;
   host.innerHTML = parts.map((p) => {
     const chip = typeChipHtml(p.etype);
+    if (p.unranked) {   // no baseline scores this lane: never print a vs-baseline claim
+      return `<span class="verdict-item">${chip}<span class="v-text">GraphCast only - not ranked</span></span>`;
+    }
     const sign = p.meanRel >= 0 ? '+' : '';
     const txt = `<b>${esc(p.model)}</b> best · ${sign}${p.meanRel.toFixed(1)}% vs ${esc(B)}` +
-      ` · won ${p.cells}/${p.total} cells`;
+      ` · won ${p.cells}/${p.total} cells${p.missNote || ""}`;
     return `<span class="verdict-item">${chip}<span class="v-text">${txt}</span></span>`;
   }).join('');
 }
@@ -1160,7 +1362,7 @@ function renderScorecard() {
   for (const etype of activeTypes()) {
     const cols = new Map();
     for (const met of metricsFor(etype)) {
-      const c = metricColumns(idx, etype, met, leads);
+      const c = metricColumns(idx, etype, met, leadsForType(etype, leads));
       if (c) cols.set(met, c);
     }
     if (cols.size) etypeCols.set(etype, cols);
@@ -1173,10 +1375,11 @@ function renderScorecard() {
   for (const [key, g] of idx) {
     const [e2, met, hStr] = key.split('|');
     const cols = etypeCols.get(e2);
-    if (!cols || !cols.has(met)) continue;
+    if (!cols || !cols.has(met) || !skillRanked(e2, met)) continue;
     const h = hStr === 'null' ? null : +hStr;
     if (h !== null && !cols.get(met).some((c) => c.kind === 'lead' && c.lead === h)) continue;
     for (const m of Object.keys(g)) {
+      if (missGreyed(idx, e2, met, h, m)) continue;
       if (m !== B && Number.isFinite(g[m].rel)) { relSums[m].s += g[m].rel; relSums[m].n += 1; }
     }
   }
@@ -1284,19 +1487,23 @@ function renderScorecard() {
       tr.appendChild(el('td', 'model-col',
         `<span class="dot" style="--c:${modelColor(model, colorIdx)}"></span>${esc(model)}`));
       for (const [met, columns] of cols) {
-        let s = 0, n = 0, any = false;
+        let s = 0, n = 0, any = false, nCells = 0, nGrey = 0;
         for (const c of columns) {
           if (c.kind === 'mean') {
-            const mv = meanVisible(idx, etype, met, model, leads);
-            const mN = meanSample(idx, etype, met, model, leads);
+            const mv = meanVisible(idx, etype, met, model, leadsForType(etype, leads));
+            const mN = meanSample(idx, etype, met, model, leadsForType(etype, leads));
             const mSmall = mN !== null && mN < minSample();
-            const meanTd = el('td', 'cell mean' + (mSmall ? ' small-n' : ''),
+            const allGrey = nCells > 0 && nGrey === nCells;       // every contributing lead is >50% misses
+            const meanTd = el('td', 'cell mean' + (mSmall ? ' small-n' : '') + (allGrey ? ' miss-grey' : ''),
               mv === null ? '—' : fmtVal(met, mv));
             meanTd.dataset.model = model;
-            if (n) meanTd.style.background = model === B ? '' : cellColor(s / n);
+            if (n && !allGrey) meanTd.style.background = model === B ? '' : cellColor(s / n);
+            if (allGrey) {
+              meanTd.title = 'miss rate > 50% at every lead';
+            }
             if (mSmall) anySmallN = true;
             attachTip(meanTd, etype, met, { kind: 'mean', mean: mv, rel: n ? s / n : null,
-              nLeads: n, n: mN, small: mSmall });
+              nLeads: n, n: mN, small: mSmall, greyed: allGrey });
             tr.appendChild(meanTd);
             continue;
           }
@@ -1308,15 +1515,22 @@ function renderScorecard() {
             continue;
           }
           any = true;
-          if (Number.isFinite(cell.rel)) { s += cell.rel; n += 1; }
+          /* D5: a track-error cell whose miss rate is above 50 % is greyed, not coloured by skill,
+             and does not feed the Mean colour */
+          const greyed = missGreyed(idx, etype, met, lead, model);
+          nCells += 1; nGrey += greyed ? 1 : 0;
+          if (Number.isFinite(cell.rel) && !greyed) { s += cell.rel; n += 1; }
           const small = Number.isFinite(cell.n) && cell.n < minSample();
           if (small) anySmallN = true;
           const td = el('td', 'cell' + (model === B ? ' baseline' : '')
-            + (small ? ' small-n' : ''), fmtVal(met, cell.mean));
+            + (small ? ' small-n' : '') + (greyed ? ' miss-grey' : ''), fmtVal(met, cell.mean));
           td.dataset.model = model;
-          td.style.background = model === B ? '' : cellColor(cell.rel);
+          td.style.background = model === B || greyed ? '' : cellColor(cell.rel);
+          if (greyed) {
+            td.title = 'miss rate > 50%';
+          }
           attachTip(td, etype, met, { kind: c.kind, lead, mean: cell.mean, rel: cell.rel,
-            n: cell.n, lo: cell.lo, hi: cell.hi, small });
+            n: cell.n, ns: cell.ns, lo: cell.lo, hi: cell.hi, small, greyed });
           tr.appendChild(td);
         }
         void any;
@@ -1356,6 +1570,9 @@ function renderScorecard() {
     });
     wrap.appendChild(table);
     block.appendChild(wrap);
+    if (TYPE_LEADS[etype]) {
+      block.appendChild(etype === 'flood' ? floodLaneNote(etype, nEv) : trackLaneNote(etype, nEv));
+    }
     host.appendChild(block);
     // horizontal-scroll affordance: fade hint while the table is wider than its box
     const updScroll = () => {
@@ -1438,6 +1655,19 @@ function attachTip(td, etype, met, c) {
     if (c.kind !== 'mean' && Number.isFinite(c.n)) {
       rows.push(`<div class="t-row"><span>n events</span><b>${c.n}</b></div>`);
     }
+    /* track lanes: how many verified samples the error rests on vs the samples tried */
+    if (TYPE_LEADS[etype] && c.kind === 'lead') {
+      const src = missSource(met) || met;   // landfall values pair against landfall_miss
+      const mc = (idx0(etype, src, c.lead) || {})[model || state.baseline];
+      if ((met === 'TrackMiss' || met === 'landfall_miss') && Number.isFinite(c.ns)) {
+        rows.push(`<div class="t-row"><span>samples</span><b>${c.ns}</b></div>`);
+      } else if (!TRACKER_FREE_METRICS.has(met) && mc && Number.isFinite(mc.ns) && Number.isFinite(c.ns)) {
+        rows.push(`<div class="t-row"><span>${src === 'landfall_miss' ? 'landfall-paired' : 'tracked'}</span><b>${c.ns} of ${mc.ns} samples</b></div>`);
+      }
+      if (c.greyed) {
+        rows.push(`<div class="t-row t-small"><span>miss rate</span><b class="t-warn">above ${Math.round(MISS_GREY * 100)}% \u00b7 greyed</b></div>`);
+      }
+    }
     /* small-sample cue (owner 2026-11-10): say it in the tooltip too, so the
        red edge never reads as a performance colour */
     if (c.small) {
@@ -1507,6 +1737,7 @@ function attachTip(td, etype, met, c) {
   const parts = [td.dataset.model || TYPE_META[etype].short, mm.label,
     `${fmtVal(met, c.mean)}${mm.units ? ' ' + mm.units : ''}`];
   if (Number.isFinite(c.n) && c.kind !== 'mean') parts.push('n ' + c.n);
+  if (c.greyed) parts.push('miss rate > 50%');
   td.setAttribute('aria-label', parts.join(', '));
   if (!touchTipGuard) {
     touchTipGuard = true;   // tap outside any cell dismisses (touch)
@@ -1526,6 +1757,7 @@ function moveTip(ev) {
   const r = tipEl.getBoundingClientRect();
   if (x + r.width > window.innerWidth - 8) x = ev.clientX - r.width - pad;
   if (y + r.height > window.innerHeight - 8) y = ev.clientY - r.height - pad;
+  x = Math.max(8, x); y = Math.max(8, y);   // phone width: the flipped tip must not leave the viewport
   tipEl.style.left = x + 'px';
   tipEl.style.top = y + 'px';
 }
@@ -2836,6 +3068,17 @@ async function boot() {
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((src) => { pre.textContent = src; pre.dataset.loaded = '1'; })
       .catch(() => { pre.textContent = 'Could not load detection.py — it ships with the dashboard (dashboard/detection.py).'; });
+  });
+  /* "How the track errors are computed": same arrangement (dashboard/track_scoring.py,
+     checked against the shipped scorer by the test suite). */
+  const trackFold = $('.repro-track');
+  trackFold?.addEventListener('toggle', (e) => {
+    const pre = $('#track-scoring-code');
+    if (!e.target.open || !pre || pre.dataset.loaded) return;
+    fetch('track_scoring.py')
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((src) => { pre.textContent = src; pre.dataset.loaded = '1'; })
+      .catch(() => { pre.textContent = 'Could not load track_scoring.py — it ships with the dashboard (dashboard/track_scoring.py).'; });
   });
   // lazy Plotly builds for collapsed folds (measuring inside display:none breaks width)
   $('#skill-details').addEventListener('toggle', (e) => {

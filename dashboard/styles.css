@@ -545,6 +545,16 @@ nav.controls {
     background: var(--border-strong); font-size: 0; overflow: hidden; user-select: none; }
   .type-group[data-group="temperature"] { display: none; }   /* nothing before the first group */
 }
+/* Mid widths (1100-1399): the shell is 75vw and the rail takes 220 px, so the Show
+   row has ~910 px at a 1280 laptop and the eight chips need ~965 at full padding —
+   they wrapped to a second row (+36 px of first screen, measured 2026-11-21). Tighter
+   chip padding/gaps (still 30 px tall, icon + label + count, nothing truncated) bring
+   it to ~880 px: one row from 1260 up. From 1400 the group dividers return and the
+   row has room at full size. */
+@media (min-width: 1100px) and (max-width: 1399px) {
+  #type-tabs { gap: 6px 4px; }
+  .etype-tab { gap: 4px; padding: 0 6px; }
+}
 /* touch: 44 px targets (M7), same visual metrics; chips share the row evenly */
 @media (pointer: coarse), (max-width: 479px) {
   .etype-tab { height: 44px; flex: 1 1 auto; justify-content: center; }
@@ -696,6 +706,11 @@ table { border-collapse: separate; border-spacing: 0; width: 100%;
   vertical-align: 1px; cursor: help; }
 .lane-empty-row td { padding: 20px 10px; text-align: center; }
 .lane-empty-row .lane-empty { margin: 0; }
+/* track lane (WP1): the scoring note under the table, and a greyed cell (miss rate > 50 %) */
+.lane-note { color: var(--ink-secondary); font-size: var(--text-sm); margin: 10px 2px 4px; line-height: 1.45;
+  max-width: 78ch; }
+td.cell.miss-grey { color: var(--ink-muted); background: transparent;
+  background-image: repeating-linear-gradient(135deg, transparent 0 5px, rgba(128, 128, 128, 0.16) 5px 6px); }
 /* DR2 M7: tap targets — chips ≥36px, pills ≥40px, both ≥44px on phones */
 #kv-line .chip { min-height: 36px; }
 .pill { min-height: 40px; }
@@ -1100,7 +1115,7 @@ nav.controls .dd .dd-body {
    settled compact strip measures at that width, so filling it is a no-op.
    It paints no chrome until it paints content. */
 #gm-legend:empty { visibility: hidden; border-color: transparent; background: none;
-  min-height: 116px; }
+  min-height: 160px; }   /* stacked, 7 lanes: 6 groups + the toggle row (measured at 390) */
 .gm-legend .swatch { width: 20px; height: 10px; border: 1px solid var(--border-strong);
   border-radius: 2px; display: block; }
 /* one group per lane, ONE GRID ROW: it spans the strip's label+swatch tracks
@@ -1120,10 +1135,17 @@ nav.controls .dd .dd-body {
 .lg-name { font-size: var(--text-2xs); font-weight: 500; letter-spacing: .08em;
   text-transform: uppercase; color: var(--text-dim); }
 .lg-unit { font-size: var(--text-2xs); color: var(--ink-muted); }
+/* a lane name with a short form (TC, MLC — tracklayer.js): the full name shows by default;
+   legendHug (mergedmap.js) adds .abbr to a wrapped strip only when the short forms buy a
+   column. The full name stays in the accessibility tree (visually clipped, never display:none). */
+.lg-abbr { display: none; }
+#gm-legend.abbr .lg-abbr { display: inline; }
+#gm-legend.abbr .lg-full { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 /* Stacked, the head WRAPS (label column floor = its longest WORD, not a
    264px nowrap unit string that would push the ramps past the card edge at
    320/390); the wide rows keep every label on one line. */
-@container (min-width: 680px) {
+@container (min-width: 450px) {
   .lg-name, .lg-unit { white-space: nowrap; }
 }
 /* 'none in view' floats as a pill over its lane — an empty lane is a
@@ -1158,14 +1180,17 @@ nav.controls .dd .dd-body {
    Region/frame where a lane paints nothing. Same rule as above — ink, not
    opacity. */
 .lg-group.none .swatch { opacity: .32; }
-@container (min-width: 680px) {   /* rows when the map column can hold the lanes */
+@container (min-width: 450px) {   /* rows when the map column can hold the lanes */
   #gm-legend { --lg-wide: 1; display: flex; flex-direction: row; align-items: center;
     gap: 20px; padding: 6px 8px; width: fit-content;
     /* a track lane adds a group; the strip still NEVER scrolls horizontally
        (test_legend_never_hides_a_lane_behind_a_scroll), it wraps instead — the
        only promise a fourth lane can keep without hiding a colour */
     flex-wrap: wrap; row-gap: 4px; }
-  #gm-legend:empty { min-height: 35px; }   /* one settled compact row */
+  /* 7 lanes settle at 3 rows (85 px) in a 450-599 px map column and 2 rows (60 px) from
+     600 px up, where the short TC/MLC names buy the third column (measured 2026-11-21,
+     1100-1920 px viewports: the old 35 px reservation shifted the timeline +25..+50 px) */
+  #gm-legend:empty { min-height: 85px; }
   .lg-group { display: flex; align-items: center; gap: 8px; flex: none;
     grid-column: auto; }
   .lg-bin.prov { width: auto; }
@@ -1204,11 +1229,13 @@ nav.controls .dd .dd-body {
     grid-row: auto; grid-column: auto; align-self: center; justify-self: start; }
 }
 
+@container (min-width: 600px) { #gm-legend:empty { min-height: 60px; } }
+
 /* COMPACT legend (default whenever 3+ lanes share the strip — owner 2026-11-19,
    first-screen budget): lane name + its colour swatches on one line, numbers
    and units hidden (every swatch and group keeps its title; the "Scales"
    control restores the labelled ramps). Its tracks come from the SAME grid as
-   the labelled strip — stacked rows share one label column, and at >=680px
+   the labelled strip — stacked rows share one label column, and at >=450px
    the columns take over (see the container rule) — so the swatch column is
    aligned in every state. It wraps/stacks, it never scrolls, and the card is
    exactly as tall as its rows. */
@@ -1402,6 +1429,10 @@ nav.controls { min-height: 46px; }
    The slider above shares the strip's time axis through --gm-lab so its thumb and
    the strip's cursor line land on the same x. */
 #gm-gantt { min-height: 155px; }
+/* below ~440 px of strip width (phones) the lane names move above their bands and the
+   same 7 lanes settle at 232 px (measured 2026-11-21 at 390: the 155 px reservation
+   shifted everything under it +77 px) */
+@container (max-width: 465px) { #gm-gantt { min-height: 232px; } }
 .tl-head { min-height: 30px; }
 header.top { min-height: 48px; }        /* settled ~47 px: 16 pad + 26/1.2 h1, tagline on that line */
 @media (max-width: 619px) { header.top { min-height: 70px; } }   /* tagline wraps under the name + 16px gutter */
