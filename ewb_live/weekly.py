@@ -212,11 +212,17 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
 
         # 6. dashboard per-event viz assets (design team; non-fatal —
         # a viz failure must not fail the weekly cycle). Cold-cache build
-        # is network-heavy (~30-60 min), warm runs take minutes;
-        # idempotent, skips events already at current schema.
+        # is network-heavy (~30-60 min), warm runs take minutes; idempotent,
+        # skips events whose asset is at the current schema AND still matches
+        # the event's window/box (the ongoing-event rebuild, review #1). A
+        # soft time budget (margin under the step timeout) stops starting new
+        # event builds so the global steps still run this pass; the skipped
+        # ids are logged and the next weekly run resumes them (round-4). The
+        # margin must outlast one in-flight build (longest logged: 1,042 s).
         try:
             proc = subprocess.run(
-                [sys.executable, "-m", "ewb_live.viz", "--all"],
+                [sys.executable, "-m", "ewb_live.viz", "--all",
+                 "--time-budget-s", "3900"],
                 timeout=5400,
             )
             logger.info("ewb_live.viz --all exited %d", proc.returncode)

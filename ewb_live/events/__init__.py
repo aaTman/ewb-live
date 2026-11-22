@@ -105,11 +105,11 @@ def _cache_path(cache_dir: Path, event_type: str, start: dt.date, end: dt.date) 
     if event_type in ("heat_wave", "freeze", "cold_snap"):
         import os
 
-        from .temperature import _mode_clim
+        from .temperature import TRACK_RULE_REV, _mode_clim
 
         clip = _mode_clim()[event_type]
         qv = clip["q_lower"] if event_type == "heat_wave" else clip["q_upper"]
-        tag = f"_{os.environ.get('EWB_LIVE_CLIM', 'owb')}{qv}"
+        tag = f"_{os.environ.get('EWB_LIVE_CLIM', 'owb')}{qv}_{TRACK_RULE_REV}"
     if event_type == "atmospheric_river":
         # bump when AR rules change (mask rules / tropical screen / TC
         # radius) so an old scan can't resurrect under new code —

@@ -6,7 +6,15 @@ methodology of 2026-11-10, ported from github.com/aaTman/ewb-events into
 ``ewb_live/events/event_tracker.py`` and specified in SPEC §2: regions ->
 candidates at 50k km2 -> events at 200k km2 of footprint, a box that grows with
 the footprint, and an end when the **core** (the cells valid every day since
-the event began, measured in the day-3 anchor box) falls below 100k km2. It
+the event qualified, measured in its anchor box) falls below 100k km2. Since
+the 2026-11-20 box-size rule the tracker box (cumulative) is only the tracking
+geometry: the published Event bbox is the **persistence box** (the cells valid
+on >= half the event's days, area-weighted 2-98 % trimmed; ``Params.publish_box
+/ publish_min_fraction / publish_trim``) and the event id hashes the frozen
+day-3 anchor bbox, so an ongoing event keeps its id across weekly runs while
+its published box is redrawn (SPEC §2, notes/footprint_tracker.md). The core
+and the anchor both start no earlier than qualification (owner decision
+2026-11-21): a spell that grows into its qualifying day is never ended by it. It
 replaced, in order: the upstream EWB blob tracker (unbounded 1 deg-per-edge
 expansion, "blob vanished or <50% of own peak" ending, no seed suppression;
 notes/ewb.md) and the same morning's interim 200k-seed/+250 km-box rule
@@ -56,7 +64,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .event_tracker import Params, track_events
+from .event_tracker import (
+    Params,
+    persistence_box,
+    persistence_k_days,
+    track_events,
+)
 from .types import Event, make_event_id, normalize_lon_180
 
 logger = logging.getLogger(__name__)
@@ -249,6 +262,25 @@ def _mirror_t2m_daily(dates, lats, lons, reduce: str = "mean") -> np.ndarray | N
     return out - 273.15
 
 
+def _bridge_missing_days(mask: np.ndarray, t2m: np.ndarray | None) -> np.ndarray:
+    """A day with no truth keeps only the cells valid on both neighbouring days."""
+    if t2m is None:
+        return mask
+    out = mask.copy()
+    for i in np.flatnonzero(np.isnan(t2m).all(axis=(1, 2))):
+        if 0 < i < len(mask) - 1:
+            out[i] = mask[i - 1] & mask[i + 1]
+    return out
+
+
+def _observed_days(ev, dates: list[dt.date], missing: set[dt.date]) -> int:
+    """Event days with truth: a bridged day never counts toward ``min_days``."""
+    end = ev.end or dates[-1] + dt.timedelta(days=1)
+    return sum(1 for d in dates if ev.start <= d < end and d not in missing)
+
+
+TRACK_RULE_REV = "c3-v4"  # bump when the heat/freeze/cold_snap tracking rule changes (cache key); c3-v4 = merge survivor "largest_close" + missing-truth days bridged
+
 FREEZE_MAX_C = 0.0   # freeze cells: t2m <= this (degC) at all four 6-hourly steps
 
 # Per-type temperature ceiling applied to the daily mask before tracking
@@ -330,9 +362,11 @@ def scan_temperature_events(
 
     Tracking is the owner's footprint/core methodology
     (``ewb_live/events/event_tracker.py``, SPEC §2): regions -> candidates at
-    50k km2 -> events at 200k km2 of footprint, box grows with the footprint,
-    end when the core (valid every day since the start, measured in the day-3
-    anchor box) holds less than 100k km2. ``min_area_km2`` overrides the 200k
+    50k km2 -> events at 200k km2 of footprint, an end when the core (valid
+    every day since the event qualified, measured in its anchor box) holds less
+    than 100k km2. The tracker box keeps growing with the footprint (follow/
+    claim/seeding geometry); the published Event bbox is the persistence box
+    and the id hashes the day-3 anchor box (SPEC §2, 2026-11-20 rule). ``min_area_km2`` overrides the 200k
     qualify floor; ``params`` replaces the whole settings block.
     Returns Events overlapping the window, sorted by start.
     """
@@ -405,12 +439,25 @@ def scan_temperature_events(
                                "the <=0C rule; truth mirror unavailable")
         mask = mask & (t2m_dmax <= max_c)
 
+    mask = _bridge_missing_days(mask, t2m_dmax)
     raw = track_events(mask, dates, cell_area, p, event_type)
+    if t2m_dmax is not None:
+        missing = {dates[i] for i in np.flatnonzero(np.isnan(t2m_dmax).all(axis=(1, 2)))}
+        raw = [ev for ev in raw if _observed_days(ev, dates, missing) >= p.min_days]
     logger.info("  tracked %s: %d valid events (%d cells-days valid)",
                 event_type, len(raw), int(mask.sum()))
 
     # --------------------------------------------------------- Event mapping --
-    from ..viz.build import consecutive_days
+    from ..viz import build as vb
+
+    # land mask on the mask grid: the denominator of the published `fill`
+    # (ocean cells can never be valid, so a whole-box denominator would lie)
+    try:
+        land = vb.land_mask(lats, lons)
+    except Exception as exc:                    # noqa: BLE001 - provenance only
+        logger.warning("no land mask for the fill stats (%s); publishing "
+                       "fill=None", exc)
+        land = None
 
     out: list[Event] = []
     dropped = 0
@@ -421,27 +468,39 @@ def scan_temperature_events(
         last = (ev.end - dt.timedelta(days=1)) if ev.end else dates[-1]
         if last < start:
             continue     # active only in the lookback, outside the window
+        d0 = dates.index(ev.start)
+        d1 = dates.index(last)
+        # the published rectangle: the persistence box (SPEC §2: cells valid
+        # on >= half the event's days, 2-98 % trimmed), falling back to the
+        # tracker box; publish_box="tracker" keeps the pre-2026-11-20 rule
+        pub_box = ev.box
+        if p.publish_box == "persistence":
+            pub_box = persistence_box(
+                mask[d0:d1 + 1], ev.box, cell_area,
+                persistence_k_days(d1 - d0 + 1, p.publish_min_fraction),
+                p.publish_trim) or ev.box
+        pub_mask = pub_box.mask(ny, nx)
         start_dt = dt.datetime.combine(ev.start, dt.time())
         end_excl = ev.end or (dates[-1] + dt.timedelta(days=1))
         end_dt = dt.datetime.combine(end_excl, dt.time())
-        cols = np.flatnonzero(ev.box.columns(nx))
-        if ev.box.j0 > ev.box.j1:      # wrapped box: order the columns as one
-            cols = np.concatenate([cols[cols >= ev.box.j0],   # continuous band
-                                   cols[cols <= ev.box.j1]])  # across 180
+        cols = np.flatnonzero(pub_box.columns(nx))
+        if pub_box.j0 > pub_box.j1:      # wrapped box: order the columns as one
+            cols = np.concatenate([cols[cols >= pub_box.j0],   # continuous band
+                                   cols[cols <= pub_box.j1]])  # across 180
         bbox = (
-            float(lats[ev.box.i0]),
-            float(lats[ev.box.i1]),
-            normalize_lon_180(float(lons[ev.box.j0])),
-            normalize_lon_180(float(lons[ev.box.j1])),
+            float(lats[pub_box.i0]),
+            float(lats[pub_box.i1]),
+            normalize_lon_180(float(lons[pub_box.j0])),
+            normalize_lon_180(float(lons[pub_box.j1])),
         )
-        # per-cell run lengths inside the box (curation severity + dashboard)
-        sub = mask[:, ev.box.i0:ev.box.i1 + 1][:, :, cols]
-        d0 = dates.index(ev.start)
-        d1 = dates.index(last)
-        runs = consecutive_days(sub[d0:d1 + 1])
+        # per-cell run lengths inside the published box (curation severity +
+        # dashboard)
+        sub = mask[:, pub_box.i0:pub_box.i1 + 1][:, :, cols]
+        runs = vb.consecutive_days(sub[d0:d1 + 1])
         over_floor = runs[runs >= p.min_days]
         if t2m_daily is not None:
-            sub_t = t2m_daily[d0:d1 + 1][:, ev.box.i0:ev.box.i1 + 1][:, :, cols]
+            sub_t = (t2m_daily[d0:d1 + 1][:, pub_box.i0:pub_box.i1 + 1]
+                     [:, :, cols])
             stats = _temp_stats(sub_t[sub[d0:d1 + 1]], event_type)
             if stats:
                 stats["temp_source"] = t2m_source
@@ -467,9 +526,25 @@ def scan_temperature_events(
         if event_type == "cold_snap" and t2m_dmax is not None:
             from .cold_snap import subzero_flags
 
-            sub_dmax = t2m_dmax[d0:d1 + 1][:, ev.box.i0:ev.box.i1 + 1][:, :, cols]
+            sub_dmax = (t2m_dmax[d0:d1 + 1][:, pub_box.i0:pub_box.i1 + 1]
+                        [:, :, cols])
             subzero = subzero_flags(sub[d0:d1 + 1], sub_dmax)
 
+        # how much of the published box is really the event (SPEC §2): fill
+        # = land area of the event's valid cells / land area of the box;
+        # daily_fill = the same share on a typical single day (the dilution
+        # the score sees)
+        land_area = (0.0 if land is None else
+                     float(((land & pub_mask) * cell_area).sum()))
+        fill: float | None = None
+        daily_fill: float | None = None
+        if land_area > 0.0:
+            days_sub = mask[d0:d1 + 1]
+            pub_land = pub_mask & land
+            fill = round(float(((days_sub.any(axis=0) & pub_land)
+                                * cell_area).sum()) / land_area, 3)
+            daily = [float(((m & pub_land) * cell_area).sum()) for m in days_sub]
+            daily_fill = round(float(np.median(daily)) / land_area, 3)
         details: dict[str, Any] = {
             "quantile": quantile,
             **subzero,
@@ -491,11 +566,26 @@ def scan_temperature_events(
             "duration_days": ev.duration_days,
             "footprint_area_km2": [round(a, 1) for a in ev.footprint_area_km2],
             "box_area_km2": [round(a, 1) for a in ev.box_area_km2],
-            "core_area_km2": [round(a, 1) for a in ev.core_area_km2],
+            # SPEC §2: the core counts from the qualifying day. The ramp days
+            # are not a core in that sense (the start clock counted cells from
+            # the seed day, the qualify clock counts everything valid before
+            # it), so the series publishes null before qualified_date and the
+            # numbers that follow mean exactly what SPEC says.
+            "core_area_km2": [None if k < (0 if ev.qualified is None
+                                           else (ev.qualified - ev.start).days)
+                              else round(a, 1) for k, a in
+                              enumerate(ev.core_area_km2)],
             "anchor_box": None if ev.anchor is None else [
                 float(lats[ev.anchor.i0]), float(lats[ev.anchor.i1]),
                 normalize_lon_180(float(lons[ev.anchor.j0])),
                 normalize_lon_180(float(lons[ev.anchor.j1]))],
+            # box provenance (SPEC §2): the tracking box vs the published one
+            "tracker_box_area_km2": round(float(
+                cell_area[ev.box.mask(ny, nx)].sum()), 1),
+            "published_box_area_km2": round(float(
+                cell_area[pub_mask].sum()), 1),
+            "fill": fill,
+            "daily_fill": daily_fill,
             "tracker_params": dataclasses.asdict(p),
             "detection": ("footprint/core tracker: candidate >="
                           f"{p.seed_area_km2:.0f} km2, event >="
@@ -505,9 +595,25 @@ def scan_temperature_events(
         if ev.start == dates[0]:
             # the tracker cannot see before the first day it has masks for
             details["window_start_truncated"] = True
+        # Stable identity (2026-11-20): the id hashes the ANCHOR bbox (the
+        # tracker box as it stood on day 3, frozen for the event's life), not
+        # the published box. The persistence box is redrawn as an ongoing
+        # spell grows - hashing it would re-key ~3/4 of ongoing events every
+        # weekly run (measured 6/8 vs 2/5 shipped,
+        # scripts/review/hb04_ongoing_ids.py) - while start and anchor do not
+        # move, so an ongoing event keeps its id/URL/score-cache lineage while
+        # it is alive. anchor_day=None falls back to hashing the published
+        # box (the pre-2026-11-20 rule).
+        id_box = ev.anchor if ev.anchor is not None else pub_box
+        id_bbox = (
+            float(lats[id_box.i0]),
+            float(lats[id_box.i1]),
+            normalize_lon_180(float(lons[id_box.j0])),
+            normalize_lon_180(float(lons[id_box.j1])),
+        )
         out.append(
             Event(
-                id=make_event_id(event_type, start_dt, bbox),
+                id=make_event_id(event_type, start_dt, id_bbox),
                 event_type=event_type,
                 title=f"{event_type.replace('_', ' ').title()} {ev.start} to {last}",
                 start=start_dt,
@@ -633,10 +739,10 @@ def recompute_merged_max_consec(events: list[Event], cutoff) -> int:
             land = vb.land_mask(lat, lon)
             passed = ((t > thr) if e.event_type == "heat_wave" else (t < thr)) & land
             daily = passed.reshape(len(times) // 4, 4, len(lat), len(lon)).min(axis=1)
+            tmax = t.reshape(len(times) // 4, 4, len(lat), len(lon)).max(axis=1)
             if e.event_type == "freeze":
-                tmax = (t.reshape(len(times) // 4, 4, len(lat), len(lon))
-                        .max(axis=1) - 273.15)
-                daily = daily & (tmax <= FREEZE_MAX_C)
+                daily = daily & (tmax - 273.15 <= FREEZE_MAX_C)
+            daily = _bridge_missing_days(daily, tmax)
             d["max_consecutive_days"] = int(vb.consecutive_days(daily).max())
             n += 1
         except Exception as exc:  # noqa: BLE001 — keep member-max, never fail detection

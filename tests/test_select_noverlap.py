@@ -310,3 +310,102 @@ def test_adjudicated_exclusion_drops_event(tmp_path, monkeypatch):
     assert [e.id for e in out] == [b.id]
     drop = [d for d in decisions if d["action"] == "drop" and d["id"] == a.id]
     assert drop and "post-tropical cyclone" in drop[0]["reason"]
+
+
+# ------------------------------------------------- merged per-box provenance
+
+def test_merged_event_voids_the_per_box_provenance():
+    """Review #3: the merged union bbox must not ship the core's per-box fields."""
+    d0 = dt.date(2026, 9, 1)
+    core = mk("heat_wave", d0, 4, (10.0, 20.0, 0.0, 10.0), 40.0, sev=5,
+              fill=0.9, daily_fill=0.7, published_box_area_km2=1.0e6,
+              tracker_box_area_km2=1.2e6, anchor_box=[10.0, 20.0, 0.0, 10.0])
+    mate = mk("heat_wave", d0 + dt.timedelta(days=3), 4,
+              (11.0, 19.0, 4.0, 14.0), 38.0, sev=3)
+    out = select.rank_and_cap([core, mate], top_n=15)
+    assert len(out) == 1
+    merged = out[0]
+    assert merged.bbox == (10.0, 20.0, 0.0, 14.0)      # the union
+    for key in ("fill", "daily_fill", "published_box_area_km2",
+                "tracker_box_area_km2", "anchor_box"):
+        assert merged.details[key] is None, key
+    assert sorted(merged.details["per_box_voided"]) == sorted(
+        ["fill", "daily_fill", "published_box_area_km2",
+         "tracker_box_area_km2", "anchor_box"])
+    assert merged.details["merged_count"] == 2
+
+
+def test_core_fallback_merge_keeps_the_per_box_provenance():
+    """The core-fallback bbox IS the core's box - its fields stay valid."""
+    d0 = dt.date(2026, 9, 1)
+    # the severity-ordered union spans 41 deg of latitude -> over
+    # CAP_LAT_SPAN, so _merge_component falls back to the core's own bbox
+    core = mk("heat_wave", d0, 4, (0.0, 39.0, 0.0, 60.0), 40.0, sev=5,
+              fill=0.9, published_box_area_km2=1.0e6)
+    far = mk("heat_wave", d0 + dt.timedelta(days=3), 4,
+             (1.0, 41.0, 0.0, 60.0), 38.0, sev=3)
+    decisions: list[dict] = []
+    merged = select._merge_component([core, far], decisions)
+    assert merged.bbox == core.bbox                    # core-fallback bbox
+    assert merged.details["fill"] == 0.9
+    assert merged.details["published_box_area_km2"] == 1.0e6
+    assert "per_box_voided" not in merged.details
+
+
+CONT_BOX = (30.0, 40.0, -100.0, -90.0)
+
+
+def test_continuation_keeps_a_fragment_the_merge_cap_stranded():
+    a = mk("heat_wave", dt.date(2026, 8, 1), 14, CONT_BOX, 40.0, sev=10.0, id="a")
+    c = mk("heat_wave", dt.date(2026, 8, 15), 5, CONT_BOX, 39.0, sev=1.0, id="c")
+    decisions: list[dict] = []
+    out = select.rank_and_cap([a, c], 1, decisions)
+    assert [e.id for e in out] == ["a", "c"]
+    assert out[1].details["continues"] == "a"
+    assert "continues" not in c.details             # the pool event is not mutated
+    assert {"action": "continuation", "event_type": "heat_wave",
+            "id": "c", "continues": "a"} in decisions
+    assert_no_overlaps(out)
+
+
+def test_continuation_is_one_hop():
+    a = mk("heat_wave", dt.date(2026, 8, 1), 14, CONT_BOX, 40.0, sev=10.0, id="a")
+    c = mk("heat_wave", dt.date(2026, 8, 15), 14, CONT_BOX, 39.0, sev=2.0, id="c")
+    d = mk("heat_wave", dt.date(2026, 8, 29), 14, CONT_BOX, 38.0, sev=1.0, id="d")
+    assert [e.id for e in select.rank_and_cap([a, c, d], 1)] == ["a", "c"]
+
+
+def test_continuation_never_applies_to_other_lanes():
+    a = mk("atmospheric_river", dt.date(2026, 8, 1), 8, CONT_BOX, 900.0, sev=10.0, id="a")
+    c = mk("atmospheric_river", dt.date(2026, 8, 9), 3, CONT_BOX, 800.0, sev=1.0, id="c")
+    assert [e.id for e in select.rank_and_cap([a, c], 1)] == ["a"]
+
+
+def test_continuation_respects_owner_exclusions(monkeypatch):
+    monkeypatch.setattr(select, "_load_exclusions", lambda: {"c": {"reason": "test"}})
+    a = mk("heat_wave", dt.date(2026, 8, 1), 14, CONT_BOX, 40.0, sev=10.0, id="a")
+    c = mk("heat_wave", dt.date(2026, 8, 15), 5, CONT_BOX, 39.0, sev=1.0, id="c")
+    assert [e.id for e in select.rank_and_cap([a, c], 1)] == ["a"]
+
+
+def test_continuation_never_overlaps_a_kept_event():
+    a = mk("heat_wave", dt.date(2026, 8, 1), 14, CONT_BOX, 40.0, sev=10.0, id="a")
+    c = mk("heat_wave", dt.date(2026, 8, 15), 5, CONT_BOX, 39.0, sev=1.0, id="c")
+    f = mk("freeze", dt.date(2026, 8, 16), 4, CONT_BOX, -5.0, sev=10.0, id="f")
+    out = select.rank_and_cap([a, c, f], 1)
+    assert sorted(e.id for e in out) == ["a", "f"]
+    assert_no_overlaps(out)
+
+
+def test_severity_cache_separates_events_sharing_an_id():
+    short = mk("heat_wave", dt.date(2026, 8, 1), 5, CONT_BOX, 40.0, sev=1.0, id="same")
+    longer = mk("heat_wave", dt.date(2026, 8, 1), 9, CONT_BOX, 40.0, sev=7.0, id="same")
+    assert select.severity(short) == 1.0
+    assert select.severity(longer) == 7.0
+
+
+def test_continuation_tie_goes_to_the_more_severe_fragment():
+    a = mk("heat_wave", dt.date(2026, 8, 1), 14, CONT_BOX, 40.0, sev=10.0, id="a")
+    low = mk("heat_wave", dt.date(2026, 8, 15), 5, (30.0, 40.0, -100.0, -94.0), 39.0, sev=1.0, id="b-low")
+    high = mk("heat_wave", dt.date(2026, 8, 15), 5, (30.0, 40.0, -96.0, -90.0), 39.0, sev=2.0, id="c-high")
+    assert [e.id for e in select.rank_and_cap([a, low, high], 1)] == ["a", "c-high"]

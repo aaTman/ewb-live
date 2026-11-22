@@ -115,13 +115,66 @@ def score_event(event: Event, models: list[str]) -> pd.DataFrame
      bridging only happens inside an otherwise dense area. Valid cells always join; components are
      labelled with 8-connectivity.
   2. **Candidate:** a region whose valid area reaches **50 000 km²** (`seed_area_km2`) starts a candidate on its first qualifying day; a candidate must reach the qualify floor within `max_ramp_days`=5 days or it is dropped.
-  3. **Qualify:** the candidate becomes an **event** on the first day its *footprint* covers **200 000 km²** (`qualify_area_km2`) — `details.qualified_date`. The event's `start` stays the candidate's first day, so ramp-ups keep early start dates.
-  4. **Box:** the event box is the bbox of everything its footprint has covered, so it grows with the event (no fixed pad, no per-iteration expansion). The footprint may claim new region cells within `move_cells`=8 cells/day of what it already holds, and only where the region is claimed by nobody or overlaps an existing event's box by >= `min_overlap`=0.5 of the smaller side; older events claim first. `max_box_area_km2` (default `None`) caps growth where an owner wants smaller objects.
-  5. **End:** the **core** — the cells valid on *every* day since the event began, counted inside the **anchor box** (the box as it stood on day 3, `anchor_day`) — must hold >= **100 000 km²** (`end_area_km2`). Below that the event closes and that day is not part of it. This is what ends permanent-belt spells physically (longest in the live window: 33 days over central Africa) without a duration cap; `end` is exclusive.
-  An event still open at the end of the scan window is `ongoing` and keeps its start date across runs. `min_days`=3 is a detection floor (a shorter spell is not an event). Because 31-day caps are gone, the publish-gate ceiling is `validate.MAX_DURATION_DAYS = 45` (and `select.MAX_MERGED_DAYS`), above the longest real spell and below nonsense.
+  3. **Qualify:** the candidate becomes an **event** on the first day its *footprint* covers **200 000 km²** (`qualify_area_km2`) — `details.qualified_date`. The event's `start` stays the candidate's first day, so ramp-ups keep early start dates. Qualification also **starts the core clock**: from this day (not from the candidate's start) the core and the anchor are evaluated (owner decision 2026-11-21, `Params.core_clock="qualified"`). Under the shipped rule (`core_clock="start"`, still pinned by the flood lane) a growing spell was closed by its own qualifying day — the core still held only the small seed area — so its qualifying day fell outside its dates and the region was free to seed a successor the same day; 34 events in the live catalogue (29 heat + 2 freeze + 3 cold snaps) have `qualified_date == end` that way.
+  4. **Footprint (claim rule; revised by owner 2026-11-20, `notes/heatwave_box_diagnosis.md`).**
+     The footprint is a set of *valid* cells — cells that pass the daily rule that day —
+     never closing-filled cells. A labelled region continues an event only for the part
+     of it that is valid **and** within `move_cells`=8 cells of the cells the event
+     already holds; the rest of the region stays free and may seed its own candidate.
+     A new candidate's first box is the bbox of the region's **valid** cells. Follow and
+     order are otherwise unchanged: a region continues an event only where it overlaps
+     the drifted footprint by >= `min_overlap`=0.5 of the smaller side, older events
+     claim first. **Merge rule (`Params.merge_survivor`=`"largest_close"`, owner decision
+     2026-11-21):** when objects reach the same cells, the qualified member holding the
+     largest claim that day carries the group on (ties: older). Any other qualified
+     member already `min_days` old is closed and published with `end` = the merge day;
+     younger members and unqualified candidates are absorbed. Their claims are clipped
+     into the survivor's box and two boxes are never unioned (`max_box_area_km2`, default
+     `None`, remains an optional cap on box growth). `Params.merge_survivor` keeps the
+     other rules as `"oldest_qualified"`/`"largest"`/`"separate"`; the flood/legacy lanes
+     pin `"oldest_qualified"` and are byte-unchanged (`notes/footprint_tracker.md`).
+     **Missing truth:** a day whose ERA5 field is entirely NaN keeps only the cells valid
+     on both neighbouring days, so one missing interior day cannot end an event by itself.
+     A missing first or last scan day is not bridged, and two or more consecutive missing
+     days still split a spell. A bridged day never counts toward the `min_days` detection
+     floor, but published durations and run lengths include it.
+     **Continuations (curation, owner 2026-11-21):** a heat, freeze or cold-snap fragment
+     passed over by selection is still published, as its own event outside the per-type
+     quota, when it starts within `MERGE_GAP_DAYS` of a selected same-type event's end,
+     has bbox IoU >= `MERGE_MIN_IOU` with it, and overlaps nothing kept. One hop only;
+     `details.continues` names the parent.
+     **Empty truth points:** the ERA5 mirror records a point ARCO serves as entirely NaN
+     as `unavailable`, never complete, and retries it every run. The map lane lists such
+     frames in `index.json` `no_truth`, the map labels them, and when one recovers that
+     frame and every later frame are rebuilt.
+     Qualification is never inherited: an event's `qualified_date` is a
+     day *its own* footprint reached the floor, so a candidate that never reached it
+     is absorbed like any younger member and leaves no event (round-3 review fix,
+     2026-11-21 — the old oldest-survivor-with-inheritance rule published valid
+     events whose peak footprint was below the qualify floor). The **tracker box** is still the bbox of everything its footprint has
+     covered, growing and never shrinking: it is the follow/claim/seeding geometry and
+     the anchor's search area, not the published rectangle.
+  5. **Published box (what the dashboard draws and the scorer scores).** The Event
+     `bbox` is the **persistence box**: the bbox of the cells valid on at least
+     `publish_min_days` = max(2, ⌈0.5 × duration⌉) of the event's days
+     (`publish_min_fraction`=0.5), trimmed to the area-weighted 2–98 % latitude/longitude
+     quantiles of that mask (`publish_trim`=0.02; fallback: the bbox of every valid cell
+     the event ever held). The tracker box is reported in `details.tracker_box_area_km2`
+     next to `published_box_area_km2`, `fill` (the share of the published box's land that
+     was a qualifying cell on some event day) and `daily_fill` (that share on a typical
+     single day). The persistence box may hold **less** area than the footprint that
+     qualified the event — it keeps only the cells valid on at least `publish_min_days`
+     days, so a spell that qualified in one big push and then collapsed publishes a
+     rectangle smaller than its 200 000 km² qualify floor (measured on the C5 replay of
+     the live window: 15 of 215 published events hold less area in their persistence box
+     than their largest qualifying-day footprint, and 1 of 215 publishes a box under the
+     200 k km² floor); this is a publish-box property, not a tracking change, and is
+     listed as an open owner question (`notes/footprint_tracker.md`).
+  6. **End:** the **core** — the cells valid on *every* day since the event **qualified**, counted inside the **anchor box** — must hold >= **100 000 km²** (`end_area_km2`). Below that the event closes and that day is not part of it. The **anchor box** is the box as it stood on the later of day 3 (`anchor_day`) and the qualification day: it never freezes before qualification, so a spell that spends days growing into qualification anchors on the day it became an event. Because the core counts from the qualifying day, the qualifying day itself can never be the ending day: every valid event satisfies `start <= qualified < end` and its qualifying day is one of its recorded days. This is what ends permanent-belt spells physically (a belt that keeps re-claiming fresh ground still loses its core inside the frozen anchor box; longest in the qualification-clock replay of the live window: 28 days, 32 as shipped) without a duration cap; `end` is exclusive. A merge never hands qualification to a survivor that never reached the floor on its own footprint (see step 4), so a survivor's core clock and anchor always start on its own qualifying day — there is no merge-day clock.
+  An event still open at the end of the scan window is `ongoing` and keeps its start date across runs. The published id hashes `(type, start, anchor bbox)` — the tracker box as it stood on the anchor day (day 3, or the qualification day when that is later), frozen for the event's life — so an ongoing event keeps its id across weekly runs while its start does, even as its persistence box is redrawn (2026-11-21, measured in `scripts/review/hb04_ongoing_ids.py` under the earlier `separate` rule and not re-measured for `largest_close`: the +7d weekly extend kept the id of **all 10** ongoing heat spells on the anchor basis — the published-box basis would have re-keyed 6 of them; under slid window starts (+7/+14 d) 8 of the 10 ongoing spells pair into the slid catalogue and **all 8 keep their anchor id** (published basis 3/8), the two non-pairing spells re-seed under new starts at the slid window head rather than re-keying; under `largest_close` an ongoing spell absorbed by a larger one is closed at the merge day; lanes with `anchor_day=None` hash the published bbox, and curation-merged ids in `select.py` keep hashing the merged bbox). `min_days`=3 is a detection floor (a shorter spell is not an event). Because 31-day caps are gone, the publish-gate ceiling is `validate.MAX_DURATION_DAYS = 45` (and `select.MAX_MERGED_DAYS`), above the longest real spell and below nonsense.
   **Mask source:** the daily masks are read from the published `raw_exceedance` frames (four steps ANDed; `ewb_live/events/frame_masks.py`) whenever the lane spans the window and the active clip is the lane's owb p85/p15, so detection cannot drift from what the map paints or from `qualified_at`; otherwise ERA5 ARCO is streamed through the upstream helpers. Daily-mean temperatures for `peak_value` come from the local ERA5 mirror on the same grid (`_mirror_t2m_daily`), per event when the mirror cannot serve the window.
   `qualified_at` scans frames from `details.qualified_date` onwards, so a grown box cannot qualify an event before its own footprint reached the floor.
-  Per-event provenance is published in `details`: `qualified_date`, `duration_days`, `ongoing`, `footprint_area_km2`, `box_area_km2`, `core_area_km2`, `anchor_box`, `mask_source`, `peak_area_km2`, `tracker_params`, `detection`.
+  Per-event provenance is published in `details`: `qualified_date`, `duration_days`, `ongoing`, `footprint_area_km2`, `box_area_km2`, `core_area_km2` (`null` for days before `qualified_date` — the core counts from the qualifying day, so the ramp days are not a core in that sense; the series stays day-aligned with the footprint series), `anchor_box`, `mask_source`, `peak_area_km2`, `tracker_box_area_km2`, `published_box_area_km2`, `fill`, `daily_fill`, `tracker_params`, `detection`.
 
 ### 3. `ewb_live/pipeline.py` (owner: agent `ewb`, integration later)
 `python -m ewb_live.pipeline --days 90` → writes:

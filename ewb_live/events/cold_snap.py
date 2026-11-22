@@ -77,10 +77,11 @@ def subzero_flags(active: np.ndarray, dmax_c: np.ndarray) -> dict[str, Any]:
     """
     if active is None or dmax_c is None or not active.size:
         return {}
-    cells = active.reshape(-1)
+    dmax = np.asarray(dmax_c, np.float32).reshape(-1)
+    cells = active.reshape(-1) & np.isfinite(dmax)  # a bridged no-truth day has no temperature
     if not cells.any():
         return {}
-    sub = (np.asarray(dmax_c, np.float32) <= 0.0).reshape(-1)[cells]
+    sub = (dmax <= 0.0)[cells]
     frac = float(sub.mean()) if sub.size else 0.0
     return {
         "subzero_cell_fraction": round(frac, 4),

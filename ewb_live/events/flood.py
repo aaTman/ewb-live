@@ -87,7 +87,7 @@ import logging
 import os
 import sys
 from bisect import bisect_left
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence
 
 import numpy as np
 import xarray as xr
@@ -169,6 +169,18 @@ class FloodParams(Params):
     #                     that walks 2 deg overnight is still the same event)
     #   max_box_area_km2 1.5e6  an object whose box is bigger than that (~35x43
     #                     deg at the equator) is a season, not an event
+    #   box-size rule knobs (2026-11-20): pinned to the shipped tracking rules.
+    #                     The valid-only claim/seed, keep-the-older-box merge
+    #                     and persistence publish box were designed and
+    #                     measured for heat/freeze spells
+    #                     (notes/heatwave_box_diagnosis.md); the flood lane
+    #                     keeps its pre-change geometry until re-measured, and
+    #                     already caps its box via max_box_area_km2.
+    #   core_clock "start"  the core counts every-day-valid cells from the
+    #                     candidate's start day (the pre-2026-11-21 rule). The
+    #                     qualify-clock decision is the owner's for the
+    #                     heat/freeze/cold_snap lane only; floods are not
+    #                     re-measured against it, so they keep the old clock.
     seed_area_km2: float = 1.0e4
     qualify_area_km2: float = 5.0e4
     end_area_km2: float = 1.0e4
@@ -179,8 +191,20 @@ class FloodParams(Params):
     move_cells: int = 4
     min_overlap: float = 0.4
     join_area_km2: float = 2.0e3
+    core_clock: Literal["qualified", "start"] = "start"
     anchor_day: int | None = 2
     max_box_area_km2: float | None = 1.5e6
+    claim_valid_only: bool = False
+    seed_valid_only: bool = False
+    merge_keep_box: bool = False
+    # inert here (merge_keep_box=False ignores it) but PINNED: the value is
+    # published in every flood event's details.tracker_params, so inheriting
+    # the base default (now "largest_close") would claim a rule
+    # this lane does not run - the pre-2026-11-21 merge is what the flood
+    # digest is pinned to
+    merge_survivor: Literal["oldest_qualified", "largest", "largest_close",
+                            "separate"] = "oldest_qualified"
+    publish_box: Literal["persistence", "tracker"] = "tracker"
 
 
 FLOOD_PARAMS = FloodParams()
