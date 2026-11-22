@@ -240,12 +240,12 @@ def test_region_renders_scorecard_with_honest_counts(dash):
     page.select_option("#region-select", "northern_hemisphere")
     page.wait_for_function("() => window.__debug.state.region === 'northern_hemisphere'")
     assert "No atmospheric rivers in Northern Hemisphere" in page.inner_text("#scorecard-tables")
-    page.locator("#sc-views button", has_text="Heat wave").click()
+    page.locator('#sc-views button[data-tab="heat_wave"]').click()
     assert "2 events" in lane(page, "Heat wave").locator("h3").inner_text()
     page.select_option("#region-select", "tropics")
     page.wait_for_function("() => window.__debug.state.region === 'tropics'")
     assert "No heat waves in Tropics" in page.inner_text("#scorecard-tables")
-    page.locator("#sc-views button", has_text="Atm. river").click()
+    page.locator('#sc-views button[data-tab="atmospheric_river"]').click()
     assert "1 event" in lane(page, "Atmospheric river").locator("h3").inner_text()
     assert errs == []
 
@@ -265,9 +265,9 @@ def test_merged_map_region_view(dash):
     corner = page.evaluate("() => window.MergedMap._dbg().project([-12.5, 35])")
     assert corner and 0 <= corner[0] <= w and 0 <= corner[1], f"corner {corner} off canvas (W={w})"
     # region view survives a type-tab repaint (counts are region-filtered)
-    page.locator("#type-tabs button", has_text="Heat wave").click()
+    page.locator('#type-tabs button[data-tab="heat_wave"]').click()
     assert page.evaluate("() => window.MergedMap._dbg().region") == "europe"
-    page.locator("#type-tabs button", has_text="All").click()
+    page.locator('#type-tabs button[data-tab="all"]').click()
     page.select_option("#region-select", "global")
     page.wait_for_function("() => window.MergedMap._dbg().region === null", timeout=4000)
     p3 = page.evaluate("() => window.MergedMap._dbg().project([0, 0])")
@@ -321,9 +321,8 @@ def test_region_filters_lists_and_counts(dash):
     assert page.evaluate(sec_aria).startswith("Europe")
     assert page.evaluate(KV_EVENTS) == "2"      # matches the contract's n_events
     badges = tab_badges(page)
-    assert badges["heat_wave"].startswith("Heat wave") and badges["heat_wave"].strip().endswith("1")
+    assert badges["heat_wave"].startswith("Heat") and badges["heat_wave"].strip().endswith("1")
     assert badges["freeze"].startswith("Freeze") and badges["freeze"].strip().endswith("1")
-    # the AR chip is labelled "Atm. river" in the grid; data-tab is the identity
     assert badges["atmospheric_river"].strip().endswith("0"), badges["atmospheric_river"]
     assert page.inner_text("#event-count").startswith("2 event")
     titles = page.eval_on_selector_all("#event-table tbody tr td:nth-child(2)",

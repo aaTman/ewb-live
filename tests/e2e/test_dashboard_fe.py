@@ -1992,7 +1992,7 @@ def test_show_tabs_are_the_only_layer_toggle(dur_server, page_ctx):
     tabs = page.locator("#type-tabs button")
     assert tabs.count() == 8            # All + every published lane (zeros included)
     labels = " ".join(tabs.all_inner_texts())
-    assert "Heat wave" in labels and "Freeze" in labels and "Atm. river" in labels
+    assert "Heat" in labels and "Freeze" in labels and "AR" in labels
     page.wait_for_selector("#gm-legend .lg-group", state="attached", timeout=20000)
     assert page.eval_on_selector_all("#gm-legend .lg-group",
                                      "els => els.map(e => e.dataset.layer)") == ["h", "f", "a"]

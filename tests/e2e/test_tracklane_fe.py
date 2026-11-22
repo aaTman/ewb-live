@@ -398,15 +398,15 @@ def test_header_truth_is_lane_aware(scored_page):
     """The header said TRUTH ERA5 on the TC tab although TC is scored vs IBTrACS (owner review)."""
     pg = scored_page
     assert _truth(pg) == "IBTrACS"                                     # the page opens on #tab=tropical_cyclone
-    pg.locator("#sc-views button", has_text="Overview").click()
+    pg.locator('#sc-views button[data-tab="all"]').click()
     pg.wait_for_timeout(300)
     mix = _truth(pg)
     assert "ERA5" in mix and "IBTrACS" in mix, mix
-    pg.locator("#sc-views button", has_text="Atm. river").click()
+    pg.locator('#sc-views button[data-tab="atmospheric_river"]').click()
     pg.wait_for_timeout(300)
     other = _truth(pg)
     assert "ERA5" in other and "IBTrACS" not in other, other           # other lanes unchanged
-    pg.locator("#sc-views button", has_text="Trop. cyclone").click()
+    pg.locator('#sc-views button[data-tab="tropical_cyclone"]').click()
     pg.wait_for_timeout(300)
     assert _truth(pg) == "IBTrACS"
     assert "IBTrACS best track" in pg.get_attribute("#kv-line .kv:has(.k:text-is('truth')) .v", "title")

@@ -512,55 +512,69 @@ nav.controls {
 .type-filter { display: block; }
 .type-filter > .ctl-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }   /* sr-only */
-#type-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 5px; min-width: 0; }
 
-.etype-tab { position: relative; display: inline-flex; align-items: center; gap: 6px;
-  flex: 0 1 auto; min-width: 0; height: 30px; padding: 0 10px;
-  border-radius: 999px; background: var(--bg-panel); border: 1px solid var(--border);
-  color: var(--matte-black); font: 400 var(--text-sm)/1 var(--font-sans); cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+/* ---- Event-type segmented underline rail (Option B + segmented rail) ------
+   One quiet recessed tray replaces 8 separate pill borders. Inside the rail:
+   concise Gantt-matching labels, 8 px lane color squares, hairline family
+   dividers (All | Temperature | Water | Storms), and an elevated active
+   segment anchored by a 2.5 px hazard-colored underline bar. */
+#type-tabs {
+  display: inline-flex; flex-wrap: nowrap; align-items: stretch; gap: 2px;
+  max-width: 100%; min-width: 0; padding: 3px 4px;
+  background: var(--bg-inset); border: 1px solid var(--border); border-radius: 8px;
+}
+.etype-tab {
+  position: relative; display: inline-flex; align-items: center; gap: 6px;
+  flex: 0 0 auto; min-width: 0; height: 30px; padding: 0 10px 2px;
+  border-radius: 5px; background: transparent; border: 1px solid transparent;
+  color: var(--ink-secondary); font: 450 var(--text-sm)/1 var(--font-sans);
+  cursor: pointer; white-space: nowrap;
+  transition: background-color 110ms ease, color 110ms ease, border-color 110ms ease;
+}
 .etype-tab .t-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.etype-tab svg { width: 14px; height: 14px; flex: none; color: var(--etype, var(--stone-grey)); }
-.etype-tab.is-all svg { color: var(--stone-grey); }   /* "All" has no identity hue */
-.etype-tab.unscored { border-style: dashed; }          /* tracked on map, not yet benchmarked */
-.etype-tab:hover { background: var(--tint); border-color: var(--border-strong); }
-/* Selected = solid inverted pill, matching Scorecard view pills, All|On map,
-   lead pills, and Track scope toggle across the entire app. */
+.etype-tab .sw {
+  width: 8px; height: 8px; border-radius: 2px; flex: none;
+  background: var(--etype, var(--stone-grey)); opacity: 0.9;
+}
+.etype-tab.unscored .sw {
+  background: transparent; border: 1.5px solid var(--etype, var(--stone-grey));
+}
+.etype-tab:hover {
+  color: var(--matte-black);
+  background: color-mix(in srgb, var(--bg-panel) 60%, transparent);
+}
 .etype-tab[aria-selected="true"] {
-  background: var(--matte-black); border-color: var(--matte-black); border-style: solid;
-  color: var(--canvas); font-weight: 500; box-shadow: none; }
-.etype-tab[aria-selected="true"]:hover { background: var(--matte-black); opacity: 0.92; }
-.etype-tab[aria-selected="true"] svg { color: var(--canvas); }
-.etype-tab .n { min-width: 2ch; text-align: right;                  /* counts don't jiggle (no CLS) */
+  background: var(--bg-panel); border-color: var(--border); color: var(--matte-black);
+  font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.etype-tab[aria-selected="true"]::after {
+  content: ""; position: absolute; left: 7px; right: 7px; bottom: 0; height: 2.5px;
+  border-radius: 2px 2px 0 0; background: var(--etype, var(--matte-black));
+}
+.etype-tab[aria-selected="true"]:hover { background: var(--bg-panel); }
+.etype-tab[aria-selected="true"] .sw { opacity: 1; }
+.etype-tab .n {
+  min-width: 1.5ch; text-align: right;
   font: 400 var(--text-xs)/1 var(--font-mono); font-variant-numeric: tabular-nums;
-  color: var(--ink-secondary); }                                    /* 5.4:1 on paper */
-.etype-tab[aria-selected="true"] .n { color: var(--canvas); opacity: 0.85; }
-.etype-tab.zero .n { color: var(--ink-muted); }                     /* honest zero: quieter, still selectable */
-/* Group captions: presentational only (role=none + aria-hidden), so the
-   tablist's owned set is unchanged and the roving-tabindex order skips them.
-   On the one-line desktop row each is a hairline divider (the text stays in the
-   DOM for the a11y-hidden caption, zero-sized visually); where chips wrap
-   (phone / narrow shells) the divider has no honest place and is not drawn. */
-.type-group { display: none; }
-@media (min-width: 1400px) {
-  .type-group { display: block; flex: none; width: 1px; height: 18px; margin: 0 3px;
-    background: var(--border-strong); font-size: 0; overflow: hidden; user-select: none; }
-  .type-group[data-group="temperature"] { display: none; }   /* nothing before the first group */
+  color: var(--ink-muted);
 }
-/* Mid widths (1100-1399): the shell is 75vw and the rail takes 220 px, so the Show
-   row has ~910 px at a 1280 laptop and the eight chips need ~965 at full padding —
-   they wrapped to a second row (+36 px of first screen, measured 2026-11-21). Tighter
-   chip padding/gaps (still 30 px tall, icon + label + count, nothing truncated) bring
-   it to ~880 px: one row from 1260 up. From 1400 the group dividers return and the
-   row has room at full size. */
-@media (min-width: 1100px) and (max-width: 1399px) {
-  #type-tabs { gap: 6px 4px; }
-  .etype-tab { gap: 4px; padding: 0 6px; }
+.etype-tab[aria-selected="true"] .n { color: var(--ink-secondary); }
+.etype-tab.zero .n { opacity: 0.7; }
+/* Hairline vertical dividers inside the rail separating All | Temp | Water | Storms */
+.type-group {
+  display: block; flex: none; align-self: center;
+  width: 1px; height: 15px; margin: 0 4px;
+  background: var(--border-strong); opacity: 0.65;
+  font-size: 0; overflow: hidden; user-select: none;
 }
-/* touch: 44 px targets (M7), same visual metrics; chips share the row evenly */
+@media (max-width: 760px) {
+  .etype-tab { padding: 0 8px 2px; gap: 5px; }
+  .type-group { margin: 0 2px; }
+}
+/* touch: 44 px targets (M7), smooth horizontal swipe rail on narrow screens */
 @media (pointer: coarse), (max-width: 479px) {
-  .etype-tab { height: 44px; flex: 1 1 auto; justify-content: center; }
-  #type-tabs { gap: 8px; }
+  .etype-tab { height: 44px; flex: 0 0 auto; justify-content: center; }
+  #type-tabs { gap: 2px; }
 }
 /* event-list rows: the glyph replaces the old colour dot (identity not colour-alone) */
 #event-table .type-ic { display: inline-flex; margin-top: 2px; color: var(--etype, var(--stone-grey)); }
@@ -1566,18 +1580,46 @@ html[data-theme="dark"] {
   font: 500 var(--text-2xs)/1.35 var(--font-sans); letter-spacing: 0.08em;
   text-transform: uppercase; vertical-align: 1px; }
 
-/* ---- scorecard view strip ------------------------------------------------ */
-.sc-views { flex-wrap: wrap; gap: 6px; }
-.sc-view { display: inline-flex; align-items: center; gap: 6px; height: 26px;
-  padding: 0 10px; border-radius: 999px; background: var(--bg-panel);
-  border: 1px solid var(--border-strong); color: var(--matte-black);
-  font: 400 var(--text-xs)/1 var(--font-sans); cursor: pointer; }
-.sc-view .n { font: 400 var(--text-2xs)/1 var(--font-mono); color: var(--ink-secondary);
+/* ---- scorecard view strip (same segmented underline rail as Events) ------ */
+.sc-views {
+  display: inline-flex; flex-wrap: nowrap; align-items: stretch; gap: 2px;
+  max-width: 100%; overflow-x: auto; scrollbar-width: none;
+  padding: 3px 4px; background: var(--bg-inset); border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.sc-views::-webkit-scrollbar { display: none; }
+.sc-div {
+  display: block; flex: none; align-self: center;
+  width: 1px; height: 14px; margin: 0 3px;
+  background: var(--border-strong); opacity: 0.65;
+}
+.sc-view {
+  position: relative; display: inline-flex; align-items: center; gap: 5px;
+  flex: 0 0 auto; height: 28px; padding: 0 9px 2px;
+  border-radius: 5px; background: transparent; border: 1px solid transparent;
+  color: var(--ink-secondary); font: 450 var(--text-xs)/1 var(--font-sans);
+  cursor: pointer; white-space: nowrap;
+  transition: background-color 110ms ease, color 110ms ease, border-color 110ms ease;
+}
+.sc-view .sw {
+  width: 7px; height: 7px; border-radius: 2px; flex: none;
+  background: var(--etype, var(--stone-grey)); opacity: 0.9;
+}
+.sc-view .n { font: 400 var(--text-2xs)/1 var(--font-mono); color: var(--ink-muted);
   font-variant-numeric: tabular-nums; }
-.sc-view:hover { background: var(--tint); }
-.sc-view.on { background: var(--matte-black); border-color: var(--matte-black);
-  color: var(--canvas); font-weight: 500; }
-.sc-view.on .n { color: var(--canvas); opacity: .8; }
+.sc-view:hover {
+  color: var(--matte-black);
+  background: color-mix(in srgb, var(--bg-panel) 60%, transparent);
+}
+.sc-view.on {
+  background: var(--bg-panel); border-color: var(--border); color: var(--matte-black);
+  font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.sc-view.on::after {
+  content: ""; position: absolute; left: 6px; right: 6px; bottom: 0; height: 2.5px;
+  border-radius: 2px 2px 0 0; background: var(--etype, var(--matte-black));
+}
+.sc-view.on .n { color: var(--ink-secondary); }
 
 /* ---- KPI leader strip ----------------------------------------------------
    One card per scored hazard: the lane, how many events, the model that leads
@@ -1822,13 +1864,12 @@ details.det-unavail > *:not(summary) { font-size: var(--text-xs); color: var(--i
 #detail-viz input[type="color"] { width: 22px; height: 20px; padding: 0; cursor: pointer;
   background: none; border: 1px solid var(--border-strong); border-radius: 3px; }
 
-/* ---- the hazard filter row on phones ------------------------------------
-   Desktop keeps every chip on ONE row (the first screen is the budget); below
-   620 px the row becomes a smooth horizontal strip instead of three stacked
-   rows that push the map off the screen. */
+/* ---- the hazard filter rail on phones -----------------------------------
+   Desktop keeps the entire segmented rail on ONE crisp row; below 620 px the
+   rail becomes a smooth horizontal swipe strip with 44 px touch targets. */
 @media (max-width: 619px) {
-  #type-tabs { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
-    scroll-snap-type: x proximity; scrollbar-width: none; padding-bottom: 2px;
+  #type-tabs { display: flex; width: 100%; flex-wrap: nowrap; overflow-x: auto;
+    overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: none;
     -webkit-overflow-scrolling: touch; }
   #type-tabs::-webkit-scrollbar { display: none; }
   .etype-tab { flex: 0 0 auto; height: 44px; justify-content: center;

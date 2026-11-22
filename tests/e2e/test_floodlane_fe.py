@@ -218,11 +218,11 @@ def test_flood_header_truth_is_pardig(flood_page):
     assert _truth(pg) == "PARDIG (AI-estimated precip)", _truth(pg)
     tip = pg.get_attribute("#kv-line .kv:has(.k:text-is('truth')) .v", "title")
     assert tip and "PARDIG" in tip, tip
-    pg.locator("#sc-views button", has_text="Overview").click()
+    pg.locator('#sc-views button[data-tab="all"]').click()
     pg.wait_for_timeout(300)
     mix = _truth(pg)
     assert "ERA5" in mix and "PARDIG (flood)" in mix, mix       # the 'all' mix names both lanes
-    pg.locator("#sc-views button", has_text="Heat wave").click()
+    pg.locator('#sc-views button[data-tab="heat_wave"]').click()
     pg.wait_for_timeout(300)
     other = _truth(pg)
     assert "ERA5" in other and "PARDIG" not in other, other     # other lanes unchanged

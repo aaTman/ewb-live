@@ -51,11 +51,11 @@ const TYPE_GROUP_LABEL = { heat_wave: 'Temperature', atmospheric_river: 'Water',
 /* Which grid row a chip belongs to: All travels with the Temperature row, and
    Water + Storms share the second. Captions are keyed by group name. */
 const TYPE_GROUP_KEY = { Temperature: 'temperature', Water: 'water', Storms: 'storms' };
-/* chip labels are short (one line in a four-across grid, not truncated); the
-   full label + the one-line detection rule ride the tooltip (About copy) */
-const TYPE_TAB_LABEL = { heat_wave: 'Heat wave', cold_snap: 'Cold snap', freeze: 'Freeze',
-  atmospheric_river: 'Atm. river', flood: 'Flood', tropical_cyclone: 'Trop. cyclone',
-  midlat_cyclone: 'Midlat. cyclone' };
+/* concise rail labels matching the Gantt lane names; full names and detection
+   rules ride each tab's tooltip and the active section header */
+const TYPE_TAB_LABEL = { heat_wave: 'Heat', cold_snap: 'Cold', freeze: 'Freeze',
+  atmospheric_river: 'AR', flood: 'Flood', tropical_cyclone: 'TC',
+  midlat_cyclone: 'MLC' };
 /* monoline glyphs — identity never colour alone (dataviz): every lane reads
    by shape at 15 px, the series hue is only the third channel */
 const TYPE_ICONS = {
@@ -991,9 +991,10 @@ function renderControls() {
   const inReg = (e) => state.region === 'global' || inRegion(e);
   const mkTab = (id, tabLabel, n, iconKey, slot) => {
     const unscored = id !== 'all' && state.scorecard.length > 0 && !laneHasScores(id);
+    const sw = iconKey === 'all' ? '' : '<i class="sw" aria-hidden="true"></i>';
     const b = el('button', 'etype-tab' + (iconKey === 'all' ? ' is-all' : '')
       + (n === 0 ? ' zero' : '') + (unscored ? ' unscored' : ''),
-      typeIcon(iconKey) + `<span class="t-label">${esc(tabLabel)}</span>`
+      sw + `<span class="t-label">${esc(tabLabel)}</span>`
       + `<span class="n">${n}</span>`);
     b.type = 'button';
     b.setAttribute('role', 'tab');
@@ -1490,16 +1491,20 @@ function renderKpiStrip(idx) {
   host.hidden = !host.children.length;
 }
 
-/* View strip: Overview + one pill per hazard with events in this view. */
+/* View strip: segmented underline rail matching the Events landing bar —
+   Overview | Temperature | Water | Storms. */
 function renderScViews() {
   const host = $('#sc-views');
   if (!host) return;
   host.innerHTML = '';
   const inReg = (e) => state.region === 'global' || inRegion(e);
   const mk = (id, label, n, tip) => {
-    const b = el('button', 'sc-view' + (state.tab === id ? ' on' : ''),
-      `${esc(label)}<span class="n">${n}</span>`);
+    const sw = id === 'all' ? '' : '<i class="sw" aria-hidden="true"></i>';
+    const b = el('button', 'sc-view' + (id === 'all' ? ' is-all' : '') + (state.tab === id ? ' on' : ''),
+      sw + `<span class="t-label">${esc(label)}</span><span class="n">${n}</span>`);
     b.type = 'button';
+    b.dataset.tab = id;
+    b.dataset.etype = id;
     b.setAttribute('aria-pressed', String(state.tab === id));
     if (tip) b.title = tip;
     b.onclick = () => setTab(id);
@@ -1507,9 +1512,18 @@ function renderScViews() {
   };
   mk('all', 'Overview', state.events.filter(inReg).length,
     'One Models × Hazards overview — every scored lane in one table.');
+  let lastGroup = null;
+  let curGroup = null;
   for (const t of TYPE_ORDER) {
+    if (TYPE_GROUP_LABEL[t]) curGroup = TYPE_GROUP_LABEL[t];
     const n = state.events.filter((e) => e.event_type === t && inReg(e)).length;
     if (!n) continue;
+    if (curGroup !== lastGroup) {
+      const div = el('span', 'sc-div');
+      div.setAttribute('aria-hidden', 'true');
+      host.appendChild(div);
+      lastGroup = curGroup;
+    }
     mk(t, TYPE_TAB_LABEL[t] || TYPE_META[t].short, n,
       `${TYPE_META[t].label} — lead by lead. ${TYPE_META[t].rule || ''}`);
   }
@@ -1545,7 +1559,7 @@ function renderOverviewMatrix(idx) {
     const th = el('th', 'mx-head');
     const b = el('button', 'mx-drill');
     b.type = 'button';
-    b.innerHTML = `<span class="mx-name">${esc(TYPE_TAB_LABEL[L.etype] || TYPE_META[L.etype].short)}</span>`
+    b.innerHTML = `<span class="mx-name">${esc(TYPE_META[L.etype].short || TYPE_TAB_LABEL[L.etype])}</span>`
       + `<span class="mx-met">${esc(mm.label)}${mm.units ? ` [${esc(mm.units)}]` : ''}</span>`
       + `<span class="mx-n">${n} event${n === 1 ? '' : 's'}</span>`;
     b.title = `${TYPE_META[L.etype].label} — ${mm.label}${mm.units ? ` (${mm.units})` : ''}, `
