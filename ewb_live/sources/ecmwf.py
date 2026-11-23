@@ -167,7 +167,10 @@ def open_forecast(
             blob += _fetch_bytes(rel, obj, rec["_offset"], rec["_offset"] + rec["_length"])
         if not blob:
             return None
-        return lead, _decode_grib(blob)
+        decoded = _decode_grib(blob)
+        if bbox is not None:
+            decoded = _cut_decoded(decoded, bbox)
+        return lead, decoded
 
     n_par = int(_os.environ.get("EWB_LIVE_LEAD_PARALLEL", "8"))
     if n_par > 1:
@@ -192,6 +195,37 @@ def open_forecast(
     if not leads_used:
         raise ValueError(f"no leads available for {spec.name} init {init:%Y-%m-%d %H:%MZ}")
     return _assemble_grib(surface_parts, level_parts, init, leads_used, bbox)
+
+
+def _cut_decoded(decoded: dict[str, xr.DataArray],
+                 bbox: tuple[float, float, float, float]) -> dict[str, xr.DataArray]:
+    """Crop per-lead decoded fields to the bbox right after decoding.
+
+    The ecmwf-forecasts GRIB byte ranges are GLOBAL fields (region padding
+    saves no transfer, see ewb_live/scoring/fc_cache.py), so without this
+    every lead's full 0.25-deg globe stays materialised until assemble()
+    finally cuts at the end of _assemble_grib — the AR-job peak measured
+    141.7 GB RSS on the 2026-11-22 weekly (antimeridian event, ~11% box).
+
+    This applies exactly the normalize_longitude + subset_latlon that
+    assemble() applies per array, so the assembled result is unchanged
+    (assemble re-applies the same cut — idempotent); the win is peak RAM.
+    Wrapped boxes (lon_min > lon_max) keep selecting the antimeridian arc
+    via lon_indices. Shared-array aliasing from _decode_grib (short name +
+    cfgrib name pointing at one DataArray) is preserved so each field is
+    cut once.
+    """
+    from ._transform import normalize_longitude, subset_latlon
+
+    cut: dict[int, xr.DataArray] = {}
+    out: dict[str, xr.DataArray] = {}
+    for key, da in decoded.items():
+        c = cut.get(id(da))
+        if c is None:
+            c = subset_latlon(normalize_longitude(da), bbox)
+            cut[id(da)] = c
+        out[key] = c
+    return out
 
 
 def _decode_grib(blob: bytes) -> dict[str, xr.DataArray]:
