@@ -43,9 +43,10 @@ flood       keep: peak 72 h accumulation >= 50 mm over >= 10,000 km2 (the
             these events with a documented "unsupported" pair status
             (UNSCORED_TYPES below; same treatment as the tropical-cyclone lane).
 
-PRODUCT RULE (owner, 2026-11-06, revised same day): NO two events may
-overlap in BOTH time and space in the final selection, and mega-merges of
-distinct events are forbidden. Curation therefore runs three phases:
+PRODUCT RULE (owner, 2026-11-06, revised same day): NO two events of the SAME
+type may overlap in BOTH time and space in the final selection, and mega-merges
+of distinct events are forbidden. Cross-type pairs are evicted only when the
+overlap is MATERIAL (owner, 2026-11-23, see rule 2). Curation runs four phases:
 
 1. merge_same_type: only FRAGMENTS OF THE SAME EVENT merge — same-type
    events that are temporally contiguous (gap <= 1 day) AND have bbox
@@ -55,7 +56,14 @@ distinct events are forbidden. Curation therefore runs three phases:
 2. resolve conflicts: any two surviving events (same or different type)
    that still overlap in time+space — e.g. a low-IoU neighbour of a
    merged cluster — are decided by WITHIN-TYPE SEVERITY PERCENTILE: the
-   higher percentile is kept, the other dropped.
+   higher percentile is kept, the other dropped. SAME type keeps the
+   zero-overlap rule of 2026-11-06 unchanged. CROSS type needs a MATERIAL
+   overlap, i.e. bbox containment (intersection area / smaller box area)
+   >= CROSS_TYPE_MIN_CONTAINMENT; below the floor a graze is not a conflict
+   and the pair is published together. Measured failure this fixes: a 4-day
+   IMERG flood whose box only clipped the corner of a 17-day US heat wave
+   (containment 0.27, IoU 0.06) evicted the heat wave, and with it the
+   continuation fragment that would have carried the spell into the showcase.
 3. greedy order: candidates are consumed in global percentile order up
    to top_n per type, so a drop frees the slot for the next candidate
    under the same rules (refill).
@@ -87,6 +95,23 @@ AR_IVT_BASELINE = 400.0  # the EWB mask threshold
 # 1500 kg/m/s is above every legit selected event (max 1435) and below
 # Dolphin/Isaias/monsoon blobs (1785-2972).
 AR_MAX_PEAK_IVT = float(os.environ.get("EWB_LIVE_AR_IVT_MAX_KGM_S", "1500"))
+
+# Cross-type conflict floor (owner 2026-11-23): a cross-type pair is a conflict
+# only when the smaller box is at least this fraction *inside* the other
+# (see _bbox_containment). Same-type eviction never uses it.
+# 0.5 = "material means at least half of the smaller event is inside". W47
+# replay: floors 0.3/0.5/0.7 all rescue the US heat-wave chain (graze 0.268);
+# 0.3 wins on diff size (9 id changes vs 12) but leaves only 0.03 of margin
+# over the measured graze, so the next corner-touch slightly deeper would
+# evict again — a rule that flip-flops weekly is worse than one slightly
+# stricter (0.7 rejected too: 17 changes, removes fill-0.926 events).
+_CTMC_RAW = os.environ.get("EWB_LIVE_CROSSTYPE_MIN_CONTAINMENT", "0.5")
+CROSS_TYPE_MIN_CONTAINMENT = float(_CTMC_RAW)
+if not 0.0 <= CROSS_TYPE_MIN_CONTAINMENT <= 1.0:
+    # a floor outside [0, 1] silently disables cross-type eviction (>1, NaN)
+    # or silently reverts to the pre-floor rule (<0); fail loudly at import
+    raise ValueError("EWB_LIVE_CROSSTYPE_MIN_CONTAINMENT must be in [0, 1], "
+                     f"got {_CTMC_RAW!r}")
 
 # --- track lanes (tc 2026-11-16, mlc 2026-11-17) ------------------------- #
 # A cyclone is a TRACK event, not an area event: one storm / one stitched low =
@@ -522,6 +547,38 @@ def _bbox_iou(a_bbox, b_bbox) -> float:
     return inter / union if union > 0 else 0.0
 
 
+def _bbox_containment(a_bbox, b_bbox) -> float:
+    """Intersection area / SMALLER box area, in deg^2 (arc-aware lon wrap).
+
+    IoU's forgiving sibling: it asks "how much of the SMALLER box sits inside
+    the other", so a flood that covers a third of a heat wave scores high
+    while a corner graze scores low, whatever the size gap between them.
+    Ranges 0..1; 0.0 when the boxes do not intersect.
+
+    Areas are deg^2, so the numerator and denominator share one space (a
+    ratio, not an area) — but deg^2 is not km^2: a degree of longitude is
+    shorter at high latitude, so a polar box and a tropical box of the same
+    km^2 get different scores. Accepted for a rule floor (owner 2026-11-23):
+    the floor only separates grazes (0.0-0.3) from real overlaps (0.5+), and
+    a cos(lat)-integrated version would add a raster dependency to a
+    decision that is not about physical exposure.
+    """
+    lat_i = min(a_bbox[1], b_bbox[1]) - max(a_bbox[0], b_bbox[0])
+    if lat_i <= 0.0:
+        return 0.0
+    lon_i = 0.0
+    for l0, h0 in _lon_arcs(a_bbox[2], a_bbox[3]):
+        for l1, h1 in _lon_arcs(b_bbox[2], b_bbox[3]):
+            lon_i += max(0.0, min(h0, h1) - max(l0, l1))
+    if lon_i <= 0.0:
+        return 0.0
+    inter = lat_i * lon_i
+    a_area = (a_bbox[1] - a_bbox[0]) * ((a_bbox[3] - a_bbox[2]) % 360.0 or 360.0)
+    b_area = (b_bbox[1] - b_bbox[0]) * ((b_bbox[3] - b_bbox[2]) % 360.0 or 360.0)
+    smaller = min(a_area, b_area)
+    return inter / smaller if smaller > 0 else 0.0
+
+
 def merge_same_type(events: list, decisions: list[dict]) -> list:
     """Merge only same-event fragments, greedily from the highest-severity
     seed: same type, temporal contiguity (gap <= MERGE_GAP_DAYS) AND bbox
@@ -582,12 +639,51 @@ def _load_exclusions() -> dict:
     return {str(k): dict(v) for k, v in raw.items() if isinstance(v, dict)}
 
 
+def _conflict_with(e, accepted: list):
+    """The first accepted event that conflicts with ``e``, or None.
+
+    A conflict is a time+space overlap (_overlaps) that the product rule
+    cares about: same-type pairs always conflict (the zero-overlap rule of
+    2026-11-06), cross-type pairs only when the overlap is material, i.e.
+    bbox containment >= CROSS_TYPE_MIN_CONTAINMENT (owner 2026-11-23). A
+    sub-floor graze is NOT a conflict: checking continues against the rest
+    of the accepted set, so ``e`` can still be published next to that
+    neighbour. TRACK lanes never conflict (_overlaps exempts them).
+
+    Returns ``(conflict, kind, containment)``; ``containment`` is None for
+    same-type drops (the floor does not apply to them). When the scan finds
+    no conflict but did see sub-floor grazes, returns the WORST one (max
+    containment — the one an auditor wants) as ``(grazer, "graze",
+    containment)`` so the caller can log it — the pair is NOT a conflict and
+    the candidate is still accepted.
+    """
+    graze = None
+    for a in accepted:
+        if not _overlaps(a, e):
+            continue
+        if a.event_type == e.event_type:
+            return a, "same-type-overlap", None
+        cont = _bbox_containment(a.bbox, e.bbox)
+        if cont >= CROSS_TYPE_MIN_CONTAINMENT:
+            return a, "cross-type", cont
+        if graze is None or cont > graze[2]:
+            graze = a, "graze", cont
+        logger.info(
+            "curation PASS %s %s past cross-type neighbour %s %s: containment "
+            "%.3f < floor %.2f (graze, not a conflict)",
+            e.event_type, e.id, a.event_type, a.id, cont,
+            CROSS_TYPE_MIN_CONTAINMENT)
+    return graze
+
+
 def _resolve_conflicts(merged_by_type: dict[str, list], top_n_map: dict[str, int],
                        decisions: list[dict]) -> list:
     """Global greedy by within-type severity PERCENTILE: any surviving pair
     (same or cross type) that overlaps in time+space goes to the higher
-    percentile; the loser is dropped. Per-type quota top_n; greedy order
-    lets lower-ranked candidates refill freed slots (rule 3)."""
+    percentile; the loser is dropped. Same-type pairs conflict on ANY
+    overlap; cross-type pairs only at containment >=
+    CROSS_TYPE_MIN_CONTAINMENT (owner 2026-11-23). Per-type quota top_n;
+    greedy order lets lower-ranked candidates refill freed slots (rule 3)."""
     exclusions = _load_exclusions()
     queue = []
     for t, evs in merged_by_type.items():
@@ -616,21 +712,31 @@ def _resolve_conflicts(merged_by_type: dict[str, list], top_n_map: dict[str, int
                               "event_type": t, "id": e.id,
                               "rank": _rank_of(e)})
             continue
-        conflict = next((a for a in accepted if _overlaps(a, e)), None)
+        conflict = _conflict_with(e, accepted)
         if conflict is not None:
-            kind = ("cross-type" if conflict.event_type != t
-                    else "same-type-overlap")
-            decisions.append({
-                "action": "drop", "reason": kind,
-                "event_type": t, "id": e.id, "rank": _rank_of(e),
-                "kept": conflict.id, "kept_type": conflict.event_type,
-                "kept_rank": _rank_of(conflict),
-            })
-            logger.info(
-                "curation DROP %s %s (rank %d) overlaps %s %s (rank %d) -> keep higher rank",
-                e.id, t, _rank_of(e), conflict.event_type, conflict.id,
-                _rank_of(conflict))
-            continue
+            kept, kind, containment = conflict
+            if kind == "graze":
+                # paper trail only: sub-floor grazes are published together
+                decisions.append({"action": "cross-type-graze", "event_type": t,
+                                  "id": e.id, "kept": kept.id,
+                                  "containment": round(containment, 3),
+                                  "containment_floor": CROSS_TYPE_MIN_CONTAINMENT})
+            else:
+                drop = {
+                    "action": "drop", "reason": kind,
+                    "event_type": t, "id": e.id, "rank": _rank_of(e),
+                    "kept": kept.id, "kept_type": kept.event_type,
+                    "kept_rank": _rank_of(kept),
+                }
+                if containment is not None:
+                    drop["containment"] = round(containment, 3)
+                    drop["containment_floor"] = CROSS_TYPE_MIN_CONTAINMENT
+                decisions.append(drop)
+                logger.info(
+                    "curation DROP %s %s (rank %d) overlaps %s %s (rank %d) -> keep higher rank",
+                    e.event_type, e.id, _rank_of(e), kept.event_type, kept.id,
+                    _rank_of(kept))
+                continue
         accepted.append(e)
         quota[t] = quota.get(t, 0) + 1
     return accepted
@@ -639,8 +745,10 @@ def _resolve_conflicts(merged_by_type: dict[str, list], top_n_map: dict[str, int
 def _add_continuations(selected: list, pool: list, decisions: list[dict]) -> list:
     """Keep a passed-over temperature fragment that directly continues a
     selected event (owner 2026-11-21): same type, starting 0..MERGE_GAP_DAYS
-    after that event ends, bbox IoU >= MERGE_MIN_IOU, and no time+space overlap
-    with anything kept. One hop only, and outside the per-type quota: the event
+    after that event ends, bbox IoU >= MERGE_MIN_IOU, and conflicting with
+    nothing kept — the SAME predicate as phase 2 (2026-11-23): a same-type
+    overlap or a material cross-type overlap blocks the hop; a sub-floor
+    graze does not. One hop only, and outside the per-type quota: the event
     stays its own row, so the merged-duration cap cannot hide its days."""
     import dataclasses
 
@@ -658,8 +766,18 @@ def _add_continuations(selected: list, pool: list, decisions: list[dict]) -> lis
         parent = next((s for s in parents if s.event_type == c.event_type
                        and 0.0 <= (c.start - s.end).total_seconds() / 86400.0 <= MERGE_GAP_DAYS
                        and _bbox_iou(c.bbox, s.bbox) >= MERGE_MIN_IOU), None)
-        if parent is None or any(_overlaps(a, c) for a in accepted):
+        if parent is None:
             continue
+        conflict = _conflict_with(c, accepted)
+        if conflict is not None and conflict[1] != "graze":
+            decisions.append({"action": "continuation-skipped", "event_type": c.event_type,
+                              "id": c.id, "kept": conflict[0].id, "reason": conflict[1]})
+            continue
+        if conflict is not None:      # graze: hop proceeds, paper trail like phase 2
+            decisions.append({"action": "cross-type-graze", "event_type": c.event_type,
+                              "id": c.id, "kept": conflict[0].id,
+                              "containment": round(conflict[2], 3),
+                              "containment_floor": CROSS_TYPE_MIN_CONTAINMENT})
         accepted.append(dataclasses.replace(
             c, details={**(c.details or {}), "continues": parent.id}))
         decisions.append({"action": "continuation", "event_type": c.event_type,
@@ -670,9 +788,11 @@ def _add_continuations(selected: list, pool: list, decisions: list[dict]) -> lis
 
 def rank_and_cap(events, top_n: int | dict[str, int] = DEFAULT_TOP_N,
                  decisions: list[dict] | None = None) -> list:
-    """Floor, merge same-type chains, resolve cross-type conflicts with
-    refill, cap per event type. Guarantees zero time+space overlap pairs in
-    the returned set (owner rule 2026-11-06). Decisions (merge/drop log) go
+    """Floor, merge same-type chains, resolve conflicts with refill, cap per
+    event type. Guarantees zero time+space overlap pairs BETWEEN SAME-TYPE
+    EVENTS in the returned set; cross-type pairs may coexist when their
+    overlap is a graze below CROSS_TYPE_MIN_CONTAINMENT (owner rule
+    2026-11-06, floor added 2026-11-23). Decisions (merge/drop log) go
     to the optional list and to LAST_DECISIONS."""
     if decisions is None:
         decisions = []
