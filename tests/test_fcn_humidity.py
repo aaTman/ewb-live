@@ -18,7 +18,6 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from extremeweatherbench import defaults
 
 
 def _fcn_like_ds(t_val: float, rh_pct: float) -> xr.Dataset:
@@ -63,6 +62,8 @@ def _expected_q(t_kelvin: float, rh_frac: float, p_hpa: float) -> float:
 def test_derived_q_matches_known_value():
     """T = 280 K, RH = 50 % on the 850 hPa level -> q = 3.63e-3 kg/kg
     (hand-checkable: e_s ~ 9.91 hPa, w_sat ~ 7.34e-3)."""
+    pytest.importorskip("extremeweatherbench.defaults")
+    from extremeweatherbench import defaults
     t, rh = 280.0, 50.0
     out = defaults.preprocess_cira_icechunk_ar_forecast_dataset(_fcn_like_ds(t, rh))
     assert "specific_humidity" in out

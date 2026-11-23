@@ -8,6 +8,12 @@ Conflicts=ewb-live-pipeline.service
 [Service]
 Type=oneshot
 OOMPolicy=continue
+# OOM blast-radius cap (incident 2026-11-23): the bench/IVT stage peaks ~150 GB
+# per AR job; two of those would OOM-kill globally on the 251G LXC. Throttle at
+# 190G, hard-kill INSIDE the unit at 215G (kernel kills the scoring child ->
+# failed_jobs; OOMPolicy=continue keeps the weekly alive).
+MemoryHigh=190G
+MemoryMax=215G
 WorkingDirectory=__REPO__
 Environment=EWB_LIVE_AR_JOBS=1
 ExecStart=__REPO__/.venv/bin/python -m ewb_live.weekly --jobs 2
