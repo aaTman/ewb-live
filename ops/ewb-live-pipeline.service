@@ -12,6 +12,9 @@ RestartSec=60
 Environment=EWB_LIVE_SKIP_EVENTS=a3bb50ccde3d,4a9c67b01f25
 # Serial AR lane (1 AR + up to 2 std) fits comfortably within RAM alongside host tenants
 Environment=EWB_LIVE_AR_JOBS=1
+# OOM blast-radius cap, same rationale as ewb-live-weekly.service (2026-11-23)
+MemoryHigh=190G
+MemoryMax=215G
 
 [Install]
 WantedBy=multi-user.target
