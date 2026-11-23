@@ -61,12 +61,12 @@ install_units() {
   systemctl enable ewb-live-weekly.timer ewb-live-store.timer
   systemctl start ewb-live-weekly.timer 2>/dev/null || true
   systemctl start ewb-live-store.timer 2>/dev/null || true
-  # scoring lifecycle (stall postmortem 2026-11-07): the guard and the
-  # freshness timer always run; the pipeline unit ENABLES (so a host
-  # reboot resumes scoring) but is not force-started here — starting a
-  # full run stays an explicit agent/orchestrator act.
+  # scoring lifecycle (stall postmortem 2026-11-07, updated 2026-11-22): the
+  # guard and freshness timer always run, while the standalone pipeline unit
+  # stays disabled so a reboot/power cut never auto-launches unscheduled
+  # scoring outside ewb-live-weekly.timer or explicit orchestrator starts.
   systemctl enable --now ewb-live-memguard.service
-  systemctl enable ewb-live-pipeline.service
+  systemctl disable ewb-live-pipeline.service 2>/dev/null || true
   systemctl enable --now ewb-live-freshness.timer
   echo
   systemctl --no-pager --full status ewb-live-web.service | head -5 || true

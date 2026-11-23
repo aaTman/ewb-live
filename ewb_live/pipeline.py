@@ -1157,10 +1157,10 @@ def run(
         # (py-spy 2026-11-06: utils.convert_init_time_to_valid_time
         # union-reindex). Heat/freeze jobs (2mT only) peak ~8-13 GB. So AR
         # events run on their own lane with a lower concurrency
-        # (EWB_LIVE_AR_JOBS, default 2), everything else uses --jobs.
+        # (EWB_LIVE_AR_JOBS, default 1), everything else uses --jobs.
         import tempfile
 
-        ar_jobs = int(os.environ.get("EWB_LIVE_AR_JOBS", "2"))
+        ar_jobs = int(os.environ.get("EWB_LIVE_AR_JOBS", "1"))
         lanes = {"ar": [t for t in todo if t[0].event_type == "atmospheric_river"],
                  "std": [t for t in todo if t[0].event_type != "atmospheric_river"]}
         lane_workers = {"ar": max(1, min(ar_jobs, len(lanes["ar"]))),

@@ -1,6 +1,6 @@
 """EWB Live weekly refresh cycle (SPEC section 5).
 
-    python -m ewb_live.weekly [--days 90] [--jobs 4]
+    python -m ewb_live.weekly [--days 90] [--jobs 2]
 
 Order: (1) mlwp_icechunk update + source refresh hook, (2) new extreme-event
 search over the rolling 90-day window, (3) EWB eval for new/changed events and
@@ -154,7 +154,8 @@ def _leak_gate(stage: str) -> bool:
     return False
 
 
-def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
+def run(days: int = 90, jobs: int = 2, models: list[str] | None = None) -> int:
+    os.environ.setdefault("EWB_LIVE_AR_JOBS", "1")
     now = dt.datetime.now(dt.timezone.utc)
     week = _iso_week(now)
     LOGS.mkdir(parents=True, exist_ok=True)
@@ -308,15 +309,19 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
     return 0
 
 
+def _build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(prog="ewb_live.weekly")
+    ap.add_argument("--days", type=int, default=90)
+    ap.add_argument("--jobs", type=int, default=2)
+    ap.add_argument("--models", type=str, default=None, help="comma-separated model ids")
+    return ap
+
+
 def main(argv: list[str] | None = None) -> int:
     from ewb_live._guard import require_ewb_host  # CLI-only guard (see _guard.py)
 
     require_ewb_host()
-    ap = argparse.ArgumentParser(prog="ewb_live.weekly")
-    ap.add_argument("--days", type=int, default=90)
-    ap.add_argument("--jobs", type=int, default=4)
-    ap.add_argument("--models", type=str, default=None, help="comma-separated model ids")
-    args = ap.parse_args(argv)
+    args = _build_parser().parse_args(argv)
     return run(days=args.days, jobs=args.jobs,
                models=args.models.split(",") if args.models else None)
 

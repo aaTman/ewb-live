@@ -252,3 +252,32 @@ def test_open_remote_nc_config_not_in_client_kwargs(monkeypatch):
     assert "config" not in captured.get("client_kwargs", {})
     assert captured["client_kwargs"]["region_name"] == "us-east-1"
     assert captured["config_kwargs"] is not None
+
+
+# ------------------------------------------------ systemd & concurrency -----
+
+def test_weekly_service_hardened():
+    text = (REPO / "ops" / "ewb-live-weekly.service").read_text()
+    assert "OOMPolicy=continue" in text
+    assert "Environment=EWB_LIVE_AR_JOBS=1" in text
+    assert "Conflicts=ewb-live-pipeline.service" in text
+    assert "--jobs 2" in text
+
+
+def test_pipeline_service_hardened():
+    text = (REPO / "ops" / "ewb-live-pipeline.service").read_text()
+    assert "OOMPolicy=continue" in text
+    assert "Environment=EWB_LIVE_AR_JOBS=1" in text
+
+
+def test_install_sh_does_not_enable_pipeline_on_boot():
+    text = (REPO / "ops" / "install.sh").read_text()
+    assert "systemctl enable ewb-live-pipeline.service" not in text
+    assert "systemctl disable ewb-live-pipeline.service" in text
+
+
+def test_weekly_cli_defaults_jobs_to_2():
+    from ewb_live import weekly
+
+    args = weekly._build_parser().parse_args([])
+    assert args.jobs == 2
