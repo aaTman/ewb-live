@@ -23,12 +23,17 @@ def _offline_severity(monkeypatch):
 
 
 D0 = dt.datetime(2026, 9, 2)
+CONT = (30.0, 40.0, -100.0, -90.0)
 
 
-def ev(id_, etype, bbox, sev, start=D0, days=5):
+def ev(id_, etype, bbox, sev, start=D0, days=5, **det):
     return Event(id=id_, event_type=etype, title=f"{etype} {id_}",
                  start=start, end=start + dt.timedelta(days=days),
-                 bbox=bbox, peak_value=30.0, details={"sev": sev})
+                 bbox=bbox, peak_value=30.0,
+                 details={"sev": sev, **det})
+
+
+FLOOD_DET = {"peak_3day_mm": 80.0, "peak_area_km2": 2.0e5}  # floor envelope
 
 
 def resolve(by_type, decisions, floor=None, top_n=15):
@@ -157,7 +162,7 @@ def test_same_type_overlap_evicts_regardless_of_containment():
         decisions: list[dict] = []
         out = resolve({"heat_wave": [a, graze]}, decisions, floor=floor)
         assert [e.id for e in out] == ["heat-a"], floor
-        drop = [d for d in decisions if d["action"] == "drop"][0]
+        drop = next(d for d in decisions if d["action"] == "drop")
         assert drop["reason"] == "same-type-overlap"
         assert "containment" not in drop  # the floor did not apply
 
@@ -203,7 +208,7 @@ def test_floor_below_the_graze_reproduces_the_old_eviction():
         decisions: list[dict] = []
         out = resolve({"heat_wave": [heat], "flood": [flood]}, decisions, floor=floor)
         assert [e.id for e in out] == ["flood"], floor
-        drop = [d for d in decisions if d["action"] == "drop"][0]
+        drop = next(d for d in decisions if d["action"] == "drop")
         assert drop["reason"] == "cross-type" and drop["kept"] == "flood"
 
 
@@ -218,7 +223,7 @@ def test_a_grazing_neighbour_does_not_hide_a_real_conflict_behind_it():
     out = resolve({"flood": [flood], "freeze": [freeze], "heat_wave": [heat]},
                   decisions)
     assert sorted(e.id for e in out) == ["flood", "freeze"]
-    drop = [d for d in decisions if d["action"] == "drop"][0]
+    drop = next(d for d in decisions if d["action"] == "drop")
     assert drop["id"] == "heat" and drop["kept"] == "freeze"
     assert drop["reason"] == "cross-type"
 
@@ -232,3 +237,87 @@ def test_sub_floor_graze_is_logged_as_a_pass(caplog):
         resolve({"flood": [flood], "heat_wave": [heat]}, [])
     assert any("containment" in r.getMessage() and "flood" in r.getMessage()
                for r in caplog.records)
+
+
+# ------------------------------------------------- continuation gate (phase 3)
+
+def test_continuation_hops_past_a_sub_floor_grazer():
+    """Review finding 1 on 2fd2bd4 (major): the continuation gate must use the
+    SAME conflict predicate as phase 2 — a kept cross-type grazer must not
+    silently kill the hop. This is the production shape that motivated the
+    floor: flood F grazes both the chain P and its continuation c."""
+    p = ev("p", "heat_wave", HEAT_BOX, 10.0, days=14)            # Sep 2 -> 16
+    f = ev("f", "flood", FLOOD_BOX, 12.0, start=D0 + dt.timedelta(8),
+           days=15, **FLOOD_DET)                                              # Sep 10 -> 25
+    c = ev("c", "heat_wave", HEAT_BOX, 2.0, start=D0 + dt.timedelta(14),
+           days=6)                                               # Sep 16 -> 22
+    out = select.rank_and_cap([p, f, c], {"heat_wave": 1, "flood": 1})
+    assert sorted(e.id for e in out) == ["c", "f", "p"]
+    assert next(e for e in out if e.id == "c").details["continues"] == "p"
+
+
+def test_continuation_blocked_by_material_conflict_is_logged():
+    a = ev("a", "heat_wave", CONT, 10.0, days=14)
+    c = ev("c", "heat_wave", CONT, 2.0, start=D0 + dt.timedelta(14), days=5)
+    fz = ev("fz", "freeze", (35.0, 45.0, -105.0, -85.0), 9.0,
+            start=D0 + dt.timedelta(14), days=5)   # containment 0.5 of CONT
+    decisions: list[dict] = []
+    out = select.rank_and_cap([a, c, fz], {"heat_wave": 1, "freeze": 1},
+                              decisions)
+    assert sorted(e.id for e in out) == ["a", "fz"]
+    skip = [d for d in decisions if d["action"] == "continuation-skipped"]
+    assert [d["id"] for d in skip] == ["c"] and skip[0]["kept"] == "fz"
+
+
+def test_sub_floor_graze_publishes_an_audit_entry():
+    heat = ev("heat", "heat_wave", HEAT_BOX, 7.0, days=17)
+    flood = ev("flood", "flood", FLOOD_BOX, 10.0, days=4, **FLOOD_DET)
+    decisions: list[dict] = []
+    out = select.rank_and_cap([heat, flood], {"heat_wave": 1, "flood": 1},
+                              decisions)
+    assert sorted(e.id for e in out) == ["flood", "heat"]
+    g = [d for d in decisions if d["action"] == "cross-type-graze"]
+    assert len(g) == 1
+    assert g[0]["containment"] == pytest.approx(GRAZE_CONTAINMENT, abs=1e-3)
+
+
+def test_containment_equal_to_the_floor_evicts():
+    """The rule-level inclusive boundary (>=): math tests already pin 0.5,
+    no rule test pinned the eviction at exactly the floor."""
+    small = (8.0, 12.0, 5.0, 15.0)      # 40 deg2, wholly inside BIG
+    big = (0.0, 10.0, 0.0, 20.0)        # intersection 20 deg2 -> 20/40 = 0.5
+    a = ev("a", "heat_wave", big, 10.0)
+    b = ev("b", "freeze", small, 9.0)
+    decisions: list[dict] = []
+    out = select.rank_and_cap([a, b], {"heat_wave": 1, "freeze": 1}, decisions)
+    assert [e.id for e in out] == ["a"]
+    drop = next(d for d in decisions if d["action"] == "drop")
+    assert drop["reason"] == "cross-type" and drop["containment"] == 0.5
+
+
+def test_sub_floor_graze_does_not_hide_a_same_type_conflict():
+    fz = ev("fz", "freeze", FLOOD_BOX, 12.0)       # accepted first (sev 12)
+    a = ev("a", "heat_wave", HEAT_BOX, 10.0)       # rank 0, kept
+    x = ev("x", "heat_wave", (20.0, 30.0, -100.0, -90.0), 3.0)  # grazes fz,
+    # overlaps a in same type -> must drop for the SAME-TYPE conflict, not pass
+    decisions: list[dict] = []
+    out = select.rank_and_cap([fz, a, x], {"heat_wave": 2, "flood": 1}, decisions)
+    assert sorted(e.id for e in out) == ["a", "fz"]
+    drop = next(d for d in decisions if d["action"] == "drop" and d["id"] == "x")
+    assert drop["reason"] == "same-type-overlap" and drop["kept"] == "a"
+
+
+@pytest.mark.parametrize("bad", ["abc", "2", "-0.1", "nan"])
+def test_floor_env_is_validated_at_import(monkeypatch, bad):
+    """A floor outside [0, 1] silently disables cross-type eviction (>1, NaN)
+    or reverts the rule (<0); a typo must fail loudly at import instead."""
+    import importlib
+
+    monkeypatch.setenv("EWB_LIVE_CROSSTYPE_MIN_CONTAINMENT", bad)
+    try:
+        with pytest.raises(ValueError):
+            importlib.reload(select)
+    finally:
+        monkeypatch.delenv("EWB_LIVE_CROSSTYPE_MIN_CONTAINMENT")
+        importlib.reload(select)
+    assert select.CROSS_TYPE_MIN_CONTAINMENT == 0.5

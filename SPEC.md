@@ -144,16 +144,26 @@ def score_event(event: Event, models: list[str]) -> pd.DataFrame
      only when the overlap is material — bbox `containment` = intersection area
      / smaller box area (deg^2, arc-aware) >= `CROSS_TYPE_MIN_CONTAINMENT`
      (default 0.5, env `EWB_LIVE_CROSSTYPE_MIN_CONTAINMENT`). A graze below the
-     floor publishes both events side by side; real cross-type eviction still
+     floor publishes both events side by side (logged as `curation.json`
+     `cross-type-graze` entries); real cross-type eviction still
      happens in production (measured: 10 drops on the 2026-11-22 window). The
      failure this fixes: a 4-day IMERG flood clipping the corner of a 17-day US
      heat-wave chain (containment 0.268, IoU 0.059) evicted the chain, and with
      it the continuation fragment carrying the Sep 16–22 heat wave into the
-     showcase. TRACK lanes stay exempt (unchanged).
+     showcase. TRACK lanes stay exempt (unchanged). Carve-out: the
+     freeze⊃cold-snap subsumption of 2026-11-16 runs BEFORE curation on
+     specificity grounds and ignores this floor — a cold snap grazing a freeze
+     is still subsumed there even though curation would publish the pair.
+     The knob is validated at import: outside [0, 1] (or non-numeric) the
+     module refuses to load rather than silently disabling eviction.
      **Continuations (curation, owner 2026-11-21):** a heat, freeze or cold-snap fragment
      passed over by selection is still published, as its own event outside the per-type
      quota, when it starts within `MERGE_GAP_DAYS` of a selected same-type event's end,
-     has bbox IoU >= `MERGE_MIN_IOU` with it, and overlaps nothing kept. One hop only;
+     has bbox IoU >= `MERGE_MIN_IOU` with it, and conflicts with nothing kept
+     (2026-11-23: the same predicate as conflict resolution — a same-type
+     overlap or a material cross-type overlap blocks the hop, a sub-floor
+     graze does not; blocked hops are logged as
+     `curation.json` `continuation-skipped`). One hop only;
      `details.continues` names the parent.
      **Empty truth points:** the ERA5 mirror records a point ARCO serves as entirely NaN
      as `unavailable`, never complete, and retries it every run. The map lane lists such

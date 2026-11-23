@@ -158,7 +158,41 @@ def overlap(a, b):
 
 pairs = [(evs[i]["id"], evs[j]["id"]) for i in range(len(evs))
          for j in range(i + 1, len(evs)) if overlap(evs[i], evs[j])]
-out["curation"]["overlapping_pairs"] = pairs
+# classify pairs under the curation rule (owner 2026-11-06 + floor 2026-11-23):
+# same-type overlap or MATERIAL cross-type overlap (containment >= 0.5) is a
+# violation; a sub-floor graze and TRACK-lane pairs are legitimate
+TRACK = {"tropical_cyclone", "midlat_cyclone"}
+
+
+def _area(ev):
+    lat0, lat1, _, _ = _bb(ev)
+    w = sum(x1 - x0 for x0, x1 in arcs(ev))
+    return max(0.0, lat1 - lat0) * w
+
+
+def _inter(a, b):
+    la0, la1, _, _ = _bb(a)
+    lb0, lb1, _, _ = _bb(b)
+    li = max(0.0, min(la1, lb1) - max(la0, lb0))
+    wi = sum(max(0.0, min(x1, y1) - max(x0, y0))
+             for x0, x1 in arcs(a) for y0, y1 in arcs(b))
+    return li * wi
+
+
+viol, graze, exempt = [], [], []
+for i, j in pairs:
+    a, b = next(e for e in evs if e["id"] == i), next(e for e in evs if e["id"] == j)
+    if a["event_type"] == b["event_type"]:
+        viol.append([i, j, "same-type"])
+    elif a["event_type"] in TRACK or b["event_type"] in TRACK:
+        exempt.append([i, j, "track-lane"])
+    else:
+        cont = _inter(a, b) / max(min(_area(a), _area(b)), 1e-9)
+        (viol if cont >= 0.5 else graze).append([i, j, round(cont, 3)])
+out["curation"]["overlapping_pairs"] = [p[:2] for p in viol]
+out["curation"]["overlap_violations"] = viol
+out["curation"]["cross_type_grazes"] = graze
+out["curation"]["track_exemptions"] = exempt
 out["curation"]["events_missing_qualified_at"] = [e["id"] for e in evs if not e.get("qualified_at")]
 
 print(json.dumps(out, indent=1, default=str))

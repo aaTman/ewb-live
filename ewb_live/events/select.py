@@ -105,8 +105,13 @@ AR_MAX_PEAK_IVT = float(os.environ.get("EWB_LIVE_AR_IVT_MAX_KGM_S", "1500"))
 # over the measured graze, so the next corner-touch slightly deeper would
 # evict again — a rule that flip-flops weekly is worse than one slightly
 # stricter (0.7 rejected too: 17 changes, removes fill-0.926 events).
-CROSS_TYPE_MIN_CONTAINMENT = float(
-    os.environ.get("EWB_LIVE_CROSSTYPE_MIN_CONTAINMENT", "0.5"))
+_CTMC_RAW = os.environ.get("EWB_LIVE_CROSSTYPE_MIN_CONTAINMENT", "0.5")
+CROSS_TYPE_MIN_CONTAINMENT = float(_CTMC_RAW)
+if not 0.0 <= CROSS_TYPE_MIN_CONTAINMENT <= 1.0:
+    # a floor outside [0, 1] silently disables cross-type eviction (>1, NaN)
+    # or silently reverts to the pre-floor rule (<0); fail loudly at import
+    raise ValueError("EWB_LIVE_CROSSTYPE_MIN_CONTAINMENT must be in [0, 1], "
+                     f"got {_CTMC_RAW!r}")
 
 # --- track lanes (tc 2026-11-16, mlc 2026-11-17) ------------------------- #
 # A cyclone is a TRACK event, not an area event: one storm / one stitched low =
@@ -646,8 +651,12 @@ def _conflict_with(e, accepted: list):
     neighbour. TRACK lanes never conflict (_overlaps exempts them).
 
     Returns ``(conflict, kind, containment)``; ``containment`` is None for
-    same-type drops (the floor does not apply to them).
+    same-type drops (the floor does not apply to them). When the scan finds
+    no conflict but did see sub-floor grazes, returns the first graze as
+    ``(grazer, "graze", containment)`` so the caller can log it — the pair
+    is NOT a conflict and the candidate is still accepted.
     """
+    graze = None
     for a in accepted:
         if not _overlaps(a, e):
             continue
@@ -656,12 +665,14 @@ def _conflict_with(e, accepted: list):
         cont = _bbox_containment(a.bbox, e.bbox)
         if cont >= CROSS_TYPE_MIN_CONTAINMENT:
             return a, "cross-type", cont
+        if graze is None:
+            graze = a, "graze", cont
         logger.info(
             "curation PASS %s %s past cross-type neighbour %s %s: containment "
             "%.3f < floor %.2f (graze, not a conflict)",
             e.event_type, e.id, a.event_type, a.id, cont,
             CROSS_TYPE_MIN_CONTAINMENT)
-    return None
+    return graze
 
 
 def _resolve_conflicts(merged_by_type: dict[str, list], top_n_map: dict[str, int],
@@ -703,21 +714,28 @@ def _resolve_conflicts(merged_by_type: dict[str, list], top_n_map: dict[str, int
         conflict = _conflict_with(e, accepted)
         if conflict is not None:
             kept, kind, containment = conflict
-            drop = {
-                "action": "drop", "reason": kind,
-                "event_type": t, "id": e.id, "rank": _rank_of(e),
-                "kept": kept.id, "kept_type": kept.event_type,
-                "kept_rank": _rank_of(kept),
-            }
-            if containment is not None:
-                drop["containment"] = round(containment, 3)
-                drop["containment_floor"] = CROSS_TYPE_MIN_CONTAINMENT
-            decisions.append(drop)
-            logger.info(
-                "curation DROP %s %s (rank %d) overlaps %s %s (rank %d) -> keep higher rank",
-                e.event_type, e.id, _rank_of(e), kept.event_type, kept.id,
-                _rank_of(kept))
-            continue
+            if kind == "graze":
+                # paper trail only: sub-floor grazes are published together
+                decisions.append({"action": "cross-type-graze", "event_type": t,
+                                  "id": e.id, "kept": kept.id,
+                                  "containment": round(containment, 3),
+                                  "containment_floor": CROSS_TYPE_MIN_CONTAINMENT})
+            else:
+                drop = {
+                    "action": "drop", "reason": kind,
+                    "event_type": t, "id": e.id, "rank": _rank_of(e),
+                    "kept": kept.id, "kept_type": kept.event_type,
+                    "kept_rank": _rank_of(kept),
+                }
+                if containment is not None:
+                    drop["containment"] = round(containment, 3)
+                    drop["containment_floor"] = CROSS_TYPE_MIN_CONTAINMENT
+                decisions.append(drop)
+                logger.info(
+                    "curation DROP %s %s (rank %d) overlaps %s %s (rank %d) -> keep higher rank",
+                    e.event_type, e.id, _rank_of(e), kept.event_type, kept.id,
+                    _rank_of(kept))
+                continue
         accepted.append(e)
         quota[t] = quota.get(t, 0) + 1
     return accepted
@@ -726,8 +744,10 @@ def _resolve_conflicts(merged_by_type: dict[str, list], top_n_map: dict[str, int
 def _add_continuations(selected: list, pool: list, decisions: list[dict]) -> list:
     """Keep a passed-over temperature fragment that directly continues a
     selected event (owner 2026-11-21): same type, starting 0..MERGE_GAP_DAYS
-    after that event ends, bbox IoU >= MERGE_MIN_IOU, and no time+space overlap
-    with anything kept. One hop only, and outside the per-type quota: the event
+    after that event ends, bbox IoU >= MERGE_MIN_IOU, and conflicting with
+    nothing kept — the SAME predicate as phase 2 (2026-11-23): a same-type
+    overlap or a material cross-type overlap blocks the hop; a sub-floor
+    graze does not. One hop only, and outside the per-type quota: the event
     stays its own row, so the merged-duration cap cannot hide its days."""
     import dataclasses
 
@@ -745,7 +765,12 @@ def _add_continuations(selected: list, pool: list, decisions: list[dict]) -> lis
         parent = next((s for s in parents if s.event_type == c.event_type
                        and 0.0 <= (c.start - s.end).total_seconds() / 86400.0 <= MERGE_GAP_DAYS
                        and _bbox_iou(c.bbox, s.bbox) >= MERGE_MIN_IOU), None)
-        if parent is None or any(_overlaps(a, c) for a in accepted):
+        if parent is None:
+            continue
+        conflict = _conflict_with(c, accepted)
+        if conflict is not None and conflict[1] != "graze":
+            decisions.append({"action": "continuation-skipped", "event_type": c.event_type,
+                              "id": c.id, "kept": conflict[0].id, "reason": conflict[1]})
             continue
         accepted.append(dataclasses.replace(
             c, details={**(c.details or {}), "continues": parent.id}))
