@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Runs on the self-hosted mandelhub runner, which holds deploy credentials:
+    # never run code from fork PRs there.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, mandelhub]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      # ExtremeWeatherBench resolves via uv's git source in uv.lock; no manual
+      # third_party checkout is needed (uv sync fetches the pinned rev).
+      - run: uv sync --frozen
+      - run: uv run pytest -q -m "not network and not e2e"
