@@ -652,9 +652,10 @@ def _conflict_with(e, accepted: list):
 
     Returns ``(conflict, kind, containment)``; ``containment`` is None for
     same-type drops (the floor does not apply to them). When the scan finds
-    no conflict but did see sub-floor grazes, returns the first graze as
-    ``(grazer, "graze", containment)`` so the caller can log it — the pair
-    is NOT a conflict and the candidate is still accepted.
+    no conflict but did see sub-floor grazes, returns the WORST one (max
+    containment — the one an auditor wants) as ``(grazer, "graze",
+    containment)`` so the caller can log it — the pair is NOT a conflict and
+    the candidate is still accepted.
     """
     graze = None
     for a in accepted:
@@ -665,7 +666,7 @@ def _conflict_with(e, accepted: list):
         cont = _bbox_containment(a.bbox, e.bbox)
         if cont >= CROSS_TYPE_MIN_CONTAINMENT:
             return a, "cross-type", cont
-        if graze is None:
+        if graze is None or cont > graze[2]:
             graze = a, "graze", cont
         logger.info(
             "curation PASS %s %s past cross-type neighbour %s %s: containment "
@@ -772,6 +773,11 @@ def _add_continuations(selected: list, pool: list, decisions: list[dict]) -> lis
             decisions.append({"action": "continuation-skipped", "event_type": c.event_type,
                               "id": c.id, "kept": conflict[0].id, "reason": conflict[1]})
             continue
+        if conflict is not None:      # graze: hop proceeds, paper trail like phase 2
+            decisions.append({"action": "cross-type-graze", "event_type": c.event_type,
+                              "id": c.id, "kept": conflict[0].id,
+                              "containment": round(conflict[2], 3),
+                              "containment_floor": CROSS_TYPE_MIN_CONTAINMENT})
         accepted.append(dataclasses.replace(
             c, details={**(c.details or {}), "continues": parent.id}))
         decisions.append({"action": "continuation", "event_type": c.event_type,

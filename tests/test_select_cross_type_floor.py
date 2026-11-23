@@ -251,9 +251,13 @@ def test_continuation_hops_past_a_sub_floor_grazer():
            days=15, **FLOOD_DET)                                              # Sep 10 -> 25
     c = ev("c", "heat_wave", HEAT_BOX, 2.0, start=D0 + dt.timedelta(14),
            days=6)                                               # Sep 16 -> 22
-    out = select.rank_and_cap([p, f, c], {"heat_wave": 1, "flood": 1})
+    decisions: list[dict] = []
+    out = select.rank_and_cap([p, f, c], {"heat_wave": 1, "flood": 1}, decisions)
     assert sorted(e.id for e in out) == ["c", "f", "p"]
     assert next(e for e in out if e.id == "c").details["continues"] == "p"
+    # the phase-3 hop leaves the same graze paper trail as phase 2 (round-2 nit)
+    g = [d for d in decisions if d["action"] == "cross-type-graze" and d["id"] == "c"]
+    assert len(g) == 1 and g[0]["kept"] == "f"
 
 
 def test_continuation_blocked_by_material_conflict_is_logged():
@@ -321,3 +325,20 @@ def test_floor_env_is_validated_at_import(monkeypatch, bad):
         monkeypatch.delenv("EWB_LIVE_CROSSTYPE_MIN_CONTAINMENT")
         importlib.reload(select)
     assert select.CROSS_TYPE_MIN_CONTAINMENT == 0.5
+
+
+def test_the_worst_graze_of_a_candidate_is_the_one_recorded():
+    """Round-2 review: with several sub-floor grazers the recorded entry must
+    be the near-floor one an auditor wants (max containment), not the first."""
+    f1 = ev("f1", "flood", (43.5, 52.0, -97.0, -95.0), 12.0,
+            start=D0 + dt.timedelta(8), days=4, **FLOOD_DET)   # cont ~0.03
+    p = ev("p", "heat_wave", HEAT_BOX, 11.0, days=17)          # cont ~0.17
+    cs = ev("cs", "cold_snap", (42.0, 44.5, -100.0, -90.0), 10.0,
+            start=D0 + dt.timedelta(3), days=8)                # cont ~0.48
+    x = ev("x", "freeze", (41.0, 44.0, -96.0, -86.0), 2.0,
+           start=D0 + dt.timedelta(1), days=9)
+    decisions: list[dict] = []
+    out = select.rank_and_cap([f1, p, cs, x], 1, decisions)
+    assert sorted(e.id for e in out) == ["cs", "f1", "p", "x"]
+    g = [d for d in decisions if d["action"] == "cross-type-graze" and d["id"] == "x"]
+    assert len(g) == 1 and g[0]["kept"] == "cs"

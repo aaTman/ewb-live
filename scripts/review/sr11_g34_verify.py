@@ -182,10 +182,12 @@ def _inter(a, b):
 viol, graze, exempt = [], [], []
 for i, j in pairs:
     a, b = next(e for e in evs if e["id"] == i), next(e for e in evs if e["id"] == j)
-    if a["event_type"] == b["event_type"]:
-        viol.append([i, j, "same-type"])
-    elif a["event_type"] in TRACK or b["event_type"] in TRACK:
+    # TRACK first: select._overlaps exempts track lanes even from the
+    # SAME-type rule (two overlapping cyclone boxes may both publish by design)
+    if a["event_type"] in TRACK or b["event_type"] in TRACK:
         exempt.append([i, j, "track-lane"])
+    elif a["event_type"] == b["event_type"]:
+        viol.append([i, j, "same-type"])
     else:
         cont = _inter(a, b) / max(min(_area(a), _area(b)), 1e-9)
         (viol if cont >= 0.5 else graze).append([i, j, round(cont, 3)])
