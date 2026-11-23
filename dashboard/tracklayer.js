@@ -490,8 +490,31 @@
         if (scr.length > 1) parts[key].push(scr);
       }
     };
-    pass(shown.filter((f) => !f.live), 'pre');
-    pass(shown.filter((f) => f.live), 'live');
+    /* Dashed and solid are separate strokes and one pass() call strokes its
+       pool as ONE polyline: filtering by the live flag alone fed the pre- AND
+       the post-window fixes of a system whose life bracketed the window into
+       a single dashed run, whose segment list then joined the LAST pre-window
+       fix to the FIRST post-window fix — a straight chord lying across the
+       solid track that is in no data (owner report 2026-11-23; regression
+       test: tests/test_track_runs.py). Fixes are chronological, so the flag
+       runs in at most three runs (pre, live, post); draw each maximal run of
+       consecutive same-flag fixes as its own pass. The solid run borrows the
+       fix neighbouring it on each side so the dashed runs MEET the solid line
+       at one shared point — without that borrow the junction segment belongs
+       to neither pass and the line has a gap. The dots are untouched: they
+       read f.live off the fix itself, only the polyline input changes. */
+    const runs = [];
+    for (const f of shown) {
+      if (runs.length && runs[runs.length - 1][0].live === f.live) runs[runs.length - 1].push(f);
+      else runs.push([f]);
+    }
+    runs.forEach((run, j) => {
+      if (!run[0].live) { pass(run, 'pre'); return; }
+      const pool = run.slice();
+      if (j) pool.unshift(runs[j - 1][runs[j - 1].length - 1]);
+      if (j + 1 < runs.length) pool.push(runs[j + 1][0]);
+      pass(pool, 'live');
+    });
     const last = shown[k];
     let peak = null;
     for (const f of shown) {
@@ -1152,7 +1175,7 @@
   }
 
   window.EwbTracks = {
-    onMapTracks, legendHtml, splitAtDateline, LANES,
+    onMapTracks, legendHtml, splitAtDateline, layoutStorm, LANES,
     _dbg: () => {
       const r = cv && cv.getBoundingClientRect();
       const k = S && r && r.width ? r.width / S.fit.W : 0;
