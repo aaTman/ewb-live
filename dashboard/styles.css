@@ -1634,7 +1634,12 @@ html[data-theme="dark"] {
 .kpi-card:hover { background: var(--tint); border-color: var(--border-strong); }
 .kpi-card.on { background: var(--alabaster); border-color: var(--matte-black); }
 .kpi-top { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
-.kpi-n { margin-left: auto; font: 400 var(--text-2xs)/1 var(--font-mono);
+/* The chip is the shrinkable item in this row (design bug 2026-11-23: the
+   shared `flex: none` chip could not give way, so on narrow columns the
+   nowrap "N events" counter rode over the card's right border). */
+.kpi-top .type-chip { flex: 0 1 auto; min-width: 0; }
+.kpi-top .type-chip > span { overflow: hidden; text-overflow: ellipsis; }
+.kpi-n { flex: none; margin-left: auto; font: 400 var(--text-2xs)/1 var(--font-mono);
   color: var(--ink-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .kpi-lead { display: flex; align-items: baseline; gap: 8px; min-width: 0; max-width: 100%; }
 .kpi-model { font-size: var(--text-base); font-weight: 500; letter-spacing: -0.01em;
