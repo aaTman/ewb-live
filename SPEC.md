@@ -138,6 +138,18 @@ def score_event(event: Event, models: list[str]) -> pd.DataFrame
      A missing first or last scan day is not bridged, and two or more consecutive missing
      days still split a spell. A bridged day never counts toward the `min_days` detection
      floor, but published durations and run lengths include it.
+     **Cross-type conflict floor (curation, owner 2026-11-23):** the no-overlap
+     rule of 2026-11-06 keeps its full force BETWEEN SAME-TYPE events; a
+     CROSS-type pair now conflicts (and evicts the lower within-type percentile)
+     only when the overlap is material — bbox `containment` = intersection area
+     / smaller box area (deg^2, arc-aware) >= `CROSS_TYPE_MIN_CONTAINMENT`
+     (default 0.5, env `EWB_LIVE_CROSSTYPE_MIN_CONTAINMENT`). A graze below the
+     floor publishes both events side by side; real cross-type eviction still
+     happens in production (measured: 10 drops on the 2026-11-22 window). The
+     failure this fixes: a 4-day IMERG flood clipping the corner of a 17-day US
+     heat-wave chain (containment 0.268, IoU 0.059) evicted the chain, and with
+     it the continuation fragment carrying the Sep 16–22 heat wave into the
+     showcase. TRACK lanes stay exempt (unchanged).
      **Continuations (curation, owner 2026-11-21):** a heat, freeze or cold-snap fragment
      passed over by selection is still published, as its own event outside the per-type
      quota, when it starts within `MERGE_GAP_DAYS` of a selected same-type event's end,

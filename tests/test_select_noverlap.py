@@ -1,9 +1,11 @@
-"""Offline tests for the owner curation rules (2026-11-06):
+"""Offline tests for the owner curation rules (2026-11-06, cross-type floor
+2026-11-23):
 - merge only same-event fragments (gap <= 1 d AND bbox IoU >= 0.3), with
   per-type merged-duration caps from upstream events.yaml (AR 9, heat 16,
   freeze 16); other overlapping pairs DROP the lower within-type severity
   percentile (never merge);
-- the final set has zero time+space overlap pairs;
+- the final set obeys the product rule: same-type pairs have zero time+space
+  overlap, cross-type pairs may only graze (bbox containment below the floor);
 - AR ocean-origin/landfall rule.
 
 Severity is monkeypatched to details["sev"] so tests stay offline (real
@@ -52,10 +54,17 @@ def mk(etype, start, days, bbox, peak, sev=1.0, id=None, **det):
 
 
 def assert_no_overlaps(events):
+    """The product rule in the final set (owner 2026-11-06, floor 2026-11-23):
+    same-type pairs have ZERO time+space overlap; a cross-type pair may share
+    time+space only as a graze, below CROSS_TYPE_MIN_CONTAINMENT."""
     for a, b in itertools.combinations(events, 2):
         time_ov = min(a.end, b.end) - max(a.start, b.start)
-        assert not (time_ov > dt.timedelta(0) and select._bbox_intersects(a.bbox, b.bbox)), (
-            f"overlap pair: {a.title} | {b.title}")
+        if not (time_ov > dt.timedelta(0) and select._bbox_intersects(a.bbox, b.bbox)):
+            continue
+        assert a.event_type != b.event_type, f"same-type overlap: {a.title} | {b.title}"
+        assert a.event_type in select.TRACK_TYPES or b.event_type in select.TRACK_TYPES \
+            or select._bbox_containment(a.bbox, b.bbox) < select.CROSS_TYPE_MIN_CONTAINMENT, (
+            f"material cross-type overlap: {a.title} | {b.title}")
 
 
 # ------------------------------------------------------------ rule 1: merge
@@ -229,15 +238,31 @@ def test_ocean_rule_rejects_land_start():
 
 # ------------------------------------------------------ rule 2: cross type
 
-def test_cross_type_overlap_drops_lower_rank():
+def test_cross_type_material_overlap_drops_lower_rank():
     d0 = dt.date(2026, 8, 1)
-    box = (10.0, 20.0, 10.0, 20.0)
-    h = mk("heat_wave", d0, 6, box, 40.0, sev=10)
-    f = mk("freeze", d0, 6, (15.0, 25.0, 15.0, 25.0), -5.0, sev=9)
+    h = mk("heat_wave", d0, 6, (10.0, 20.0, 10.0, 20.0), 40.0, sev=10)
+    # the freeze sits wholly inside the heat wave's box: containment 1.0, a
+    # material overlap -> the lower within-type percentile is evicted
+    f = mk("freeze", d0, 6, (12.0, 18.0, 12.0, 18.0), -5.0, sev=9)
     out = select.rank_and_cap([h, f], top_n=15)
     assert [e.event_type for e in out] == ["heat_wave"]  # rank-0 heat wins
     assert select.LAST_DECISIONS[-1]["action"] == "drop"
     assert select.LAST_DECISIONS[-1]["reason"] == "cross-type"
+    assert select.LAST_DECISIONS[-1]["containment"] == 1.0
+
+
+def test_cross_type_graze_keeps_both():
+    """Owner 2026-11-23: a corner graze is not a conflict any more.
+
+    The boxes are the production pair that killed the US heat-wave chain:
+    containment 0.25, IoU 0.06."""
+    d0 = dt.date(2026, 8, 1)
+    h = mk("heat_wave", d0, 6, (10.0, 20.0, 10.0, 20.0), 40.0, sev=10)
+    f = mk("freeze", d0, 6, (15.0, 25.0, 15.0, 25.0), -5.0, sev=9)  # containment 0.25
+    out = select.rank_and_cap([h, f], top_n=15)
+    assert sorted(e.event_type for e in out) == ["freeze", "heat_wave"]
+    assert [d for d in select.LAST_DECISIONS if d["action"] == "drop"] == []
+    assert_no_overlaps(out)
 
 
 # ----------------------------------------------------------- rule 3: refill
@@ -245,9 +270,9 @@ def test_cross_type_overlap_drops_lower_rank():
 def test_cross_type_drop_frees_slot_for_refill():
     top_n = {"heat_wave": 1, "freeze": 1}
     d0 = dt.date(2026, 8, 1)
-    box = (10.0, 20.0, 10.0, 20.0)
-    h = mk("heat_wave", d0, 6, box, 40.0, sev=10)
-    f1 = mk("freeze", d0, 5, (15.0, 25.0, 15.0, 25.0), -5.0, sev=9)   # rank-0 freeze: overlaps heat
+    h = mk("heat_wave", d0, 6, (10.0, 20.0, 10.0, 20.0), 40.0, sev=10)
+    # rank-0 freeze: containment 1.0 inside the heat wave -> material conflict
+    f1 = mk("freeze", d0, 5, (12.0, 18.0, 12.0, 18.0), -5.0, sev=9)
     f2 = mk("freeze", dt.date(2026, 9, 1), 5, (40.0, 45.0, 0.0, 10.0), -8.0, sev=5)  # disjoint
     out = select.rank_and_cap([h, f1, f2], top_n=top_n)
     types = sorted(e.event_type for e in out)
@@ -266,7 +291,9 @@ def test_final_set_has_zero_pairwise_overlaps():
              38.0 - i, sev=10 - i) for i in range(4)],
         # an independent heat wave far away
         mk("heat_wave", d0, 5, (-30.0, -25.0, 120.0, 130.0), 33.0, sev=6),
-        # a freeze overlapping the heat chain spatially (lower rank -> dropped)
+        # a freeze overlapping the heat chain: it GRAZES the first member
+        # (containment 0.19, both kept) but sits wholly inside the second
+        # (containment 1.0), so that member is dropped as the lower percentile
         mk("freeze", d0 + dt.timedelta(days=2), 5, (58.0, 62.0, 52.0, 60.0), -2.0, sev=1),
         # an AR crossing both
         mk("atmospheric_river", d0, 6, (40.0, 50.0, 100.0, 115.0), 700.0, sev=8),
