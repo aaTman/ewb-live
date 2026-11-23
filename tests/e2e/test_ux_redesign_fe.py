@@ -478,6 +478,40 @@ def test_unified_scorecard_overview_and_drilldown(app_url):
             b.close()
 
 
+@pytest.mark.parametrize("width", [360, 480, 600, 720, 850, 1100, 1280, 1440])
+def test_kpi_event_counter_stays_inside_card(app_url, width):
+    """Regression (design bug 2026-11-23): a non-shrinkable `.type-chip` pushed
+    the nowrap "N events" counter over the card's right border on narrow KPI
+    columns. The counter must sit inside its card at every width; a chip that
+    cannot fit ellipsizes instead (full name stays in the card title)."""
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        ctx, pg, errs = _open_page(b, f"{app_url}#view=scorecard", width, 900)
+        try:
+            pg.wait_for_selector(".kpi-card", timeout=15000)
+            assert pg.locator(".kpi-card").count() >= 4, "KPI leader strip cards missing"
+            pg.wait_for_timeout(300)
+            bad = pg.evaluate("""() => {
+              const out = [];
+              for (const card of document.querySelectorAll('.kpi-card')) {
+                const cb = card.getBoundingClientRect();
+                for (const child of card.querySelectorAll('.kpi-top *, .kpi-lead *, .kpi-sub')) {
+                  const r = child.getBoundingClientRect();
+                  if (r.width === 0) continue;
+                  if (r.right - cb.right > 0.5)
+                    out.push({card: card.querySelector('.type-chip span')?.textContent,
+                              over: +(r.right - cb.right).toFixed(1), who: child.className});
+                }
+              }
+              return out;
+            }""")
+            assert not bad, f"{width}px: KPI content crosses card border: {bad}"
+            assert errs == [], f"{width}px: Runtime errors: {errs}"
+        finally:
+            ctx.close()
+            b.close()
+
+
 @pytest.mark.parametrize("event_id,etype,kind", [
     ("hw001a", "heat_wave", "grid"),
     ("cs001b", "cold_snap", "grid"),
