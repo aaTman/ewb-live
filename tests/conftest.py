@@ -12,6 +12,17 @@ fixture and they skip with a clear reason where that checkout is absent.
 
 import pathlib
 
+# Deterministic BLAS/OpenMP thread count - MUST be set before any numpy import
+# (hence the placement at module top, before importing ewb_live). On CPU-
+# starved hosts (pinned-vCPU containers, small CI runners) OpenBLAS spin-
+# wait threads livelock: tiny numpy ops burn minutes of sys time and the
+# suite appears to hang (GitHub CI hang + local repro, 2026-11-23).
+import os
+
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS",
+           "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
 import pytest
 
 from ewb_live._guard import is_ewb_host
