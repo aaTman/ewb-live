@@ -83,6 +83,8 @@ def test_q_levels_in_monotonic_order():
     (e = RH*e_s(T)), so w = eps*e/(p-e) GROWS as pressure falls: q must
     increase upward (250 hPa > 500 hPa > 850 hPa). A transposed level axis
     would break this ordering."""
+    pytest.importorskip("extremeweatherbench.defaults")
+    from extremeweatherbench import defaults
     out = defaults.preprocess_cira_icechunk_ar_forecast_dataset(_fcn_like_ds(285.0, 60.0))
     q = out["specific_humidity"].isel(lead_time=0, latitude=1, longitude=0).values
     assert q[0] > q[1] > q[2]  # 250 > 500 > 850 hPa
@@ -91,5 +93,7 @@ def test_q_levels_in_monotonic_order():
 def test_preprocess_noop_when_q_present():
     ds = _fcn_like_ds(280.0, 50.0)
     ds["specific_humidity"] = ds["air_temperature"] * 0.0 + 0.004
+    pytest.importorskip("extremeweatherbench.defaults")
+    from extremeweatherbench import defaults
     out = defaults.preprocess_cira_icechunk_ar_forecast_dataset(ds)
     assert float(out["specific_humidity"].isel(lead_time=0, level=0).values.flat[0]) == 0.004
