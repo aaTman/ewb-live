@@ -223,6 +223,12 @@ def _cut_decoded(decoded: dict[str, xr.DataArray],
         c = cut.get(id(da))
         if c is None:
             c = subset_latlon(normalize_longitude(da), bbox)
+            if 0 in c.sizes.values():
+                # empty cut (e.g. a lon range with no grid point): keep the
+                # pre-fix late-cut behavior - assemble's own path tolerates
+                # it (empty dataset), normalize_longitude on an empty axis
+                # would raise (review of 8065e10, finding 1)
+                c = da
             cut[id(da)] = c
         out[key] = c
     return out

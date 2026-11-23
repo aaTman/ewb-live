@@ -134,3 +134,17 @@ def test_cut_decoded_subset_shape_shrinks():
     da = cut["surface_air_temperature"]
     frac = (da.latitude.size * da.longitude.size) / (len(LAT) * len(LON))
     assert frac < 0.12  # ~11% box: this is the whole point of the fix
+
+
+def test_early_cut_identity_straddle0_and_full_lon():
+    for bbox in [(10.0, 30.0, -20.0, 20.0), (-80.0, 80.0, -180.0, 179.75)]:
+        xr.testing.assert_identical(_assemble(False, bbox), _assemble(True, bbox))
+
+
+def test_empty_lon_cut_falls_back_to_the_old_path():
+    """Review of 8065e10 finding 1: a lon range with no grid point used to
+    yield an empty assembled dataset; the early cut must not crash there."""
+    bbox = (10.0, 20.0, 169.9, 169.9)
+    old = _assemble(False, bbox)
+    assert old["longitude"].size == 0
+    xr.testing.assert_identical(old, _assemble(True, bbox))
