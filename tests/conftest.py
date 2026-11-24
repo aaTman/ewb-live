@@ -22,6 +22,9 @@ import os
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS",
            "VECLIB_MAXIMUM_THREADS"):
     os.environ.setdefault(_v, "1")
+# the pipeline dual-writes into the results store by default; tests that run it must not
+# create data/icechunk-results in the working tree (test_results_sink opts back in)
+os.environ.setdefault("EWB_LIVE_RESULTS_STORE", "0")
 
 import pytest
 

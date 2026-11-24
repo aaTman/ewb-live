@@ -297,6 +297,26 @@ significantly larger week over week: `data/cache/subsets` already evicts by init
 window-keyed policy (window start minus a margin) with a dry-run report first. Deletion needs the
 same owner approval as above.
 
+**Phase 2 (dual-write) — behaviour.** `pipeline._write_outputs` (already called after every job) calls
+`results_sink.ResultsSink.sync`, which commits every event whose content hash (event record + rows +
+public pair status) changed, to branch `run/<week>`; selection churn is dropped with one `retain_only`
+commit. After the viz/global steps `weekly` attaches `events/<id>/viz.json` and the run docs
+(`events_selected`, `curation`, `events`, `global_timeline`, `meta`, `scorecard`, `scorecard_by_region`,
+`pair_status`, `tc_wind`), prunes to the window, publishes (tag + `main`) and logs
+`tools/results_parity` (store vs files: ids, score rows, docs, viz bytes). Everything is best-effort: a
+store failure logs a warning (three in a row disable the sink for the run) and never fails the run or
+changes a file. `EWB_LIVE_RESULTS_STORE=0` turns it off; run identity comes from
+`EWB_LIVE_RUN_WEEK` / `EWB_LIVE_RUN_ID` / `EWB_LIVE_RUN_WINDOW_END` (weekly pins them so a run that
+crosses midnight stays one run). `maintenance` runs as a DRY RUN every publish and is only applied
+when the owner sets `EWB_RESULTS_MAINTENANCE_CONFIRM=1`.
+
+**Cache bounding — measured 2026-11-24** (`python -m ewb_live.tools.cache_retention`, report only):
+`subsets` 118 GB and `fc_parts` 59 GB are keyed by init time and the caches are only ~4 months old, so
+nothing is evictable yet (window + 30 d margin = 120 d); `subsets` evicts itself, `fc_parts` does not and
+needs the same init-time eviction before it passes 120 d (about 15 GB/month of growth otherwise). The ERA5
+mirror (`truth/era5.zarr`, 51 GB for 116 days, ~3 GB/week) only grows forward and is the one unbounded
+cache; trimming it means rewriting the time axis (rolling rebuild), designed in phase 3.
+
 **Phases.** (1) store module + spec + tests [this change]; (2) dual-write: the collector commits each
 event to the store while the existing files are still written, parity-checked; cache retention report;
 (3) `serve.py` materialises the unchanged `/data/results/*` URL contract from the store, live banner,
