@@ -227,6 +227,15 @@ Incremental: re-runs reuse cached scores; only new events/inits are computed.
      model at a selected lead). AR visual = IVT map + observed AR mask contour + forecast mask overlap.
      Presentation reference: https://windbornesystems.com/blog/introducing-windborne-weather-events
   Also reference dynamical.org scorecards and WeatherBench 2 scorecards for conventions.
+- **Event-density map layer (owner 2026-11-24):** an opt-in layer under the raw shading that paints,
+  per 2.5° cell, how many events of the current type tab (All = every type) cover that cell over the
+  whole shown window, counting event `bbox` footprints from `global_timeline.json` (region-filtered,
+  dateline-aware, full-band boxes skipped). The top of the ramp is the busiest cell in the current
+  view, so the scale rescales with the tab, the Region view and the window; a legend control turns
+  the layer on and sets the minimum visible count (default 1, cells below it stay unpainted). It is a
+  "where is the action" guide, not a measurement: a bounding box over-counts around its real
+  footprint. State rides the URL (`#dens=1`, `#densmin=N`); the grid maths lives in
+  `dashboard/density.js` (pure, tested in node by `tests/test_density_js.py`).
 - **Methodology explainer (About dialog, owner 2026-11-10):** the About dialog is the page that
   explains the detection criteria — the daily rule plus the five tracker steps (group / seed /
   qualify / follow / end) with the numbers the detector actually uses, then a collapsed
