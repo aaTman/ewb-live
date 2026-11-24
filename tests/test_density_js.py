@@ -11,6 +11,7 @@ Offline, tiny, no network.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -72,7 +73,8 @@ def test_one_box_counts_one_in_its_cells_and_zero_elsewhere() -> None:
 	assert _cell(g, 25.0, 5.0) == 0
 	assert _cell(g, 15.0, -5.0) == 0
 	assert _cell(g, 15.0, 25.0) == 0
-	assert sum(int(c) for c in g["counts"]) == 4  # type: ignore[union-attr]
+	# 10° cells: the box is one row (lat 10–20) by two columns (lon 0–20).
+	assert sum(int(c) for c in g["counts"]) == 2  # type: ignore[union-attr]
 
 
 def test_two_overlapping_boxes_give_two_in_the_overlap() -> None:
@@ -140,3 +142,17 @@ def test_index_html_loads_density_before_mergedmap() -> None:
 	assert dens != -1, "index.html must load density.js"
 	assert merged != -1
 	assert dens < merged
+
+
+def test_the_density_layer_takes_its_hue_from_a_token_not_a_literal() -> None:
+	"""The density ramp's colour is a CSS token, so it follows the theme flip.
+
+	Same rule as every other map surface (`tests/test_mlc_hue.py`): no shipped
+	JS may bake a hex for a lane hue, or dark mode paints the light ramp.
+	"""
+	js = (ROOT / "dashboard" / "mergedmap.js").read_text()
+	start = js.index("function paintDensity")
+	block = js[start : js.index("function densGroupHtml", start)]
+	assert "densTabToken" in block, "paintDensity must resolve the lane hue from a token"
+	for lit in re.findall(r"#[0-9a-fA-F]{3,6}\b", block):
+		raise AssertionError(f"paintDensity hard-codes {lit}; read a --series- token")
