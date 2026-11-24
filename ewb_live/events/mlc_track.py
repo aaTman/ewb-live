@@ -723,7 +723,9 @@ def fill_track_gaps_from_fields(track: Track, mslp_stack: np.ndarray,
         pb, ib = min(s for s in have_seq if s[0] > i)
         frac = (i - pa) / (pb - pa)
         exp_lat = track.lat[ia] + frac * (track.lat[ib] - track.lat[ia])
-        exp_lon = track.lon[ia] + frac * (track.lon[ib] - track.lon[ia])
+        # along the short arc: 178 -> -176 must pass through 180, not through 0
+        step_lon = (track.lon[ib] - track.lon[ia] + 180.0) % 360.0 - 180.0
+        exp_lon = track.lon[ia] + frac * step_lon
         dist = haversine_deg(lat[:, None], lon[None, :], exp_lat, exp_lon)
         mask = dist <= p.gap_fill_search_degrees
         n_valid = int(np.count_nonzero(mask))

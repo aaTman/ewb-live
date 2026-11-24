@@ -205,6 +205,31 @@ def test_gap_filling_re_drops_missing_fixes_from_the_field():
     assert abs(tr.mslp[3] - float(mslp[3].min())) <= 1.0
 
 
+def test_gap_filling_follows_a_low_across_the_antimeridian() -> None:
+    """A fix lost next to +-180 is re-dropped on the low, not on the far side of the globe.
+
+    The expected position used a plain average of the two neighbouring longitudes, so
+    178 and -176 gave +1 (near Greenwich). The fill then took the lowest cell there, a
+    1028 hPa fix stitched into a 970 hPa storm (W47, storm 3b4108d8a8d0).
+    """
+    n = 6
+    lats = np.linspace(50.0, 51.5, n)
+    lons = np.linspace(172.0, 187.0, n)  # unwrapped; steps of 3 deg
+    wrapped = (lons + 180.0) % 360.0 - 180.0
+    mslp = np.empty((n, LATS.size, LONS.size), np.float32)
+    for k in range(n):
+        mslp[k] = add_low(np.full((LATS.size, LONS.size), 1013.0), lats[k], wrapped[k], 45.0)
+    times = [T0 + dt.timedelta(hours=6 * i) for i in range(n)]
+    nodes = [T.Node(times[k], lats[k], wrapped[k], 968.0, k) for k in (0, 1, 2, 4, 5)]
+    tr = T.associate_nodes(nodes)[0]
+    tr = T.fill_track_gaps_from_fields(tr, mslp, times, LATS, LONS)
+    assert len(tr) == n
+    assert bool(tr.filled[3])
+    dlon = (tr.lon[3] - wrapped[3] + 180.0) % 360.0 - 180.0
+    assert abs(dlon) <= 0.3
+    assert abs(tr.mslp[3] - float(mslp[3].min())) <= 1.0
+
+
 # ---------------------------------------------------------------- events
 def test_events_and_schema():
     mslp, lats, lons, times = build_field()

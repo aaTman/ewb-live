@@ -89,13 +89,16 @@ from .types import Event, make_event_id, normalize_lon_180
 
 logger = logging.getLogger(__name__)
 
-RULE_REV = "mlc-v3"          # bump when a screen or the mapping changes (cache key)
+RULE_REV = "mlc-v4"          # bump when a screen or the mapping changes (cache key)
 # v1 -> v2 (mlc-fix 2026-11-18): the ARCO reader handed the tracker a rotated
 # longitude axis, so every window scanned 0 events; the tag is bumped so a
 # cached empty scan cannot resurrect under the fix (notes/mlc_fix.md).
 # v2 -> v3 (ne-fix-mlc 2026-11-19): screen 6 (tracked-TC overlap) added and
 # the quota severity re-ranked (audit F1/F2); cached v2 scans must not keep
 # the Josephine double-count or the old pick alive.
+# v3 -> v4 (2026-11-24): gap fills interpolated longitude linearly, so a lost fix next
+# to +-180 landed on the far side of the globe (W47 storm 3b4108d8a8d0: a 1028 hPa
+# fix inside a 970 hPa track); cached v3 tracks must not keep those fixes.
 TITLE_LABEL = "Midlatitude Cyclone"
 SOURCE_NAME = "ERA5 MSLP (ARCO), closed-low tracker"
 BBOX_PAD_DEG = 5.0           # same margin as Event.padded / the tc lane
