@@ -252,3 +252,52 @@ snapshot to data/results/history/<YYYY-WW>/ so week-over-week changes are viewab
 meta.json gains: `cycle: "weekly"`, `week` (ISO year-week), `next_update` (UTC ISO).
 Entry point: `python -m ewb_live.weekly` (orchestrates steps 1–5, logs to logs/weekly-<date>.log,
 non-zero exit on failure, safe to re-run).
+
+### 6. Results store — versioned Icechunk repo (`ewb_live/stores/results_icechunk.py`)
+Replaces "dump `data/results/*.json` at the end of the run". Rollout is phased; this section is the
+contract for all phases. **Phase 1 (this change) ships the store module + tests only: nothing in
+the pipeline, server or dashboard reads or writes it yet.**
+
+**Repo.** Its own repo (`EWB_RESULTS_REPO`, default `data/icechunk-results`, local filesystem), separate
+from the MLWP *reference* store of §5 (that one is refs only; this one holds real data). Single writer:
+the pipeline collector process commits; scoring workers never touch the repo; a flock refuses a second
+writer.
+
+**Layout.** `/events/<id>/` holds the event record + per-model status (attrs), `scores/<col>` (columns of
+`SCORE_COLUMNS` minus the per-event constants), `blobs/<name>` (uint8 bytes, e.g. `viz.json`) and
+`grids/<name>` (n-D arrays: masks, gridded data). Root attrs carry `schema`, `window` and `run`.
+
+**One commit per event.** The collector commits each finished event in ONE transaction on branch
+`run/<ISO-week>` (event record, score rows, blobs, grids, including documented-zero events with no
+rows). Commit metadata references the weekly run: `week`, `run_id`, `rule_rev` (`TRACK_RULE_REV`),
+`code_sha`, `event_id`. Rescoring overwrites the event's subtree atomically; readers never see a
+half-written event. `begin_run` is idempotent, so a resumed run keeps what it already committed.
+
+**Live vs published.** `main` = published. The run branch is the live view while the week is in
+progress (the site may show "W48 in progress, n/N events"; rankings over a partial set are labelled
+provisional). `publish` tags the run tip `<ISO-week>`, fast-forwards `main` to it and retires the run
+branch (the tag keeps the snapshot). History snapshots (`data/results/history/<YYYY-WW>/`) become
+those tags. One failed event is a status row, not a reason to withhold the other events.
+
+**Retention — the store holds the rolling window, not history.**
+1. *Logical:* every run `prune_window` drops events whose `end` is before the window start (a normal
+   commit; events that cannot be dated are kept).
+2. *Physical:* `maintenance` (dry run unless `confirm=True`) drops weekly tags beyond the newest
+   `EWB_RESULTS_KEEP_TAG_WEEKS` (default 12), retires stale unpublished run branches older than the
+   oldest kept week, expires snapshots older than `EWB_RESULTS_SNAPSHOT_KEEP_DAYS` (default 14) and
+   garbage-collects what nothing references. Branch tips and kept tags are never expired. Size is
+   therefore ~ the 90-day window plus retained tags' deltas; `tests/test_results_icechunk.py` rolls
+   30 weeks and asserts the repo stays flat once the window is full.
+3. *Owner rule:* physical deletion stays opt-in. The weekly may only call `maintenance(confirm=True)`
+   once the owner has approved it; until then it runs the dry run and logs the report.
+
+**Cache bounding (phase 2 deliverable).** The big caches must be bounded by the same window, never
+significantly larger week over week: `data/cache/subsets` already evicts by init time
+(`sources/cache.py`, 120 d); `fc_parts` and the `truth` ERA5 mirror have no eviction today and get a
+window-keyed policy (window start minus a margin) with a dry-run report first. Deletion needs the
+same owner approval as above.
+
+**Phases.** (1) store module + spec + tests [this change]; (2) dual-write: the collector commits each
+event to the store while the existing files are still written, parity-checked; cache retention report;
+(3) `serve.py` materialises the unchanged `/data/results/*` URL contract from the store, live banner,
+backfill W45–W47 from `history/` as tags; (4) retire the end-of-run dump paths.
