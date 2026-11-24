@@ -121,6 +121,9 @@
   let land = null, graticule = null, proj = null, path = null;
   let fit = null;                          // {W,H}
   let region = null;                       // Region dropdown view {key,label,lat,lon}; null = world
+  // event-density layer (density.js): `on` is the legend toggle, `min` hides
+  // cells below a chosen overlap count. Both ride the URL (#dens, #densmin).
+  const dens = { on: false, min: 1 };
   const frameCache = new Map();            // ts -> Uint8Array | null
   const inflight = new Map();              // ts -> Promise (one fetch per frame; prefetch+paint share it)
   const CACHE_MAX = 7;
@@ -446,6 +449,7 @@
     const cv = $('#raw-canvas');
     const ctx = cv.getContext('2d');
     drawBase(ctx);
+    paintDensity(ctx);          // under the raw raster: event overlap, not evidence
     curIvt = null;                                    // no frame → nothing for hover to read
     curPaint = null;
     const fl = curFl;      // flood day frame paints even past the ERA5 cutoff (the rain source
@@ -578,6 +582,122 @@
     ctx.fillRect(0, y0, x0, y1 - y0);
     ctx.fillRect(x1, y0, fit.W - x1, y1 - y0);
     ctx.restore();
+  }
+
+  /* ---------------- event density (density.js) ----------------
+     How many events of the page's current tab cover each map cell over the
+     whole shown window (NOT just this frame: the answer is about the event
+     list beside the map). It paints UNDER the raw layers because a bbox is not
+     evidence — a big box over-counts around its real footprint — and its top
+     stop is the busiest cell in the current view, so the same colour means a
+     different count per tab/region. That is why the legend prints min/max next
+     to the ramp instead of a fixed scale. The grid maths is pure and lives in
+     dashboard/density.js (window.EwbDensity), which is what tests run. */
+  const DENS_CELL = 2.5;                 // grid cell edge in degrees
+  const DENS_A_LO = 0.12, DENS_A_HI = 0.55;   // ramp alpha floor/ceiling
+  let densGrid = null, densKey = '';
+
+  const densTabToken = () => {
+    const tab = pageTab();
+    if (tab !== 'all' && typeof TYPE_SERIES_VAR !== 'undefined' && TYPE_SERIES_VAR[tab]) {
+      return TYPE_SERIES_VAR[tab];
+    }
+    return '--series-unknown';           // the All tab mixes types: neutral
+  };
+  const densEvents = () => {
+    const tab = pageTab();
+    // A full-band bbox is a producer artefact (the boxes overlay skips it too):
+    // counted, it would wash the whole globe in one stroke.
+    return tlEvents().filter((e) => (tab === 'all' || e.type === tab) && !isFullBand(e.bbox));
+  };
+  /* Cached grid: the counts only move with the tab, the Region view and the
+     published event list, never with the frame or the play head. */
+  function densView() {
+    if (!tl || typeof window.EwbDensity === 'undefined') return null;
+    const key = [pageTab(), region ? region.key : 'world',
+                 tl.window || tl.events.length].join('|');
+    if (key !== densKey || !densGrid) {
+      densGrid = window.EwbDensity.countGrid(densEvents(), DENS_CELL);
+      densKey = key;
+    }
+    return { grid: densGrid, scale: window.EwbDensity.scaleOf(densGrid, dens.min) };
+  }
+  const densAlpha = (c, sc) => (sc.max <= sc.min
+    ? DENS_A_HI
+    : DENS_A_LO + (DENS_A_HI - DENS_A_LO) * ((c - sc.min) / (sc.max - sc.min)));
+
+  function paintDensity(ctx) {
+    if (!dens.on || !fit || !proj || !path) return;
+    const v = densView();
+    if (!v || !v.scale.max) return;
+    const { grid, scale } = v;
+    // the lane hue for canvas comes from the CSS token, never a literal
+    const cs = getComputedStyle(document.documentElement);
+    const [r, g, b] = rgbOf(cs.getPropertyValue(densTabToken()).trim() || 'gray');
+    const rgba = (a) => `rgba(${r},${g},${b},${a.toFixed(3)})`;
+    ctx.save();
+    ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+    ctx.clip(new Path2D(path({ type: 'Sphere' })));    // no density in space
+    for (let i = 0; i < grid.ny; i++) {
+      const s = -90 + i * grid.cellDeg, n = s + grid.cellDeg;
+      for (let j = 0; j < grid.nx; j++) {
+        const c = grid.counts[i * grid.nx + j];
+        if (c < scale.min) continue;
+        const w = -180 + j * grid.cellDeg, e = w + grid.cellDeg;
+        const a = proj([w, s]), bb = proj([e, s]), cc = proj([e, n]), d = proj([w, n]);
+        ctx.fillStyle = rgba(densAlpha(c, scale));
+        ctx.beginPath();
+        ctx.moveTo(a[0], a[1]); ctx.lineTo(bb[0], bb[1]);
+        ctx.lineTo(cc[0], cc[1]); ctx.lineTo(d[0], d[1]);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  /* Legend group for the layer: the toggle, the ramp with the numbers it means
+     RIGHT NOW, and the minimum-count input. Rendered from state, so a tab or
+     region change rewrites the numbers in place; the controls are delegated in
+     mount() because this markup is replaced whenever the scale changes. */
+  function densGroupHtml() {
+    const v = densView();
+    const sc = v ? v.scale : { min: 1, max: 0 };
+    const cs = getComputedStyle(document.documentElement);
+    const [r, g, b] = rgbOf(cs.getPropertyValue(densTabToken()).trim() || 'gray');
+    const rgba = (a) => `rgba(${r},${g},${b},${a})`;
+    const ramp = sc.max
+      ? `<i class="swatch dens-ramp" title="Density ramp: ${sc.min} to ${sc.max} overlapping events per cell in this view"
+         style="background:linear-gradient(90deg,${rgba(DENS_A_LO)},${rgba(DENS_A_HI)})"></i>`
+      : '<span class="lg-none">none in view</span>';
+    return '<span class="lg-group" data-layer="dens"'
+      + ' title="Event density: how many events of this tab cover each map cell over the whole window, counted from event bounding boxes (a box over-counts around the real footprint). The top of the ramp is the busiest cell in the current view, so it rescales with the tab, the Region view and the window.">'
+      + '<span class="lg-head"><label class="lg-name">'
+      + `<input type="checkbox" id="gm-dens-on"${dens.on ? ' checked' : ''}> Event density</label>`
+      + '<span class="lg-unit">events per cell</span></span>'
+      + `<span class="lg-stops dens-stops"><span class="lg-t">${sc.min}</span>${ramp}`
+      + `<span class="lg-t">${sc.max || 0}</span>`
+      + `<label class="lg-t dens-set">min<input class="dens-num" type="number" id="gm-dens-min"`
+      + ` min="1" max="999" step="1" value="${dens.min}"`
+      + ' title="Hide cells covered by fewer events than this"></label></span></span>';
+  }
+
+  /* Legend controls are delegated once: renderLegend replaces this markup
+     whenever the scale changes, so per-element handlers would leak/detach. */
+  function bindDensity(leg) {
+    leg.addEventListener('change', (ev) => {
+      const t = ev.target;
+      if (!t || !t.id) return;
+      if (t.id === 'gm-dens-on') {
+        dens.on = !!t.checked;
+      } else if (t.id === 'gm-dens-min') {
+        dens.min = Math.max(1, Math.round(+t.value || 1));
+        t.value = String(dens.min);            // echo the clamp back
+      } else {
+        return;                                // another control in the same strip
+      }
+      writeUrl(false);
+      if (raw) render(); else renderLegend();
+    });
   }
 
   /* ---------------- event boxes (SVG overlay, same projection) ---------------- */
@@ -1206,6 +1326,7 @@
       const p = hashParams();
       delete p.raw; delete p.global; delete p.date;    // old keys never survive a rewrite
       delete p.layers; delete p.sel;                   // re-added below only when non-default
+      delete p.dens; delete p.densmin;                 // idem: the density layer and its minimum
       const u = locationFor(Object.assign(p, urlParams()));
       if (push) history.pushState({ event: state.selectedEvent || null }, '', u);
       else history.replaceState({ event: state.selectedEvent || null }, '', u);
@@ -1217,6 +1338,8 @@
     const p = { map: raw.frames[idx] };
     const lay = urlLayers();
     if (lay) p.layers = lay;
+    if (dens.on) p.dens = 1;                 // #densmin only rides the layer it belongs to
+    if (dens.on && dens.min !== 1) p.densmin = dens.min;
     if (sel.size) p.sel = Array.from(sel).join(',');
     return p;
   }
@@ -1241,6 +1364,18 @@
     if (s !== undefined) {
       const ids = s.split(',').filter(Boolean);
       if (ids.join(',') !== Array.from(sel).join(',')) { sel.clear(); ids.forEach((i) => sel.add(i)); changed = true; }
+    }
+    /* Density layer: the keys are only read when present, so a hash rewrite by
+       another component (which keeps `#map=` but may drop ours) cannot switch a
+       layer the reader turned ON. A fresh link without the keys stays OFF. */
+    if ('dens' in params) {
+      const wantOn = String(params.dens) === '1';
+      if (dens.on !== wantOn) { dens.on = wantOn; changed = true; }
+    }
+    if ('densmin' in params) {
+      const dm = Math.round(+params.densmin);
+      const wantMin = Number.isFinite(dm) && dm > 0 ? dm : 1;
+      if (dens.min !== wantMin) { dens.min = wantMin; changed = true; }
     }
     if (changed) render();
     return changed;
@@ -1483,6 +1618,10 @@
           + `<span class="lg-stops">${stops.join('')}</span></span>`);
       });
     }
+    /* The event-density layer's own group (density.js): toggle, the ramp with
+       the min/max it means in THIS view, and the minimum-count input. It shows
+       whenever the event list exists, even with no raw asset on this site. */
+    if (raw && tl) groups.push(densGroupHtml());
     /* TRACK lanes contribute their own groups (tracklayer.js): a lane only
        appears when it has published events, so the raster-only pages keep
        their exact legend contract (counts, widths, fixed height). */
@@ -1503,7 +1642,12 @@
        swatch-only `compact` strip is gone in every state: the popover shows the
        numbers and units, because an unlabelled swatch is exactly the "what does
        this colour mean" complaint the popover exists to answer. */
-    const pop = groups.length >= 3;
+    /* The density group is a control, not a lane: it never counts towards the
+       3-lane popover rule, so adding it cannot turn a two-lane strip into a
+       popover (the strip's height contract and the e2e lane-visibility test
+       both ride that threshold). */
+    const lanes = groups.filter((g) => g.indexOf('data-layer="dens"') < 0).length;
+    const pop = lanes >= 3;
     if (!pop) legOpen = false;                 // a tab switch always re-opens closed
     const html = groups.join('');
     if (html !== legHtml) {                    // same legend: no reflow per frame
@@ -1683,6 +1827,8 @@
   async function mount() {
     if (mounted) return;
     const slider = $('#raw-slider');
+    const leg = $('#gm-legend');
+    if (leg) bindDensity(leg);
     $('#raw-play').onclick = togglePlay;
     /* The floating `Legend ▾` (AC-4.1): the button toggles the popover, a click
        outside it closes it, Escape closes it and hands focus back. The strip

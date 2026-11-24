@@ -1209,6 +1209,20 @@ nav.controls .dd .dd-body {
    Region/frame where a lane paints nothing. Same rule as above — ink, not
    opacity. */
 .lg-group.none .swatch { opacity: .32; }
+/* Event-density control (mergedmap.js renderLegend): the strip's one interactive
+   group. The NAME is a label so the checkbox is the on/off target; the ramp is a
+   gradient bar between the min and max counts printed either side (the scale
+   rescales per view, so the numbers ARE the legend). Only the minimum input and
+   the bar need rules — everything else rides the existing legend grid. */
+.lg-group .lg-name input[type="checkbox"] { margin: 0 4px 0 0; vertical-align: -1px;
+  accent-color: var(--matte-black); }
+.dens-stops { align-items: center; gap: 5px; }
+.dens-stops .dens-ramp { width: 56px; height: 10px; flex: 0 0 auto; }
+.dens-set { display: inline-flex; align-items: center; gap: 3px; }
+.dens-num { width: 3.2em; font: inherit; font-size: var(--text-2xs);
+  font-family: var(--font-mono); color: inherit; background: transparent;
+  border: 1px solid var(--border-strong); border-radius: 3px; padding: 0 2px; }
+
 @container (min-width: 450px) {   /* rows when the map column can hold the lanes */
   #gm-legend { --lg-wide: 1; display: flex; flex-direction: row; align-items: center;
     gap: 20px; padding: 6px 8px; width: fit-content;
