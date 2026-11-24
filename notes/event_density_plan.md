@@ -11,7 +11,20 @@ We add a density layer to the global map. It counts how many events cover each m
 - "For each event" means one density view per event type tab. The All tab shows all types combined. [unverified] ⚠️ (read of the request, not confirmed)
 - Max of the ramp = the highest per-cell count in the current view. [verified] ✅ (owner request)
 - Minimum = user control, default 1. Cells below it are not painted. [verified] ✅ (owner request)
-- Source of counts = `bbox` of each event in `tlEvents()` filtered by the page tab. No new data files, no backend change. [unverified] ⚠️
+- Source of counts = `bbox` of each event in `tlEvents()` filtered by the page tab. No new data files, no backend change. [verified] ✅ (`mergedmap.js densEvents()`: `tlEvents()`, tab filter, full-band boxes skipped; the Region view already filters `tlEvents`, so the grid follows it)
+
+## What shipped (2026-11-24, this branch)
+
+- `dashboard/density.js`: `countGrid(events, cellDeg)` (half-open cells, row 0 at
+  lat -90, dateline boxes count both halves) and `scaleOf(grid, minCount)`
+  (`{min: 1, max: 0}` when empty). Pure, no DOM; `window.EwbDensity` +
+  `module.exports`.
+- `mergedmap.js`: `dens = {on, min}` state, `paintDensity(ctx)` right after
+  `drawBase` (under the raw raster, clipped to the sphere), the hue from
+  `TYPE_SERIES_VAR` / `--series-unknown` for the All tab, legend group with the
+  toggle + min input + ramp bar, URL keys `dens`/`densmin`.
+- Cell edge 2.5°, ramp alpha 0.12 → 0.55. The density group does NOT count
+  towards the 3-group popover threshold (it is a control, not a lane).
 
 ## Where the code goes
 
@@ -30,7 +43,7 @@ We add a density layer to the global map. It counts how many events cover each m
 
 ## Steps (commit after each step)
 
-1. Red: `tests/test_density_js.py` runs `node` on `dashboard/density.js` (skip if no node, like `tests/test_mlc_hue.py`). Cases:
+1. [x] Red: `tests/test_density_js.py` runs `node` on `dashboard/density.js` (skip if no node, like `tests/test_mlc_hue.py`). Cases:
    - one box counts 1 in its cells and 0 elsewhere;
    - two overlapping boxes give 2 in the overlap;
    - a dateline box `[10, 20, 170, -170]` counts both halves and not lon 0;
@@ -38,10 +51,10 @@ We add a density layer to the global map. It counts how many events cover each m
    - `scaleOf` clamps `minCount` (0 becomes 1, 99 becomes max);
    - an empty list gives max 0.
    Run it. Confirm it fails because the file is missing.
-2. Green: write `dashboard/density.js`. Run `uv run pytest tests/test_density_js.py -q`.
-3. Wire the layer into `mergedmap.js`, `index.html`, `styles.css`. Add a test that `index.html` loads `density.js` before `mergedmap.js`.
-4. Update `SPEC.md`. Run `uv run pytest -q` and `uvx ruff check .`.
-5. Commit, push, open the PR with base `develop`.
+2. [x] Green: write `dashboard/density.js`. Run `uv run pytest tests/test_density_js.py -q`.
+3. [x] Wire the layer into `mergedmap.js`, `index.html`, `styles.css`. Add a test that `index.html` loads `density.js` before `mergedmap.js`.
+4. [x] Update `SPEC.md`. Run `uv run pytest -q` and `uvx ruff check .`.
+5. [x] Commit, push, open the PR with base `develop`.
 
 ## Rules for the agent
 
