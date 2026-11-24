@@ -1,0 +1,113 @@
+=== orography fractions, recommended variant (vor3v: 3 hPa/6deg closed contour + vor850>=1e-4)
+nodes: 2720  over 500 m orography: 446 (16.4 %)
+  high lat 65+           nodes    655  high-elev   120 (18.3 %)
+  midlat 40-65           nodes   1420  high-elev   122 (8.6 %)
+  orogeny belt 20-40     nodes    507  high-elev   162 (32.0 %)
+  tropics |lat|<20       nodes    138  high-elev    42 (30.4 %)
+
+=== full analysis, recommended variant
+# tracks file: data/mlc/run/tracks_vor3v.csv
+# window 2023-11-01 .. 2023-11-30 (tracks with >=1 point in window)
+tracks: 65   points: 755
+lifetime h: median 66  mean 68.5  max 138
+  lifetime >= 24 h:   65 (100 %)
+  lifetime >= 48 h:   65 (100 %)
+  lifetime >= 72 h:   23 (35 %)
+  lifetime >= 96 h:    7 (11 %)
+displacement km: median 1574  p90 3266  >=1000 km: 47
+min MSL hPa: median 971.2  deepest 927.5
+bomb (24 h fall >= 24 hPa*sin(lat)/sin60): 12 tracks
+mean |lat| of tracks: 56.1 deg; in 25-70 deg band: 53
+
+## deepest 10 tracks
+ track_id               start                 end  lifetime_h  min_msl  min_lat  min_lon  displacement_km  max_24h_fall  bomb_ratio
+       29 2023-11-05 00:00:00 2023-11-09 12:00:00       108.0 927.4963    -69.0   -96.00      3175.491192       15.1189    0.588401
+       11 2023-10-29 18:00:00 2023-11-02 00:00:00        78.0 935.9302    -64.0   143.00       868.664768       19.4077    0.779172
+       20 2023-11-01 12:00:00 2023-11-04 12:00:00        72.0 937.3427    -72.5   -92.25       768.790719       23.3347    0.882881
+       61 2023-11-18 18:00:00 2023-11-22 00:00:00        78.0 939.6188     52.5   165.25      2222.403625       39.2267    1.784163
+       73 2023-11-27 00:00:00 2023-11-30 00:00:00        72.0 942.4863    -65.0  -171.25      1564.537630       27.3984    1.088655
+       31 2023-11-05 06:00:00 2023-11-08 00:00:00        66.0 945.7606    -64.5   -85.00      2319.496325        8.5574    0.346562
+       44 2023-11-10 18:00:00 2023-11-13 00:00:00        54.0 945.9523    -64.0   -90.50      2314.491287       18.1745    0.729662
+       28 2023-11-04 18:00:00 2023-11-07 00:00:00        54.0 947.2473    -65.0   118.00       477.738494       -1.5041   -0.059411
+       64 2023-11-20 12:00:00 2023-11-23 18:00:00        78.0 948.1339     47.0   177.00      2586.489694       36.3436    1.757823
+       18 2023-10-31 18:00:00 2023-11-03 18:00:00        72.0 948.3041    -63.0    61.00       812.985676       -6.4534   -0.261938
+
+## known-storm check: Ciaran (landfall Finistere, France, 2 Nov 2023)
+  FOUND track 15 (a point within 450 km of 48.4N -4.6E): 2023-10-31 06:00:00 -> 2023-11-05 18:00:00 (132 h, 23 steps)
+  deepest along track: 954.0 hPa at 50.50N -1.50E on 2023-11-02 06:00:00
+  displacement 3138 km, path 6159 km, max 24 h fall 32.2 hPa (= 1.52x the bomb threshold at 49.8N)
+  reference: Storm Ciaran (Met Office/Met Eireann naming, 1-2 Nov 2023): a bomb cyclone that crossed the Atlantic from the remnants of Tropical Philippe and made landfall in Finistere, France, on 2 Nov 2023 with violent winds in Brittany, the Channel/North Sea coasts and southern England.
+  track points:
+               time   lat    lon      msl        vor850
+2023-10-31 06:00:00 44.75 -52.50 996.0165 -3.971573e-05
+2023-10-31 12:00:00 45.50 -46.25 994.7443 -6.291968e-05
+2023-10-31 18:00:00 46.00 -38.75 990.1205 -6.094834e-05
+2023-11-01 00:00:00 46.75 -32.00 986.7845 -6.036124e-05
+2023-11-01 06:00:00 47.25 -24.00 979.4436 -6.456507e-05
+2023-11-01 12:00:00 48.00 -17.50 970.7240 -4.817209e-05
+2023-11-01 18:00:00 48.75 -11.75 960.7353 -4.134469e-05
+2023-11-02 00:00:00 49.75  -5.75 954.5815 -2.682410e-06
+2023-11-02 06:00:00 50.50  -1.50 954.0282  8.657536e-06
+2023-11-02 12:00:00 52.50   1.75 955.9286  2.112973e-05
+2023-11-02 18:00:00 54.25   3.00 958.0204  2.404588e-05
+2023-11-03 00:00:00 55.50   2.75 960.3253 -6.443881e-07
+2023-11-03 06:00:00 55.75   2.00 962.2487 -2.615050e-05
+2023-11-03 12:00:00 55.75   3.00 965.3697 -3.069566e-05
+2023-11-03 18:00:00 57.00   4.00 967.7130 -2.266166e-05
+2023-11-04 00:00:00 58.25   3.00 968.1016 -5.945662e-06
+2023-11-04 06:00:00 59.75   1.50 967.2014  2.161386e-05
+2023-11-04 12:00:00 61.00  -0.50 966.6846 -1.152788e-06
+2023-11-04 18:00:00 61.75  -3.25 968.0031 -7.631594e-06
+2023-11-05 00:00:00 62.00  -6.00 970.0872  8.531943e-06
+2023-11-05 06:00:00 61.75  -9.00 971.4783  3.551521e-05
+2023-11-05 12:00:00 60.50 -11.00 974.5204  2.234283e-05
+2023-11-05 18:00:00 59.25 -12.00 977.1359  4.138572e-06
+
+## raw-field check (ERA5 field minima, independent of the tracker)
+  Ciaran (landfall Finistere, France, 2 Nov 2023):
+    2023-11-01T00:00  min 968.5 hPa at 55.50N -22.50E
+    2023-11-01T06:00  min 965.4 hPa at 56.00N -24.00E
+    2023-11-01T12:00  min 965.3 hPa at 56.25N -25.50E
+    2023-11-01T18:00  min 960.7 hPa at 48.75N -11.75E
+    2023-11-02T00:00  min 954.6 hPa at 49.75N -5.75E
+    2023-11-02T06:00  min 954.0 hPa at 50.50N -1.50E
+    2023-11-02T12:00  min 955.9 hPa at 52.50N 1.75E
+    2023-11-02T18:00  min 958.0 hPa at 54.25N 3.00E
+    2023-11-03T00:00  min 960.3 hPa at 55.50N 2.75E
+    2023-11-03T06:00  min 962.2 hPa at 55.75N 2.00E
+    2023-11-03T12:00  min 965.4 hPa at 55.75N 3.00E
+    2023-11-03T18:00  min 964.0 hPa at 51.25N -25.25E
+    storm-core min over 45-58N/25W-5E: 954.0 hPa at 2023-11-02T06:00
+
+## variant comparison (same input frames, Nov 2023 reporting window)
+
+| variant | DetectNodes recipe (beyond searchbymin msl)      | nodes | Nov tracks | med lifetime | >=1000 km | bombs | mean |lat| | Ciaran |
+|---------|--------------------------------------------------|-------|-----------|--------------|-----------|-------|--------------|--------|
+| mslp    | closedcontour msl,1.0,4.5,0                       |  7792 | 229       | 72 h         | 159       | 29    | 50.3         | found (186 h) |
+| vor     | + thresholdcmd vor850 >= 0.0000000002 (2e-10)     |  7792 | 229       | 72 h         | 159       | 29    | 50.3         | found (186 h) |
+| vor3    | closedcontour msl,3.0,6.0,0                       |  3327 |  99       | 66 h         |  70       | 13    | 58.3         | found (156 h) |
+| vor3v   | + thresholdcmd vor850 >= 0.0001                   |  2720 |  65       | 66 h         |  47       | 12    | 56.1         | found (132 h) |
+
+All variants: --mergedist 6.0 --minabslat 5.0, StitchNodes --range 6 --mintime 48h --maxgap 12h.
+The 2e-10 s^-1 vorticity threshold quoted in circulating TempestExtremes "extratropical cyclone"
+recipes is a NO-OP here (identical node counts to MSLP-only); scan results:
+>=2e-6 -> 7792 nodes, >=1e-5 -> 7792, >=2e-5 -> 7780, >=1e-4 -> 2720 (with the 3 hPa contour),
+>=5e-4 -> 222. `--thresholdcmd` is an EXISTS-within-radius test, not an average, so it is a weak
+filter by construction.
+
+## timing / footprint on the ewb LXC (16 cores, single-core tracker run)
+
+- ARCO read: `mean_sea_level_pressure` is a single-level variable chunked (1,721,1440) -> ~1.3 s
+  per global 6-hourly frame. `u/v_component_of_wind` are chunked (1,37,721,1440): asking for the
+  850 hPa level reads the whole 37-level block -> ~8.5 s per frame for the pair (~5x the cost).
+- Extraction Nov 2023 (117 frames) + a 6-day October warm start (24 frames): ~17 min wall,
+  1.3 GB + 0.26 GB on disk (4 variables, zlib level 4).
+- DetectNodes: 141 frames, 0.25 deg global, ONE core: 18 s. StitchNodes: 0.03 s. Node+track files: 4 MB.
+- Disk after the run: /opt 461G used, 10G free (the box is at 98% - the scratch was deleted afterwards).
+
+## reproduction
+
+    ops/remote.sh bg mlc_proof bash scripts/mlc/run_proof.sh      # extract (writes data/mlc/{nov23,octctx})
+    ops/remote.sh run  bash scripts/mlc/run_track.sh              # 3 recipe variants
+    ops/remote.sh run  bash scripts/mlc/run_vor_scan.sh           # vorticity-threshold scan + orography
+    ops/remote.sh run  bash scripts/mlc/compare_variants.sh       # the table above

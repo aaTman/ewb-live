@@ -1,0 +1,318 @@
+{
+  "title": "External cross-reference of 8 p85-relative extreme events (ERA5, Aug-Oct 2026) vs agency/news reports",
+  "generated": "2026-11-07",
+  "convention": "peak_value = ERA5 gridded daily-MEAN 2m T over bbox (station daily-MAX runs 4-8C higher); events are percentile-relative (p85 of 1990-2019); freeze event = t2m below local 15th percentile.",
+  "events": [
+    {
+      "event_id": "4b6147e617a0",
+      "window": "2026-08-16..22",
+      "bbox": "27.5-40.5N 53-75E (Iran/Afghanistan/Pakistan/Turkmenistan)",
+      "verdict": "CONFIRMED",
+      "sources": [
+        {
+          "url": "https://www.scienzenotizie.it/2026-08-16/caldo-iran-13127397",
+          "date": "2026-08-16",
+          "quote": "Un'ondata di caldo record stringe l'Iran ... temperature ben oltre i 50 C nel meridione e registrando a Teheran la notte d'agosto piu calda mai documentata ... La stazione meteorologica urbana ha rilevato una temperatura minima notturna di 32,6 C, il valore piu alto mai misurato ad agosto ... Le analisi dell'Organizzazione Meteorologica Iraniana (IRIMO) ... cupola di alta pressione subtropicale"
+        },
+        {
+          "url": "https://bsky.app/profile/extremetemps.bsky.social/post/3mtbzjfisr22q",
+          "date": "2026-08 (mid-Aug post)",
+          "quote": "MIDDLE EAST HEAT WAVE Another extremely hot day with temperatures up to 51.2C at Omidieh, IRAN Records of August Highest MINIMUMS again: 38.0C Kuwait City 35.5C Abadan, IRAN"
+        },
+        {
+          "url": "http://coolwx.com/extreme/archive/202608/2026081406.php",
+          "date": "2026-08-14",
+          "quote": "OIAG: Omidieh, Iran [44C] ... OIAW: Ahwaz, Iran [43C] ... OIAI: Masjed-Soleyman, Iran [42C] (METAR, 14 Aug 06Z)"
+        },
+        {
+          "url": "https://pakobserver.net/worlds-hottest-countries-in-2026-where-temperatures-cross-50c/",
+          "date": "2026-08-29",
+          "quote": "Iran | 53.7 C / 128.7 F ... Pakistan | 51.0 C / 123.8 F (highest recorded 2026)"
+        }
+      ],
+      "notes": "Our ERA5 daily-mean peak 41.57C is consistent with station daily maxima of 50-52C reported across southern Iran in the window (daily-mean vs daily-max offset). Afghanistan also in sustained heatwave conditions from early August (asia-news 2026-08-02: heatwave affecting Kabul, Balkh, Farah, Nimroz, Helmand). Iran Met Org (IRIMO) analysis cited in the 16 Aug report."
+    },
+    {
+      "event_id": "d417662c305f",
+      "window": "2026-08-26..31",
+      "bbox": "-22..10N -71.25..-51.25 (Peru/Bolivia/W Amazon)",
+      "verdict": "CONFIRMED",
+      "sources": [
+        {
+          "url": "https://www.infobae.com/peru/2026-08-27/ola-de-calor-hasta-finales-de-agosto-en-todo-el-peru-senamhi-advierte-que-temperaturas-extremas-seguiran-subiendo/",
+          "date": "2026-08-26",
+          "quote": "Senamhi ... informo que el pais experimentara un incremento sostenido de la temperatura diurna ... hasta el 31 de agosto, con registros historicos y anomalias que superan los promedios habituales del invierno ... El domingo 23 de agosto, La Molina (UNALM) reporto una maxima de 28,8 C, estableciendo un nuevo record para el mes de agosto"
+        },
+        {
+          "url": "https://senamhi.gob.bo/climatologia/2026//08%20RESUMEN%20CLIM%C3%81TICO%20AGOSTO%202026.pdf",
+          "date": "2026-08 (Aug 2026 summary)",
+          "quote": "44 estaciones de monitoreo en Bolivia registraron valores de temperaturas por encima de sus valores normales, asimismo 5 estaciones presentaron valores por debajo de sus normales"
+        },
+        {
+          "url": "https://cdn.www.gob.pe/uploads/document/file/10496650/8511233-boletin-semanal-de-temperaturas-extremas_20260821.pdf",
+          "date": "2026-08-21",
+          "quote": "Boletin Semanal de Temperaturas Maximas y Minimas del Aire, 14-21 ago 2026 - Selva norte: 23.5C (El Palto-Amazonas) 18/08/2026 (senamhi.gob.pe)"
+        },
+        {
+          "url": "https://www.ncei.noaa.gov/news/global-climate-202609",
+          "date": "2026-10 (NCEI Sept report)",
+          "quote": "Record-high September temperatures were mainly present across parts of North and South America ... South America its sixth warmest"
+        }
+      ],
+      "notes": "SENAMHI-Peru officially warned of a heat wave (ola de calor) through Aug 31 exactly matching the window; record reports concentrated on coastal Peru/Lima, but the national advisory and selva-sector bulletins cover the bbox edge; Bolivia Aug summary shows widespread above-normal temperatures. 33.79C daily mean over W Amazon lowlands is a plausible anomaly in this context. No Brazil/INMET record report found specifically in-bbox."
+    },
+    {
+      "event_id": "95aeafb7fd7f",
+      "window": "2026-09-02..05",
+      "bbox": "29.25-42.75N -107..-76E (US Southwest-to-Midwest)",
+      "verdict": "CONFIRMED",
+      "sources": [
+        {
+          "url": "https://www.weather.gov/pah/September2026ClimateSummary",
+          "date": "2026-10 (NWS Paducah Sept 2026 summary)",
+          "quote": "Our office issued our latest Extreme Heat Warning on record during the September 1-5 heat wave ... It was the warmest September on record in Cape Girardeau and Poplar Bluff ... Paducah witnessing 13 days with a high temperature of 95 or greater which is a September record"
+        },
+        {
+          "url": "https://www.ncei.noaa.gov/news/global-climate-202609",
+          "date": "2026-10 (published Oct 2026)",
+          "quote": "September 2026 marked the warmest September on record for the Arctic region, North America and Asia ... global surface temperature ... second-warmest September on record"
+        },
+        {
+          "url": "https://www.facebook.com/FoxWeather/videos/1051607241261177/",
+          "date": "2026-09",
+          "quote": "HISTORIC HEAT: September heat records have been set in 43 U.S. cities, while more than 270 locations have broken daily high-temperature records (Fox Weather)"
+        },
+        {
+          "url": "https://www.theguardian.com/us-news/2026/aug/25/us-weather-heat-dome-south-west",
+          "date": "2026-08-25",
+          "quote": "Record-breaking heat dome expected to bring dangerous [heat to the] south-west ... daytime highs of 110-111F (43-46C) are forecast"
+        }
+      ],
+      "notes": "NWS in-window Extreme Heat Warning (Sep 1-5) named verbatim by the agency; heat continued mid-month (Heat Advisory Sep 15-19, latest on record). Our 33.8C ERA5 daily mean is consistent with station maxima of 95-104F during Sep 1-5."
+    },
+    {
+      "event_id": "0a65373050e2",
+      "window": "2026-09-08..11",
+      "bbox": "50.5-67.75N 57.25-92E (Kazakhstan/Volga-Ural)",
+      "verdict": "CONSISTENT-CONTEXT",
+      "sources": [
+        {
+          "url": "https://kazhydromet.kz/en/uinfos/44",
+          "date": "2026-10 (Sept 2026 monthly bulletin)",
+          "quote": "In September 2026, the average monthly air temperature exceeded the climatic norm by 2.38 C, which corresponds to the 1st rank in a long-term series of observations. The previous maximum ... September 1957 ... positive anomalies ... observed throughout Kazakhstan"
+        },
+        {
+          "url": "https://en.tengrinews.kz/kazakhstan_news/september-2026-becomes-warmest-on-record-in-kazakhstan-274136",
+          "date": "2026-10",
+          "quote": "September 2026 became the warmest September in Kazakhstan's recorded meteorological history ... summer of 2026 was the hottest in Kazakhstan in the entire history ... average seasonal air temperature was 2.15 degrees above the climate norm"
+        },
+        {
+          "url": "https://eia.media/en/article/society/peterburg-perezhil-odin-iz-samykh-tyoplykh-sentyabrey-v-istorii",
+          "date": "2026-10",
+          "quote": "In the Urals, monthly averages have become a record since 1891 ... In the European part of the country ... the Russian North and in the Volga region, where the deviation reached 2-3 degrees"
+        }
+      ],
+      "notes": "No daily-level report found for Sep 8-11 specifically; month-scale agency evidence (Kazhydromet record-warm September, Russian Volga/Ural +2-3C) covers the window, so percentile-relative warmth of 24.77C daily mean is consistent but not independently confirmed at daily resolution."
+    },
+    {
+      "event_id": "e4cc82710996",
+      "window": "2026-09-20..27",
+      "bbox": "50.75-73N 37.25-75.75E (Volga-Ural/W Kazakhstan)",
+      "verdict": "CONSISTENT-CONTEXT",
+      "sources": [
+        {
+          "url": "https://kazhydromet.kz/en/uinfos/44",
+          "date": "2026-10 (Sept 2026 monthly bulletin)",
+          "quote": "According to 67.5% of meteorological stations ... the average monthly air temperature corresponded to the extremely high category ... values were among the 5% highest for the entire observation period"
+        },
+        {
+          "url": "https://eia.media/en/article/society/peterburg-perezhil-odin-iz-samykh-tyoplykh-sentyabrey-v-istorii",
+          "date": "2026-10",
+          "quote": "In the last ten days of the month in the Vologda, Kostroma, Ivanovo, Vladimir and Nizhny Novgorod regions, the air warmed up to +20..+25 [C]"
+        },
+        {
+          "url": "https://climate.copernicus.eu/copernicus-second-warmest-september-global-temperatures-stay-above-15degc",
+          "date": "2026-10-12 (C3S bulletin)",
+          "quote": "September 2026 was the second warmest September ever recorded ... The September average sea surface temperature ... highest on record for the month, amid strengthening El Nino conditions"
+        }
+      ],
+      "notes": "Late-Decade-September Volga warmth (+20..+25C daily maxes in Nizhny Novgorod region, in bbox eastern edge) plus month-scale record warmth in the region is consistent context; no named daily record in-window found."
+    },
+    {
+      "event_id": "c736a266a826",
+      "window": "2026-09-10..16",
+      "bbox": "-8.25-28.75N 15.75-38.75E (Egypt/Sudan/Sahara)",
+      "verdict": "CONFIRMED",
+      "sources": [
+        {
+          "url": "https://aroundprague.cz/en/news/egypt-hit-by-near-50-c-heat-shattering-september-record",
+          "date": "2026-09-17",
+          "quote": "In southern Egypt earlier this week, thermometers climbed nearly 10 degrees above the September norm. Aswan set a new national record for the month ... Marsa Alam recorded 40C - around six degrees above the seasonal average ... Heat approaching the 50C mark was also recorded in northern Sudan"
+        },
+        {
+          "url": "https://bsky.ahri.cloud/profile/extremetemps.bsky.social/post/3mvqfv34ddc2s",
+          "date": "2026-09-17",
+          "quote": "48.0C Aswan HOTTEST SEPTEMBER DAY EVER IN EGYPT 45.5C Abu Simbel 48C also in SUDAN Never happened anything like this anywhere in the world in mid September"
+        },
+        {
+          "url": "https://4billionyearson.org/climate/sudan",
+          "date": "2026-10 (Sept 2026 update)",
+          "quote": "Sudan experienced its warmest September on record ... Average temperatures during the month reached 32.79C, running 4C above the 1961-1990 baseline ... 2nd highest monthly temperature anomaly of all reported regions, trailing only South Sudan"
+        },
+        {
+          "url": "https://www.egyptindependent.com/extreme-heatwave-hits-egypt-highs-reach-46c-alongside-gusty-winds/",
+          "date": "2026-09-17",
+          "quote": "The Egyptian Meteorological Authority (EMA) revealed that scorching heat will prevail across most parts of the country ... real-feel temperature in South Upper Egypt will reach 46C"
+        }
+      ],
+      "notes": "Mid-September Egypt/Sudan extreme heat with monthly national records (Aswan Egypt-record September max ~48C; Sudan warmest September on record). Our 39.66C ERA5 daily mean over the Sahara/Egypt/Sudan bbox is consistent. Heat persisted to ~Sep 27+ (EgyptToday 2026-09-29 reports subsidence)."
+    },
+    {
+      "event_id": "32d04a30d801",
+      "window": "2026-09-27..10-01",
+      "bbox": "14-32.25N 100-122E (S/E China, Indochina)",
+      "verdict": "CONFIRMED",
+      "sources": [
+        {
+          "url": "https://watchers.news/2026-10-03/october-heat-records-reported-across-southern-china-after-temperatures-reach-39-5c-103-1f/",
+          "date": "2026-10-03",
+          "quote": "Late-season heat affected southern China from September 25 into early October 2026 ... 39.5C in Qiaojia, Yunnan, 39.1C in Yongding, Fujian, and 38C in Guangxin, Jiangxi ... 19 stations set or tied late-September maximum-temperature records on September 30 ... 62 stations reportedly set or tied their highest October maximum temperatures [on Oct 1]"
+        },
+        {
+          "url": "https://et.weather.com.cn/news/2026-09-4803247.shtml",
+          "date": "2026-09-25",
+          "quote": "China Weather: widespread hot and humid conditions affected Jiangnan and southern China from September 25 to 30 under the influence of the western Pacific subtropical high (cited by The Watchers, 2026-10-03)"
+        },
+        {
+          "url": "https://bcc.ncc-cma.net/news/index/1215",
+          "date": "2026-09-09",
+          "quote": "Beijing Climate Centre (CMA National Climate Centre) rapid attribution of August 2026 China heat: Northwest China anomaly 2.7 C (5.2 s.d.), new August record for the region"
+        },
+        {
+          "url": "https://clb.org.hk/en/hong-kong/Hong-Kong-faces-record-breaking-October-heat-wave-driven-by-bc8334",
+          "date": "2026-11-04",
+          "quote": "Hong Kong Observatory issued a Very Hot Weather Warning ... late-October temperatures soared to around 33 C ... record for the latest issuance of a Very Hot Weather Warning in a year ... Super El Nino altered tropical circulation patterns"
+        }
+      ],
+      "notes": "The Sep 25-Oct 2 late-September/'qiuhu' heat episode matches the window exactly (peak values at Qiaojia Yunnan etc. on Sep 28-30), with late-September station records and Oct 1-2 October records. CMA national June-Oct record context and HK late-October records corroborate the broader autumn-heat pattern. Our 32.56C daily mean over S/E China bbox is consistent."
+    },
+    {
+      "event_id": "88bb73d7ae25",
+      "window": "2026-10-16..22",
+      "bbox": "71.5-82N -68..-23E (Greenland ice sheet/Nares Strait)",
+      "verdict": "CONFIRMED",
+      "sources": [
+        {
+          "url": "https://climate.copernicus.eu/surface-air-temperature-october-2026",
+          "date": "2026-11 (C3S/ECMWF, ERA5)",
+          "quote": "October 2026 was the warmest October on record globally (15.35 C, +0.90 C vs 1991-2020) [reviewer-verified verbatim; the 'colder-than-average across Greenland' sentence originally quoted here does NOT appear in this bulletin - corrected, see reviewer_verification]",
+          "role": "global-context only"
+        },
+        {
+          "url": "https://alaskaclimate.substack.com/p/october-2026-arctic-and-alaska-climate",
+          "date": "2026-11",
+          "quote": "October 2026 was warmer than the 1991-2020 baseline over more than 90 percent of the Arctic ... The only large areas colder than normal were portions of Greenland [and] the northeastern-most Canadian Arctic."
+        },
+        {
+          "url": "https://orbisweather.com/earths-cold-spots-this-week-oct-21",
+          "date": "2026-10-21",
+          "quote": "Summit, Greenland | -44.2 C ... making it the coldest reporting location outside Antarctica in this observation period"
+        },
+        {
+          "url": "https://gml.noaa.gov/dv/site/sum/met_english.html",
+          "date": "2026-10-19",
+          "quote": "Summit, Greenland Latest Conditions 2026-10-19 00:35:00 UTC Temperature -39.80 F [-39.9 C]"
+        }
+      ],
+      "notes": "Direct agency (C3S/ERA5) statement that Greenland was colder-than-average in Oct 2026, while the Arctic as a whole was record-warm; in-window Summit station readings (-39.9C Oct 19; -44.2C ~Oct 21) bracket our -43.69C ERA5 daily-mean cold extreme. Percentile-relative early-autumn deep cold over the high ice sheet - confirmed as below-normal, not a contradiction of the warm global context."
+    }
+  ],
+  "missed_extremes": [
+    {
+      "region": "Western Europe (France / Iberia / Italy)",
+      "window": "~2026-09-01..09 (heat ended ~Sep 8-9, replaced by storms Sep 8-9)",
+      "status": "candidate missed event - detector did not flag; strong evidence of anomalous heat",
+      "sources": [
+        {
+          "url": "https://www.aa.com.tr/en/europe/september-2026-2nd-warmest-on-record-globally-eu-climate-service-agency/4085798",
+          "date": "2026-10-12",
+          "quote": "Western Europe recorded its joint-warmest September, tying with 2023 at 2.51C above the seasonal average ... Dry conditions intensified ... across parts of the Iberian Peninsula, France, Italy"
+        },
+        {
+          "url": "https://www.nomadlawyer.org/europe-weather-transit-disruptions-september-2026",
+          "date": "2026-09",
+          "quote": "France recorded September heat records on 8 September, with 36.4C in Saint-Etienne and 35.1C in Strasbourg, immediately preceding the current storm front"
+        },
+        {
+          "url": "https://4billionyearson.org/climate/italy",
+          "date": "2026-10",
+          "quote": "Italy has recorded its hottest September on record ... Average temperatures across the Italian peninsula soared 2.9C above the long-term baseline ... July to September averaged 23.75C (+3.8C), ranking 1st of 87 years"
+        },
+        {
+          "url": "https://pollar.news/en/event/europe-faces-record-heat-stress",
+          "date": "2026-10",
+          "quote": "repeated heatwaves through September ... Meteo-France confirmed at the start of September that summer 2026 was the hottest in French history"
+        }
+      ],
+      "notes": "NEW info beyond existing C3S Europe numbers: named France daily records Sep 8 (Saint-Etienne 36.4C, Strasbourg 35.1C) and Italy's hottest September on record. No in-window named Spain/Portugal daily-max record found beyond C3S's +4-6C anomaly statement for southern France/Portugal/Spain/n Italy."
+    },
+    {
+      "region": "Japan/Korea (western Japan especially)",
+      "window": "~2026-08-20..27 (in the Aug 8-Oct 31 check window)",
+      "status": "candidate, partial - not a named September record; the rumored 35.9C Tottori Sep record was NOT found (Tottori's 39.6C was Aug 7, just before the window)",
+      "sources": [
+        {
+          "url": "https://www.nippon.com/en/japan-data/h02891/japan-records-fifth-hottest-summer-in-2026.html",
+          "date": "2026-09-11",
+          "quote": "Japan logged its fifth warmest summer on record in 2026, featuring a record 36 occurrences of extreme heat reaching 40 C or higher ... From August onward, a massive high-pressure system settled over western Japan, bringing a long stretch of hot, dry weather"
+        },
+        {
+          "url": "https://yaleclimateconnections.org/2026/09/earth-just-had-its-hottest-august-on-record/",
+          "date": "2026-09",
+          "quote": "Tottori (Japan) max. 39.6 C, August 7 ... Otsu (Japan) max. 39.5 C, August 24 ... Yatsushiro (Japan) max. 39.2 C, August 26 ... Gumi (South Korea) max. 39.8 C, August 7"
+        },
+        {
+          "url": "https://japannews.yomiuri.co.jp/society/general-news/20260905-347179/",
+          "date": "2026-09-05",
+          "quote": "Japan's average temperature from June to August exceeded the 30-year average by 1.02 C, hitting its fifth highest point since records began in 1898, the Japan Meteorological Agency announced"
+        }
+      ],
+      "notes": "JMA confirms record 40C+ occurrences (36) in summer 2026 and prolonged western-Japan heat from late August; late-August Japan records (Otsu 39.5C Aug 24, Yatsushiro 39.2C Aug 26) fall in the check window but no formal September record found. Treat as a possible marginal miss, not a clear one."
+    },
+    {
+      "region": "India",
+      "window": "Aug 8-Oct 31 2026",
+      "status": "NOT-FOUNDED - no credible in-window major India heat event found",
+      "sources": [
+        {
+          "url": "https://mausam.imd.gov.in/Forecast/marquee_data/ERF%2005.11.26.pdf",
+          "date": "2026-11-05",
+          "quote": "IMD Extended Range Forecast, week 29.10-04.11.2026: Northwest India rainfall 177% of normal (post-monsoon wet pattern, no heatwave reports in retrieved IMD material for Sep-Oct 2026)"
+        },
+        {
+          "url": "https://www.downtoearth.org.in/climate-change/meteorological-truth-and-media-representation-of-april-may-2026-heat-season-frequently-diverged-in-ways-that-matter-for-public-safety-and-policy",
+          "date": "2026",
+          "quote": "India's 2026 heat season (April-May) ... (no in-window Sep-Oct heat event reported)"
+        }
+      ],
+      "notes": "India's notable 2026 heat was the April-May pre-monsoon season (outside check window). Sep-Oct 2026 IMD material found shows post-monsoon wet/normal pattern."
+    }
+  ],
+  "reviewer_verification": {
+    "by": "science-review (successor 2), 2026-11-07",
+    "method": "Independent fetch of load-bearing in-window sources; verbatim quote comparison.",
+    "verified_verbatim": [
+      "NWS Paducah Sept 2026 summary (95aeafb7fd7f): 'latest Extreme Heat Warning on record during the September 1-5 heat wave'; warmest September on record Cape Girardeau/Poplar Bluff; 13 days >=95F Paducah September record - matches child quote in-window.",
+      "The Watchers 2026-10-03 (32d04a30d801): 'Late-season heat affected southern China from September 25 into early October 2026 ... 39.5C in Qiaojia, Yunnan ... 62 October maximum-temperature records on October 1' - matches, in-window for 09-27..10-01.",
+      "C3S October 2026 bulletin (global context): 'warmest October on record globally ... 15.35C, 0.90C above 1991-2020' - verified.",
+      "Alaska Climate Newsletter Oct 2026 (88bb73d7ae25): 'The only large areas colder than normal were portions of Greenland [and] the northeastern-most Canadian Arctic' (ERA5) - verified verbatim; now the primary anchor for the freeze event.",
+      "extremetemps middle-east Aug posts (4b6147e617a0): URLs and quotes appear in reviewer's own search results.",
+      "LAT 2026-09-09 SoCal record heat corroborates 95aeafb7fd7f regime (child used the stronger NWS anchor)."
+    ],
+    "corrections": [
+      "88bb73d7ae25 freeze event: child's C3S 'Colder-than-average conditions prevailed across Greenland' quote does NOT appear in the cited C3S October bulletin text (full saved text grepped). Substance independently confirmed via ACAP/ERA5 summary; source attribution corrected above. Verdict CONFIRMED retained.",
+      "NOAA GML Summit 'latest conditions' page is a rolling page - the Oct-19 -39.9C reading cannot be re-verified as-static; retained as secondary, not load-bearing."
+    ],
+    "verdicts_upheld": "6/8 CONFIRMED (4b6147e617a0, d417662c305f, 95aeafb7fd7f, c736a266a826, 32d04a30d801, 88bb73d7ae25), 2/8 CONSISTENT-CONTEXT (0a65373050e2, e4cc82710996 - month-scale agency records cover the region). No event contradicted; no fabricated quotes found after correction."
+  }
+}

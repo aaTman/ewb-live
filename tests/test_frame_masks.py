@@ -92,6 +92,15 @@ def lane(tmp_path, monkeypatch):
     frame_masks.clear_cache()
     d = _lane(tmp_path, hot_days={0, 1, 2}, cold_days={3, 4, 5})
     monkeypatch.setattr(temperature, "_event_temp_stats", _stats)
+
+    def _mirror(dates, lats, lons, reduce="mean"):
+        # no truth mirror in tests: daily means unavailable (per-event stats
+        # are stubbed), daily max well below 0 C so the freeze rule passes
+        if reduce == "max":
+            return np.full((len(dates), len(lats), len(lons)), -4.0, np.float32)
+        return None
+
+    monkeypatch.setattr(temperature, "_mirror_t2m_daily", _mirror)
     yield d
     frame_masks.clear_cache()
 
@@ -192,7 +201,7 @@ def test_scan_falls_back_when_the_lane_does_not_span_the_window(lane, monkeypatc
 
     def fake_arco(*a, **kw):
         called["yes"] = True
-        return [], np.zeros(0), np.zeros(0), None, None, None
+        return [], np.zeros(0), np.zeros(0), None, None, None, None
 
     monkeypatch.setattr(temperature, "_scan_masks_from_arco", fake_arco)
     assert temperature.scan_temperature_events(D0 + dt.timedelta(days=9),
@@ -246,3 +255,83 @@ def test_qualification_clamps_to_the_qualify_day(tmp_path, monkeypatch):
     assert ev.start == dt.datetime(2026, 9, 1)            # began as a 15-cell patch
     assert ev.details["qualified_date"] == "2026-09-02"   # qualified on day 1
     assert qualified_at(ev, root) == "2026-09-02T00:00:00Z"
+    # round-3 item 4: the published core series means what SPEC §2 says -
+    # null on the pre-qualification day, numbers from the qualifying day on
+    core = ev.details["core_area_km2"]
+    assert len(core) == len(ev.details["footprint_area_km2"])
+    assert core[0] is None
+    assert all(isinstance(a, float) for a in core[1:])
+    # nothing downstream trips on the nulls: the publish validator and the
+    # JSON round-trip (the dashboard reads no core series)
+    import json as _json
+    assert validate_event(evs[0]) == []
+    assert _json.loads(_json.dumps(evs[0].to_dict()))["details"][
+        "core_area_km2"][0] is None
+
+
+def test_scan_publishes_the_persistence_box_with_fill(tmp_path, monkeypatch):
+    """SPEC §2: the Event bbox is the persistence box, not the tracker box.
+
+    A 5-col patch drifting 1 col/day for 3 days: the tracker box spans the
+    whole path (cols 3-9); the published box keeps the cols valid on >= 2 of
+    the 3 days (4-8) and the details report the fill of that box (1.0 whole,
+    0.8 on a typical day - the drifting ends are never qualifying together).
+    """
+    monkeypatch.setattr(temperature, "_event_temp_stats", _stats)
+    monkeypatch.setattr("ewb_live.viz.build.land_mask",
+                        lambda la, lo: np.ones((NY, NX), bool))
+    days = {}
+    for k in range(4):
+        d = D0 + dt.timedelta(days=k)
+        m = np.zeros((NY, NX), bool)
+        if k < 3:                       # days 0-2 drifting; day 3 ends the spell
+            m[ROWS, slice(3 + k, 8 + k)] = True
+        for h in frame_masks.HOURS:
+            days[(d, h)] = (m, np.zeros((NY, NX), bool))
+    root = _write_lane(tmp_path / "drift", days)
+    evs = temperature.scan_temperature_events(D0, D0 + dt.timedelta(days=3),
+                                              "heat_wave", frames_dir=root,
+                                              params=PARAMS)
+    assert len(evs) == 1
+    e = evs[0]
+    assert e.bbox == pytest.approx((LATS[2], LATS[6], LONS[4], LONS[8]))
+    det = e.details
+    assert det["tracker_params"]["publish_box"] == "persistence"
+    assert det["published_box_area_km2"] < det["tracker_box_area_km2"]
+    assert det["fill"] == 1.0
+    assert det["daily_fill"] == 0.8
+    assert validate_event(e) == []
+
+
+def test_scan_id_survives_the_published_box_moving(tmp_path, monkeypatch):
+    """SPEC §2: an ongoing event keeps its id across runs (anchor-bbox basis).
+
+    The same lane scanned twice - W1 through day 2 (spell still open) and W2
+    through day 4 (spell finished). The persistence box is redrawn as the
+    spell lengthens (its k-day threshold grows), but the id hashes the frozen
+    day-3 anchor box, so the spell keeps its id; the published bbox differs.
+    """
+    monkeypatch.setattr(temperature, "_event_temp_stats", _stats)
+    days = {}
+    for k in range(5):
+        d = D0 + dt.timedelta(days=k)
+        m = np.zeros((NY, NX), bool)
+        if k < 4:                       # 6-col patch drifting 1 col/day
+            m[ROWS, slice(3 + k, 9 + k)] = True
+        for h in frame_masks.HOURS:
+            days[(d, h)] = (m, np.zeros((NY, NX), bool))
+    root = _write_lane(tmp_path / "idem", days)
+    w1 = temperature.scan_temperature_events(D0, D0 + dt.timedelta(days=2),
+                                             "heat_wave", frames_dir=root,
+                                             params=PARAMS)
+    w2 = temperature.scan_temperature_events(D0, D0 + dt.timedelta(days=4),
+                                             "heat_wave", frames_dir=root,
+                                             params=PARAMS)
+    assert [e.details["ongoing"] for e in w1] == [True]
+    assert [e.details["ongoing"] for e in w2] == [False]
+    assert w1[0].id == w2[0].id
+    assert w1[0].start == w2[0].start == dt.datetime(2026, 9, 1)
+    assert w1[0].details["anchor_box"] == w2[0].details["anchor_box"]
+    assert w1[0].bbox == pytest.approx((LATS[2], LATS[6], LONS[4], LONS[9]))
+    assert w2[0].bbox == pytest.approx((LATS[2], LATS[6], LONS[4], LONS[10]))
+    assert validate_event(w1[0]) == [] and validate_event(w2[0]) == []

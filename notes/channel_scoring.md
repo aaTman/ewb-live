@@ -1,0 +1,105 @@
+# Channel — scoring (TC / MLC / flood lanes)
+
+Append-only. Entry header: `## [role] YYYY-MM-DD HH:MM UTC — title`. R5 of `notes/scoring_design.md`.
+
+## [wp1] 2026-11-21 01:25 UTC — WP1 progress: code + offline tests done, dev run next
+
+Branch `feat/scoring-tc-track-core` off `origin/develop` (e09ebe3). Built: `ewb_live/scoring/track_verif.py` (geometry per
+section 3.4 / D10, tracker, rows incl. `TrackMiss`), `scoring/tc.py` (IBTrACS adapter, readers with 4-try backoff retry, store
+gaps = `no_data` not misses), `scoring/lane_pool.py` (ONE pool, `max_tasks_per_child=30`, RSS sampler + 40 GB cap),
+`ops/lane_backfill.sh` (state-based R1 guard, 30 s poll, SIGTERM + resumable), pipeline wiring (TC out of
+`UNSCORED_TYPES`, `truth_source = ibtracs`, `_score_job` dispatch, scores.json compaction), dashboard cell + About copy.
+Owner decisions of 2026-11-21 (single recycled pool; TC verified from the first >= 34 kt fix) recorded in section 7 of the
+note. Offline: `test_track_verif` 28, `test_score_tc` 21, `test_lane_guard` 26, pilot smoke 11 pass. Next: unit suite + 3-storm
+dev run + full backfill in a private preview tree (`/opt/ewb-preview-tc`, port 8062; not /opt/ewb-live, not /opt/ewb-live-dev).
+
+## [wp1] 2026-11-21 02:20 UTC — WP1 DONE: TC lane scored (44 storms x 9 models), PR to develop
+
+**What changed.** TC left `UNSCORED_TYPES` (`truth_source = ibtracs`); per `(event, model, init, lead)` rows
+`TrackPositionError`, `AlongTrackError` (>0 = ahead), `CrossTrackError` (>0 = right), `CentralPressureError`, `TrackMiss` in
+`scores.parquet` (scores.json carries the per-init rows collapsed to means). New: `scoring/track_verif.py`, `scoring/tc.py`,
+`scoring/lane_pool.py`, `ops/lane_backfill.sh`, `dashboard/track_scoring.py` (About listing, tested against the scorer),
+`tests/test_track_verif.py`, `test_score_tc.py`, `test_lane_guard.py`. Touched: `pipeline.py` (lane block, `_score_job` dispatch,
+`SIGNED_ERROR_METRICS`, scores.json compaction, `meta.track_verification`, sidecar fold-in keeps a proven `fp`),
+`events/select.py`, `scoring/truth.py`, `scoring/__init__.py`, `dashboard/app.js|index.html|styles.css`, `tools/track_pilot.py`
+(imports the absorbed geometry/tracker). Owner decisions of 2026-11-21 recorded in section 7 of the note: ONE pool recycled
+every 30 jobs (`ifs_hres` in the same pool); TC verified from the first observed fix >= 34 kt (earlier inits "not verified").
+
+**Measured (LXC, private preview tree `/opt/ewb-preview-tc`, port 8062; not /opt/ewb-live, not /opt/ewb-live-dev).**
+Full TC backfill launched through `ops/lane_backfill.sh tc` inside R1 (weekly inactive, Saturday): 369 pairs, 4311 jobs,
+**wall 1557 s (26 min)**, 12 workers, recycle 30, **peak pool RSS 18.1 GB** (peak worker 1.80 GB, 149 worker processes over the
+run; the pilot projected 29.7 GB), 5 transient S3 retries, 0 failed jobs. Per `(model, init)` job: store 1.116 s (pilot 0.976 s,
++14 %), `ifs_hres` 22.5 s (pilot 20.9 s, +8 %); tracker 0.023 s. The 3-storm dev run (27 pairs, 351 jobs, 203 s) had store 0.917 s
+and `ifs_hres` 39.7 s (all 12 workers on ECMWF at once). Store gaps: 36 of 518 verified inits per `_gfs` model have no init in
+the store (even via the 12 h earlier one): reported `no_data` in the pair status, no rows, never misses. R1 exercised for real:
+guard flipped to "activating" mid-run -> SIGTERM -> the pool drained (stats `stopped: true`, exit 0), rerun resumed from the
+existing part files (15 of 16 pairs scored).
+Rows: **TC scored rows 291,778** over 44 events x 9 models (396 pairs `scored`, 88 `unsupported`: `aifs_single`, `aigfs`) =
+TrackPositionError 56,124; AlongTrackError 55,908; CrossTrackError 55,908; CentralPressureError 56,033; TrackMiss 67,805.
+Existing lanes' rows per (type, metric) identical before/after. `meta.full_run_complete` true (2255 pairs: 812 scored + 1443
+documented). 518 00/12Z inits verified, 156 earlier ones not verified. Headline (24 h / 120 h): `ifs_hres` 52 / 265 km,
+`graphcast` 43 / 230 km; miss rate 5-31 % (no cell above the 50 % grey rule). scores.parquet 2.0 MB, scores.json 13 MB raw /
+0.78 MB gzip.
+
+**Tests.** Offline: `test_track_verif` 28, `test_score_tc` 23, `test_lane_guard` 26, pilot smoke 11. Box (preview tree, not the
+live tree): unit suite 675 passed, 2 failed (`test_cold_snap::test_cold_snap_severity_and_merge_envelope_follow_freeze`,
+`test_imerg::test_s3_credentials_parses_and_caches`, the two known box failures; 28 network-marked deselected;
+`test_fcn_humidity.py` excluded: its import opens the CIRA icechunk from S3 at collection and hung in this run); e2e
+(`tests/e2e -m e2e`, against the preview server) **199 passed, 1 skipped, 0 failed**, incl. new TC-lane e2e at 1440 and 390 px.
+Browser check of the real data at 1440 and 390 px: no JS errors, no horizontal page overflow (screenshots kept outside the repo).
+
+**Open.** (1) Not deployed, not merged. The weekly run will score the TC lane in its own pool after the EWB jobs (~26 min extra);
+the first weekly after merge rescores nothing already in part files. (2) The pilot's "store +/-10 %" check: store job +14 % at 12
+workers, `ifs_hres` +8 % (and 39.7 s with 12 concurrent ECMWF readers in the small run): the ECMWF backend is the bottleneck, consider
+`EWB_LIVE_LEAD_PARALLEL` if S3 politeness matters. (3) WP2 (MLC) and WP3 (landfall classes) are untouched; `Lane` in `lane_pool.py`
+is the registration point. (4) Pre-existing: sidecars of EWB jobs carry no `fp`, which used to turn every documented
+zero-row pair into a blocker after a publish-only run; fixed here (same-status fp is carried), flagged for review.
+
+## [wp1] 2026-11-21 03:25 UTC — PR #16 follow-ups: truth label, miss-rate verdict, real-data fixtures
+
+Owner review of the preview (:8062) raised three points.
+1. **Header truth** was `ERA5` on the TC tab. Now lane-aware: TC tab -> `IBTrACS` (tooltip names the best track), "all types" ->
+   `ERA5 + IBTrACS (TC)` when the TC lane has score rows, other lanes unchanged; `setTab` re-renders the header. e2e asserts all four.
+2. **Miss rate vs `ifs_hres`** (`notes/scoring_tc_miss_rate.md`, part files read-only on the LXC + one sensitivity run of 1827 reads in 417 s
+   via `ops/lane_backfill.sh`): the advantage is **real**. On the common set of (storm, valid time, lead) every model has data for (5775
+   samples) the miss rate is ifs_hres 6.8 % vs pangu 11.3 %, graphcast 13.6 %, fcn 21.7 %, aurora 26.8 % (`_gfs` twins 11-27 %); on the 5
+   IFS-initialised models alone 7.2 % vs 10.9-25.7 %. Track error on the common set where ALL are non-missed: graphcast 78 km, aurora 89,
+   pangu 95, ifs_hres 103, fcn 112 km, same ordering as the headline, so no survivorship flattery. Cause: the AI models' lows are shallower
+   (median fc-obs central pressure ifs_hres +1.8 hPa, graphcast +9.8, aurora +13.8, pangu +14.1, fcn +17.1) and misses sit on weak storms
+   (24-72 h, 34-49 kt: ifs 7 % vs MLWP 13-24 %; >= 64 kt: 0-3 % vs 0.5-9 %). Loosening the closed contour (2 -> 1 -> 0.5 hPa) shrinks the gap
+   in points (3.4 -> 1.9 -> 1.5) but never closes it (ratio 1.4 -> 1.5 -> 2.0); patience (lost after 3) changes nothing. No asymmetry in
+   tracker, grid, inits or matching found, so no tracker change. The banner now reads "ranks track error only" and shows the miss rates
+   (real data: `graphcast best · +15.8% vs ifs_hres · won 5/5 cells · ranks track error only · misses 15% vs 8%`).
+3. **Real-data checks**: cross-track group, 'Skill vs lead' (5 Plotly charts) and the 50 % grey rule verified with a real-data-shaped
+   fixture (`tests/fixtures/tc_scorecard_real_shape.json`, cut from the real 44-storm scorecard, one model's 96/120 h miss rate forced above
+   50 %) at 1440 px and 390 px light + dark, no JS errors, no overflow. Screenshots in `notes/screenshots/` (gitignored).
+   Observation, not changed: the skill-vs-lead charts run to 10 d where TC miss rates climb to 1.0 on a handful of samples.
+
+## [wp4] 2026-11-21 14:39 UTC — WP4 flood lane DONE (GraphCast only, vs AI-estimated precipitation)
+
+Branch feat/scoring-flood-lane -> develop. Built: `scoring/flood.py` (PARDIG truth on the ERA5 lattice, apcp daily totals, contingency/FSS/areal metrics),
+lane_pool/pipeline/select/truth wiring, dashboard + About. Not deployed, not merged, nothing under /opt/ewb-live or /opt/ewb-live-dev touched.
+
+**Rows.** 36,388 flood rows in scores.parquet over 40 events x {graphcast 20,360; graphcast_gfs 16,028}: CriticalSuccessIndex 5,427, ProbabilityOfDetection
+5,388, FalseAlarmRatio 3,109, FractionsSkillScore 5,427, FractionsSkillScore5 5,427, PrecipAreaBias 5,805, PeakPrecipError 5,805. 80 pairs `scored`,
+360 `unsupported` (9 models x 40), `full_run_complete` true, other lanes' rows per (type, metric) identical to the pre-flood tree.
+Headline (all 40 events, 3 d): graphcast CSI 0.09, POD 0.14, FAR 0.65, FSS(3x3) 0.18, area bias -1.9 mm, peak error -36 mm (too dry): the usual GraphCast
+under-forecast of extremes. 1 d CSI 0.11 for graphcast_gfs (graphcast has no 24 h cell).
+
+**Backfill.** `ops/lane_backfill.sh flood` from the private tree /opt/ewb-preview-flood-lane (guard ok every time, weekly service inactive): 1458 jobs,
+12 workers, recycle 30; pool 340-355 s, total 10 min 18 s (first run) - 10 min 59 s (forced rerun), ~5 min of that is serial planning of the 40 events
+(land mask + climatology, ~5-8 s each; not parallelised); peak pool RSS 16.1 GB, 1.39 GB/worker, 1.8-1.9 s per store job, 0 errors, 0-2 retries.
+Single-event serial smoke before: 2 models x 17 inits 29 s, 2.1 GB.
+
+**Tests.** New: test_score_flood_kernels 19, test_score_flood_pipeline_units 10, test_flood_pipeline 16 (wiring incl. run()), e2e/test_floodlane_fe 36
+(1440/390 px x light/dark). Box unit suite (preview tree, excl. test_fcn_humidity and network): 741 passed, 2 failed (the 2 known box failures). Full e2e on the
+preview server (:8066): 251 passed, 1 skipped, 0 failed. Real-data browser check of the flood tab at 1440 and 390 px light+dark: no console/page errors, no
+horizontal overflow, truth label "PARDIG (AI-estimated precip)", verdict "GraphCast only - not ranked". One existing TC test (`test_pool_survives_one_killed_worker_by_rebuilding`
+and its sibling) was made independent of the pytest process RSS (rss_cap_gb=1e6): its forked children carry the whole suite's RSS and the larger suite crossed the 40 GB cap.
+
+**Found on the way.** (1) apcp fill is 9.97e36 and only on some IFS inits; (2) the dashboard folds off-grid leads into its 1 d/3 d bins, so a 12Z
+nearest-earlier-init rescue showed 36 h skill under "1d": the rescue is off for flood (graphcast_gfs then has 21 % of planned inits as no_data: the upstream
+GFS-initialised store lacks 00Z on about a third of days); (3) `--force` rewrites the part files but publish-only keeps cached rows/statuses for pairs already done,
+so a forced re-merge needs those dropped (done by hand on the preview). Honest caveats: single model family (two members), no ifs_hres baseline (so no skill colour),
+truth is an AI estimate that also defines the events, daily lane scored although every event's lane of record is the 72 h accumulation.
+Pi (fleet/agent) children did tests, wiring and dashboard; the first tests child died after ~2 min with nothing written (context compressed), re-split into two smaller briefs.

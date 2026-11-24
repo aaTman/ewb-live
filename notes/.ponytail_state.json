@@ -1,0 +1,9 @@
+{
+  "note": "reset by ponytail-setup: timeout run's state advance was a bug (fixed); rolling back",
+  "cutoff_utc": "2026-11-11T09:17:13Z",
+  "last_run_utc": "2026-11-11T09:17:13Z",
+  "last_full_sweep_utc": "2026-11-11T09:17:13Z",
+  "last_terminal": "",
+  "last_result": "done-marker",
+  "carry": []
+}

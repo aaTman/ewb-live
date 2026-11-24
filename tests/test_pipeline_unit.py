@@ -362,3 +362,26 @@ def test_scorecard_ci_seed_is_per_cell():
              for x in churned["rows"]}
     for k, v in kept.items():
         assert again[k] == v, f"cell {k} CI shifted on unrelated churn"
+
+
+def test_sel_thresholds_is_serialisable_for_every_lane():
+    """Integration guard (2026-11-18): _sel_thresholds() referenced
+    flood.p95/flood.FLOOR_MM as module constants that the flood lane never
+    exposed. It is called from _write_outputs, so the AttributeError killed
+    every pipeline run that writes meta.json -- silently, on the box only, and
+    no test touched it. Assert the record exists for every lane we publish and
+    survives json.dumps (meta.json is JSON)."""
+    import json
+
+    from ewb_live.events.types import EVENT_TYPES
+    from ewb_live.pipeline import _sel_thresholds
+
+    t = _sel_thresholds()
+    assert json.loads(json.dumps(t)) == t
+    for lane in ("heat_wave", "freeze", "cold_snap", "atmospheric_river", "flood"):
+        assert lane in t, f"no selection threshold recorded for {lane}"
+    assert 0.0 < t["flood"]["q_upper"] < 1.0
+    assert set(t["flood"]["floor_mm"]) == {"1", "3"}  # str keys survive json
+    # lanes without a quantile rule (TC/MLC are track-based) must not fake one
+    for lane in ("tropical_cyclone", "midlat_cyclone"):
+        assert lane not in t or lane in EVENT_TYPES

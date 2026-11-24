@@ -16,6 +16,7 @@ dependencies = [
     "icechunk>=2.3.1",
     "matplotlib>=3.11.2",
     "ruamel-yaml>=0.19.1",
+    "scikit-image>=0.26.0",  # mlc lane: peak_local_max + find_contours (direct import; also an extremeweatherbench dep)
     "s3fs>=2026.9.0",
     "virtualizarr>=2.8.0",
     "zarr>=3.4.2",
@@ -37,7 +38,7 @@ testpaths = ["tests"]
 # ponytail 10:16 SHOULD: the live Playwright suite must stay out of a default
 # `pytest` run (browser against the DEPLOYED dashboard). An explicit
 # `-m e2e` on the command line overrides this (later -m wins).
-addopts = ["-m", "not e2e"]
+addopts = ["-m", "not e2e", "--timeout=300", "--timeout-method=thread"]
 
 [tool.uv.sources]
 extremeweatherbench = { git = "https://github.com/brightbandtech/ExtremeWeatherBench" }
@@ -46,4 +47,5 @@ extremeweatherbench = { git = "https://github.com/brightbandtech/ExtremeWeatherB
 dev = [
     "playwright>=1.64.1",
     "pytest>=9.2.0",
+    "pytest-timeout>=2.4",
 ]

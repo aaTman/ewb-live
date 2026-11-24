@@ -24,6 +24,10 @@ DIRNAME = Path("data/results/raw_exceedance")
 HOURS = ("00", "06", "12", "18")
 # layer index inside a frame (frame_bytes writes heat, freeze, ar)
 LAYERS = {"heat_wave": 0, "freeze": 1}
+# Event types that share a layer instead of having their own. cold_snap (owner
+# 2026-11-16) is the freeze rule minus the <=0C cap, so the published p15 bit IS
+# its mask — the lane needs no third temperature layer (cold_snap.py).
+MASK_ALIAS = {"cold_snap": "freeze"}
 # (dir, index mtime) -> (dates, lats, lons, {"heat_wave": mask, "freeze": mask})
 _CACHE: dict[tuple[str, float], tuple] = {}
 
@@ -83,6 +87,8 @@ def daily_masks(frames_dir: Path | None = None,
         ``lat0``, col 0 = ``lon0`` — the frame's own display orientation), and
         ``masks["heat_wave"]`` / ``masks["freeze"]`` are boolean arrays of shape
         ``(days, ny, nx)``: a cell is True when it exceeded at all four steps.
+        ``MASK_ALIAS`` maps an event type onto the layer it shares (cold_snap
+        reads the p15 freeze mask).
         ``masks`` is cached per (lane, index mtime), so scanning both hazards
         decodes the files once.
     """

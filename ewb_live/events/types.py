@@ -8,7 +8,8 @@ import hashlib
 import json
 from typing import Any
 
-EVENT_TYPES = ("heat_wave", "freeze", "atmospheric_river")
+EVENT_TYPES = ("heat_wave", "freeze", "cold_snap", "atmospheric_river",
+               "tropical_cyclone", "midlat_cyclone", "flood")
 
 
 def _encode(v: Any) -> Any:

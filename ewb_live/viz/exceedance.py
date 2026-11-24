@@ -334,6 +334,24 @@ def _write_atomic(path: Path, data: bytes) -> None:
     os.replace(tmp, path)
 
 
+def _no_truth_frames(mirror, times: list[np.datetime64]) -> set[str]:
+    """Frame tags whose 2 m temperature is entirely NaN in the mirror."""
+    return {_frame_name(t)[:-4] for t in times
+            if np.isnan(mirror["2m_temperature"].sel(
+                time=str(np.datetime64(t))).to_numpy()).all()}
+
+
+def _reconcile_no_truth(index: dict, scope: set[str], missing: set[str]) -> None:
+    """Record the frames with no truth. When one recovers, un-index it and
+    every later frame: the .run streaks after it depend on its data."""
+    old = set(index.get("no_truth", []))
+    recovered = (old & scope) - missing
+    if recovered:
+        first = min(recovered)
+        index["frames"] = [f for f in index["frames"] if f < first]
+    index["no_truth"] = sorted((old - scope) | missing)
+
+
 def build_frames(out: Path, times: list[np.datetime64], layer_fn, force: bool,
                  frames: list[str], run_seed: dict | None = None) -> int:
     """Write missing frames; returns count written. layer_fn(day_times) ->
@@ -809,6 +827,8 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
                     "full rebuild", index.get("label_sig"), sig)
         index["frames"] = []
     index["label_sig"] = sig
+    _reconcile_no_truth(index, {_frame_name(t)[:-4] for t in build_times},
+                        _no_truth_frames(mirror, build_times))
     build_frames(out, build_times, layer_fn, force, index["frames"], run_seed)
 
     index["frames"].sort()
@@ -827,6 +847,7 @@ def build(root: Path, days: int | None = None, force: bool = False) -> Path:
     # track spans for the hover tooltip (frontend contract, 00:32Z post);
     # restricted to surviving frames; absent for v1 (no sidecars)
     live = set(index["frames"])
+    index["no_truth"] = [t for t in index["no_truth"] if t in live]
     if presence:
         index["schema"] = SCHEMA
         index["tracks"] = {str(tid): dict(

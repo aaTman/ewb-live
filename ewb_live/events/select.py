@@ -20,13 +20,33 @@ heat_wave   keep: max_consecutive_days >= 3 (upstream already enforces)
             anomaly_K = peak daily-mean t2m - mean q0.85 climatology over the
             event bbox across its days/synoptic hours
 freeze      symmetric with q0.15: anomaly_K = mean q0.15 - min daily-mean t2m
+cold_snap   the freeze rule minus the <=0C cap (ewb_live/events/cold_snap.py):
+            same q0.15 anomaly x area x duration severity as freeze. It is NOT
+            merged with freeze (different type); a cold snap that overlaps a
+            freeze in time+space is dropped BEFORE curation in favour of the
+            freeze (detect_events -> cold_snap.subsume_freeze_overlaps), so the
+            two lanes never double-publish the same spell.
 atmospheric_river
             keep: landfall_days >= 1 (owner 2026-11-09; was 3) and peak IVT >= 600 kg/m/s
             severity = landfall_days x peak_land_pixels x (peak_IVT - 400)
+flood       keep: peak 72 h accumulation >= 50 mm over >= 10,000 km2 (the
+            detector already enforces the percentile + floor rule, so here only
+            the case-shape envelope: duration and bbox span).
+            severity = (peak_excess_ratio - 1) x peak_area_km2 x days, i.e. how
+            far above its OWN percentile the peak ran x how much ground it
+            covered x how long it lasted — the same anomaly x area x duration
+            shape as heat/freeze, with the percentile ratio in place of the
+            temperature anomaly because a mm of rain is not comparable across
+            climates (a 60 mm day that is p99 in Provence beats a 150 mm day
+            that is p96 in the monsoon trough).
+            NOT SCORED: EWB has no flood benchmark, so the pipeline publishes
+            these events with a documented "unsupported" pair status
+            (UNSCORED_TYPES below; same treatment as the tropical-cyclone lane).
 
-PRODUCT RULE (owner, 2026-11-06, revised same day): NO two events may
-overlap in BOTH time and space in the final selection, and mega-merges of
-distinct events are forbidden. Curation therefore runs three phases:
+PRODUCT RULE (owner, 2026-11-06, revised same day): NO two events of the SAME
+type may overlap in BOTH time and space in the final selection, and mega-merges
+of distinct events are forbidden. Cross-type pairs are evicted only when the
+overlap is MATERIAL (owner, 2026-11-23, see rule 2). Curation runs four phases:
 
 1. merge_same_type: only FRAGMENTS OF THE SAME EVENT merge — same-type
    events that are temporally contiguous (gap <= 1 day) AND have bbox
@@ -36,16 +56,27 @@ distinct events are forbidden. Curation therefore runs three phases:
 2. resolve conflicts: any two surviving events (same or different type)
    that still overlap in time+space — e.g. a low-IoU neighbour of a
    merged cluster — are decided by WITHIN-TYPE SEVERITY PERCENTILE: the
-   higher percentile is kept, the other dropped.
+   higher percentile is kept, the other dropped. SAME type keeps the
+   zero-overlap rule of 2026-11-06 unchanged. CROSS type needs a MATERIAL
+   overlap, i.e. bbox containment (intersection area / smaller box area)
+   >= CROSS_TYPE_MIN_CONTAINMENT; below the floor a graze is not a conflict
+   and the pair is published together. Measured failure this fixes: a 4-day
+   IMERG flood whose box only clipped the corner of a 17-day US heat wave
+   (containment 0.27, IoU 0.06) evicted the heat wave, and with it the
+   continuation fragment that would have carried the spell into the showcase.
 3. greedy order: candidates are consumed in global percentile order up
    to top_n per type, so a drop frees the slot for the next candidate
    under the same rules (refill).
+4. continuations (heat, freeze, cold snap): a passed-over fragment that
+   starts within a day of a selected same-type event's end, on the same
+   region, is kept as its own event outside the quota (owner 2026-11-21).
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import functools
+import json
 import logging
 import os
 from typing import Any
@@ -64,6 +95,63 @@ AR_IVT_BASELINE = 400.0  # the EWB mask threshold
 # 1500 kg/m/s is above every legit selected event (max 1435) and below
 # Dolphin/Isaias/monsoon blobs (1785-2972).
 AR_MAX_PEAK_IVT = float(os.environ.get("EWB_LIVE_AR_IVT_MAX_KGM_S", "1500"))
+
+# Cross-type conflict floor (owner 2026-11-23): a cross-type pair is a conflict
+# only when the smaller box is at least this fraction *inside* the other
+# (see _bbox_containment). Same-type eviction never uses it.
+# 0.5 = "material means at least half of the smaller event is inside". W47
+# replay: floors 0.3/0.5/0.7 all rescue the US heat-wave chain (graze 0.268);
+# 0.3 wins on diff size (9 id changes vs 12) but leaves only 0.03 of margin
+# over the measured graze, so the next corner-touch slightly deeper would
+# evict again — a rule that flip-flops weekly is worse than one slightly
+# stricter (0.7 rejected too: 17 changes, removes fill-0.926 events).
+_CTMC_RAW = os.environ.get("EWB_LIVE_CROSSTYPE_MIN_CONTAINMENT", "0.5")
+CROSS_TYPE_MIN_CONTAINMENT = float(_CTMC_RAW)
+if not 0.0 <= CROSS_TYPE_MIN_CONTAINMENT <= 1.0:
+    # a floor outside [0, 1] silently disables cross-type eviction (>1, NaN)
+    # or silently reverts to the pre-floor rule (<0); fail loudly at import
+    raise ValueError("EWB_LIVE_CROSSTYPE_MIN_CONTAINMENT must be in [0, 1], "
+                     f"got {_CTMC_RAW!r}")
+
+# --- track lanes (tc 2026-11-16, mlc 2026-11-17) ------------------------- #
+# A cyclone is a TRACK event, not an area event: one storm / one stitched low =
+# one event, it never merges (welding two storms, or two lows caught in one
+# basin, makes an object that never existed and a discontinuous pressure or
+# wind series), and it sits outside the "no two events overlap in time+space"
+# rule — a hurricane routinely overlaps a tropical AR, a deep low sits inside a
+# freeze or a heat wave, and the overlap rule would delete the most impactful
+# rows in the catalog. Flagged for the owner in notes/channel_new_events.md.
+TRACK_TYPES = {"tropical_cyclone", "midlat_cyclone"}
+# --- lanes that read their own source, not the ERA5 rasters ---------------- #
+# tropical_cyclone reads IBTrACS best tracks, flood reads IMERG: both publish
+# with sub-daily / ~1-day latency, so the ERA5 truth-cutoff clamp must not trim
+# their windows (it silently erased the newest week of storms and floods every
+# run). midlat_cyclone is deliberately NOT here — it is tracked in ERA5/ARCO
+# MSLP and can only be detected inside the ERA5-available window.
+SELF_SOURCE_TYPES = {"tropical_cyclone", "flood"}
+# --- published-but-not-scored lanes -------------------------------------- #
+# An event type here is curated, published and rendered, but never sent to EWB
+# scoring: there is no benchmark for its shape, so the pipeline records a
+# documented ``unsupported`` pair status per (event, model) instead of leaving
+# phantom blockers in pair_coverage. EWB ships no metric set for best-track
+# storms, for tracked pressure minima, or for IMERG-accumulation floods.
+# tropical_cyclone left this set in WP1 (notes/scoring_design.md 8.3) and midlat_cyclone in
+# WP2 (8.4): they are scored by the track-verification lanes (scoring/tc.py, scoring/mlc.py,
+# scoring/lane_pool.py), not by EWB. flood left it in WP4: it is scored by scoring/flood.py
+# (PARDIG truth + apcp). No published type remains unscored.
+UNSCORED_TYPES = TRACK_TYPES - {"tropical_cyclone", "midlat_cyclone"}
+# per-type quota overrides: a 90-day window is not 15 events.
+#  * tropical_cyclone: measured on IBTrACS v04r01 on 2026-11-17, the trailing
+#    90 days held 43 qualifying storms (16 NE Pacific, 14 NW Pacific, 7
+#    Atlantic, 3 North Indian, 3 southern); 60 covers a busy window.
+#  * flood: the live 90-day IMERG run publishes 30 (notes/channel_new_events.md).
+#  * midlat_cyclone: Nov 2023 held 99 stitched lows, ~53 in the genesis band,
+#    ~20-40 after every screen; the lane's proof window published 71.
+TOP_N_BY_TYPE = {
+    "tropical_cyclone": int(os.environ.get("EWB_LIVE_TOP_N_TC", "60")),
+    "flood": int(os.environ.get("EWB_LIVE_TOP_N_FLOOD", "40")),
+    "midlat_cyclone": int(os.environ.get("EWB_LIVE_TOP_N_MLC", "80")),
+}
 
 
 @functools.lru_cache(maxsize=2)
@@ -130,15 +218,22 @@ def _detail(e, key: str, default: float = 0.0) -> float:
     return float(v) if v is not None else default
 
 
-_severity_cache: dict[str, float] = {}
+_severity_cache: dict[tuple, float] = {}
+
+
+def _severity_key(e) -> tuple:
+    """Cache key: a merged event can reuse a member's id with a longer window."""
+    details = {k: v for k, v in (e.details or {}).items() if k != "severity_rank_score"}
+    return (e.id, e.end, e.peak_value, json.dumps(details, sort_keys=True, default=str))
 
 
 def severity(e) -> float:
     """Severity score (arbitrary units, comparable within an event type)."""
-    if e.id in _severity_cache:
-        return _severity_cache[e.id]
+    key = _severity_key(e)
+    if key in _severity_cache:
+        return _severity_cache[key]
     val = _severity(e)
-    _severity_cache[e.id] = val
+    _severity_cache[key] = val
     return val
 
 
@@ -159,8 +254,8 @@ def _severity(e) -> float:
         clim = _bbox_clim_mean(q, e.bbox, e.start, e.end, src)
         anom = (e.peak_value - clim + 273.15) if clim is not None and e.peak_value is not None else 0.0
         return max(anom, 0.0) * area * days
-    if e.event_type == "freeze":
-        q = clips["freeze"]["q_upper"] if owb else 0.15
+    if e.event_type in ("freeze", "cold_snap"):
+        q = clips[e.event_type]["q_upper"] if owb else 0.15
         clim = _bbox_clim_mean(q, e.bbox, e.start, e.end, src)
         mn = (e.details or {}).get("min_temp_c", e.peak_value)
         anom = (clim - 273.15 - mn) if clim is not None and mn is not None else 0.0
@@ -170,11 +265,52 @@ def _severity(e) -> float:
         return _detail(e, "landfall_days") * _detail(e, "peak_land_pixels") * max(
             ivt - AR_IVT_BASELINE, 1.0
         )
+    if e.event_type == "tropical_cyclone":
+        # intensity above the 34 kt floor x how long it stayed tropical, so a
+        # long major hurricane outranks a one-day tropical storm
+        from ewb_live.events.tc import MIN_TS_WIND_KT
+
+        kt = max((e.peak_value or 34.0) - MIN_TS_WIND_KT, 1.0)
+        return kt * max(_detail(e, "ts_hours", 12.0), 1.0) / 24.0
+    if e.event_type == "flood":
+        # percentile excess x ground x time (see the module docstring)
+        excess = max(_detail(e, "peak_excess_ratio", 1.0) - 1.0, 0.02)
+        return excess * area * max(days, 1.0)
+    if e.event_type == "midlat_cyclone":    # mlc lane: depth x duration x bomb
+        from ewb_live.events.mlc import severity as _mlc_severity
+
+        return _mlc_severity(e)
     return 0.0
 
 
 def _passes_floor(e) -> bool:
     dur = (e.end - e.start).days
+    if e.event_type == "tropical_cyclone":
+        # qualification already happened in events/tc.py (34 kt x 3 fixes x
+        # 12 h); here only the physical-sanity tripwires
+        from ewb_live.events.tc import MIN_TS_WIND_KT
+
+        dur_h = (e.end - e.start).total_seconds() / 3600.0   # sub-daily windows
+        return (dur_h >= 12.0
+                and (e.peak_value or 0.0) >= MIN_TS_WIND_KT
+                and _detail(e, "ts_fixes") >= 3.0)
+    if e.event_type == "flood":
+        # the physical rule (percentile + floor + area + land + completeness)
+        # is enforced in events/flood.py; here only the case-shape envelope,
+        # so a fragment that is not a flood-shaped object cannot be published.
+        lat_span = e.bbox[1] - e.bbox[0]
+        lon_span = (e.bbox[3] - e.bbox[2]) % 360.0
+        return (_detail(e, "peak_3day_mm", 0.0) >= 50.0
+                and _detail(e, "peak_area_km2", 0.0) >= 1.0e4
+                and 1 <= dur <= 21
+                and lat_span <= 45.0
+                and lon_span <= 45.0)
+    if e.event_type == "midlat_cyclone":
+        # the detector already screened it; this re-checks the same floors so a
+        # mutated/merged track cannot slip through (mlc lane)
+        from ewb_live.events.mlc import passes_floor as _mlc_floor
+
+        return _mlc_floor(e)
     if e.event_type == "atmospheric_river":
         # events.yaml AR cases: centroid |lat| >= 22, duration p90 8 d
         centroid = _detail(e, "centroid_lat", 999.0)
@@ -206,12 +342,18 @@ def _passes_floor(e) -> bool:
 
 MERGE_GAP_DAYS = 1.0      # same-type fragments may touch by at most this
 MERGE_MIN_IOU = float(os.environ.get("EWB_LIVE_MERGE_MIN_IOU", "0.3"))
+CONTINUATION_TYPES = {"heat_wave", "freeze", "cold_snap"}  # see _add_continuations
 # merged-duration caps = upstream events.yaml per-type p90 duration
 # (measured 2026-11-06: AR p90 9 d, heat_wave p90 16 d, freeze p90 16 d)
 MERGE_CAP_DAYS = {
     "atmospheric_river": float(os.environ.get("EWB_LIVE_MERGE_CAP_AR_DAYS", "9")),
     "heat_wave": float(os.environ.get("EWB_LIVE_MERGE_CAP_HEAT_DAYS", "16")),
     "freeze": float(os.environ.get("EWB_LIVE_MERGE_CAP_FREEZE_DAYS", "16")),
+    # same envelope as freeze: cold snaps are the same tracker on the same mask
+    "cold_snap": float(os.environ.get("EWB_LIVE_MERGE_CAP_FREEZE_DAYS", "16")),
+    # a rain-flood spell is short: the upstream events.yaml envelope for a
+    # precipitative event is days, not the two weeks a heat wave gets
+    "flood": float(os.environ.get("EWB_LIVE_MERGE_CAP_FLOOD_DAYS", "9")),
 }
 CAP_LAT_SPAN = 40.0       # merged-union bbox caps; beyond -> refuse absorb
 CAP_LON_SPAN = 60.0
@@ -252,6 +394,11 @@ def _bbox_intersects(a_bbox, b_bbox) -> bool:
 
 def _overlaps(a, b) -> bool:
     """True iff the two events share >=1 day of time AND bbox area."""
+    if a.event_type in TRACK_TYPES or b.event_type in TRACK_TYPES:
+        # track lanes sit outside the no-overlap rule (see TRACK_TYPES): a
+        # hurricane is routinely inside a tropical AR / a heat wave, and a deep
+        # low sits inside freezes, heat waves and ARs as a matter of course
+        return False
     if min(a.end, b.end) - max(a.start, b.start) <= dt.timedelta(0):
         return False
     return _bbox_intersects(a.bbox, b.bbox)
@@ -310,6 +457,20 @@ def _merge_component(members: list, decisions: list[dict]):
                 if (m.details or {}).get(key) is not None]
 
     det = dict(core.details or {})
+    # Per-box provenance (fill / daily_fill / the two box areas / anchor_box)
+    # describes the CORE's own published rectangle. When the merged bbox is
+    # the union of members' boxes those numbers are a lie for the rectangle
+    # the map draws and the scorer scores (review #3: -20260909 boxes scored
+    # against a partner's fill). The masks are not available this far
+    # downstream, so drop the fields and record it (per_box_voided); the
+    # core-fallback merge keeps them - there the bbox IS the core's box.
+    if tuple(bbox) != tuple(core.bbox):
+        voided = [k for k in ("fill", "daily_fill", "published_box_area_km2",
+                              "tracker_box_area_km2", "anchor_box") if k in det]
+        for k in voided:
+            det[k] = None
+        if voided:
+            det["per_box_voided"] = voided
     if _vals("max_consecutive_days"):
         det["max_consecutive_days"] = max(_vals("max_consecutive_days"))
     if _vals("peak_area_km2"):
@@ -320,10 +481,18 @@ def _merge_component(members: list, decisions: list[dict]):
         peak = max(peaks) if peaks else core.peak_value
         if _vals("min_temp_c"):
             det["min_temp_c"] = min(_vals("min_temp_c"))
-    elif t == "freeze":
+    elif t in ("freeze", "cold_snap"):   # peak == the coldest value
         mins = _vals("min_temp_c") or peaks
         peak = mn = min(mins) if mins else core.peak_value
         det["min_temp_c"] = mn
+    elif t == "flood":
+        # the peak of a merged fragment set is the worst accumulation, and the
+        # percentile excess that goes with it (both lanes, kept consistent)
+        peak = max(peaks) if peaks else core.peak_value
+        for key in ("peak_3day_mm", "peak_daily_mm", "peak_excess_ratio",
+                    "peak_excess_ratio_3day", "peak_excess_ratio_daily"):
+            if _vals(key):
+                det[key] = max(_vals(key))
     else:  # atmospheric_river: core keeps its consistent pixel/threshold pair
         peak = max(peaks) if peaks else core.peak_value
         if _vals("landfall_days"):
@@ -378,6 +547,38 @@ def _bbox_iou(a_bbox, b_bbox) -> float:
     return inter / union if union > 0 else 0.0
 
 
+def _bbox_containment(a_bbox, b_bbox) -> float:
+    """Intersection area / SMALLER box area, in deg^2 (arc-aware lon wrap).
+
+    IoU's forgiving sibling: it asks "how much of the SMALLER box sits inside
+    the other", so a flood that covers a third of a heat wave scores high
+    while a corner graze scores low, whatever the size gap between them.
+    Ranges 0..1; 0.0 when the boxes do not intersect.
+
+    Areas are deg^2, so the numerator and denominator share one space (a
+    ratio, not an area) — but deg^2 is not km^2: a degree of longitude is
+    shorter at high latitude, so a polar box and a tropical box of the same
+    km^2 get different scores. Accepted for a rule floor (owner 2026-11-23):
+    the floor only separates grazes (0.0-0.3) from real overlaps (0.5+), and
+    a cos(lat)-integrated version would add a raster dependency to a
+    decision that is not about physical exposure.
+    """
+    lat_i = min(a_bbox[1], b_bbox[1]) - max(a_bbox[0], b_bbox[0])
+    if lat_i <= 0.0:
+        return 0.0
+    lon_i = 0.0
+    for l0, h0 in _lon_arcs(a_bbox[2], a_bbox[3]):
+        for l1, h1 in _lon_arcs(b_bbox[2], b_bbox[3]):
+            lon_i += max(0.0, min(h0, h1) - max(l0, l1))
+    if lon_i <= 0.0:
+        return 0.0
+    inter = lat_i * lon_i
+    a_area = (a_bbox[1] - a_bbox[0]) * ((a_bbox[3] - a_bbox[2]) % 360.0 or 360.0)
+    b_area = (b_bbox[1] - b_bbox[0]) * ((b_bbox[3] - b_bbox[2]) % 360.0 or 360.0)
+    smaller = min(a_area, b_area)
+    return inter / smaller if smaller > 0 else 0.0
+
+
 def merge_same_type(events: list, decisions: list[dict]) -> list:
     """Merge only same-event fragments, greedily from the highest-severity
     seed: same type, temporal contiguity (gap <= MERGE_GAP_DAYS) AND bbox
@@ -387,6 +588,10 @@ def merge_same_type(events: list, decisions: list[dict]) -> list:
     _resolve_conflicts (drop, never merge)."""
     pending = sorted(events, key=severity, reverse=True)
     out: list = []
+    if events and events[0].event_type in TRACK_TYPES:
+        # one storm / one low = one event: never weld fragments (or two storms
+        # in one basin, or two lows) into a single object
+        return list(pending)
     while pending:
         seed = pending.pop(0)
         cluster = [seed]
@@ -422,7 +627,6 @@ def _load_exclusions() -> dict:
     {event_id: {"reason": str, "by": str, "date": str}} applied at curation.
     Used for events misclassified by detection but settled by product review
     (e.g. post-tropical cyclones scored as ARs). Absent file = no exclusions."""
-    import json
     import pathlib
     p = pathlib.Path("data/curation_exclusions.json")
     try:
@@ -435,12 +639,51 @@ def _load_exclusions() -> dict:
     return {str(k): dict(v) for k, v in raw.items() if isinstance(v, dict)}
 
 
+def _conflict_with(e, accepted: list):
+    """The first accepted event that conflicts with ``e``, or None.
+
+    A conflict is a time+space overlap (_overlaps) that the product rule
+    cares about: same-type pairs always conflict (the zero-overlap rule of
+    2026-11-06), cross-type pairs only when the overlap is material, i.e.
+    bbox containment >= CROSS_TYPE_MIN_CONTAINMENT (owner 2026-11-23). A
+    sub-floor graze is NOT a conflict: checking continues against the rest
+    of the accepted set, so ``e`` can still be published next to that
+    neighbour. TRACK lanes never conflict (_overlaps exempts them).
+
+    Returns ``(conflict, kind, containment)``; ``containment`` is None for
+    same-type drops (the floor does not apply to them). When the scan finds
+    no conflict but did see sub-floor grazes, returns the WORST one (max
+    containment — the one an auditor wants) as ``(grazer, "graze",
+    containment)`` so the caller can log it — the pair is NOT a conflict and
+    the candidate is still accepted.
+    """
+    graze = None
+    for a in accepted:
+        if not _overlaps(a, e):
+            continue
+        if a.event_type == e.event_type:
+            return a, "same-type-overlap", None
+        cont = _bbox_containment(a.bbox, e.bbox)
+        if cont >= CROSS_TYPE_MIN_CONTAINMENT:
+            return a, "cross-type", cont
+        if graze is None or cont > graze[2]:
+            graze = a, "graze", cont
+        logger.info(
+            "curation PASS %s %s past cross-type neighbour %s %s: containment "
+            "%.3f < floor %.2f (graze, not a conflict)",
+            e.event_type, e.id, a.event_type, a.id, cont,
+            CROSS_TYPE_MIN_CONTAINMENT)
+    return graze
+
+
 def _resolve_conflicts(merged_by_type: dict[str, list], top_n_map: dict[str, int],
                        decisions: list[dict]) -> list:
     """Global greedy by within-type severity PERCENTILE: any surviving pair
     (same or cross type) that overlaps in time+space goes to the higher
-    percentile; the loser is dropped. Per-type quota top_n; greedy order
-    lets lower-ranked candidates refill freed slots (rule 3)."""
+    percentile; the loser is dropped. Same-type pairs conflict on ANY
+    overlap; cross-type pairs only at containment >=
+    CROSS_TYPE_MIN_CONTAINMENT (owner 2026-11-23). Per-type quota top_n;
+    greedy order lets lower-ranked candidates refill freed slots (rule 3)."""
     exclusions = _load_exclusions()
     queue = []
     for t, evs in merged_by_type.items():
@@ -469,31 +712,87 @@ def _resolve_conflicts(merged_by_type: dict[str, list], top_n_map: dict[str, int
                               "event_type": t, "id": e.id,
                               "rank": _rank_of(e)})
             continue
-        conflict = next((a for a in accepted if _overlaps(a, e)), None)
+        conflict = _conflict_with(e, accepted)
         if conflict is not None:
-            kind = ("cross-type" if conflict.event_type != t
-                    else "same-type-overlap")
-            decisions.append({
-                "action": "drop", "reason": kind,
-                "event_type": t, "id": e.id, "rank": _rank_of(e),
-                "kept": conflict.id, "kept_type": conflict.event_type,
-                "kept_rank": _rank_of(conflict),
-            })
-            logger.info(
-                "curation DROP %s %s (rank %d) overlaps %s %s (rank %d) -> keep higher rank",
-                e.id, t, _rank_of(e), conflict.event_type, conflict.id,
-                _rank_of(conflict))
-            continue
+            kept, kind, containment = conflict
+            if kind == "graze":
+                # paper trail only: sub-floor grazes are published together
+                decisions.append({"action": "cross-type-graze", "event_type": t,
+                                  "id": e.id, "kept": kept.id,
+                                  "containment": round(containment, 3),
+                                  "containment_floor": CROSS_TYPE_MIN_CONTAINMENT})
+            else:
+                drop = {
+                    "action": "drop", "reason": kind,
+                    "event_type": t, "id": e.id, "rank": _rank_of(e),
+                    "kept": kept.id, "kept_type": kept.event_type,
+                    "kept_rank": _rank_of(kept),
+                }
+                if containment is not None:
+                    drop["containment"] = round(containment, 3)
+                    drop["containment_floor"] = CROSS_TYPE_MIN_CONTAINMENT
+                decisions.append(drop)
+                logger.info(
+                    "curation DROP %s %s (rank %d) overlaps %s %s (rank %d) -> keep higher rank",
+                    e.event_type, e.id, _rank_of(e), kept.event_type, kept.id,
+                    _rank_of(kept))
+                continue
         accepted.append(e)
         quota[t] = quota.get(t, 0) + 1
     return accepted
 
 
+def _add_continuations(selected: list, pool: list, decisions: list[dict]) -> list:
+    """Keep a passed-over temperature fragment that directly continues a
+    selected event (owner 2026-11-21): same type, starting 0..MERGE_GAP_DAYS
+    after that event ends, bbox IoU >= MERGE_MIN_IOU, and conflicting with
+    nothing kept — the SAME predicate as phase 2 (2026-11-23): a same-type
+    overlap or a material cross-type overlap blocks the hop; a sub-floor
+    graze does not. One hop only, and outside the per-type quota: the event
+    stays its own row, so the merged-duration cap cannot hide its days."""
+    import dataclasses
+
+    exclusions = _load_exclusions()
+    used = {e.id for e in selected}
+    for d in decisions:
+        if d.get("action") == "merge":
+            used.update(d.get("members") or [])
+    parents = sorted((e for e in selected if e.event_type in CONTINUATION_TYPES),
+                     key=lambda e: (e.start, e.id))
+    accepted = list(selected)
+    candidates = (e for e in pool if e.event_type in CONTINUATION_TYPES
+                  and e.id not in used and e.id not in exclusions)
+    for c in sorted(candidates, key=lambda e: (e.start, -severity(e), e.id)):
+        parent = next((s for s in parents if s.event_type == c.event_type
+                       and 0.0 <= (c.start - s.end).total_seconds() / 86400.0 <= MERGE_GAP_DAYS
+                       and _bbox_iou(c.bbox, s.bbox) >= MERGE_MIN_IOU), None)
+        if parent is None:
+            continue
+        conflict = _conflict_with(c, accepted)
+        if conflict is not None and conflict[1] != "graze":
+            decisions.append({"action": "continuation-skipped", "event_type": c.event_type,
+                              "id": c.id, "kept": conflict[0].id, "reason": conflict[1]})
+            continue
+        if conflict is not None:      # graze: hop proceeds, paper trail like phase 2
+            decisions.append({"action": "cross-type-graze", "event_type": c.event_type,
+                              "id": c.id, "kept": conflict[0].id,
+                              "containment": round(conflict[2], 3),
+                              "containment_floor": CROSS_TYPE_MIN_CONTAINMENT})
+        accepted.append(dataclasses.replace(
+            c, details={**(c.details or {}), "continues": parent.id}))
+        decisions.append({"action": "continuation", "event_type": c.event_type,
+                          "id": c.id, "continues": parent.id})
+        logger.info("curation CONTINUATION %s %s continues %s", c.event_type, c.id, parent.id)
+    return accepted
+
+
 def rank_and_cap(events, top_n: int | dict[str, int] = DEFAULT_TOP_N,
                  decisions: list[dict] | None = None) -> list:
-    """Floor, merge same-type chains, resolve cross-type conflicts with
-    refill, cap per event type. Guarantees zero time+space overlap pairs in
-    the returned set (owner rule 2026-11-06). Decisions (merge/drop log) go
+    """Floor, merge same-type chains, resolve conflicts with refill, cap per
+    event type. Guarantees zero time+space overlap pairs BETWEEN SAME-TYPE
+    EVENTS in the returned set; cross-type pairs may coexist when their
+    overlap is a graze below CROSS_TYPE_MIN_CONTAINMENT (owner rule
+    2026-11-06, floor added 2026-11-23). Decisions (merge/drop log) go
     to the optional list and to LAST_DECISIONS."""
     if decisions is None:
         decisions = []
@@ -514,7 +813,13 @@ def rank_and_cap(events, top_n: int | dict[str, int] = DEFAULT_TOP_N,
 
     n_map = ({t: top_n for t in merged_by_type} if not isinstance(top_n, dict)
              else top_n)
+    # per-type quota overrides (season-scale lanes carry their own count;
+    # see TOP_N_BY_TYPE)
+    n_map = {t: max(n_map.get(t, DEFAULT_TOP_N), TOP_N_BY_TYPE.get(t, 0))
+             for t in merged_by_type}
     selected = _resolve_conflicts(merged_by_type, n_map, decisions)
+    selected = _add_continuations(selected, [e for evs in by_type.values() for e in evs],
+                                  decisions)
     for e in selected:
         e.details = {**(e.details or {}), "severity_rank_score": round(severity(e), 2)}
     LAST_DECISIONS[:] = decisions

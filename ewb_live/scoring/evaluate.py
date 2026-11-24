@@ -20,7 +20,6 @@ import pandas as pd
 import xarray as xr
 
 from extremeweatherbench import cases as ewb_cases
-from extremeweatherbench import defaults as ewb_defaults
 from extremeweatherbench import derived as ewb_derived
 from extremeweatherbench import evaluate as ewb_evaluate
 from extremeweatherbench import inputs as ewb_inputs
@@ -115,9 +114,22 @@ BBOX_PAD_DEG = 10.0
 SCORE_COLUMNS = ["event_id", "event_type", "model", "metric", "lead_time_hours", "value", "init_time"]
 
 
+def _ewb_defaults():
+    """Lazy ``extremeweatherbench.defaults`` accessor.
+
+    ``defaults`` opens the hosted CIRA icechunk store AT IMPORT (module-scope
+    ``inputs.get_cira_icechunk`` calls, no opt-out) - importing it transitively
+    from this module made the whole offline test suite depend on that network
+    path and hung CI collection for minutes when egress stalls. Only call this
+    from runtime code paths (compute host), never at module scope.
+    """
+    from extremeweatherbench import defaults
+    return defaults
+
+
 @lru_cache(maxsize=8)
 def _climatology(quantile: float):
-    return ewb_defaults.get_climatology(quantile)
+    return _ewb_defaults().get_climatology(quantile)
 
 
 def default_metrics(event_type: str) -> list[ewb_metrics.BaseMetric]:
@@ -131,7 +143,9 @@ def default_metrics(event_type: str) -> list[ewb_metrics.BaseMetric]:
             ),
             ewb_metrics.MaximumLowestMeanAbsoluteError(),
         ]
-    if event_type == "freeze":
+    if event_type in ("freeze", "cold_snap"):
+        # cold snap is scored exactly like freeze: same target (ERA5 2 m t2m),
+        # same EWB default metrics; only the event SET differs (no <=0C cap).
         return [
             ewb_metrics.MinimumMeanAbsoluteError(),
             ewb_metrics.RootMeanSquaredError(),
@@ -159,6 +173,7 @@ def _le(a, b):
 EVENT_SURFACE_VARS = {
     "heat_wave": ["surface_air_temperature"],
     "freeze": ["surface_air_temperature"],
+    "cold_snap": ["surface_air_temperature"],
 }
 AR_FORECAST_VARS = ["eastward_wind", "northward_wind", "specific_humidity"]
 
@@ -186,7 +201,7 @@ def forecast_variables_for(event_type: str, model: str) -> tuple[list[str], Call
     if missing == ["specific_humidity"] and {"relative_humidity", "air_temperature"} <= available:
         return (
             ["eastward_wind", "northward_wind", "relative_humidity", "air_temperature"],
-            ewb_defaults.preprocess_cira_icechunk_ar_forecast_dataset,
+            _ewb_defaults().preprocess_cira_icechunk_ar_forecast_dataset,
         )
     raise ValueError(f"model {model!r} lacks variables {missing} for atmospheric_river")
 

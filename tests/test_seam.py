@@ -8,8 +8,8 @@ import pandas as pd
 
 from ewb_live.events.ar_filter import ar_filter_tracks, track_ar_components
 from ewb_live.events.seam import (arc_bbox_180, label_periodic,
-                                  merge_seam_objects, minimal_arc, pad_bbox_180,
-                                  seam_columns)
+                                  mask_lat_span, merge_seam_objects,
+                                  minimal_arc, pad_bbox_180, seam_columns)
 
 T = np.array([np.datetime64("2026-10-03T00", "h")
               + np.timedelta64(6 * i, "h") for i in range(3)])
@@ -133,3 +133,39 @@ def test_arc_bbox_180_returns_a_lon_pair_pad_bbox_180_a_full_bbox():
     assert arc_bbox_180(-10.0, 10.0, 5.0) == (-15.0, 15.0)
     assert arc_bbox_180(175.0, -175.0, 5.0) == (170.0, -170.0)   # wrap arc
     assert len(pad_bbox_180((-10.0, 10.0, -20.0, 20.0), 5.0, 5.0)) == 4
+
+
+def test_mask_lat_span_is_latitude_axis_order_agnostic():
+    """(lat_min, lat_max) must be south-then-north on ANY latitude axis.
+
+    ERA5 ARCO / the local mirror — and the model archives — are DESCENDING
+    (latitude 90..-90). mask_lat_span used to return (lats[rows[0]],
+    lats[rows[-1]]), which on a descending axis is (north, south).
+    events/ar.py publishes the AR-object extent as the event bbox, so every AR
+    whose box came from that path was inverted and the publish gate dropped it
+    ("bbox latitudes invalid: 56.25..41.0" — 9 of the 15 curated ARs on the
+    2026-11-16 weekly, including the top-severity ones).
+    """
+    lats_up = np.arange(-90.0, 91.0, 1.0)
+    lats_dn = lats_up[::-1]
+
+    def band(lats):
+        m = np.zeros((len(lats), 4), bool)
+        m[(lats >= 41.0) & (lats <= 61.0), 1] = True
+        return m
+
+    assert mask_lat_span(band(lats_up), lats_up) == (41.0, 61.0)
+    assert mask_lat_span(band(lats_dn), lats_dn) == (41.0, 61.0)
+
+    # the way ar.py pads that extent into a published bbox: still a box
+    lat_lo, lat_hi = mask_lat_span(band(lats_dn), lats_dn)
+    bbox = (max(-90.0, lat_lo - 2.5), min(90.0, lat_hi + 2.5), 0.0, 10.0)
+    assert bbox[0] < bbox[1]
+
+    # a gapped mask reports the full span (min/max of the rows that hold cells)
+    m = np.zeros((len(lats_dn), 4), bool)
+    m[(lats_dn >= 70.0) & (lats_dn <= 75.0), 0] = True
+    m[(lats_dn >= -20.0) & (lats_dn <= -10.0), 0] = True
+    assert mask_lat_span(m, lats_dn) == (-20.0, 75.0)
+    empty = np.zeros((len(lats_dn), 4), bool)
+    assert mask_lat_span(empty, lats_dn) is None

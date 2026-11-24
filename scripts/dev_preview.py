@@ -57,8 +57,9 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
+    ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8061)
     ap.add_argument("--upstream", default="http://192.168.0.121:8050")
     args = ap.parse_args()
     Handler.upstream = args.upstream.rstrip("/")
-    ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+    ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()

@@ -1,0 +1,465 @@
+{
+ "report": {
+  "desktop/all": {
+   "rows": 202,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [
+    "Not scored in this data release \u2014 6 published events; no score rows for this lane yet.",
+    "Not scored \u2014 40 floods tracked from IMERG rain accumulations; no EWB benchmark for this lane yet.",
+    "Not scored \u2014 44 storms tracked from IBTrACS best tracks; no EWB benchmark for this lane yet.",
+    "Not scored \u2014 80 events; no EWB benchmark for this lane yet."
+   ],
+   "count": "202 events"
+  },
+  "desktop/all/event": {
+   "open": true,
+   "title": "Flood \u00b7 Vietnam",
+   "chips": "Flood",
+   "tvTrack": false,
+   "plotly": false,
+   "vizChildren": 1,
+   "vizTags": "div.ev3-root",
+   "story": "Flood \u00b7 Vietnam, Asia \u00b7 Aug 21 \u2013 Aug 25 \u00b7 peak 72 h 565 mm \u00b7 peak day 344 mm \u00b7 174,170 km\u00b2 at peak"
+  },
+  "desktop/heat_wave": {
+   "rows": 15,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [],
+   "count": "15 events"
+  },
+  "desktop/heat_wave/event": {
+   "open": true,
+   "title": "Heat wave \u00b7 United States of America",
+   "chips": "Heat wave",
+   "tvTrack": false,
+   "plotly": false,
+   "vizChildren": 1,
+   "vizTags": "div.ev3-root",
+   "story": "Heat wave \u00b7 United States of America, North America \u00b7 Aug 21 \u2013 Aug 30 \u00b7 peak daily-mean 41.2 \u00b0C \u00b7 10d max run"
+  },
+  "desktop/freeze": {
+   "rows": 5,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [],
+   "count": "5 events"
+  },
+  "desktop/freeze/event": {
+   "open": true,
+   "title": "Freeze \u00b7 Greenland",
+   "chips": "Freeze",
+   "tvTrack": false,
+   "plotly": false,
+   "vizChildren": 1,
+   "vizTags": "div.ev3-root",
+   "story": "Freeze \u00b7 Greenland, North America \u00b7 Sep 10 \u2013 Sep 12 \u00b7 peak daily-mean -34.0 \u00b0C \u00b7 3d max run"
+  },
+  "desktop/cold_snap": {
+   "rows": 6,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [
+    "Not scored in this data release \u2014 6 published events; no score rows for this lane yet."
+   ],
+   "count": "6 events"
+  },
+  "desktop/cold_snap/event": {
+   "open": true,
+   "title": "Cold snap \u00b7 China",
+   "chips": "Cold snap",
+   "tvTrack": false,
+   "plotly": false,
+   "vizChildren": 1,
+   "vizTags": "div.ev3-root",
+   "story": "Cold snap \u00b7 China, Asia \u00b7 Oct 3 \u2013 Oct 6 \u00b7 peak daily-mean -16.8 \u00b0C \u00b7 4d max run"
+  },
+  "desktop/atmospheric_river": {
+   "rows": 12,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [],
+   "count": "12 events"
+  },
+  "desktop/atmospheric_river/event": {
+   "open": true,
+   "title": "Atmospheric river \u00b7 Germany",
+   "chips": "Atmospheric river",
+   "tvTrack": false,
+   "plotly": false,
+   "vizChildren": 1,
+   "vizTags": "div.ev3-root",
+   "story": "Atmospheric river \u00b7 Germany, Europe \u00b7 Aug 26 \u2013 Aug 30 \u00b7 peak IVT 900 kg m\u207b\u00b9 s\u207b\u00b9 \u00b7 landfall Aug 26"
+  },
+  "desktop/tropical_cyclone": {
+   "rows": 44,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [
+    "Not scored \u2014 44 storms tracked from IBTrACS best tracks; no EWB benchmark for this lane yet."
+   ],
+   "count": "44 events"
+  },
+  "desktop/tropical_cyclone/event": {
+   "open": true,
+   "title": "Tropical cyclone Saudel \u00b7 China",
+   "chips": "Tropical cyclone",
+   "tvTrack": true,
+   "plotly": false,
+   "vizChildren": 4,
+   "vizTags": "div.tv-head,div.tv-map-wrap,div.tv-legend,p.tv-note",
+   "story": "Tropical cyclone \u00b7 China, Asia \u00b7 Aug 21 \u2013 Aug 28 \u00b7 Saudel \u00b7 115 kt CAT 4 \u00b7 944 hPa \u00b7 Northwest Pacific"
+  },
+  "desktop/midlat_cyclone": {
+   "rows": 80,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [
+    "Not scored \u2014 80 events; no EWB benchmark for this lane yet."
+   ],
+   "count": "80 events"
+  },
+  "desktop/midlat_cyclone/event": {
+   "open": true,
+   "title": "Midlatitude cyclone \u00b7 the Southern Ocean",
+   "chips": "Midlatitude cyclone",
+   "tvTrack": true,
+   "plotly": false,
+   "vizChildren": 4,
+   "vizTags": "div.tv-head,div.tv-map-wrap,div.tv-legend,p.tv-note",
+   "story": "Midlatitude cyclone \u00b7 the Southern Ocean \u00b7 Aug 24 \u2013 Aug 26 \u00b7 943 hPa centre \u00b7 21\u00b0 travelled"
+  },
+  "desktop/flood": {
+   "rows": 40,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [
+    "Not scored \u2014 40 floods tracked from IMERG rain accumulations; no EWB benchmark for this lane yet."
+   ],
+   "count": "40 events"
+  },
+  "desktop/flood/event": {
+   "open": true,
+   "title": "Flood \u00b7 Vietnam",
+   "chips": "Flood",
+   "tvTrack": false,
+   "plotly": false,
+   "vizChildren": 1,
+   "vizTags": "div.ev3-root",
+   "story": "Flood \u00b7 Vietnam, Asia \u00b7 Aug 21 \u2013 Aug 25 \u00b7 peak 72 h 565 mm \u00b7 peak day 344 mm \u00b7 174,170 km\u00b2 at peak"
+  },
+  "desktop/about-lanes": [
+   "Heat wave",
+   "Freeze",
+   "Cold snap",
+   "Atmospheric river",
+   "Tropical cyclone",
+   "Midlatitude cyclone",
+   "+3\u00a0hPa",
+   "48\u00a0h",
+   "1000\u00a0km",
+   "\u2264990\u00a0hPa",
+   "25\u201370\u00b0",
+   "under 500\u00a0m",
+   "bomb",
+   "Flood",
+   "up",
+   "no model is scored\n      on them",
+   "completed",
+   "Group",
+   "Seed",
+   "50,000\u00a0km\u00b2",
+   "Qualify",
+   "200,000\u00a0km\u00b2",
+   "3\u00a0days",
+   "Follow",
+   "End",
+   "core",
+   "100,000\u00a0km\u00b2",
+   "RMSE, peak-max MAE, min MAE",
+   "Duration error",
+   "CSI",
+   "Spatial displacement",
+   "Early signal"
+  ],
+  "phone/all": {
+   "rows": 202,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [
+    "Not scored in this data release \u2014 6 published events; no score rows for this lane yet.",
+    "Not scored \u2014 40 floods tracked from IMERG rain accumulations; no EWB benchmark for this lane yet.",
+    "Not scored \u2014 44 storms tracked from IBTrACS best tracks; no EWB benchmark for this lane yet.",
+    "Not scored \u2014 80 events; no EWB benchmark for this lane yet."
+   ],
+   "count": "202 events"
+  },
+  "phone/all/event": {
+   "open": true,
+   "title": "Flood \u00b7 Vietnam",
+   "chips": "Flood",
+   "tvTrack": false,
+   "plotly": false,
+   "vizChildren": 1,
+   "vizTags": "div.ev3-root",
+   "story": "Flood \u00b7 Vietnam, Asia \u00b7 Aug 21 \u2013 Aug 25 \u00b7 peak 72 h 565 mm \u00b7 peak day 344 mm \u00b7 174,170 km\u00b2 at peak"
+  },
+  "phone/heat_wave": {
+   "rows": 15,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [],
+   "count": "15 events"
+  },
+  "phone/heat_wave/event": {
+   "open": true,
+   "title": "Heat wave \u00b7 United States of America",
+   "chips": "Heat wave",
+   "tvTrack": false,
+   "plotly": false,
+   "vizChildren": 1,
+   "vizTags": "div.ev3-root",
+   "story": "Heat wave \u00b7 United States of America, North America \u00b7 Aug 21 \u2013 Aug 30 \u00b7 peak daily-mean 41.2 \u00b0C \u00b7 10d max run"
+  },
+  "phone/freeze": {
+   "rows": 5,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [],
+   "count": "5 events"
+  },
+  "phone/freeze/event": {
+   "open": true,
+   "title": "Freeze \u00b7 Greenland",
+   "chips": "Freeze",
+   "tvTrack": false,
+   "plotly": false,
+   "vizChildren": 1,
+   "vizTags": "div.ev3-root",
+   "story": "Freeze \u00b7 Greenland, North America \u00b7 Sep 10 \u2013 Sep 12 \u00b7 peak daily-mean -34.0 \u00b0C \u00b7 3d max run"
+  },
+  "phone/cold_snap": {
+   "rows": 6,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [
+    "Not scored in this data release \u2014 6 published events; no score rows for this lane yet."
+   ],
+   "count": "6 events"
+  },
+  "phone/cold_snap/event": {
+   "open": true,
+   "title": "Cold snap \u00b7 China",
+   "chips": "Cold snap",
+   "tvTrack": false,
+   "plotly": false,
+   "vizChildren": 1,
+   "vizTags": "div.ev3-root",
+   "story": "Cold snap \u00b7 China, Asia \u00b7 Oct 3 \u2013 Oct 6 \u00b7 peak daily-mean -16.8 \u00b0C \u00b7 4d max run"
+  },
+  "phone/atmospheric_river": {
+   "rows": 12,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [],
+   "count": "12 events"
+  },
+  "phone/atmospheric_river/event": {
+   "open": true,
+   "title": "Atmospheric river \u00b7 Germany",
+   "chips": "Atmospheric river",
+   "tvTrack": false,
+   "plotly": false,
+   "vizChildren": 1,
+   "vizTags": "div.ev3-root",
+   "story": "Atmospheric river \u00b7 Germany, Europe \u00b7 Aug 26 \u2013 Aug 30 \u00b7 peak IVT 900 kg m\u207b\u00b9 s\u207b\u00b9 \u00b7 landfall Aug 26"
+  },
+  "phone/tropical_cyclone": {
+   "rows": 44,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [
+    "Not scored \u2014 44 storms tracked from IBTrACS best tracks; no EWB benchmark for this lane yet."
+   ],
+   "count": "44 events"
+  },
+  "phone/tropical_cyclone/event": {
+   "open": true,
+   "title": "Tropical cyclone Saudel \u00b7 China",
+   "chips": "Tropical cyclone",
+   "tvTrack": true,
+   "plotly": false,
+   "vizChildren": 4,
+   "vizTags": "div.tv-head,div.tv-map-wrap,div.tv-legend,p.tv-note",
+   "story": "Tropical cyclone \u00b7 China, Asia \u00b7 Aug 21 \u2013 Aug 28 \u00b7 Saudel \u00b7 115 kt CAT 4 \u00b7 944 hPa \u00b7 Northwest Pacific"
+  },
+  "phone/midlat_cyclone": {
+   "rows": 80,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [
+    "Not scored \u2014 80 events; no EWB benchmark for this lane yet."
+   ],
+   "count": "80 events"
+  },
+  "phone/midlat_cyclone/event": {
+   "open": true,
+   "title": "Midlatitude cyclone \u00b7 the Southern Ocean",
+   "chips": "Midlatitude cyclone",
+   "tvTrack": true,
+   "plotly": false,
+   "vizChildren": 4,
+   "vizTags": "div.tv-head,div.tv-map-wrap,div.tv-legend,p.tv-note",
+   "story": "Midlatitude cyclone \u00b7 the Southern Ocean \u00b7 Aug 24 \u2013 Aug 26 \u00b7 943 hPa centre \u00b7 21\u00b0 travelled"
+  },
+  "phone/flood": {
+   "rows": 40,
+   "tabs": [
+    "All202",
+    "Heat wave15",
+    "Cold snap6",
+    "Freeze5",
+    "Atm. river12",
+    "Flood40",
+    "Trop. cyclone44",
+    "Midlat. cyclone80"
+   ],
+   "empty": [
+    "Not scored \u2014 40 floods tracked from IMERG rain accumulations; no EWB benchmark for this lane yet."
+   ],
+   "count": "40 events"
+  },
+  "phone/flood/event": {
+   "open": true,
+   "title": "Flood \u00b7 Vietnam",
+   "chips": "Flood",
+   "tvTrack": false,
+   "plotly": false,
+   "vizChildren": 1,
+   "vizTags": "div.ev3-root",
+   "story": "Flood \u00b7 Vietnam, Asia \u00b7 Aug 21 \u2013 Aug 25 \u00b7 peak 72 h 565 mm \u00b7 peak day 344 mm \u00b7 174,170 km\u00b2 at peak"
+  }
+ },
+ "console_errors": []
+}

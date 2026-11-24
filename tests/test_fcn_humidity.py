@@ -18,7 +18,6 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from extremeweatherbench import defaults
 
 
 def _fcn_like_ds(t_val: float, rh_pct: float) -> xr.Dataset:
@@ -63,6 +62,8 @@ def _expected_q(t_kelvin: float, rh_frac: float, p_hpa: float) -> float:
 def test_derived_q_matches_known_value():
     """T = 280 K, RH = 50 % on the 850 hPa level -> q = 3.63e-3 kg/kg
     (hand-checkable: e_s ~ 9.91 hPa, w_sat ~ 7.34e-3)."""
+    pytest.importorskip("extremeweatherbench.defaults")
+    from extremeweatherbench import defaults
     t, rh = 280.0, 50.0
     out = defaults.preprocess_cira_icechunk_ar_forecast_dataset(_fcn_like_ds(t, rh))
     assert "specific_humidity" in out
@@ -82,6 +83,8 @@ def test_q_levels_in_monotonic_order():
     (e = RH*e_s(T)), so w = eps*e/(p-e) GROWS as pressure falls: q must
     increase upward (250 hPa > 500 hPa > 850 hPa). A transposed level axis
     would break this ordering."""
+    pytest.importorskip("extremeweatherbench.defaults")
+    from extremeweatherbench import defaults
     out = defaults.preprocess_cira_icechunk_ar_forecast_dataset(_fcn_like_ds(285.0, 60.0))
     q = out["specific_humidity"].isel(lead_time=0, latitude=1, longitude=0).values
     assert q[0] > q[1] > q[2]  # 250 > 500 > 850 hPa
@@ -90,5 +93,7 @@ def test_q_levels_in_monotonic_order():
 def test_preprocess_noop_when_q_present():
     ds = _fcn_like_ds(280.0, 50.0)
     ds["specific_humidity"] = ds["air_temperature"] * 0.0 + 0.004
+    pytest.importorskip("extremeweatherbench.defaults")
+    from extremeweatherbench import defaults
     out = defaults.preprocess_cira_icechunk_ar_forecast_dataset(ds)
     assert float(out["specific_humidity"].isel(lead_time=0, level=0).values.flat[0]) == 0.004

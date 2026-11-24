@@ -45,6 +45,13 @@ def truth_source_for_event(event, cutoff: dt.datetime) -> str:
     Event.end is exclusive midnight after the last active day, so the last
     valid instant scored is end - 1h; ARCO covering that instant suffices.
     """
+    if getattr(event, "event_type", None) == "tropical_cyclone":
+        from .tc import TRUTH_TAG      # track lane: truth is the IBTrACS best track, not an ERA5 field
+        return TRUTH_TAG
+    if getattr(event, "event_type", None) == "midlat_cyclone":
+        return "era5_arco"    # track lane: the published track IS the ERA5 analysis, whatever the window's ARCO reach
+    if getattr(event, "event_type", None) == "flood":
+        return "pardig"       # flood lane: truth is Google PARDIG, not an ERA5 field
     return "era5_arco" if event.end - dt.timedelta(hours=1) <= cutoff else "ifs_hres_analysis"
 
 
@@ -208,7 +215,8 @@ def make_targets(
         default = None
         if event_type == "heat_wave":
             default = ewb_defaults.era5_heatwave_target
-        elif event_type == "freeze":
+        elif event_type in ("freeze", "cold_snap"):
+            # cold snap shares the freeze truth: same ERA5 2 m t2m target
             default = ewb_defaults.era5_freeze_target
         elif event_type == "atmospheric_river":
             default = ewb_defaults.era5_atmospheric_river_target
@@ -251,7 +259,7 @@ def make_targets(
         ((lon_min - pad + 180) % 360) - 180,
         ((lon_max + pad + 180) % 360) - 180,
     )
-    if event_type in ("heat_wave", "freeze"):
+    if event_type in ("heat_wave", "freeze", "cold_snap"):
         var_names = ["surface_air_temperature"]
     else:
         var_names = ["eastward_wind", "northward_wind", "specific_humidity"]
@@ -259,7 +267,7 @@ def make_targets(
         event.start, event.end, var_names, bbox
     )
     storage = {"token": "anon"} if path.startswith("gs://") else None
-    if event_type in ("heat_wave", "freeze"):
+    if event_type in ("heat_wave", "freeze", "cold_snap"):
         target = ewb_inputs.ERA5(
             source=path,
             variables=["surface_air_temperature"],

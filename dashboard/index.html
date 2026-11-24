@@ -37,6 +37,8 @@
 <script src="app.js" defer></script>
 <script src="eventviz.js" defer></script>
 <script src="mergedmap.js" defer></script>
+<script src="tracklayer.js" defer></script>
+<script src="trackviz.js" defer></script>
 </head>
 <body>
 
@@ -77,17 +79,17 @@
        rail reads as a list, not a stack of icons. Settings (week, theme) are not
        links and live in the footer. -->
   <nav class="rail-nav" aria-label="Site">
-    <p class="rail-cap home-only">On this page</p>
-    <div class="rail-group home-only">
-      <button type="button" class="rail-link home-only" data-jump="explore">
+    <p class="rail-cap">Views</p>
+    <div class="rail-group">
+      <button type="button" class="rail-link" data-jump="explore" data-view="events" aria-current="page">
         <svg class="rail-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>
         <span class="rail-label">Events</span></button>
-      <button type="button" class="rail-link home-only" data-jump="scorecard-sec">
+      <button type="button" class="rail-link" data-jump="scorecard-sec" data-view="scorecard">
         <svg class="rail-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9.5 9.5v10"/></svg>
         <span class="rail-label">Scorecard</span></button>
     </div>
 
-    <div class="rail-sep home-only" aria-hidden="true"></div>
+    <div class="rail-sep" aria-hidden="true"></div>
     <div class="rail-group">
       <button type="button" class="rail-link" id="about-btn">
         <svg class="rail-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.6C10.4 5.4 8.6 4.8 6.5 4.8H4v13.1h3c1.9 0 3.6.5 5 1.5 1.4-1 3.1-1.5 5-1.5h3V4.8h-2.5c-2.1 0-3.9.6-5.5 1.8Z"/><path d="M12 6.6v12.8"/></svg>
@@ -121,6 +123,13 @@
     <span id="mini-badge" class="badge warn hidden"></span>
   </h1>
   <p class="tagline">AI weather models, scored on recent extreme weather</p>
+  <!-- The Region filter is page-wide (map + list + scorecard), so it sits in the
+       header where BOTH views can reach it — it used to live inside the Events
+       section, which made it vanish from the Scorecard view. -->
+  <div class="ctl-group ctl-region hidden" id="region-group">
+    <label class="ctl-label" for="region-select">Region</label>
+    <select id="region-select" title="Events, map and scorecard by region"></select>
+  </div>
  </div>
 </header>
 
@@ -136,15 +145,9 @@
         <span class="sec-badge" id="raw-badge" hidden>IFS analysis (ERA5 lag)</span></h2>
       <span class="count" id="gm-count"></span>
     </div>
-    <p class="sec-lede">Shading shows where the heat, freeze and atmospheric-river detectors fired;
-      dashed boxes are the events the models are scored on. Move through time below the map, or pick an event.</p>
     <div class="type-filter">
       <span class="ctl-label" id="type-tabs-label">Show</span>
-      <div class="ctl-group" id="type-tabs" role="group" aria-labelledby="type-tabs-label"></div>
-      <div class="ctl-group ctl-region hidden" id="region-group">
-        <label class="ctl-label" for="region-select">Region</label>
-        <select id="region-select" title="Events, map and scorecard by region"></select>
-      </div>
+      <div class="ctl-group" id="type-tabs" role="tablist" aria-labelledby="type-tabs-label"></div>
     </div>
   </div>
 
@@ -153,12 +156,23 @@
       <div class="raw-skeleton" id="raw-skel" aria-hidden="true"></div>
       <canvas id="raw-canvas" role="img" aria-label="Equal Earth world map of raw threshold exceedances and event boxes" hidden></canvas>
       <svg id="gm-boxes" hidden></svg>
+      <!-- The map's corner tools sit in ONE overlay: the colour-scale popover
+           (the scales used to reserve 160 px under the map in the 7-lane view)
+           and Theater mode. Both float above the box/track overlays and never
+           cover the timeline; `t` and Esc in app.js. -->
+      <div class="map-corner-tools" id="map-corner-tools">
+        <button type="button" id="legend-btn" class="map-leg-btn" aria-expanded="false"
+                aria-controls="gm-legend" hidden>Legend <span aria-hidden="true">▾</span></button>
+        <!-- Theater mode: the map borrows the event list's column and the list
+             drops below it (the .explore theater rules). `t` and Esc in app.js. -->
+        <button type="button" id="theater-btn" title="Theater mode (t)" aria-label="Theater mode"
+                aria-pressed="false"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/></svg></button>
+      </div>
     </div>
-    <!-- The colour scales sit BELOW the map (owner complaint 2026-11-11: the
-         in-map panel hid a quarter of it). It is a fixed-height slim strip —
-         one row, horizontal scroll when narrow — so its content changing
-         (layer toggles, the frame, the Region view) can never reflow the
-         timeline or the cards below. -->
+    <!-- The colour scales. One or two lanes: a slim strip below the map. Three
+         or more (the All view): the same node becomes a floating popover under
+         #legend-btn, closed by default, so the map and the timeline keep the
+         160 px the stacked ramps used to reserve (app.js + styles.css). -->
     <span id="gm-legend" class="gm-legend" role="group" aria-label="Map colour legend — what the lane colours mean"></span>
     <div class="timeline" role="group" aria-label="Time controls">
       <div class="tl-head">
@@ -180,7 +194,13 @@
         <input id="raw-slider" type="range" min="0" max="0" step="1" value="0"
                aria-label="Frame time (6-hourly)">
       </div>
-      <svg id="gm-gantt" role="img" aria-label="Event timeline by type — click a bar to jump to it"></svg>
+      <!-- role=group, NOT role=img: the strip holds focusable controls (a dense
+           lane's label is a real button that expands it). role=img declares
+           presentational children, which both hides those buttons from a screen
+           reader and makes them focusable descendants of a non-composite role —
+           axe `nested-interactive` on #gm-gantt (the two axe e2e failures on live
+           with 7 lanes, 2026-11-20). A group keeps its label and its controls. -->
+      <svg id="gm-gantt" role="group" aria-label="Event timeline by type — click a bar to jump to it"></svg>
     </div>
     <p class="gm-note hidden" id="raw-note" role="status"></p>
   </section>
@@ -190,11 +210,18 @@
     <div class="evlist-head">
       <h3 class="sec-title">Events</h3>
       <span class="count" id="event-count"></span>
-      <input id="event-search" type="search" placeholder="filter by place, type or id…" autocomplete="off" aria-label="Filter events">
+      <!-- All | On map: the list can follow the map frame instead of the whole
+           90-day window (app.js reads the frame's active ids from the map). -->
+      <div class="ctl-group toggle ev-scope" id="ev-scope-toggle" role="group" aria-label="Event list scope">
+        <button type="button" data-scope="all" class="on" aria-pressed="true">All</button>
+        <button type="button" data-scope="map" aria-pressed="false">On map
+          <span class="n" id="ev-map-count">0</span></button>
+      </div>
+      <input id="event-search" type="search" placeholder="Filter events…" autocomplete="off" aria-label="Filter events">
     </div>
     <div class="table-wrap tall">
       <table id="event-table">
-        <thead><tr><th><span class="sr-only">Type</span></th><th>Event</th><th class="num" title="Heat/freeze: ERA5 daily-mean 2 m temperature at the peak day. Atmospheric river: peak IVT.">Peak</th></tr></thead>
+        <thead><tr><th><span class="sr-only">Type</span></th><th>Event</th><th class="num" title="Heat/freeze/cold snap: ERA5 daily-mean 2 m temperature at the peak day. Atmospheric river: peak IVT. Tropical cyclone: peak sustained wind (kt). Flood: trailing 72 h precipitation accumulation (mm) from the lane's rain source (AI-estimated Google PARDIG, or GPM IMERG on fallback builds).">Peak</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -202,7 +229,7 @@
   </section>
 </div>
 
-<section id="scorecard-sec">
+<section id="scorecard-sec" class="hidden">
   <div class="sec-head">
     <h2>Scorecard <span id="scorecard-status" class="sec-badge hidden"></span></h2>
     <span id="sc-scope" class="sc-scope"></span>
@@ -215,8 +242,10 @@
       </span>
     </span>
   </div>
-  <p class="sec-lede">Mean score of each model over the events above, by forecast lead time.</p>
+  <p class="sec-lede">Mean skill vs IFS&nbsp;HRES by forecast lead time.</p>
   <nav class="controls" aria-label="Scorecard options">
+    <!-- View strip: the overview matrix and one lead-time breakdown per hazard. -->
+    <div class="ctl-group sc-views" id="sc-views" role="group" aria-label="Scorecard view"></div>
     <div class="ctl-group models" id="model-pills"></div>
     <div class="ctl-group leads">
       <span class="ctl-label">Lead time</span>
@@ -229,7 +258,9 @@
     </div>
   </nav>
   <div id="kv-line" class="kv-line" aria-label="run summary"></div>
-  <div id="verdict-strip" class="verdict-strip" aria-label="verdict"></div>
+  <!-- KPI leader strip: one card per scored hazard (leader + skill), clickable
+       straight into that hazard. It replaces the multi-sentence verdict line. -->
+  <div id="kpi-strip" class="kpi-strip" role="group" aria-label="Hazard leaders"></div>
   <p class="sc-note" id="sc-sample-note" hidden></p>
   <div id="scorecard-tables"></div>
   <details id="skill-details" class="fold">
@@ -242,12 +273,21 @@
 </section>
 
 <section id="detail-sec" class="hidden">
-  <button id="detail-close" class="backlink" type="button">← All events</button>
-  <div class="sec-head">
-    <h2 id="detail-title">Event</h2>
+  <!-- Band 1 — the unified header every one of the seven lanes gets: back link,
+       the place/storm name alone (the type sits beside it as a chip, never twice
+       in the title), then 3–4 compact fact pills. The sentence-form story lives
+       on for screen readers only, so the same facts are never read three times. -->
+  <div class="det-header">
+    <div class="det-title-block">
+      <button id="detail-close" class="backlink" type="button">← All events</button>
+      <div class="det-title-row">
+        <h2 id="detail-title">Event</h2>
+        <span id="detail-type-slot"></span>
+      </div>
+    </div>
+    <div class="detail-chips" id="detail-chips"></div>
   </div>
-  <div class="detail-chips" id="detail-chips"></div>
-  <p class="event-story" id="detail-story"></p>
+  <p class="event-story sr-only" id="detail-story"></p>
   <div id="detail-viz" class="detail-viz"></div>
   <details id="detail-scores" class="fold">
     <summary>Scores</summary>
@@ -279,17 +319,57 @@
     models against IFS&nbsp;HRES on them, using ExtremeWeatherBench (EWB) defaults. It refreshes
     every Monday: events are re-detected each week and scores do not accumulate across runs.</p>
 
-    <h3>Events</h3>
+    <details class="about-sec" id="about-sec-events">
+      <summary><h3>Events</h3></summary>
     <ul>
       <li><b>Heat wave</b> — ERA5 2&nbsp;m temperature above the 85th percentile of the
       Operational WeatherBench ERA5 1990–2019 climatology (per day of year and hour) at <em>every</em>
       6-hourly step of a UTC day, over land, tracked into events by the rule set out below.</li>
-      <li><b>Freeze</b> — the same rule below the 15th percentile. A window with no freeze is a
+      <li><b>Freeze</b> — the same rule below the 15th percentile, <em>and</em> 2&nbsp;m temperature
+      at or below 0&nbsp;°C at all four 6-hourly steps (owner 2026-11-16). A window with no freeze is a
       valid result.</li>
+      <li><b>Cold snap</b> — the freeze rule <em>without</em> the 0&nbsp;°C requirement: below the
+      15th percentile at every 6-hourly step of a UTC day, over land, same tracker and same area
+      floors. Because a freeze is always also a cold snap, a cold snap that overlaps a freeze in
+      time and space is dropped in favour of the freeze (the more specific claim), so the two never
+      publish the same spell twice; cold snaps that stayed above 0&nbsp;°C are the part the freeze
+      lane cannot describe.</li>
       <li><b>Atmospheric river</b> — EWB’s AR mask: integrated vapour transport (IVT) of at least
       400&nbsp;kg&nbsp;m⁻¹&nbsp;s⁻¹ with a ridge criterion. The river must start over the ocean and
       reach land — making landfall on at least one day; objects entirely over land are excluded,
       and tropical cyclones are screened out using IBTrACS best tracks.</li>
+      <li><b>Tropical cyclone</b> — one IBTrACS best-track storm is one event: at least three
+      3-hourly fixes at tropical-storm force (34&nbsp;kt sustained wind) spanning at least
+      12&nbsp;hours, with extratropical and mixed fixes excluded. The event window runs from the
+      first to the last storm-force fix; the detail view draws the storm’s whole track, coloured
+      by wind. The best track is the truth the models are scored against (see <b>Scoring
+      tropical cyclones</b> below).</li>
+      <li><b>Midlatitude cyclone</b> — a closed low in 6-hourly ERA5 mean sea
+      level pressure: the lowest pressure within 6° with a <b>+3&nbsp;hPa</b> isobar
+      closing around it inside 6°, followed while it stays within 6° per 6-hour step
+      (gaps up to 12&nbsp;h are bridged). A low becomes an event when it lives at least
+      <b>48&nbsp;h</b>, travels at least <b>1000&nbsp;km</b>, reaches <b>≤990&nbsp;hPa</b>,
+      was born between <b>25–70°</b> latitude and <b>under 500&nbsp;m</b> elevation
+      (no phantom lows off the Tibetan Plateau or the Andes), and did not begin life as a
+      tropical cyclone. Peak value is the lowest central pressure; a <b>bomb</b> tag marks
+      a fall of ≥24&nbsp;hPa in 24&nbsp;h at 60° latitude. Tracked from ERA5, so this lane
+      has no model scorecard yet — it is drawn as a track, like a tropical cyclone.</li>
+      <li><b>Flood</b> — an <em>observation-lane</em> product, not an ERA5 lane: rain is
+      <b>AI-estimated precipitation (Google PARDIG, CC BY 4.0)</b> — 15-minute instantaneous
+      rates summed to a daily total — averaged <b>up</b> onto the ERA5 0.25&deg; land lattice;
+      PARDIG is an experimental model estimate, not an official observation, and is credited
+      to Google. Builds may fall back to GPM IMERG (which the code still supports); each
+      event&rsquo;s own detail panel names the source it was detected on. The ERA5 climatology
+      is the same in both modes. A cell exceeds when its daily total <em>or</em> its trailing
+      72&nbsp;h accumulation reaches the 95th percentile of that calendar day in the ERA5
+      1990&ndash;2019 wet-day climatology <em>and</em> at least 20&nbsp;mm/day (50&nbsp;mm per
+      72&nbsp;h). The absolute floor is not decoration: the rain source and ERA5 are different
+      products, so an exceedance means &ldquo;this source measured more rain than ERA5&rsquo;s
+      p95 for this cell and day of year&rdquo;. Cells whose ERA5 percentile is undefined
+      (hyper-arid) can never exceed, the ocean is excluded, and a day with incomplete sampling
+      is dropped rather than read as dry. EWB has no ERA5 flood benchmark: the lane is scored
+      against that same rain product, from <b>GraphCast</b> only (see <b>Scoring
+      floods</b> below).</li>
       <li>The raw detector map shades each cell by its consecutive <b>completed</b> UTC days
       meeting the daily rule. Heat shades only cells reaching the detector’s 3-day minimum
       (heat ramp 3–7+) — below that a cell can never become a heat wave, so it stays blank —
@@ -302,15 +382,22 @@
       threshold for one 6-hour step keeps its id; that step shows its previous footprint with a
       lighter fill (bridged — display only, the river was not physically detected there).</li>
       <li>Parts of one system are merged, no two events overlap in time and space, and each type
-      is capped at 15 events.</li>
+      is capped at 15 events — except the lanes whose 90-day windows hold many more objects:
+      tropical cyclones 60 (a storm is a single object that is never merged and a whole season
+      must fit), midlatitude cyclones 80 and floods 40.</li>
     </ul>
 
-    <h3>How a spell becomes an event</h3>
-    <p>Heat waves and freezes are found in two stages. A <b>daily rule</b> picks the pixels:
+    </details>
+
+    <details class="about-sec" id="about-sec-how-a-spell-becomes-an-event">
+      <summary><h3>How a spell becomes an event</h3></summary>
+    <p>Heat waves, freezes and cold snaps are found in two stages. A <b>daily rule</b> picks the
+    pixels:
     a cell counts on a UTC day when 2&nbsp;m temperature is past the climatology bound (p85 for heat,
-    p15 for freeze) at <em>all four</em> 6-hourly steps and the cell is on land. A <b>tracker</b> then
+    p15 for freeze and cold snap — freeze also needing 0&nbsp;°C or below) at <em>all four</em>
+    6-hourly steps and the cell is on land. A <b>tracker</b> then
     decides which pixels belong to the same event, and when the event is over — the same numbers for
-    both hazards.</p>
+    all three hazards.</p>
     <ol class="method-steps">
       <li><b>Group</b> the counting cells of the day into regions. A cell belongs to a region when it
       is counting, or when it sits in a hole the closing fills (up to 12 cells wide) and at least
@@ -347,16 +434,111 @@
       <pre id="detection-code" aria-live="polite">loading…</pre>
     </details>
 
-    <h3>Scoring</h3>
+    </details>
+
+    <details class="about-sec" id="about-sec-scoring">
+      <summary><h3>Scoring</h3></summary>
     <p>Models are scored from daily 00&nbsp;UTC runs at leads of 0–240&nbsp;h (the scorecard shows
-    1, 3, 5, 7 and 10 days). Truth is ERA5. ERA5 trails real time by about six days; an event
+    1, 3, 5, 7 and 10 days; tropical cyclones and floods 1&ndash;5 days). Truth is ERA5 (tropical
+    cyclones: the IBTrACS best track; floods: AI-estimated precipitation, Google PARDIG). ERA5
+    trails real time by about six days; an event
     ending after that point would be scored against the IFS&nbsp;HRES 0-h analysis, which favours
     IFS.</p>
     <p id="about-models">—</p>
     <p class="dlg-note">Names ending <code>_gfs</code> are forced with GFS initial conditions;
     the others use ECMWF-based forcing.</p>
 
-    <h3>Reading the scorecard</h3>
+    </details>
+
+    <details class="about-sec" id="about-sec-scoring-tropical-cyclones">
+      <summary><h3>Scoring tropical cyclones</h3></summary>
+    <p>Tropical cyclones are not scored with ERA5 fields: each model&rsquo;s sea-level-pressure
+    forecast is searched for the storm and compared with the IBTrACS best track (provisional until
+    the archive catches up). For every 00 and 12&nbsp;UTC forecast at which the storm is already
+    at tropical-storm force, the forecast low is followed from the <em>observed</em> position at
+    the start; two steps in a row without a closed low lose the track.
+    Verification starts at the storm&rsquo;s first best-track fix of at least 34&nbsp;kt, so
+    earlier forecasts &mdash; of a disturbance that is not yet a storm &mdash; are listed as not
+    verified, not as misses.</p>
+    <ul>
+      <li><b>Track error</b> (km) &mdash; great-circle distance from the best-track position;
+      lower is better.</li>
+      <li><b>Along-track</b> (km, signed) &mdash; positive when the forecast is <em>ahead</em> of
+      the observed storm (too fast), negative behind. <b>Cross-track</b> (km, signed) &mdash;
+      positive to the <em>right</em> of the observed track, negative to the left. The motion is the
+      observed heading over the 6&nbsp;h before and after the valid time; a storm slower than
+      2&nbsp;km/h has no direction, so only its track error counts. Closer to zero is better.</li>
+      <li><b>Central pressure</b> (hPa, signed) &mdash; forecast minus best-track pressure,
+      positive = too weak. At 0.25&deg; a model cannot draw the core of a strong storm, so this is
+      a resolution-limited bias to read, not a ranking. No wind error is published for the same
+      reason.</li>
+      <li><b>Miss rate</b> &mdash; the share of forecast steps with no storm to follow. A miss
+      gets no error value (never imputed); a cell where more than half the steps are misses is
+      greyed because its error rests on the storms the model kept.</li>
+    </ul>
+    </details>
+
+    <details class="about-sec" id="about-sec-scoring-mid-latitude-cyclones">
+      <summary><h3>Scoring mid-latitude cyclones</h3></summary>
+    <p>Mid-latitude cyclones are scored against the ERA5 mean-sea-level-pressure track each low
+    was detected on &mdash; the same 0.25&deg; grid the models run on, so central pressure has no
+    resolution floor here. <b>Track error</b>, <b>along-track</b>, <b>cross-track</b> and
+    <b>miss rate</b> use the same definitions as above, against that ERA5 position.</p>
+    <ul>
+      <li><b>Peak depth</b> (hPa, signed) &mdash; the lowest forecast pressure within 8&deg; of
+      the observed centre minus the ERA5 central pressure; positive = forecast too shallow.
+      It needs no tracking, so it has no miss rate and is never greyed.</li>
+      <li><b>Bombs detected</b> &mdash; the share of observed 24&nbsp;h bomb-rate deepenings
+      (Sanders&ndash;Gyakum, scaled by latitude) that the forecast also showed; higher is
+      better. <b>Bomb false alarms</b> &mdash; the share of non-bomb windows where the forecast
+      showed one anyway; lower is better. Both are rates beside their metric names.</li>
+    </ul>
+    <details class="repro repro-track">
+      <summary>How the track errors are computed, in Python</summary>
+      <p class="dlg-note">The formulas above in a few lines:
+      <a href="track_scoring.py" download>track_scoring.py</a> &mdash; run
+      <code>python3 track_scoring.py</code> for a worked example. The test suite checks this
+      listing against the scorer that produces the numbers on this site.</p>
+      <pre id="track-scoring-code">loading&hellip;</pre>
+    </details>
+
+    </details>
+
+    <details class="about-sec" id="about-sec-scoring-floods">
+      <summary><h3>Scoring floods</h3></summary>
+    <p>Floods are not scored with ERA5 fields either: the rain truth is <b>Google PARDIG</b>, an
+    AI-estimated precipitation product &mdash; provisional, and the very product the events are
+    defined from, so a skill number here is always conditional on a truth exceedance existing.
+    Only <b>GraphCast</b> is scored: its two members (the ECMWF-initialised <code>graphcast</code>
+    and the GFS-initialised <code>graphcast_gfs</code>) are the only models in the store that carry
+    precipitation &mdash; every other model has no flood rows, and ECMWF <code>tp</code> is not
+    wired. No baseline model scores flood, so flood cells carry no skill colour and nothing is
+    ranked against IFS&nbsp;HRES on this lane.</p>
+    <p>An exceedance is PARDIG rain past the ERA5 1990&ndash;2019 wet-day p95 climatology for that
+    day of year, with a floor of 20&nbsp;mm/day. Verification runs over the land cells of the
+    event&rsquo;s bounding box grown by 2&deg;, on days start&minus;2&hellip;end+2. The lead is the
+    end of the verified UTC day measured from the 00Z start (24, 48 &hellip; 240&nbsp;h). The
+    forecast is GraphCast&rsquo;s <code>apcp</code> 6-hour accumulations summed over the UTC day
+    (negatives clipped); the IFS-initialised member has no usable first 6&nbsp;h, so its day-1
+    total is not scored.</p>
+    <ul>
+      <li><b>Critical success index</b> &mdash; from the daily exceedance contingency per land cell
+      and day: CSI = hits/(hits+misses+false alarms). <b>Hit rate (POD)</b> = hits/(hits+misses);
+      <b>false alarm ratio</b> = false alarms/(hits+false alarms). Higher / lower is better,
+      respectively.</li>
+      <li><b>Fractions skill score (3x3, 5x5)</b> &mdash; compares exceedance fractions in 3x3 and
+      5x5 cell neighbourhoods: pattern skill with a little spatial tolerance. Higher is better.</li>
+      <li><b>Area rain bias</b> and <b>peak rain error</b> (mm, signed) &mdash; forecast minus truth
+      in mm over the event footprint: <b>negative = forecast drier than the truth</b>; 0 is ideal.</li>
+    </ul>
+    <p class="dlg-note">Read POD and CSI as conditional on the AI truth: PARDIG is provisional,
+    GraphCast was trained on ERA5, whose rain is low-biased, and a truth the events are defined
+    from cannot be treated as an independent observation.</p>
+
+    </details>
+
+    <details class="about-sec" id="about-sec-reading-the-scorecard">
+      <summary><h3>Reading the scorecard</h3></summary>
     <p>Each cell prints the mean metric over events. Its colour is the relative skill against
     IFS&nbsp;HRES at the same metric and lead: blue is better, red is worse, whichever way the
     metric points. Hover or tap a cell for the baseline value, the relative skill and
@@ -371,7 +553,10 @@
       <li><b>Early signal</b> — share of events the forecast flags, 0–1; higher is better.</li>
     </ul>
 
-    <h3>Limits to keep in mind</h3>
+    </details>
+
+    <details class="about-sec" id="about-sec-limits-to-keep-in-mind">
+      <summary><h3>Limits to keep in mind</h3></summary>
     <ul>
       <li>Heat and freeze are <i>percentile-relative</i>, not absolute hazard levels: a freeze at
       −43.7&nbsp;°C over Greenland is ordinary for there.</li>
@@ -389,13 +574,17 @@
       listed but not scored. Missing cells are shown as — .</li>
     </ul>
 
-    <h3>Credits</h3>
+    </details>
+
+    <details class="about-sec" id="about-sec-credits">
+      <summary><h3>Credits</h3></summary>
     <p class="dlg-note">Metrics and event definitions: <a href="https://github.com/brightbandtech/ExtremeWeatherBench" rel="noopener">ExtremeWeatherBench</a>
     (Brightband); scorecard design after Brightband’s Operational WeatherBench. AI model forecasts:
     NOAA/CIRA MLWP archive on AWS Open Data. IFS&nbsp;HRES: ECMWF open data (CC&nbsp;BY&nbsp;4.0).
     Truth: ERA5 (Copernicus Climate Change Service / ECMWF). Basemaps: Esri, Garmin, GEBCO, NOAA, USGS
     and the GIS User Community; coastlines: Natural Earth (public domain). Maps: Leaflet, d3-geo;
     charts: Plotly. Type: Inter and IBM Plex Mono (SIL OFL).</p>
+    </details>
   </div>
 </dialog>
 

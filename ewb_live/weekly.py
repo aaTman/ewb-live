@@ -1,6 +1,6 @@
 """EWB Live weekly refresh cycle (SPEC section 5).
 
-    python -m ewb_live.weekly [--days 90] [--jobs 4]
+    python -m ewb_live.weekly [--days 90] [--jobs 2]
 
 Order: (1) mlwp_icechunk update + source refresh hook, (2) new extreme-event
 search over the rolling 90-day window, (3) EWB eval for new/changed events and
@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import shutil
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -153,7 +154,8 @@ def _leak_gate(stage: str) -> bool:
     return False
 
 
-def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
+def run(days: int = 90, jobs: int = 2, models: list[str] | None = None) -> int:
+    os.environ.setdefault("EWB_LIVE_AR_JOBS", "1")
     now = dt.datetime.now(dt.timezone.utc)
     week = _iso_week(now)
     LOGS.mkdir(parents=True, exist_ok=True)
@@ -172,6 +174,22 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
     try:
         # 1. forecast source update (skips cleanly when mlwp_icechunk absent)
         update_mlwp_icechunk()
+
+        # 1b. PARDIG-NRT daily flood cache (owner 2026-11-19: the flood lane's
+        # rain source, EWB_FLOOD_SOURCE=pardig default). Streaming anonymous
+        # fetch, incremental (only days not already cached); non-fatal: the
+        # flood lane treats uncached days as absent, and IMERG remains the
+        # selectable fallback (EWB_FLOOD_SOURCE=imerg).
+        if importlib.util.find_spec("ewb_live.sources.pardig") is None:
+            logger.info("ewb_live.sources.pardig not present; skipping PARDIG build step")
+        else:
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "-m", "ewb_live.sources.pardig", "--days", "96"],
+                    check=False, timeout=2 * 3600)
+                logger.info("ewb_live.sources.pardig exited %d", proc.returncode)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                logger.warning("PARDIG build step failed (non-fatal): %s", exc)
 
         # 2-4. detect + incremental eval + atomic results write
         from ewb_live import pipeline
@@ -195,11 +213,17 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
 
         # 6. dashboard per-event viz assets (design team; non-fatal —
         # a viz failure must not fail the weekly cycle). Cold-cache build
-        # is network-heavy (~30-60 min), warm runs take minutes;
-        # idempotent, skips events already at current schema.
+        # is network-heavy (~30-60 min), warm runs take minutes; idempotent,
+        # skips events whose asset is at the current schema AND still matches
+        # the event's window/box (the ongoing-event rebuild, review #1). A
+        # soft time budget (margin under the step timeout) stops starting new
+        # event builds so the global steps still run this pass; the skipped
+        # ids are logged and the next weekly run resumes them (round-4). The
+        # margin must outlast one in-flight build (longest logged: 1,042 s).
         try:
             proc = subprocess.run(
-                [sys.executable, "-m", "ewb_live.viz", "--all"],
+                [sys.executable, "-m", "ewb_live.viz", "--all",
+                 "--time-budget-s", "3900"],
                 timeout=5400,
             )
             logger.info("ewb_live.viz --all exited %d", proc.returncode)
@@ -210,7 +234,6 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
         # raw_exceedance_map.md): per-6h heat/freeze/AR bitmasks under
         # data/results/raw_exceedance/, incremental (only new frames).
         # Non-fatal like viz; skipped until design lands the builder.
-        import importlib.util
         if importlib.util.find_spec("ewb_live.viz.exceedance") is None:
             logger.info("ewb_live.viz.exceedance not present; skipping raw-exceedance step")
         else:
@@ -222,6 +245,22 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
                 logger.info("ewb_live.viz.exceedance exited %d", proc.returncode)
             except Exception as exc:  # noqa: BLE001 — best-effort like viz
                 logger.warning("ewb_live.viz.exceedance step failed (non-fatal): %s", exc)
+
+        # 6b2. flood lane daily raw-map frames (defect F0, ne-fix-flood): the
+        # union-rule exceedance footprint per UTC day (flood_<YYYYMMDD>.cls)
+        # + the additive 'flood' key in the exceedance index — MUST follow
+        # step 6b (it merges into that index). Non-fatal like the steps above.
+        if importlib.util.find_spec("ewb_live.viz.flood_frames") is None:
+            logger.info("ewb_live.viz.flood_frames not present; skipping flood-frames step")
+        else:
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "-m", "ewb_live.viz.flood_frames"],
+                    timeout=3600,
+                )
+                logger.info("ewb_live.viz.flood_frames exited %d", proc.returncode)
+            except Exception as exc:  # noqa: BLE001 — best-effort like viz
+                logger.warning("ewb_live.viz.flood_frames step failed (non-fatal): %s", exc)
 
         # 6c. regional scorecard refresh (regions lane): pipeline.run wrote
         # scorecard_by_region.json BEFORE viz assets existed for newly detected
@@ -238,6 +277,26 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001 — best-effort like viz
             logger.warning("region scorecard refresh failed (non-fatal): %s", exc)
 
+        # 6d. tropical-cyclone wind field (briefs-new-events/tc_map.md): the ERA5
+        # 10 m wind envelopes the dashboard's TC layer shades under each storm's
+        # track, in data/results/tc_wind.json. The track LINES need no asset — the
+        # layer reads the best-track fixes the TC lane already publishes on each
+        # event (ev.track.fixes). The field stops with the storm: only the 6-hourly
+        # steps inside the event's own life window are read, so a dead storm has no
+        # cells at all (see ewb_live/viz/tc_wind.py's dissipation rule).
+        # Non-fatal like viz; the layer hides itself when the asset is absent.
+        if importlib.util.find_spec("ewb_live.viz.tc_wind") is None:
+            logger.info("ewb_live.viz.tc_wind not present; skipping TC wind step")
+        else:
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "-m", "ewb_live.viz.tc_wind"],
+                    timeout=3600,
+                )
+                logger.info("ewb_live.viz.tc_wind exited %d", proc.returncode)
+            except Exception as exc:  # noqa: BLE001 — best-effort like viz
+                logger.warning("TC wind step failed (non-fatal): %s", exc)
+
         # 7. final public leak gate (re-check after meta/viz writes)
         if not _leak_gate("post-publish"):
             return 1
@@ -250,15 +309,19 @@ def run(days: int = 90, jobs: int = 4, models: list[str] | None = None) -> int:
     return 0
 
 
+def _build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(prog="ewb_live.weekly")
+    ap.add_argument("--days", type=int, default=90)
+    ap.add_argument("--jobs", type=int, default=2)
+    ap.add_argument("--models", type=str, default=None, help="comma-separated model ids")
+    return ap
+
+
 def main(argv: list[str] | None = None) -> int:
     from ewb_live._guard import require_ewb_host  # CLI-only guard (see _guard.py)
 
     require_ewb_host()
-    ap = argparse.ArgumentParser(prog="ewb_live.weekly")
-    ap.add_argument("--days", type=int, default=90)
-    ap.add_argument("--jobs", type=int, default=4)
-    ap.add_argument("--models", type=str, default=None, help="comma-separated model ids")
-    args = ap.parse_args(argv)
+    args = _build_parser().parse_args(argv)
     return run(days=args.days, jobs=args.jobs,
                models=args.models.split(",") if args.models else None)
 

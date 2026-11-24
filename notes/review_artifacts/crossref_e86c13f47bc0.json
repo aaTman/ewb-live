@@ -1,0 +1,80 @@
+{
+  "id": "e86c13f47bc0",
+  "window": "2026-10-28..2026-10-31",
+  "bbox": {"lat": [-60.5, -39.25], "lon": [-80.5, -60.25]},
+  "peak_ivt_kg_per_m_s": 843,
+  "verdict": "confirmed (event-level)",
+  "verdict_note": "Multiple independent met sources (incl. Chile DMC/SMN via Senapred and Argentina SMN) document an atmospheric river feeding a frontal system over southern Aysen / Última Esperanza / adjacent Southern Ocean on 29-31 Oct 2026. No named damage/impact reports inside the bbox during the window (heaviest Oct 2026 impacts, 6-24 Oct, were further north and belong to a different, earlier pulse).",
+  "evidence": [
+    {
+      "source": "Meteored Chile (met. Viviana Urbina / Pamela Henríquez)",
+      "url": "https://www.meteored.cl/noticias/prediccion/igual-que-en-invierno-frente-frio-avanzara-por-chile-esta-semana-a-prepararse-para-lluvia-y-un-bajon-de-temperaturas.html",
+      "date": "~2026-10-27",
+      "quote": "Un río atmosférico de categoría 1 a 2 será responsable de incrementar las lluvias de un sistema frontal que alcanzará Chile durante la mañana del jueves [29 Oct]. ... Las lluvias sobre la Patagonia sumarán cerca de entre 30 y 40 mm desde la mañana del jueves y hasta la mañana del viernes 30 de octubre. El frente estará acompañado de rachas que podrían superar los 90 km/h en la provincia de Última Esperanza."
+    },
+    {
+      "source": "Meteored Chile",
+      "url": "https://www.meteored.cl/noticias/prediccion/de-antofagasta-a-magallanes-algunas-regiones-esperan-mas-de-50-mm-por-sistema-frontal-y-rio-atmosferico-esta-semana.html",
+      "date": "~2026-10-27",
+      "quote": "Sectores insulares de la provincia de Última Esperanza y la mitad sur de la región de Aysén serán los tramos que más precipitaciones recibirán con el sistema frontal con río atmosférico que comenzará a actuar en el país el jueves 29 de octubre."
+    },
+    {
+      "source": "BiobioChile",
+      "url": "https://www.biobiochile.cl/noticias/servicios/toma-nota/2026/10/27/pronostican-rio-atmosferico-para-los-proximos-dias-las-zonas-que-se-verian-mas-afectadas.shtml",
+      "date": "2026-10-27",
+      "quote": "las lluvias volverán al país desde este jueves, impulsadas por un río atmosférico que reforzará un sistema frontal en la Patagonia, especialmente en Última Esperanza y Aysén ... desde este jueves 29 de octubre."
+    },
+    {
+      "source": "Senapred Magallanes via El Pingüino (citing DMC Aviso A594/2026)",
+      "url": "https://www.elpinguino.com/regional/senapred-declara-alerta-temprana-preventiva-en-magallanes-por-tormentas-electricas-y-vientos-de-100-km-h/",
+      "date": "2026-10-30",
+      "quote": "Senapred declaró Alerta Temprana Preventiva para la Región de Magallanes ... a contar de este viernes 30 de octubre ... fundamentada en el Aviso Meteorológico A594/2026 de la DMC ... Sábado 31 de octubre: ... Vientos del noroeste con ráfagas de hasta 100 km/h [Torres del Paine, paso John Gardner] ... nevadas continuas [1 Nov], sensaciones térmicas hasta -15 °C."
+    },
+    {
+      "source": "WMO METAREA 6 NAVTEX weather bulletin (SHN)",
+      "url": "https://wwmiws.wmo.int/index.php/metareas/display/bulletin_download/WWST03_SABM/20261029235407533472",
+      "date": "2026-10-30 00Z",
+      "quote": "GALE WARNING 460: STRONG BARIC GRADIENT ... WINDS FORCE 8 WITH GUST IN ... SOUTH PATAGONIA COASTS ... GENERAL SINOPSIS: LOW 996HPA 50S 68W MOV SE / LOW 996HPA 55S 65W ... USHUAIA: ... PROB OF HVY RAIN."
+    },
+    {
+      "source": "Servicio Meteorológico Nacional (Argentina) via TN",
+      "url": "https://tn.com.ar/clima/alertas/2026/10/29/hay-alerta-amarilla-por-lluvias-para-este-jueves-29-de-octubre-en-tierra-del-fuego-las-zonas-afectadas",
+      "date": "2026-10-29",
+      "quote": "alerta amarilla por lluvias para la provincia de Tierra del Fuego ... vigente desde el 29 de octubre a las 21:00hs hasta el 30 de octubre a las 02:59hs ... precipitación acumulada entre 10 y 30 mm, pudiendo ser superados localmente."
+    },
+    {
+      "source": "Radio Revelación FM (regional Aysén forecast)",
+      "url": "https://radiorevelacionfm.cl/?p=36321",
+      "date": "~2026-10-27",
+      "quote": "Desde el viernes 27 hasta el martes 31 de octubre, la Región de Aysén experimentará cielos mayormente nublados con lluvias ... Caleta Tortel, Lago Verde y La Junta, donde se estima una acumulación que podría exceder los 50 mm diarios ... ráfagas ... superar los 80 km/h ... llegada de un sistema de baja presión relevante, que impactará a la región con un frente frío ... desde el jueves hasta el domingo."
+    },
+    {
+      "source": "CentralNoticia (summarizing Meteored forecast)",
+      "url": "https://www.centralnoticia.cl/nacional/2026/10/28/rio-atmosferico-chile-pronostico-lluvias/432968/",
+      "date": "2026-10-28",
+      "quote": "El pronóstico ... sitúa el ingreso del primer frente el jueves 29 de octubre. Sus precipitaciones se extenderían hasta la mañana del viernes 30. El mayor aporte se concentraría en el sur de Aysén y sectores insulares de Última Esperanza ... entre 30 y 40 milímetros en aproximadamente 30 horas."
+    },
+    {
+      "source": "IFRC GO / Cruz Roja Chilena (ReliefWeb) - context: broader Oct 2026 hydrometeorological complex emergency, earlier pulses",
+      "url": "https://go.ifrc.org/field-reports/18632",
+      "date": "2026-10-25",
+      "quote": "CHL: Complex Emergency - 10-2026 - Evento Hidrometeorológico #3 ... Start Date 2026-10-16 ... Displaced 172 ... (Antofagasta ... Los Lagos, Aysén, Magallanes ...). Note: damage tallies pertain to 16-25 Oct events centred Coquimbo-Biobío, not this 28-31 Oct AR."
+    }
+  ],
+  "queries_tried": [
+    "Chiloé Los Lagos precipitaciones inundaciones 28 29 30 octubre 2026 temporal",
+    "southern Chile flooding storm late October 2026 Los Lagos Aisen",
+    "\"río atmosférico\" Chile octubre 2026 Aysén Los Lagos precipitaciones",
+    "Senapred alerta Los Lagos Aysén \"29 de octubre\" OR \"30 de octubre\" OR \"31 de octubre\" 2026 sistema frontal",
+    "Chile rains \"October 30\" OR \"October 31\" 2026 Aysen Patagonia snow storm wind road closures",
+    "reliefweb OR Copernicus EMS Chile flood storm October 2026 activation Los Lagos Aisen",
+    "NASA Worldview atmospheric river October 2026 Chile \"total precipitable water\" imagery",
+    "Senapred Aysén \"alerta\" OR \"aviso\" \"29 de octubre de 2026\" OR \"30 de octubre de 2026\" viento nieve"
+  ],
+  "not_found": [
+    "Copernicus EMS activation for this window/bbox",
+    "NASA Worldview/Earth Observatory mention of this specific AR (only a 2023 central-Chile article exists)",
+    "named damage/impact reports within bbox during 28-31 Oct window"
+  ],
+  "ivt_plausibility": "Peak IVT 843 kg/m/s is physically consistent: ~AR category 1-2 on the Payne-Magginis IVT scale, matching Meteored's independent 'categoría 1 a 2' characterization and the 30-40 mm / 30 h precipitation footprint plus 80-100 km/h gusts and a 996 hPa low at 50-55S 65-68W (inside bbox) reported by METAREA 6 NAVTEX. Well below the 2000 kg/m/s TC-contamination flag; no flag."
+}

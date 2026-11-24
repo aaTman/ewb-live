@@ -94,3 +94,78 @@ def test_torn_frame_skipped(tmp_path):
                  [(40, 76), (41, 76), (42, 76), (43, 76)])
     (tmp_path / "2026091006.bin").write_bytes(b"garbage")  # torn: skipped
     assert q.qualified_at(ev, tmp_path) == "2026-09-10T00:00:00Z"
+
+
+def test_fallback_never_precedes_qualified_date(tmp_path):
+    """Review #6: an all-frames-below-floor scan must not report the raw start.
+
+    The persistence box can be small enough that no 6-hourly frame inside it
+    reaches the 200k km2 floor; qualified_at then falls back - but to the
+    later of start and details.qualified_date, never to a pre-qualification
+    instant (heat_wave-20260909-264 published 09-09T00Z vs qualified 09-12).
+    """
+    import datetime as dt
+    import json
+
+    from ewb_live.events.qualification import qualified_at
+    from ewb_live.events.types import Event
+
+    lane = tmp_path / "raw_exceedance"
+    lane.mkdir()
+    # an index with frames, none of which has a readable .bin -> the scan
+    # finds no qualifying frame and falls back
+    (lane / "index.json").write_text(json.dumps({
+        "grid": {"nx": 4, "ny": 3, "step_lat": 1.0, "step_lon": 1.0,
+                 "lat0": 0.0, "lon0": 0.0},
+        "frames": ["2026090100", "2026090200", "2026090300"],
+    }))
+    ev = Event(id="heat_wave-x", event_type="heat_wave", title="",
+               start=dt.datetime(2026, 9, 1), end=dt.datetime(2026, 9, 4),
+               bbox=(0.0, 2.0, 0.0, 2.0), peak_value=None,
+               details={"qualified_date": "2026-09-03"})
+    assert qualified_at(ev, lane) == "2026-09-03T00:00:00Z"
+    # no qualified_date (AR-like): unchanged behaviour, the start date
+    ev2 = Event(id="atmospheric_river-x", event_type="atmospheric_river",
+                title="", start=dt.datetime(2026, 9, 1),
+                end=dt.datetime(2026, 9, 4), bbox=(0.0, 2.0, 0.0, 2.0),
+                peak_value=None, details={})
+    assert qualified_at(ev2, lane) == "2026-09-01T00:00:00Z"
+
+
+def test_cold_snap_reads_the_freeze_layer(tmp_path):
+    """Round-3 item: cold_snap qualifies on the p15 (freeze) frame bit.
+
+    The early return that skipped cold_snap made qualified_at return the raw
+    start even though SPEC §2 and cold_snap.py say it reads frame layer 1;
+    the layer now comes from frame_masks.MASK_ALIAS. The heat layer also
+    burns in every frame here - a lookalike bug that painted heat would
+    still "qualify" on the wrong bit at 00Z.
+    """
+    fr = [(r, c) for r in range(40, 45) for c in range(76, 81)]
+    ev = _event("cold_snap", "2026-09-10T00:00", "2026-09-13T00:00",
+                (10.0, 20.0, 10.0, 20.0))
+    _index(tmp_path, ["2026091000", "2026091006", "2026091012"])
+    for tag in ("2026091000", "2026091006", "2026091012"):
+        _write_frame(tmp_path, tag, 0, fr)              # heat: floor at 00Z
+    _write_frame(tmp_path, "2026091000", 1, [])         # freeze: floor at 12Z
+    _write_frame(tmp_path, "2026091006", 1, [(40, 76), (40, 77)])
+    _write_frame(tmp_path, "2026091012", 1, fr[:6])
+    assert q.qualified_at(ev, tmp_path) == "2026-09-10T12:00:00Z"
+
+
+def test_cold_snap_fallback_respects_qualified_date(tmp_path):
+    """Same clamp as heat: never before its own qualified_date."""
+    from ewb_live.events.types import Event
+
+    lane = tmp_path / "lane"
+    lane.mkdir()
+    (lane / "index.json").write_text(json.dumps({
+        "grid": {"nx": 4, "ny": 3, "step_lat": 1.0, "step_lon": 1.0,
+                 "lat0": 0.0, "lon0": 0.0},
+        "frames": ["2026090100", "2026090200", "2026090300"],
+    }))
+    ev = Event(id="cold_snap-x", event_type="cold_snap", title="",
+               start=dt.datetime(2026, 9, 1), end=dt.datetime(2026, 9, 4),
+               bbox=(0.0, 2.0, 0.0, 2.0), peak_value=None,
+               details={"qualified_date": "2026-09-02"})
+    assert q.qualified_at(ev, lane) == "2026-09-02T00:00:00Z"

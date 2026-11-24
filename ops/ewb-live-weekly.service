@@ -1,13 +1,22 @@
 [Unit]
 Description=EWB Live weekly refresh cycle (ewb_live.weekly)
+Conflicts=ewb-live-pipeline.service
 # One-shot: started by ewb-live-weekly.timer (Mondays 07:00 UTC, Persistent).
 # ewb_live/weekly.py owns its own log file (logs/weekly-<date>.log); stdout and
 # stderr are appended to logs/weekly.log to capture crashes before/around it.
 
 [Service]
 Type=oneshot
+OOMPolicy=continue
+# OOM blast-radius cap (incident 2026-11-23): the bench/IVT stage peaks ~150 GB
+# per AR job; two of those would OOM-kill globally on the 251G LXC. Throttle at
+# 190G, hard-kill INSIDE the unit at 215G (kernel kills the scoring child ->
+# failed_jobs; OOMPolicy=continue keeps the weekly alive).
+MemoryHigh=190G
+MemoryMax=215G
 WorkingDirectory=__REPO__
-ExecStart=__REPO__/.venv/bin/python -m ewb_live.weekly
-TimeoutStartSec=6h
+Environment=EWB_LIVE_AR_JOBS=1
+ExecStart=__REPO__/.venv/bin/python -m ewb_live.weekly --jobs 2
+TimeoutStartSec=24h
 StandardOutput=append:__REPO__/logs/weekly.log
 StandardError=append:__REPO__/logs/weekly.log

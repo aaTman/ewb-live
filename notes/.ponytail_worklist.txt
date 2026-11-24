@@ -1,0 +1,3 @@
+RUN STAMP: 2026-11-11T09:17:13Z
+MODE: FULL SWEEP
+Review the whole repo (ewb_live/, dashboard/, ops/, scripts/, tests/) with the ponytail-audit skill. Never read third_party/ or data/.

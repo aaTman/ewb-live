@@ -43,7 +43,8 @@ logger = logging.getLogger(__name__)
 SCHEMA = 3
 ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = ROOT / "data" / "results" / "events"
-CELL = {"heat_wave": 0.25, "freeze": 0.25, "atmospheric_river": 0.5}
+CELL = {"heat_wave": 0.25, "freeze": 0.25, "cold_snap": 0.25,
+        "atmospheric_river": 0.5}
 # AR input window = event bbox grown by this MUCH before the mask is computed.
 # Two independent reasons, both live bugs (2026-11-10, Europe AR
 # 6b4dec9dc8db "sliced at the prime meridian"):
@@ -215,10 +216,17 @@ def open_truth_window(times: list[dt.datetime], bbox, cutoff):
 
     t0, t1 = times[0], times[-1] + dt.timedelta(hours=6)
     lmin, lmax, onmin, onmax = bbox
+    ds = None
     if t1 <= cutoff:
         ds = truth_mirror.open_mirror()
         src = "era5_mirror"
-    else:
+        # the mirror lags the ARCO cutoff by days (2026-11-19: ends 11-10T18
+        # while the cutoff is 11-13T23): a window past its last step must take
+        # the analysis path below, not die on a missing-time KeyError
+        if np.datetime64(times[-1]) > np.asarray(ds["time"].values).max():
+            logger.info("open_truth_window: mirror ends before %s - using the HRES analysis", times[-1])
+            ds = None
+    if ds is None:
         # exact-key cache lookup happens inside build_hres_analysis_zarr
         # (time+vars+bbox); time-range-based reuse of another region's
         # cropped store was the bug (ponytail 2026-11-08)
@@ -654,8 +662,12 @@ def _ar_model_panel(model, anchor, lead, bbox, lats, lons, thr_val):
 
 # ------------------------------------------------------------------ driver
 def build_event(ev: dict, cutoff: dt.datetime, heat_leads, ar_leads) -> dict:
-    if ev["event_type"] in ("heat_wave", "freeze"):
+    if ev["event_type"] in ("heat_wave", "freeze", "cold_snap"):
         return build_heat_freeze(ev, cutoff, heat_leads)
+    if ev["event_type"] == "flood":          # flood lane (ne-fix-flood 2026-11-19)
+        from .floodviz import build_flood
+
+        return build_flood(ev)
     return build_ar(ev, cutoff, ar_leads)
 
 

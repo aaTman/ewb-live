@@ -1,0 +1,14 @@
+# Distinct task (owner, 2026-11-08): second global map: raw ERA5 detector output per timestep
+KEEP the existing global event dashboard (event boxes, timeline, multi-select). ADD a second view, toggled with it or placed directly below it at the top of the home page, that shows the RAW detector output on the globe, with NO event boxes.
+Owner decisions (asked and answered):
+- **Field:** threshold exceedances, globally, at every timestep, whether or not the cells became a selected event: heat = cells where ERA5 2 m T > OWB p85 (hour-of-day ramp applied, as in detection); freeze = cells < OWB p15; AR = the EWB AR mask (IVT/Laplacian AR detection as ewb_live/events uses it, 400 kg m-1 s-1 threshold). This is the per-timestep exceedance BEFORE the AND/3-day/area/curation filters.
+- **Layers:** overlaid on one map, each toggleable (heat warm orange-red, freeze blue, AR green: the existing type tokens), with a legend showing the three swatches + toggles.
+- **Projection:** Equal Earth, flat (d3-geo geoEqualEarth), same basemap style as the existing global map.
+- **Timestep:** 6-hourly (00/06/12/18 UTC) across the 90-day window (~360 frames), matching the ERA5 copy and EWB's 6-hourly detection.
+Details:
+1. Time slider with play/pause, step +-6 h, drag, keyboard arrows; readout 'Valid time: DD Mon YYYY, HH:MM UTC'; playback speed control; reduced-motion respected.
+2. Truth coverage: ERA5 (ARCO) lags ~6 days. Frames after the ERA5 cutoff either use the IFS-analysis fallback (clearly labeled 'IFS analysis') or are omitted with an end-of-data marker on the slider; pick the option consistent with what the pipeline uses and label it.
+3. No boxes, but an optional off-by-default toggle 'highlight cells in selected events' is allowed if cheap; not required.
+4. Data asset (design, built on the box from the ERA5 mirror with ewb's detection functions; coordinate with ewb, term in notes/orchestrator_watch.md): per-frame compact global masks (3 bit-layers per cell). Use native 0.25 deg if size allows, else 0.5 deg, encoded as tiny PNG/bitpacked u8 + run-length/zlib, one file per frame under data/results/raw_exceedance/<YYYYMMDDHH>.bin|png plus an index.json (frames, grid, cutoff). Lazy-load frames with prefetch of neighbors; target < ~100 KB per frame. Generate in the weekly/auto-viz step (incremental: only new frames). Run on the box under a MemoryMax cap.
+5. Frontend: canvas rendering in Equal Earth (precompute projected cell geometry once, or reproject a lat/lon raster per frame via an offscreen canvas), crisp cell edges, smooth playback (>= 10 fps on a laptop), responsive in the <=75vw container, mobile-usable. URL state (#raw=YYYYMMDDHH&layers=h,f,a). Playwright tests: slider steps change the frame; layer toggles; URL round trip; a missing frame shows a graceful message.
+6. Post 'RAW MAP READY' with desktop + mobile screenshots in notes/channel_design_frontend.md when live; include in the KT docs. Public hygiene rules apply.

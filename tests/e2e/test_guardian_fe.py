@@ -169,7 +169,7 @@ def test_storage_blocked_does_not_break_theme_toggle(engine, base):
     page.on("pageerror", lambda e: errs.append(str(e)))
     _boot(page, base)
     page.click("#theme-ctl button[data-pref='dark']")
-    page.click("#type-tabs button:nth-child(2)")
+    page.click("#type-tabs button:nth-of-type(2)")
     page.wait_for_timeout(300)
     assert page.locator("#event-table tbody tr").count() >= 0
     assert not errs, errs
@@ -255,8 +255,12 @@ def test_no_dom_or_listener_growth_over_open_close_cycles(pg, base):
         pg.wait_for_timeout(700)
         pg.click("#detail-close")
         pg.wait_for_selector("#detail-sec", state="hidden")
+        pg.click('[data-view="scorecard"]')
+        pg.wait_for_selector("#scorecard-sec:not(.hidden)")
         pg.click("#metrics-more")
         pg.click("#metrics-more")
+        pg.click('[data-view="events"]')
+        pg.wait_for_selector("#explore:not(.hidden)")
 
     for i in range(3):          # warm-up: lazy singletons (Plotly hooks, tooltips) settle
         cycle(i)
@@ -326,13 +330,14 @@ def test_default_models_are_all_scored_models(pg, base):
 
 
 def test_scorecard_tooltip_has_ci_and_direction(pg, base):
-    _boot(pg, base)
-    cell = pg.locator("td[data-tip]").nth(3)
+    _boot(pg, base, "/#view=scorecard&tab=heat_wave")
+    pg.wait_for_selector("#scorecard-sec:not(.hidden) td[data-tip]", timeout=15000)
+    cell = pg.locator("#scorecard-sec td[data-tip]").nth(3)
     cell.hover()
     pg.wait_for_timeout(300)
     tip = pg.inner_text("#tooltip")
     assert re.search(r"(higher|lower|closer to 0) is better", tip), tip
-    if pg.evaluate("state.scorecard.some(r => Number.isFinite(r.ci_lo))"):
+    if pg.evaluate("state.scorecard.some(r => r.event_type === 'heat_wave' && Number.isFinite(r.ci_lo))"):
         assert "95% CI" in tip, tip
 
 
@@ -629,12 +634,27 @@ def _json_get(base, name):
         base + "/data/results/" + name, headers={"User-Agent": "Mozilla/5.0 (e2e)"})))
 
 
-def _wrapped_event(base):
+TRACK_LANES = ("tropical_cyclone", "midlat_cyclone")
+
+
+def _wrapped_events(base):
+    """(box-lane, track-lane) dateline-crossing events, either may be None.
+
+    The suite was written when every wrapped event was a footprint box; since
+    the storm lanes published, the first wrapped event in the set is a TC —
+    and a track lane DELIBERATELY draws no rectangle ("a box around a 3,000 km
+    track is not information"): it paints a mark and a split polyline. Lane-
+    aware means: assert the BOX contract on a box-lane crosser (prefer AR, the
+    one with a detail viz), and the MARK contract plus the no-full-band-degrade
+    rule on a track-lane crosser."""
     sel = _json_get(base, "events_selected.json")
-    for e in (sel["events"] if isinstance(sel, dict) else sel):
-        if e["bbox"][2] > e["bbox"][3]:
-            return e
-    return None
+    evs = sel["events"] if isinstance(sel, dict) else sel
+    wrapped = [e for e in evs if e["bbox"][2] > e["bbox"][3]]
+    box = next((e for e in wrapped if e["event_type"] not in TRACK_LANES
+                and e["event_type"] != "flood"),
+               next((e for e in wrapped if e["event_type"] not in TRACK_LANES), None))
+    track = next((e for e in wrapped if e["event_type"] in TRACK_LANES), None)
+    return box, track
 
 
 def _span(b):
@@ -678,6 +698,10 @@ def _dateline_page(engine, base, ev, patch=None, strip_footprint=False):
         page.route("**/data/results/*.json", handler)
     tl_entry = next((e for e in _json_get(base, "global_timeline.json")["events"] if e["id"] == ev["id"]), None)
     q = (tl_entry or {}).get("qualified_at") or ev["start"][:10].replace("-", "") + "00"
+    end_ts = ((tl_entry or {}).get("end") or ev["end"])[:10].replace("-", "") + "00"
+    frames = _json_get(base, "raw_exceedance/index.json").get("frames") or []
+    if frames and q not in frames:
+        q = next((f for f in frames if q <= f < end_ts), q)
     page.goto(base + f"/#map={q}&sel={ev['id']}", wait_until="load")
     wait_js(page, "typeof state !== 'undefined' && state.events && state.events.length > 0")
     wait_js(page, "typeof MergedMap !== 'undefined' && MergedMap._dbg().mounted === true", timeout=20000)
@@ -686,55 +710,122 @@ def _dateline_page(engine, base, ev, patch=None, strip_footprint=False):
 
 
 def _detail_width(page, base, ev_id):
+    """(east-west, north-south) degrees the detail map shows."""
     page.goto(base + f"/#event={ev_id}&lead=24h")
     page.wait_for_selector("#detail-viz .ev3-panel", timeout=25000)
     page.wait_for_timeout(1200)
     return page.evaluate("""() => { const m = window.__ev3.maps[0], b = m.getBounds();
-        return b.getEast() - b.getWest(); }""")
+        return [b.getEast() - b.getWest(), b.getNorth() - b.getSouth()]; }""")
+
+
+def _framed(wh, bbox):
+    """The detail map frames the FIELD, not the world. The panel is a wide, short
+    letterbox, so a tall event (an AR 44 deg tall x 51 deg wide) is limited by
+    the panel HEIGHT and the visible longitude span is ~4x the event width
+    (a9d8ad3af01c: 187-212 deg wide, 55 deg tall) — fine. Tight in at least one
+    axis is the real contract; a world-scale fit is loose in both."""
+    w, h = wh
+    return w < 2 * _span(bbox) + 10 or h < 2 * (bbox[1] - bbox[0]) + 10
+
+
+# what a crossing storm must do on the merged map: paint its MARK, own no box
+# node, and leave the sheet free of any world-wide (>=90 % of the canvas) box
+# path — the no-full-band-degrade rule, asserted for every event, not just its
+# own. (The wind field's own seam behaviour is pinned with synthetic data in
+# tests/e2e/test_trackwind_fe.py; the track unwrap on the detail page in
+# tests/e2e/test_trackviz_fe.py.)
+TRACK_PROBE = r"""(id) => {
+  const W = document.querySelector('#raw-canvas').getBoundingClientRect().width;
+  const band = [...document.querySelectorAll('#gm-boxes .gm-bbox')].filter((p) => {
+    // a legitimate wrapped box is ONE path with two subpaths at opposite map
+    // edges, so max-min across the whole d spans the sheet BY DESIGN; the
+    // degrade is a single subpath almost as wide as the world — check runs
+    const d = p.getAttribute('d') || '';
+    return d.split('Z').slice(0, -1).some((poly) => {
+      const xs = [...poly.matchAll(/[ML](-?\d+\.?\d*) /g)].map((m) => +m[1]);
+      return xs.length && Math.max(...xs) - Math.min(...xs) > 0.9 * W; });
+  }).length;
+  return { mark: !!document.querySelector('#gm-track-marks [data-id="' + id + '"]'),
+           boxes: document.querySelectorAll('#gm-boxes [data-id="' + id + '"] .gm-bbox').length,
+           band };
+}"""
 
 
 def test_dateline_event_renders_sanely_on_every_surface(engine, base):
-    ev = _wrapped_event(base)
-    if not ev:
+    box, track = _wrapped_events(base)
+    if not box and not track:
         pytest.skip("no dateline-crossing event in the current set")
-    true_w = _span(ev["bbox"])
-    ctx, page = _dateline_page(engine, base, ev)
-    r = page.evaluate(DATELINE_PROBE, ev["id"])
-    assert r["node"] and r["bboxD"], r                             # box drawn at the qualification step
-    assert r["bboxD"].count("M") == 2, r                           # wrapped bbox -> split at the seam, not a full-band bar
-    # the two halves sit at opposite map edges, so the group bbox is wide: check the path itself
-    for poly in r["bboxD"].split("Z")[:-1]:
-        px = [float(x) for x in re.findall(r"[ML](-?\d+\.?\d*) ", poly)]
-        assert max(px) - min(px) < 0.4 * r["W"], poly[:120]        # an unsplit run spanned ~80 %
-    w = _detail_width(page, base, ev["id"])
-    assert w < 2 * true_w + 10, (w, true_w)
-    ctx.close()
+    if box:      # the box contract: split at the seam, framed detail page
+        ev = box
+        true_w = _span(ev["bbox"])
+        ctx, page = _dateline_page(engine, base, ev)
+        r = page.evaluate(DATELINE_PROBE, ev["id"])
+        assert r["node"] and r["bboxD"], r                         # box drawn at the qualification step
+        assert r["bboxD"].count("M") == 2, r                       # wrapped bbox -> split, not a full-band bar
+        # the two halves sit at opposite map edges, so the group bbox is wide: check the path itself
+        for poly in r["bboxD"].split("Z")[:-1]:
+            px = [float(x) for x in re.findall(r"[ML](-?\d+\.?\d*) ", poly)]
+            assert max(px) - min(px) < 0.4 * r["W"], poly[:120]    # an unsplit run spanned ~80 %
+        wh = _detail_width(page, base, ev["id"])
+        assert _framed(wh, ev["bbox"]), (wh, true_w)
+        ctx.close()
+    if track:    # the mark contract: a track lane paints a mark, never a box
+        ctx, page = _dateline_page(engine, base, track)
+        r = page.evaluate(TRACK_PROBE, track["id"])
+        assert r["mark"], f"the crossing storm paints no mark on the merged map: {r}"
+        assert not r["boxes"], "a track lane drew a rectangle — boxes are for footprint lanes"
+        assert not r["band"], "a wrapped bbox degraded into a world-wide band"
+        ctx.close()
 
 
 def test_degenerate_full_band_bbox_is_recovered_from_footprint(engine, base):
     """A producer that records min/max of raw longitudes gives [-180,180]: the world-wide band.
-    The footprint masks in the timeline let the dashboard recover the wrapped box."""
-    ev = _wrapped_event(base)
-    if not ev:
+    The footprint masks in the timeline let the dashboard recover the wrapped box.
+    Track lanes have no footprint to recover from and draw no box either way —
+    for them the same patch must change nothing: mark stays, band stays absent."""
+    box, track = _wrapped_events(base)
+    if not box and not track:
         pytest.skip("no dateline-crossing event in the current set")
-    ctx, page = _dateline_page(engine, base, ev, patch=lambda b: [b[0], b[1], -180.0, 180.0])
-    r = page.evaluate(DATELINE_PROBE, ev["id"])
-    assert r["bbox"][2] > r["bbox"][3], r                           # wrapped again (lon_min > lon_max)
-    assert _span(r["bbox"]) < 2 * _span(ev["bbox"]), r
-    assert r["node"] and r["bboxD"].count("M") == 2, r              # recovered box renders, split at the seam
-    ctx.close()
+    if box:
+        ev = box
+        ctx, page = _dateline_page(engine, base, ev, patch=lambda b: [b[0], b[1], -180.0, 180.0])
+        r = page.evaluate(DATELINE_PROBE, ev["id"])
+        assert r["bbox"][2] > r["bbox"][3], r                      # wrapped again (lon_min > lon_max)
+        assert _span(r["bbox"]) < 2 * _span(ev["bbox"]), r
+        assert r["node"] and r["bboxD"].count("M") == 2, r         # recovered box renders, split at the seam
+        ctx.close()
+    if track:
+        ctx, page = _dateline_page(engine, base, track, patch=lambda b: [b[0], b[1], -180.0, 180.0])
+        r = page.evaluate(TRACK_PROBE, track["id"])
+        assert r["mark"], f"a degraded bbox deleted the storm's mark: {r}"
+        assert not r["boxes"] and not r["band"], r
+        ctx.close()
 
 
 def test_unrecoverable_full_band_bbox_draws_no_band(engine, base):
-    ev = _wrapped_event(base)
-    if not ev:
+    """No footprint to recover from and a world-wide bbox: the map must draw
+    NOTHING for that event — and for a crossing storm, the mark (which comes
+    from the track, not the box) is exactly what must still be there."""
+    box, track = _wrapped_events(base)
+    if not box and not track:
         pytest.skip("no dateline-crossing event in the current set")
-    ctx, page = _dateline_page(engine, base, ev, patch=lambda b: [b[0], b[1], -180.0, 180.0], strip_footprint=True)
-    r = page.evaluate(DATELINE_PROBE, ev["id"])
-    assert not r["node"] and not r["bboxD"], r                       # none on the merged map either
-    w = _detail_width(page, base, ev["id"])
-    assert w < 2 * _span(ev["bbox"]) + 10, w                         # detail still frames the field, not the world
-    ctx.close()
+    if box:
+        ev = box
+        ctx, page = _dateline_page(engine, base, ev,
+                                   patch=lambda b: [b[0], b[1], -180.0, 180.0], strip_footprint=True)
+        r = page.evaluate(DATELINE_PROBE, ev["id"])
+        assert not r["node"] and not r["bboxD"], r                 # none on the merged map either
+        if ev["event_type"] != "flood":      # flood has no detail viz by design
+            wh = _detail_width(page, base, ev["id"])
+            assert _framed(wh, ev["bbox"]), wh                     # detail still frames the field, not the world
+        ctx.close()
+    if track:
+        ctx, page = _dateline_page(engine, base, track,
+                                   patch=lambda b: [b[0], b[1], -180.0, 180.0], strip_footprint=True)
+        r = page.evaluate(TRACK_PROBE, track["id"])
+        assert r["mark"], f"a degraded, unrecoverable bbox deleted the storm's mark: {r}"
+        assert not r["boxes"] and not r["band"], r
+        ctx.close()
 
 
 # --------------------------------------------------------------------------
@@ -803,7 +894,19 @@ def test_global_map_opens_on_the_busiest_day(pg, base):
         if n > best_n:
             best, best_n = f, n
     assert pg.evaluate("MergedMap._dbg().idx") == frames.index(best), (best, best_n)
-    assert pg.locator("#gm-boxes .gm-ev").count() == best_n, best_n
+    # lane-aware (the suite predates the storm and flood lanes): footprint lanes
+    # draw a BOX on #gm-boxes; track lanes (TC/MLC) a MARK on #gm-track-marks and
+    # flood paints its own raster layer, so neither of those is a box. Boxes must
+    # equal the active footprint-lane events; every active track event must carry
+    # a (not dissipated) mark.
+    types = {e["id"]: e.get("type") for e in tl["events"]}
+    active = [e for e in tl["events"] if qual[e["id"]] <= best < end[e["id"]]]
+    n_box = sum(1 for e in active if e.get("type") not in TRACK_LANES + ("flood",))
+    assert pg.locator("#gm-boxes .gm-ev").count() == n_box, (n_box, best_n, len(types))
+    marks = set(pg.evaluate("""() => [...document.querySelectorAll(
+        '#gm-track-marks .gm-mark:not(.gone)')].map((n) => n.dataset.id)"""))
+    need = {e["id"] for e in active if e.get("type") in TRACK_LANES}
+    assert need <= marks, sorted(need - marks)
 
 
 def test_detail_heading_is_type_and_region(pg, base):
@@ -811,8 +914,9 @@ def test_detail_heading_is_type_and_region(pg, base):
     pg.evaluate("selectEvent(state.events[0].id, false)")
     pg.wait_for_selector("#detail-sec:not(.hidden)")
     pg.wait_for_timeout(800)
-    h = pg.inner_text("#detail-title")
-    assert " · " in h and not re.search(r"\d{4}-\d{2}-\d{2}", h), h
+    h = pg.inner_text("#detail-title").strip()
+    chip = pg.inner_text("#detail-type-slot .type-chip").strip()
+    assert h and chip and not re.search(r"\d{4}-\d{2}-\d{2}", h), (h, chip)
 
 
 # --------------------------------------------------------------------------

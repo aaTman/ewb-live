@@ -1,0 +1,1149 @@
+{
+ "report": {
+  "chips_after-desktop-light": {
+   "tabs": [
+    {
+     "text": "All123",
+     "h": 32,
+     "w": 167,
+     "row": 217,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Every event published this window, all types.",
+     "badgeRight": -89,
+     "dot": false
+    },
+    {
+     "text": "Heat wave15",
+     "h": 32,
+     "w": 167,
+     "row": 217,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Heat waves \u2014 ERA5 2 m temperature above the p85 climatology at every 6-hourly step of a UTC day, over land.",
+     "badgeRight": -42,
+     "dot": false
+    },
+    {
+     "text": "Cold snap6",
+     "h": 32,
+     "w": 167,
+     "row": 274,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Cold snaps \u2014 Below the p15 climatology at every 6-hourly step of a UTC day, over land \u2014 the freeze rule without its 0 \u00b0C cap.",
+     "badgeRight": -43,
+     "dot": false
+    },
+    {
+     "text": "Freeze5",
+     "h": 32,
+     "w": 167,
+     "row": 274,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Freezes \u2014 Below the p15 climatology and at or below 0 \u00b0C at every 6-hourly step of a UTC day, over land.",
+     "badgeRight": -64,
+     "dot": false
+    },
+    {
+     "text": "Atm. river13",
+     "h": 32,
+     "w": 167,
+     "row": 274,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Atmospheric rivers \u2014 IVT peaking at \u2265400 kg m\u207b\u00b9 s\u207b\u00b9 with a ridge criterion; starts over ocean and makes landfall.",
+     "badgeRight": -45,
+     "dot": false
+    },
+    {
+     "text": "Flood40",
+     "h": 32,
+     "w": 167,
+     "row": 274,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Floods \u2014 IMERG daily or 72 h rain past the ERA5 p95 wet-day climatology AND \u226520 mm/day. Published, not scored.",
+     "badgeRight": -70,
+     "dot": false
+    },
+    {
+     "text": "Trop. cyclone44",
+     "h": 32,
+     "w": 158,
+     "row": 274,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Tropical cyclones \u2014 One IBTrACS storm: \u22653 fixes at tropical-storm force (\u226534 kt) spanning \u226512 h. Published, not scored.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Midlat. cyclone0",
+     "h": 32,
+     "w": 166,
+     "row": 274,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Midlatitude cyclones \u2014 No midlatitude cyclones met the criteria this window. A closed ERA5 MSLP low \u2264990 hPa living \u226548 h and travelling \u22651000 km, born between 25\u00b0 and 70\u00b0. Track lane \u2014 no scorecard yet.",
+     "badgeRight": -13,
+     "dot": false
+    }
+   ],
+   "rows": 2,
+   "heights": [
+    32
+   ],
+   "widths": [
+    167,
+    158,
+    166
+   ],
+   "selShadow": null,
+   "pageOverflow": 0,
+   "filterBox": {
+    "x": 314,
+    "y": 177,
+    "w": 1032,
+    "h": 182,
+    "top": 177
+   },
+   "legendBox": {
+    "x": 314,
+    "y": 736,
+    "w": 698,
+    "h": 48,
+    "top": 736
+   },
+   "chips": [
+    {
+     "text": "Heat wave",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(254, 230, 213)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Freeze",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(223, 236, 255)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Heat wave",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(254, 230, 213)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Cold snap",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(214, 240, 255)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Freeze",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(223, 236, 255)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(221, 242, 221)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Flood",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(209, 243, 244)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Tropical cyclone",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(236, 231, 255)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Midlatitude cyclone",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(255, 228, 225)",
+     "fs": "11.5px",
+     "tt": "none"
+    }
+   ]
+  },
+  "chips_after-desktop-dark": {
+   "tabs": [
+    {
+     "text": "All123",
+     "h": 32,
+     "w": 167,
+     "row": 217,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Every event published this window, all types.",
+     "badgeRight": -89,
+     "dot": false
+    },
+    {
+     "text": "Heat wave15",
+     "h": 32,
+     "w": 167,
+     "row": 217,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Heat waves \u2014 ERA5 2 m temperature above the p85 climatology at every 6-hourly step of a UTC day, over land.",
+     "badgeRight": -42,
+     "dot": false
+    },
+    {
+     "text": "Cold snap6",
+     "h": 32,
+     "w": 167,
+     "row": 274,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Cold snaps \u2014 Below the p15 climatology at every 6-hourly step of a UTC day, over land \u2014 the freeze rule without its 0 \u00b0C cap.",
+     "badgeRight": -43,
+     "dot": false
+    },
+    {
+     "text": "Freeze5",
+     "h": 32,
+     "w": 167,
+     "row": 274,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Freezes \u2014 Below the p15 climatology and at or below 0 \u00b0C at every 6-hourly step of a UTC day, over land.",
+     "badgeRight": -64,
+     "dot": false
+    },
+    {
+     "text": "Atm. river13",
+     "h": 32,
+     "w": 167,
+     "row": 274,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Atmospheric rivers \u2014 IVT peaking at \u2265400 kg m\u207b\u00b9 s\u207b\u00b9 with a ridge criterion; starts over ocean and makes landfall.",
+     "badgeRight": -45,
+     "dot": false
+    },
+    {
+     "text": "Flood40",
+     "h": 32,
+     "w": 167,
+     "row": 274,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Floods \u2014 IMERG daily or 72 h rain past the ERA5 p95 wet-day climatology AND \u226520 mm/day. Published, not scored.",
+     "badgeRight": -70,
+     "dot": false
+    },
+    {
+     "text": "Trop. cyclone44",
+     "h": 32,
+     "w": 158,
+     "row": 274,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Tropical cyclones \u2014 One IBTrACS storm: \u22653 fixes at tropical-storm force (\u226534 kt) spanning \u226512 h. Published, not scored.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Midlat. cyclone0",
+     "h": 32,
+     "w": 166,
+     "row": 274,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Midlatitude cyclones \u2014 No midlatitude cyclones met the criteria this window. A closed ERA5 MSLP low \u2264990 hPa living \u226548 h and travelling \u22651000 km, born between 25\u00b0 and 70\u00b0. Track lane \u2014 no scorecard yet.",
+     "badgeRight": -13,
+     "dot": false
+    }
+   ],
+   "rows": 2,
+   "heights": [
+    32
+   ],
+   "widths": [
+    167,
+    158,
+    166
+   ],
+   "selShadow": null,
+   "pageOverflow": 0,
+   "filterBox": {
+    "x": 314,
+    "y": 177,
+    "w": 1032,
+    "h": 182,
+    "top": 177
+   },
+   "legendBox": {
+    "x": 314,
+    "y": 736,
+    "w": 698,
+    "h": 48,
+    "top": 736
+   },
+   "chips": [
+    {
+     "text": "Heat wave",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(76, 49, 29)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Freeze",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(47, 54, 82)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Heat wave",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(76, 49, 29)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Cold snap",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(20, 62, 74)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Freeze",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(47, 54, 82)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(48, 61, 32)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Flood",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(21, 64, 56)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Tropical cyclone",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(58, 50, 79)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Midlatitude cyclone",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(79, 45, 46)",
+     "fs": "11.5px",
+     "tt": "none"
+    }
+   ]
+  },
+  "chips_after-tablet-light": {
+   "tabs": [
+    {
+     "text": "All123",
+     "h": 32,
+     "w": 102,
+     "row": 269,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Every event published this window, all types.",
+     "badgeRight": -24,
+     "dot": false
+    },
+    {
+     "text": "Heat wave15",
+     "h": 32,
+     "w": 102,
+     "row": 269,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Heat waves \u2014 ERA5 2 m temperature above the p85 climatology at every 6-hourly step of a UTC day, over land.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Cold snap6",
+     "h": 32,
+     "w": 102,
+     "row": 326,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Cold snaps \u2014 Below the p15 climatology at every 6-hourly step of a UTC day, over land \u2014 the freeze rule without its 0 \u00b0C cap.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Freeze5",
+     "h": 32,
+     "w": 102,
+     "row": 326,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Freezes \u2014 Below the p15 climatology and at or below 0 \u00b0C at every 6-hourly step of a UTC day, over land.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Atm. river13",
+     "h": 32,
+     "w": 102,
+     "row": 326,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Atmospheric rivers \u2014 IVT peaking at \u2265400 kg m\u207b\u00b9 s\u207b\u00b9 with a ridge criterion; starts over ocean and makes landfall.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Flood40",
+     "h": 32,
+     "w": 102,
+     "row": 326,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Floods \u2014 IMERG daily or 72 h rain past the ERA5 p95 wet-day climatology AND \u226520 mm/day. Published, not scored.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Trop. cyclone44",
+     "h": 32,
+     "w": 158,
+     "row": 326,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Tropical cyclones \u2014 One IBTrACS storm: \u22653 fixes at tropical-storm force (\u226534 kt) spanning \u226512 h. Published, not scored.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Midlat. cyclone0",
+     "h": 32,
+     "w": 166,
+     "row": 326,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Midlatitude cyclones \u2014 No midlatitude cyclones met the criteria this window. A closed ERA5 MSLP low \u2264990 hPa living \u226548 h and travelling \u22651000 km, born between 25\u00b0 and 70\u00b0. Track lane \u2014 no scorecard yet.",
+     "badgeRight": -13,
+     "dot": false
+    }
+   ],
+   "rows": 2,
+   "heights": [
+    32
+   ],
+   "widths": [
+    102,
+    158,
+    166
+   ],
+   "selShadow": null,
+   "pageOverflow": 0,
+   "filterBox": {
+    "x": 24,
+    "y": 229,
+    "w": 772,
+    "h": 182,
+    "top": 229
+   },
+   "legendBox": {
+    "x": 24,
+    "y": 824,
+    "w": 772,
+    "h": 48,
+    "top": 824
+   },
+   "chips": [
+    {
+     "text": "Heat wave",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(254, 230, 213)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Freeze",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(223, 236, 255)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Heat wave",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(254, 230, 213)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Cold snap",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(214, 240, 255)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Freeze",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(223, 236, 255)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(221, 242, 221)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Flood",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(209, 243, 244)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Tropical cyclone",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(236, 231, 255)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Midlatitude cyclone",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(255, 228, 225)",
+     "fs": "11.5px",
+     "tt": "none"
+    }
+   ]
+  },
+  "chips_after-tablet-dark": {
+   "tabs": [
+    {
+     "text": "All123",
+     "h": 32,
+     "w": 102,
+     "row": 269,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Every event published this window, all types.",
+     "badgeRight": -24,
+     "dot": false
+    },
+    {
+     "text": "Heat wave15",
+     "h": 32,
+     "w": 102,
+     "row": 269,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Heat waves \u2014 ERA5 2 m temperature above the p85 climatology at every 6-hourly step of a UTC day, over land.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Cold snap6",
+     "h": 32,
+     "w": 102,
+     "row": 326,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Cold snaps \u2014 Below the p15 climatology at every 6-hourly step of a UTC day, over land \u2014 the freeze rule without its 0 \u00b0C cap.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Freeze5",
+     "h": 32,
+     "w": 102,
+     "row": 326,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Freezes \u2014 Below the p15 climatology and at or below 0 \u00b0C at every 6-hourly step of a UTC day, over land.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Atm. river13",
+     "h": 32,
+     "w": 102,
+     "row": 326,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Atmospheric rivers \u2014 IVT peaking at \u2265400 kg m\u207b\u00b9 s\u207b\u00b9 with a ridge criterion; starts over ocean and makes landfall.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Flood40",
+     "h": 32,
+     "w": 102,
+     "row": 326,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Floods \u2014 IMERG daily or 72 h rain past the ERA5 p95 wet-day climatology AND \u226520 mm/day. Published, not scored.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Trop. cyclone44",
+     "h": 32,
+     "w": 158,
+     "row": 326,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Tropical cyclones \u2014 One IBTrACS storm: \u22653 fixes at tropical-storm force (\u226534 kt) spanning \u226512 h. Published, not scored.",
+     "badgeRight": -13,
+     "dot": false
+    },
+    {
+     "text": "Midlat. cyclone0",
+     "h": 32,
+     "w": 166,
+     "row": 326,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Midlatitude cyclones \u2014 No midlatitude cyclones met the criteria this window. A closed ERA5 MSLP low \u2264990 hPa living \u226548 h and travelling \u22651000 km, born between 25\u00b0 and 70\u00b0. Track lane \u2014 no scorecard yet.",
+     "badgeRight": -13,
+     "dot": false
+    }
+   ],
+   "rows": 2,
+   "heights": [
+    32
+   ],
+   "widths": [
+    102,
+    158,
+    166
+   ],
+   "selShadow": null,
+   "pageOverflow": 0,
+   "filterBox": {
+    "x": 24,
+    "y": 229,
+    "w": 772,
+    "h": 182,
+    "top": 229
+   },
+   "legendBox": {
+    "x": 24,
+    "y": 824,
+    "w": 772,
+    "h": 48,
+    "top": 824
+   },
+   "chips": [
+    {
+     "text": "Heat wave",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(76, 49, 29)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Freeze",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(47, 54, 82)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Heat wave",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(76, 49, 29)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Cold snap",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(20, 62, 74)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Freeze",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(47, 54, 82)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(48, 61, 32)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Flood",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(21, 64, 56)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Tropical cyclone",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(58, 50, 79)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Midlatitude cyclone",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(79, 45, 46)",
+     "fs": "11.5px",
+     "tt": "none"
+    }
+   ]
+  },
+  "chips_after-phone-light": {
+   "tabs": [
+    {
+     "text": "All123",
+     "h": 44,
+     "w": 358,
+     "row": 314,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Every event published this window, all types.",
+     "badgeRight": -280,
+     "dot": false
+    },
+    {
+     "text": "Heat wave15",
+     "h": 44,
+     "w": 358,
+     "row": 387,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Heat waves \u2014 ERA5 2 m temperature above the p85 climatology at every 6-hourly step of a UTC day, over land.",
+     "badgeRight": -233,
+     "dot": false
+    },
+    {
+     "text": "Cold snap6",
+     "h": 44,
+     "w": 175,
+     "row": 439,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Cold snaps \u2014 Below the p15 climatology at every 6-hourly step of a UTC day, over land \u2014 the freeze rule without its 0 \u00b0C cap.",
+     "badgeRight": -51,
+     "dot": false
+    },
+    {
+     "text": "Freeze5",
+     "h": 44,
+     "w": 175,
+     "row": 439,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Freezes \u2014 Below the p15 climatology and at or below 0 \u00b0C at every 6-hourly step of a UTC day, over land.",
+     "badgeRight": -72,
+     "dot": false
+    },
+    {
+     "text": "Atm. river13",
+     "h": 44,
+     "w": 358,
+     "row": 512,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Atmospheric rivers \u2014 IVT peaking at \u2265400 kg m\u207b\u00b9 s\u207b\u00b9 with a ridge criterion; starts over ocean and makes landfall.",
+     "badgeRight": -236,
+     "dot": false
+    },
+    {
+     "text": "Flood40",
+     "h": 44,
+     "w": 175,
+     "row": 564,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Floods \u2014 IMERG daily or 72 h rain past the ERA5 p95 wet-day climatology AND \u226520 mm/day. Published, not scored.",
+     "badgeRight": -78,
+     "dot": false
+    },
+    {
+     "text": "Trop. cyclone44",
+     "h": 44,
+     "w": 358,
+     "row": 637,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Tropical cyclones \u2014 One IBTrACS storm: \u22653 fixes at tropical-storm force (\u226534 kt) spanning \u226512 h. Published, not scored.",
+     "badgeRight": -213,
+     "dot": false
+    },
+    {
+     "text": "Midlat. cyclone0",
+     "h": 44,
+     "w": 175,
+     "row": 689,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Midlatitude cyclones \u2014 No midlatitude cyclones met the criteria this window. A closed ERA5 MSLP low \u2264990 hPa living \u226548 h and travelling \u22651000 km, born between 25\u00b0 and 70\u00b0. Track lane \u2014 no scorecard yet.",
+     "badgeRight": -22,
+     "dot": false
+    }
+   ],
+   "rows": 7,
+   "heights": [
+    44
+   ],
+   "widths": [
+    358,
+    175
+   ],
+   "selShadow": null,
+   "pageOverflow": 0,
+   "filterBox": {
+    "x": 16,
+    "y": 292,
+    "w": 358,
+    "h": 493,
+    "top": 292
+   },
+   "legendBox": {
+    "x": 16,
+    "y": 997,
+    "w": 358,
+    "h": 116,
+    "top": 997
+   },
+   "chips": [
+    {
+     "text": "Heat wave",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(254, 230, 213)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Freeze",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(223, 236, 255)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Heat wave",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(254, 230, 213)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Cold snap",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(214, 240, 255)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Freeze",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(223, 236, 255)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(221, 242, 221)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Flood",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(209, 243, 244)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Tropical cyclone",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(236, 231, 255)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Midlatitude cyclone",
+     "h": 24,
+     "color": "rgb(38, 38, 32)",
+     "bg": "rgb(255, 228, 225)",
+     "fs": "11.5px",
+     "tt": "none"
+    }
+   ]
+  },
+  "chips_after-phone-dark": {
+   "tabs": [
+    {
+     "text": "All123",
+     "h": 44,
+     "w": 358,
+     "row": 314,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Every event published this window, all types.",
+     "badgeRight": -280,
+     "dot": false
+    },
+    {
+     "text": "Heat wave15",
+     "h": 44,
+     "w": 358,
+     "row": 387,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Heat waves \u2014 ERA5 2 m temperature above the p85 climatology at every 6-hourly step of a UTC day, over land.",
+     "badgeRight": -233,
+     "dot": false
+    },
+    {
+     "text": "Cold snap6",
+     "h": 44,
+     "w": 175,
+     "row": 439,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Cold snaps \u2014 Below the p15 climatology at every 6-hourly step of a UTC day, over land \u2014 the freeze rule without its 0 \u00b0C cap.",
+     "badgeRight": -51,
+     "dot": false
+    },
+    {
+     "text": "Freeze5",
+     "h": 44,
+     "w": 175,
+     "row": 439,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Freezes \u2014 Below the p15 climatology and at or below 0 \u00b0C at every 6-hourly step of a UTC day, over land.",
+     "badgeRight": -72,
+     "dot": false
+    },
+    {
+     "text": "Atm. river13",
+     "h": 44,
+     "w": 358,
+     "row": 512,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Atmospheric rivers \u2014 IVT peaking at \u2265400 kg m\u207b\u00b9 s\u207b\u00b9 with a ridge criterion; starts over ocean and makes landfall.",
+     "badgeRight": -236,
+     "dot": false
+    },
+    {
+     "text": "Flood40",
+     "h": 44,
+     "w": 175,
+     "row": 564,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Floods \u2014 IMERG daily or 72 h rain past the ERA5 p95 wet-day climatology AND \u226520 mm/day. Published, not scored.",
+     "badgeRight": -78,
+     "dot": false
+    },
+    {
+     "text": "Trop. cyclone44",
+     "h": 44,
+     "w": 358,
+     "row": 637,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Tropical cyclones \u2014 One IBTrACS storm: \u22653 fixes at tropical-storm force (\u226534 kt) spanning \u226512 h. Published, not scored.",
+     "badgeRight": -213,
+     "dot": false
+    },
+    {
+     "text": "Midlat. cyclone0",
+     "h": 44,
+     "w": 175,
+     "row": 689,
+     "ariaPressed": null,
+     "role": "tab",
+     "title": "Midlatitude cyclones \u2014 No midlatitude cyclones met the criteria this window. A closed ERA5 MSLP low \u2264990 hPa living \u226548 h and travelling \u22651000 km, born between 25\u00b0 and 70\u00b0. Track lane \u2014 no scorecard yet.",
+     "badgeRight": -22,
+     "dot": false
+    }
+   ],
+   "rows": 7,
+   "heights": [
+    44
+   ],
+   "widths": [
+    358,
+    175
+   ],
+   "selShadow": null,
+   "pageOverflow": 0,
+   "filterBox": {
+    "x": 16,
+    "y": 292,
+    "w": 358,
+    "h": 493,
+    "top": 292
+   },
+   "legendBox": {
+    "x": 16,
+    "y": 997,
+    "w": 358,
+    "h": 116,
+    "top": 997
+   },
+   "chips": [
+    {
+     "text": "Heat wave",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(76, 49, 29)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Freeze",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(47, 54, 82)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Heat wave",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(76, 49, 29)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Cold snap",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(20, 62, 74)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Freeze",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(47, 54, 82)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Atmospheric river",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(48, 61, 32)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Flood",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(21, 64, 56)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Tropical cyclone",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(58, 50, 79)",
+     "fs": "11.5px",
+     "tt": "none"
+    },
+    {
+     "text": "Midlatitude cyclone",
+     "h": 24,
+     "color": "rgb(236, 234, 216)",
+     "bg": "rgb(79, 45, 46)",
+     "fs": "11.5px",
+     "tt": "none"
+    }
+   ]
+  }
+ },
+ "console_errors": []
+}

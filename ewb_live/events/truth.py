@@ -5,8 +5,9 @@ This module probes the archive for its last fully-populated hour so the
 pipeline knows which events can be scored against ERA5 and which need the
 IFS-HRES-lead-0 analysis fallback (SPEC section 2).
 
-The probe reads ``2m_temperature`` at 4 scattered grid points (bisection
-over hourly indices, ~11 probes x 4 points), cached to
+The probe reads ``2m_temperature`` at 4 scattered grid points and walks BACKWARDS
+from now on a 12 h stride (bounded probe count; see probe_arco_cutoff for why the
+old bisection-on-a-fixed-anchor broke on interior holes), cached to
 ``data/cache/truth_cutoff.json`` with a 12 h TTL. ``ewb_live.scoring.truth``
 re-exports ``probe_arco_cutoff`` from here; do not implement another probe.
 """
@@ -42,10 +43,24 @@ def probe_arco_cutoff(
     arco_uri: str | None = None,
     lookback_days: int = 14,
 ) -> dt.datetime:
-    """Bisect ERA5 ARCO for the last hour with finite t2m at all probe points.
+    """Last ERA5 ARCO hour that is fully populated, searched BACKWARDS from `now`.
 
-    Returns the last valid timestamp found (naive UTC). If even the oldest
-    probed hour is NaN, raises RuntimeError.
+    Returns the newest timestamp with finite t2m at all probe points (naive UTC).
+
+    Why not a bisection anchored at ``now - lookback_days`` (the old code): the
+    archive is 5-7 d behind wall clock *and*, observed 2026-11-18, it also has
+    INTERIOR holes -- 2026-11-04T05Z and 2026-11-09T23Z are NaN at all four probe
+    points while the hours on either side are filled, and the fill ended at
+    2026-11-11T17Z. The old probe asserted that the single hour at ``now - 14 d``
+    was valid and raised otherwise, so one interior hole aborted every lane build
+    (`--events-only`, `--publish-only`) and the unit test that reaches the real
+    archive. A strided backwards walk tolerates a hole at the end *and* inside,
+    and its probe count is bounded (stride 12 h over `lookback_days`, then a
+    <=12-probe hourly refine).
+
+    A hole in the MIDDLE of the window is not this function's business -- it only
+    reports the last fully-available hour; scans that cross a hole still see NaN
+    truth cells there and handle them as missing.
     """
     import numpy as np
 
@@ -64,22 +79,34 @@ def probe_arco_cutoff(
                 return False
         return True
 
-    lo = int(times.searchsorted(np.datetime64(now - dt.timedelta(days=lookback_days), "h")))
+    stride = 12
     hi = int(times.searchsorted(np.datetime64(now, "h")))
     if hi >= len(times):
         hi = len(times) - 1
-    if not is_valid(times[lo]):
-        raise RuntimeError("ERA5 ARCO probe: oldest probed hour is NaN")
-    # bisect for last valid
-    while lo < hi:
-        mid = (lo + hi + 1) // 2
-        if is_valid(times[mid]):
-            lo = mid
-        else:
-            hi = mid - 1
-    cutoff = times[lo].astype("datetime64[h]").astype(dt.datetime)
-    logger.info("ERA5 ARCO truth cutoff probed: %s", cutoff.isoformat())
-    return cutoff
+    floor_i = max(0, hi - int(lookback_days * 24))
+
+    anchor = None
+    n_probe = 0
+    i = hi
+    while i >= floor_i:
+        n_probe += 1
+        if is_valid(times[i]):
+            anchor = i
+            break
+        i -= stride
+    if anchor is None:
+        raise RuntimeError(
+            f"ERA5 ARCO probe: no fully-populated hour in the last "
+            f"{lookback_days} d ({n_probe} probes) -- archive unavailable")
+    # newest valid hour is within `stride` above the anchor; walk down for it
+    for j in range(min(anchor + stride, hi), anchor, -1):
+        n_probe += 1
+        if is_valid(times[j]):
+            anchor = j
+            break
+    logger.info("ERA5 ARCO truth cutoff probed: %s (%d probes, oldest probed %s)",
+                times[anchor], n_probe, times[max(floor_i, anchor - lookback_days * 24)])
+    return times[anchor].astype("datetime64[h]").astype(dt.datetime)
 
 
 def truth_cutoff(now: dt.datetime | None = None, force: bool = False) -> dt.datetime:
@@ -101,7 +128,7 @@ def truth_cutoff(now: dt.datetime | None = None, force: bool = False) -> dt.date
                 return dt.datetime.fromisoformat(d["cutoff"])
         except Exception:  # noqa: BLE001 - fall through to re-probe
             pass
-    cutoff = probe_arco_cutoff(now=now)
+    cutoff = _probe_or_stale(now)
     os.makedirs(os.path.dirname(CUTOFF_CACHE_PATH), exist_ok=True)
     tmp = CUTOFF_CACHE_PATH + ".tmp"
     now_iso = dt.datetime.utcnow().isoformat()
@@ -109,6 +136,37 @@ def truth_cutoff(now: dt.datetime | None = None, force: bool = False) -> dt.date
         json.dump({"cutoff": cutoff.isoformat(), "probed_at": now_iso, "fetched": now_iso}, f)
     os.replace(tmp, CUTOFF_CACHE_PATH)
     return cutoff
+
+
+def _probe_or_stale(now: dt.datetime | None) -> dt.datetime:
+    """Probe ARCO; if the archive is unreachable, fall back to the cached cutoff.
+
+    The probe is a *precondition* for every lane, so a transient read failure
+    must not be able to abort a build and report it as "no events" -- that is a
+    lie about the data, not about the atmosphere. On failure we keep the last
+    known cutoff (however old) and say so in the log; the caller still gets a
+    datetime and the build still clamps its window to real available truth.
+    """
+    try:
+        return probe_arco_cutoff(now=now)
+    except Exception as exc:  # noqa: BLE001 - any read/probe failure
+        if os.path.exists(CUTOFF_CACHE_PATH):
+            try:
+                with open(CUTOFF_CACHE_PATH) as f:
+                    d = json.load(f)
+                cutoff = dt.datetime.fromisoformat(d["cutoff"])
+                when = d.get("probed_at") or d.get("fetched")
+                age_h = ((now or dt.datetime.utcnow())
+                         - dt.datetime.fromisoformat(when)).total_seconds() / 3600.0
+                logger.warning(
+                    "ERA5 ARCO probe failed (%s: %s) -- continuing with the cached "
+                    "cutoff %s, probed %.1f h ago; truth after that hour is not "
+                    "available and the window is clamped to it",
+                    type(exc).__name__, exc, cutoff.isoformat(), age_h)
+                return cutoff
+            except Exception:  # noqa: BLE001 - unreadable cache -> real failure
+                pass
+        raise
 
 
 def truth_source_for(event_end: dt.datetime, cutoff: dt.datetime | None = None) -> str:

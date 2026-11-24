@@ -1,0 +1,374 @@
+{
+  "events": [
+    {
+      "id": "a3bb50cc",
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "source": "Infobae via News Minimalist",
+          "url": "https://www.newsminimalist.com/articles/storm-in-patagonia-floods-rio-gallegos-cuts-power-in-neuquen-suspends-classes-199fcaa3",
+          "date": "2026-08-06",
+          "quote": "A severe rain-and-snow storm battered Patagonia, flooding streets, cutting power, and suspending classes in cities across four Argentine provinces. Mendoza, Neuquén, Río Negro and Santa Cruz were affected. In Río Gallegos, neighborhoods flooded... The national weather service maintained yellow and orange alerts through the weekend."
+        },
+        {
+          "source": "SMN (Servicio Meteorológico Nacional) Breves del Clima, Agosto 2026",
+          "url": "https://repositorio.smn.gob.ar/bitstream/handle/20.500.12160/3321/0052CL2026.pdf",
+          "date": "2026-08/09",
+          "quote": "Lluvias y/o tormentas intensas. Noreste y norte de país; noreste de Buenos Aires; Noroeste de Patagonia. 3-6/8... Récords diarios: Neuquén (34.7 mm el 5/8) Cipolletti (33.0 mm el 5/8)"
+        }
+      ],
+      "queries_tried": [
+        "Patagonia Argentina Chile floods heavy rain early August 2026",
+        "\"Río Gallegos\" OR Patagonia tormenta inundaciones \"agosto 2026\" Santa Cruz Neuquén"
+      ]
+    },
+    {
+      "id": "fbe99f30",
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "source": "Xinhua via gov.cn",
+          "url": "https://english.www.gov.cn/news/202608/08/content_WS6a7683a8c6d00ca5f9a0c8ea.html",
+          "date": "2026-08-08",
+          "quote": "China's Ministry of Water Resources on Friday activated a Level-IV emergency flood response for six provincial regions as the approaching Typhoon Dolphin... is expected to bring heavy rainfall to east China... forecasting Typhoon Dolphin to make landfall along China's eastern coast in either Zhejiang or north Fujian between Sunday afternoon and Monday morning."
+        },
+        {
+          "source": "Reuters",
+          "url": "https://www.reuters.com/3fec1b0a85a0/business/environment/thousands-evacuated-northwest-china-after-heavy-rains-flooding-2026-08-06",
+          "date": "2026-08-06",
+          "quote": "Heavy rains and floods in China's northwestern province of Shaanxi have caused roads to collapse, and damaged bridges and power and communications infrastructure, forcing the evacuation of more than 25,000 people in the past 24 hours... More than 140,000 people have been evacuated in Shaanxi since July 30."
+        },
+        {
+          "source": "Egyptian Gazette (AFP/Reuters wires)",
+          "url": "https://egyptian-gazette.com/world/heavy-rains-hit-beijing-as-typhoon-dolphin-nears-china",
+          "date": "2026-08-07",
+          "quote": "Multiple districts in Beijing issued heavy rainfall warnings on Friday... The highest rainfall occurred in Miyun district in northeast Beijing on Friday afternoon, where precipitation reached 99.5 millimeters."
+        },
+        {
+          "source": "Wikipedia - Tropical Storm Peilou (2026) / Kujira",
+          "url": "https://en.wikipedia.org/wiki/Tropical_Storm_Peilou_(2026)",
+          "date": "2026-08",
+          "quote": "In Baguio City, eleven days' worth of August rain amounting to 355.2mm fell from August 5 to August 7."
+        }
+      ],
+      "queries_tried": [
+        "South China Korea Japan extreme heavy rain flooding August 6-10 2026",
+        "China heavy rain flooding \"August 6\" OR \"August 7\" OR \"August 8\" 2026"
+      ]
+    },
+    {
+      "id": "29d2a97a",
+      "verdict": "context",
+      "evidence": [
+        {
+          "source": "Bureau of Meteorology - Western Australia in August 2026 (monthly climate summary)",
+          "url": "https://www.bom.gov.au/climate/current/month/wa/archive/202608.summary.shtml",
+          "date": "2026-08",
+          "quote": "In the 24 hours to 9 am on 8 August, a cold front brought daily rainfall totals of 10 to 35 mm to coastal regions of Western Australia's Lower West and South West districts... snow was observed at Bluff Knoll. August rainfall totals were above to very much above average for most of the southern half of the state."
+        }
+      ],
+      "queries_tried": [
+        "Australia floods heavy rain Western Australia Victoria August 2026 flood warning BOM"
+      ]
+    },
+    {
+      "id": "22039c3a",
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "source": "El Cronista",
+          "url": "https://www.cronista.com/informacion-gral/el-gran-diluvio-del-mes-llegara-este-jueves-13-de-agosto-advierten-por-lluvias-extremas-y-fuertes-vientos/",
+          "date": "2026-08-13",
+          "quote": "El 'gran diluvio' del mes llegará este jueves 13 de agosto... Las zonas más comprometidas se encuentran en Mendoza, Neuquén, Río Negro, Chubut y Santa Cruz... Las precipitaciones afectarán principalmente a Neuquén, Río Negro, Chubut y Santa Cruz."
+        },
+        {
+          "source": "Prensa Santa Cruz - Vialidad Provincial meteorological alert",
+          "url": "https://noticias.santacruz.gob.ar/organismos/entes-publicos/vialidad-provincial/vialidad-provincial-alerta-sobre-precipitaciones-en-forma-de-lluvia-y-nieve-en-gran-parte-de-santa-cruz",
+          "date": "2026-08-15",
+          "quote": "Se esperan nieblas, neblinas y precipitaciones en forma de lluvia y nieve en gran parte del territorio provincial [15-16 August]... Entre la noche del lunes 17 y la mañana del martes 18 de agosto, se esperan nevadas importantes en áreas cordilleranas... el consecuente incremento del escurrimiento superficial podría generar una mayor concentración de agua en sectores bajos."
+        },
+        {
+          "source": "Meteored Argentina",
+          "url": "https://www.meteored.com.ar/noticias/prediccion/sigue-el-tiempo-inestable-en-la-patagonia-con-lluvias-y-nevadas-pero-tierra-del-fuego-quedara-al-margen.html",
+          "date": "2026-08-14",
+          "quote": "El viernes 14 de agosto comenzará con un sistema de baja presión... Lluvias, agua-nieve y nevadas se alternarán de manera irregular en distintos sectores de la Patagonia... Durante el sábado 15 de agosto un nuevo sistema de baja presión producirá nevadas sobre la provincia de Santa Cruz."
+        },
+        {
+          "source": "SMN Breves del Clima, Agosto 2026",
+          "url": "https://repositorio.smn.gob.ar/bitstream/handle/20.500.12160/3321/0052CL2026.pdf",
+          "date": "2026-08/09",
+          "quote": "Lluvias y/o tormentas intensas... 3-6/8; 16-19/8; 25-31/8 Durante estos períodos de agosto se registraron los principales eventos de precipitación."
+        }
+      ],
+      "queries_tried": [
+        "Argentina Chile Patagonia \"sistema frontal\" intensas lluvias nieve \"14 de agosto\" OR \"15 de agosto\" OR \"16 de agosto\" 2026",
+        "\"atmospheric river\" OR tormenta Patagonia Argentina \"inundación\" \"15 de agosto\" OR \"16 de agosto\" 2026"
+      ]
+    },
+    {
+      "id": "806867ad",
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "source": "Chosun Ilbo (English)",
+          "url": "https://chosun.com/english/national-en/2026-08-31/FEZXS6NV5FH3DPSDF2AMUNQXRQ",
+          "date": "2026-08-31",
+          "quote": "In Jeonnam-Gwangju Yeonggwang County, 344 mm of rain fell on that day alone, causing rivers to overflow. In Jeollabuk-do Gochang County, 188 mm of rain turned roads into flooded zones... The government raised the heavy rain crisis alert from 'attention' to 'caution' at 5 p.m. on the 30th."
+        },
+        {
+          "source": "Seoul Economic Daily (English)",
+          "url": "https://en.sedaily.com/society/2026-09-01/two-missing-in-jeolla-region-as-heavy-rain-batters-korea",
+          "date": "2026-09-01",
+          "quote": "Cumulative rainfall since August 28 totaled 579.5 millimeters in Yeonggwang, South Jeolla Province, 358.6 millimeters in Gunsan... The Ministry of the Interior and Safety activated the first level of the Central Disaster and Safety Countermeasures Headquarters from 5 p.m. on August 30."
+        },
+        {
+          "source": "IMD Pune - India Monthly Climate Summary August 2026",
+          "url": "https://imdpune.gov.in/cmpg/Product/Monthly_Climate_Summary/Monthly_Clim_Summary_8_2026.pdf",
+          "date": "2026-08",
+          "quote": "Western Disturbances: During August 2026, eight Western Disturbance (WD) spells affected the region, occurring during... 23-26 August, and 28 August onwards. [No Bay of Bengal depression in the 24 Aug - 1 Sep window; BOB 04 formed 13 Aug, BOB 05 formed 17 Aug.]"
+        }
+      ],
+      "queries_tried": [
+        "Korea Japan heavy rain typhoon \"August 2\" OR \"August 3\" September 2026 flooding evacuation East Asia late August",
+        "Japan OR Korea OR China rain \"August 29\" OR \"August 30\" OR \"August 31\" OR \"September 1\" 2026 heavy rain flooding",
+        "typhoon late August 2026 landfall China Vietnam Korea Japan heavy rain Bay of Bengal"
+      ]
+    },
+    {
+      "id": "3d32db12",
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "source": "PERILS",
+          "url": "https://www.perils.org/news/eur-3-296m-first-perils-industry-loss-estimate-for-the-severe-convective-storms-in-europe-of-late-august-2026",
+          "date": "2026-10-19",
+          "quote": "PERILS has today disclosed its initial industry loss estimate for the severe convective storms (SCS) which affected France, Germany, Switzerland and Italy from 26 to 28 August 2026. The storms are also known as SCS Raphaela... EUR 3,296 million. Losses were the result of large hail, high winds and flash flooding."
+        },
+        {
+          "source": "GDACS / Copernicus EMS - Ireland",
+          "url": "https://www.gdacs.org/report.aspx?eventid=1104127&eventtype=FL",
+          "date": "2026-08-28",
+          "quote": "Overall Green Flood in Ireland from 27 Aug 2026 01:00 UTC to 29 Aug 2026 01:00 UTC... Local media reported heavy rain and flooding in Ireland, in late August 2026."
+        },
+        {
+          "source": "GDACS / Copernicus EMS - France",
+          "url": "https://www.gdacs.org/report.aspx?eventid=1104084&eventtype=FL",
+          "date": "2026-08-28",
+          "quote": "A severe thunderstorm crossed the Doubs Department in France during the evening of 27 August 2026. Heavy rain and hail flooded streets and some commercial properties in École-Valentin."
+        }
+      ],
+      "queries_tried": [
+        "Europe flooding heavy rain \"late August 2026\" UK Met Office DWD August 26 27 28 2026"
+      ]
+    },
+    {
+      "id": "85df401a",
+      "verdict": "context",
+      "evidence": [
+        {
+          "source": "Alaska Center for Climate and Assessment / ACRC - Alaska August 2026 summary",
+          "url": "https://akclimate.org/wp-content/uploads/2026-09-202608_August_summary.pdf",
+          "date": "2026-09",
+          "quote": "August brought a mix of warm summer weather, Bering Sea storms, and the first signs of winter on the horizon."
+        },
+        {
+          "source": "Alaska Climate (Rick Thoman) - Alaska August 2026 Climate Summary",
+          "url": "https://alaskaclimate.substack.com/p/alaska-august-2026-climate-summary",
+          "date": "2026-09",
+          "quote": "Much of western Alaska was quite rainy. St. Paul Island had the second highest August rainfall in more than a century of observations and Bethel, McGrath and Nome all had a top-ten wettest August."
+        }
+      ],
+      "queries_tried": [
+        "Alaska Bering Sea Nome flood heavy rain storm late August September 2026",
+        "Alaska \"Bering Sea\" storm \"August 2026\" OR \"September 2026\" coastal flooding rain Nome Kotzebue Emmonak Kuskokwim"
+      ]
+    },
+    {
+      "id": "695a34bd",
+      "verdict": "context",
+      "evidence": [
+        {
+          "source": "Alaska Climate (Rick Thoman) - Alaska August 2026 Climate Summary",
+          "url": "https://alaskaclimate.substack.com/p/alaska-august-2026-climate-summary",
+          "date": "2026-09",
+          "quote": "The NWS cooperative station in Galena reported 7.85 inches of rain in August, easily the highest monthly total on record (climate observations, with some gaps, since 1942)."
+        },
+        {
+          "source": "NOAA/ACRC - Alaska & Northwestern Canada Summer 2026 report",
+          "url": "https://drought.gov/sites/default/files/2026-09/AK-CAN%20Summer%202026.pdf",
+          "date": "2026-09",
+          "quote": "the portion of the state south and west of the Alaska Range experienced significant rainfall... Bering Sea was also about split about 50-50 above/below normal."
+        }
+      ],
+      "queries_tried": [
+        "Alaska \"Bering Sea\" storm \"August 2026\" OR \"September 2026\" coastal flooding rain Nome Kotzebue Emmonak Kuskokwim",
+        "Alaska Bering Sea Nome Nome flood heavy rain storm late August September 2026"
+      ]
+    },
+    {
+      "id": "82dc9c1b",
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "source": "The Witness (South Africa)",
+          "url": "https://witness.co.za/news/2026-09-14/severe-thunderstorms-hail-and-flooding-expected-across-kzn/",
+          "date": "2026-09-14",
+          "quote": "The South African Weather Service (Saws) has issued a level 2 warning for severe thunderstorms, valid for Tuesday [14 Sep]... The weather service warned that the storms could cause localised flooding of roads and bridges, particularly in areas prone to flooding."
+        },
+        {
+          "source": "The Witness (South Africa)",
+          "url": "https://witness.co.za/news/2026-09-15/n3-flooded-as-severe-storms-hit-kzn-and-more-rain-looms/",
+          "date": "2026-09-15",
+          "quote": "Three lanes of the N3 eastbound have been closed near Durban's Tollgate Bridge following heavy rainfall and localised flooding on Tuesday [15 Sep]."
+        },
+        {
+          "source": "IOL / TimesLIVE",
+          "url": "https://iol.co.za/news/south-africa/2026-09-15-heavy-rain-hail-and-strong-winds-near-durban-as-severe-storms-hit-kwazulu-natal/",
+          "date": "2026-09-15",
+          "quote": "Heavy rain, hail and strong winds triggered by a cut-off low-pressure system have affected several road networks and human settlements in parts of KwaZulu-Natal."
+        }
+      ],
+      "queries_tried": [
+        "South Africa KwaZulu-Natal Durban heavy rain flooding September 12 13 14 2026"
+      ]
+    },
+    {
+      "id": "06ceb4d8",
+      "verdict": "none found",
+      "evidence": [
+        {
+          "source": "Copernicus Climate Change Service - Precipitation/soil moisture/river flow for October 2026 (counter-evidence: regional dryness)",
+          "url": "https://climate.copernicus.eu/precipitation-relative-humidity-soil-moisture-and-river-flow-october-2026",
+          "date": "2026-11",
+          "quote": "In October 2026, western Iberia, parts of France, central Europe, including the western Balkans and Italy, part of eastern Europe, and a large area of western Russia experienced drier-than-average conditions... The Baltic States and areas east of the Black Sea also experienced below-average precipitation."
+        }
+      ],
+      "queries_tried": [
+        "flooding heavy rain Poland Belarus Ukraine Russia \"October 2026\" flood alert",
+        "\"October 27\" OR \"October 28\" OR \"October 29\" 2026 rain flooding storm United States (broader sweep, no E-Europe/Russia hits)"
+      ]
+    },
+    {
+      "id": "4a9c67b0",
+      "verdict": "context",
+      "evidence": [
+        {
+          "source": "Bureau of Meteorology (official Facebook severe-weather update)",
+          "url": "https://www.facebook.com/bureauofmeteorology/posts/weather-update-widespread-rain-ahead-south-australia-impacted-from-thursdayvideo/1575869761249432/",
+          "date": "2026-10-08",
+          "quote": "Weather Update: Widespread rain ahead, South Australia impacted from Thursday. Video current: 11am ACDT 8 October 2026."
+        }
+      ],
+      "queries_tried": [
+        "New Zealand flooding heavy rain \"October 2026\" flood warning North Island South Island",
+        "BOM \"October 2026\" southern Australia heavy rain cold front Victoria Tasmania South Australia flood warning \"early October\"",
+        "Queensland New South Wales Victoria floods heavy rain October 2026 BOM flood warning"
+      ]
+    },
+    {
+      "id": "6ad93bd2",
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "source": "NASA Earth Observatory",
+          "url": "https://science.nasa.gov/earth/earth-observatory/isaias-dims-the-gulf-coast",
+          "date": "2026-10",
+          "quote": "Isaias became the season's first hurricane on October 8 as it tracked toward the U.S. Gulf Coast. The storm brought heavy rain and flash flooding to parts of the Southeast, including Alabama and the Florida Panhandle... Isaias made landfall near Destin, Florida, on the evening of October 9 as a Category 2 hurricane."
+        },
+        {
+          "source": "NWS Tallahassee via WKGC",
+          "url": "https://wkgc.org/2026-10-08/flood-watch-issued-for-bay-county",
+          "date": "2026-10-08",
+          "quote": "Hurricane Isaias is expected to bring bands of heavy rainfall, with widespread totals of 3-7 inches and localized amounts up to 10 inches across the watch area... Considerable flash flooding is possible."
+        },
+        {
+          "source": "FEMA National Watch Center Daily Operations Briefing",
+          "url": "https://content.govdelivery.com/attachments/USDHSFEMA/2026-10-10/file_attachments/3813016/FEMA%20Daily%20Ops%20Briefing%2010-10-2026.pdf",
+          "date": "2026-10-10",
+          "quote": "Oct 1 FL - Hurricane Isaias - Approved; Oct 8 AL - Hurricane Isaias - Approved; Oct 9 GA - Hurricane Isaias."
+        }
+      ],
+      "queries_tried": [
+        "flash flooding heavy rain United States \"October 8\" OR \"October 9\" OR \"October 10\" 2026 NWS",
+        "atmospheric river California October 2026 (no relevant hits)"
+      ]
+    },
+    {
+      "id": "b4afeee6",
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "source": "Copernicus Climate Change Service - October 2026 precipitation/river-flow bulletin",
+          "url": "https://climate.copernicus.eu/precipitation-relative-humidity-soil-moisture-and-river-flow-october-2026",
+          "date": "2026-11",
+          "quote": "Severe low-pressure systems brought intense and widespread rainfall and triggered flash flooding across several regions, particularly during the second half of the month... Storm Adam (Katja) brought heavy precipitation to eastern Spain on 18-20 October... Storm Austen (Luise) and Storm Boelo (Manja) affected northwestern Europe later in the month."
+        },
+        {
+          "source": "Al Jazeera / AFP-AP",
+          "url": "https://www.aljazeera.com/news/2026-10-26/two-storms-slam-northern-europe-cut-power-to-150000-homes",
+          "date": "2026-10-26",
+          "quote": "A pair of storms battering northern Europe have killed one man, cut power to more than 150,000 homes, and disrupted flights and phone networks. More than 82,000 homes in the United Kingdom, nearly 60,000 in France, and at least 10,000 in Germany had no electricity on Sunday after storms Boelo and Austen."
+        },
+        {
+          "source": "GDACS / Copernicus EMS - Germany",
+          "url": "https://www.gdacs.org/report.aspx?eventtype=FL&eventid=1104257",
+          "date": "2026-10-27",
+          "quote": "Coastal Floods, Northern Germany, Late October 2026: Storm surge associated with Storm Manja caused coastal and tidal flooding across northern Germany in late October 2026."
+        }
+      ],
+      "queries_tried": [
+        "Central Europe floods rain storm October 2026 Germany Poland Czech Austria Baltic \"late October 2026\""
+      ]
+    },
+    {
+      "id": "3935b8c5",
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "source": "The Guardian",
+          "url": "https://www.theguardian.com/australia-news/2026/oct/25/unusual-multi-state-storm-causing-flood-warningd-and-severe-weather-for-australias-east",
+          "date": "2026-10-25",
+          "quote": "A broad line of storms had already swept through western New South Wales, while eight flood warnings were in place across southern Queensland after days of torrential rain... southern Queensland, western NSW, the ACT and eastern Victoria... areas around the Sunshine Coast seeing between 200mm and 400mm of rain in the past week."
+        },
+        {
+          "source": "Bureau of Meteorology (official Facebook severe-weather update, 26 October 2026)",
+          "url": "https://www.facebook.com/bureauofmeteorology/videos/severe-weather-update-26-october-2026-further-severe-thunderstorms-for-qld-and-n/1752266909210851/",
+          "date": "2026-10-26",
+          "quote": "Severe Weather Update 26 October 2026: Further severe thunderstorms for QLD and NSW (major weekend storm outbreak across eastern Australia, 23-26 October)."
+        }
+      ],
+      "queries_tried": [
+        "Queensland New South Wales Victoria floods heavy rain October 2026 BOM flood warning"
+      ]
+    },
+    {
+      "id": "43e1cd0e",
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "source": "WeatherOnThisDay (NOAA NCEI GHCN-Daily based analysis)",
+          "url": "https://weatheronthisday.com/trends/west-texas-flooding-october-2026",
+          "date": "2026-10-29",
+          "quote": "A slow-moving upper-level low dropped a month of rain on parts of West Texas in a day and a half on October 29-30, 2026... Del Rio led the region with 4.58 inches over the two-day storm... driven by a slow-moving upper-level low drawing Pacific and Gulf moisture over the Southern High Plains."
+        },
+        {
+          "source": "Texas Storm Chasers (Texas Weather Roundup)",
+          "url": "https://texasstormchasers.com/forecast/west-texas-flood-risk-thursday-and-will-it-rain-on-halloween-texas-weather-roundup/",
+          "date": "2026-10-27",
+          "quote": "Active weather is headed back to Texas. Moisture from Tropical Storm Vance in the eastern Pacific feeds a corridor of training storms Thursday into Friday morning across the Permian Basin."
+        },
+        {
+          "source": "Weather.com daily history, Washington DC (counter-evidence for the track's NE end)",
+          "url": "https://weather.com/weather/monthly/l/38.89511,-77.03637",
+          "date": "2026-10-27/30",
+          "quote": "Tuesday 2026-10-27: Sunny, Precip 0 in; Wednesday 2026-10-28: AM Fog/PM Sun, Precip 0 in; Thursday 2026-10-29: Partly Cloudy, Precip 0 in; Friday 2026-10-30: Mostly Sunny/Wind, Precip 0 in."
+        }
+      ],
+      "queries_tried": [
+        "Texas rain flooding flash flood late October 2026 NWS Texas Great Lakes Midwest heavy rain",
+        "\"October 27\" OR \"October 28\" OR \"October 29\" 2026 rain flooding storm United States"
+      ]
+    }
+  ],
+  "summary": "External cross-check of 15 EWB-masked AR tracks (Aug-Nov 2026): 10/15 confirmed by specific regional rainfall/flood events in the matching window, 4/15 supported only as regional wet anomalies (context), 1/15 none found. CONFIRMED: a3bb50cc (Patagonia storm + Río Gallegos flooding + SMN daily records, Aug 5-6); fbe99f30 (Typhoon Dolphin landfall E China Aug 9-10, Shaanxi flood evacuations Aug 6, Beijing 99.5mm Aug 7, Baguio 355mm Aug 5-7); 22039c3a (Patagonia rain/snow 'gran diluvio' Aug 13-17, SMN records 16-19/8); 806867ad (Korea stationary-front rain Aug 28-Sep 1, Yeonggwang 579.5mm, disaster HQ activated Aug 30 - only the Korean end corroborated; IMD shows no Bay of Bengal cyclone in-window); 3d32db12 (SCS Raphaela Aug 26-28, EUR 3.3bn losses, Ireland flood Aug 27-29); 82dc9c1b (KZN/Durban flooding Sep 14-15, SAWS warnings); 6ad93bd2 (Hurricane Isaias Gulf/SE US landfall Oct 9, FEMA disaster declarations); b4afeee6 (Storms Adam/Austen/Boelo-Manja, Iberia to NW Europe & N-Germany coastal flooding, Oct 18-27); 3935b8c5 (SE Qld/NE NSW multi-state storm, 8 flood warnings, 200-400mm Sunshine Coast, Oct 22-26); 43e1cd0e (West Texas record Oct 29-30 rain, Del Rio 4.58in - but the track's US Northeast end was dry in-window per DC daily history). CONTEXT only: 29d2a97a (Aug 7-8 WA cold front, 10-35mm, BOM monthly summary); 85df401a & 695a34bd (western/Bering Alaska had a record-wet August - Galena record 7.85in, St. Paul 2nd-wettest Aug ever - but no event-specific reports tied to Aug 27-Sep 5); 4a9c67b0 (BOM 8 Oct update: widespread rain reaching South Australia; no flood reports found). NONE FOUND: 06ceb4d8 (E Europe/Russia Oct 5-6) - moreover Copernicus/ERA5 October 2026 bulletin reports that exact region was DRYER than average in October, suggesting a possible detection error or a track over sparsely populated northern Russia. PHYSICAL-PLAUSIBILITY FLAGS: (1) fbe99f30's peak IVT of 2972 kg/m/s over land is world-record class (even typhoon-core ocean IVT rarely exceeds ~2000-2500 in 6-hourly ERA5); the corroborated extreme rain in-window was Typhoon Dolphin-driven, so this 'AR' is most likely a tropical-cyclone moisture flux (or a masking/unit artifact) - recommend excluding TC cores before peak-IVT statistics. (2) 6ad93bd2's 2018 kg/m/s is likewise consistent with a hurricane (Isaias) core crossing land, i.e. a likely AR/TC classification ambiguity. (3) 85df401a and 695a34bd have identical peak IVT (1126) and near-identical bounding boxes days apart - suspicious duplicate tracking of the same storm system. (4) 3d32db12 and 82dc9c1b corroborate heavy rain in-region+window but the impacts are attributed by sources to severe convective storms and a cut-off low respectively - AR co-location is plausible but mechanism attribution needs care. (5) 43e1cd0e corroborated only at the Texas end; the Great Lakes/Northeast end had no wet reports in-window. No fabricated sources: all URLs/quotes above were retrieved live on 2026-11-07."
+}

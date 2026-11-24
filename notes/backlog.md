@@ -1,0 +1,3 @@
+# Backlog (product-owner approved, not scheduled)
+- Validate EWB's shipped climatology: rebuild its percentiles from the 1990-2020 ERA5 raw zarrs in /opt/ewb-owb/data/clim2 and diff against gs://extremeweatherbench climatology; publish the result on the methodology page. (Owner: "skip for now, but I do want to do this", 2026-11-06.)
+- Cut the AR scoring memory footprint: one AR job peaks ~60 GB because of the dense (lead x valid x init) IVT reindex in upstream extremeweatherbench utils.convert_init_time_to_valid_time. A lazy/sparse rewrite would allow 3-4 parallel AR lanes and make the first full run and backfills much faster. (ewb, 2026-11-06)

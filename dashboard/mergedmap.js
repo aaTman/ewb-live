@@ -21,7 +21,12 @@
    streak reaches the lane minimum (heat = detector MIN_CONSECUTIVE_DAYS = 3,
    freeze = 1; index.dur.min overrides the built-in LAYERS[].min)) and
    data/results/global_timeline.json (events[]: id,type,title,start,end,bbox,
-   grid,day,days,masks[,qualified_at]).
+   grid,day,days,masks[,qualified_at]). The flood lane rides its OWN daily
+   class frames, flood_<YYYYMMDD>.cls (zlib u8 on the same grid: 0 = no
+   evidence, 1..5 = accumulation classes over the detector's union rule —
+   ewb_live/viz/flood_frames.py), advertised additively as index.flood and
+   fetched only for days it lists (defect F0, owner 2026-11-19: floods were
+   invisible on the map while other lanes' shading leaked under the chip).
    Reduced motion: playback is frame-stepping only; nothing auto-plays.
    ========================================================================== */
 (function () {
@@ -44,6 +49,13 @@
       tip: 'Detected atmospheric rivers, shaded by IVT magnitude (kg m-1 s-1): 250-500, 500-750, 750-1000, 1000-1250, >=1250.'
         + ' Only cells the EWB AR detector flags (and the tropical/cyclone screens keep) are drawn; IVT outside an AR is never shown.'
         + ' Pale green = a track\'s gap-bridge footprint (display only).' },
+    // flood (defect F0, owner 2026-11-19): the lane's own daily raster —
+    // union-rule cells (>= 20 mm/day OR >= 50 mm/72 h over the ERA5 P95
+    // wet-day climatology, land only) from flood_<YYYYMMDD>.cls, shaded by
+    // accumulation. Not bit-packed .bin planes: IMERG is a DAILY product,
+    // so the grid is constant across the four frames of its UTC day.
+    { key: 'l', name: 'flood',  label: 'Flood — mm/day-equiv', ramp: true, bins: 5, min: 1,
+      tip: 'Precipitation over the detector rule: daily >= the ERA5 P95 wet-day threshold AND >= 20 mm, OR trailing 72 h >= P95 AND >= 50 mm (land only, fully observed cells only). Shaded by the mm/day-equivalent accumulation max(daily, 72 h total / 3): 20-50, 50-100, 100-200, 200-350, >=350. Cells that qualify only through the 72 h rule ride the lightest stop. One frame per UTC day (the rain product is daily); blank where the source has no day. The index (raw.flood.tip) restates the actual build source — Google PARDIG AI estimate (CC BY 4.0) or GPM IMERG.' },
   ];
   // bin opacities: ONE constant alpha per lane (all lanes 200) — the ramps'
   // lightness carries the scale (light theme: even L* steps, darker = more
@@ -54,7 +66,7 @@
   // additionally re-stroked above the raster in paintFrame (owner review
   // 2026-11-11, complaint 1: opaque AR sheets hid the oceans' grid).
   const RUN_ALPHA = { heat: [200, 200, 200, 200, 200, 200, 200], freeze: [200, 200, 200],
-                      ar: [200, 200, 200, 200, 200] };
+                      ar: [200, 200, 200, 200, 200], flood: [200, 200, 200, 200, 200] };
   // qualification gate per lane: heat = the detector's MIN_CONSECUTIVE_DAYS,
   // freeze = 1 completed day (context; events still need 3). index.dur.min
   // (published with the v2 sidecars) wins; otherwise the built-in LAYERS[].min.
@@ -63,20 +75,47 @@
   const minDays = (L) => (raw && raw.dur && raw.dur.min && raw.dur.min[L.name] != null)
     ? raw.dur.min[L.name] : (L.min || 0);
   const runBin = (count, bins) => Math.min(count - 1, bins - 1);   // bins: 1..bins
+  const isTrack = (e) => !!(e && e.track);   // TRACK lane → tracklayer.js draws it
   const TYPES = {
-    heat_wave:          { css: 'heat',   short: 'Heat' },
-    freeze:             { css: 'freeze', short: 'Freeze' },
-    atmospheric_river:  { css: 'ar',     short: 'AR' },
+    heat_wave:          { css: 'heat',      short: 'Heat',            narrow: 'Heat' },
+    freeze:             { css: 'freeze',    short: 'Freeze',          narrow: 'Freeze' },
+    // cold snap = the freeze rule without the 0 °C cap: its own colour, but it
+    // shares the P15 raw layer, which IS its mask (no third temperature lane)
+    cold_snap:          { css: 'cold-snap', short: 'Cold snap',       narrow: 'Cold' },
+    atmospheric_river:  { css: 'ar',        short: 'AR',              narrow: 'AR' },
+    // flood rides BOTH: the daily class raster below (LAYERS key l) and the
+    // event boxes — the raster is the evidence field, the boxes the events
+    flood:              { css: 'flood',     short: 'Flood',           narrow: 'Flood' },
+    /* TRACK lanes (tc-map 2026-11-18): a cyclone entry carries its own `track`
+       geometry, so it is drawn by the additive tracklayer.js layer (polyline,
+       intensity fixes, position at the selected step) and NEVER as a bbox box —
+       a rectangle around a 3,000 km track is not information. These entries give
+       that layer the lane colour and the Gantt short label. */
+    tropical_cyclone:   { css: 'tc',        short: 'Tropical cyclone', narrow: 'TC', track: true },
+    midlat_cyclone:     { css: 'mlc',       short: 'Midlat. cyclone',  narrow: 'MLC', track: true },
   };
-  const LANE_ORDER = ['heat_wave', 'freeze', 'atmospheric_river'];
+  // Gantt lanes: EVERY lane with events in the window shows, midlat_cyclone
+  // included (its lane now publishes events — round 2 was filed because it was
+  // silently missing while holding 80 storms). A track lane gets bars/ribbon like
+  // every other lane, from qualified_at → end, which is how a storm becomes
+  // findable on the time strip at all.
+  // Grouped in the chips' order (Temperature | Water | Storms): the lane adjacency is
+  // part of what the identity palette was validated against — if this order
+  // changes, re-run the palette check (notes/chips_design.md).
+  const LANE_ORDER = ['heat_wave', 'cold_snap', 'freeze', 'atmospheric_river',
+    'flood', 'tropical_cyclone', 'midlat_cyclone'];
   const SPEEDS = [2, 5, 10];               // fps choices
 
   let raw = null;                          // raw_exceedance index.json
   let tl = null;                           // global_timeline.json (null = unavailable)
   let idx = 0;                             // current frame index
-  let on = { h: true, f: true, a: true };  // layer toggles
+  let on = { h: true, f: true, a: true, l: true };  // layer toggles
   const sel = new Set();                   // selected event ids (multi-highlight)
   let previewId = null;                    // event pointed at in the page's event list (outline only)
+  // Dense lanes a reader expanded to packed rows (label click). IN MEMORY ONLY:
+  // the strip's height rides on it, so it never persists to the URL and never
+  // changes on hover or a frame step (only on the toggle itself).
+  const gExpand = new Set();
   let mounted = false;
   let playing = null, speedI = 1;
   let land = null, graticule = null, proj = null, path = null;
@@ -104,7 +143,7 @@
     + String(d.getUTCHours()).padStart(2, '0');
   const urlLayers = () => {                // positive list, only when not all-on
     const k = LAYERS.filter((L) => on[L.key]).map((L) => L.key);
-    return k.length === 3 ? null : k.join(',');
+    return k.length === LAYERS.length ? null : k.join(',');
   };
   function fmtReadout(ts) {
     const d = tsToDate(ts);
@@ -216,6 +255,38 @@
   const prefetch = (i) => { [i - 1, i + 1].forEach((j) => {
     if (raw && j >= 0 && j < raw.frames.length) getFrame(j).catch(() => {}); }); };
 
+  /* ---------------- flood day frames (defect F0) ----------------
+     flood_<YYYYMMDD>.cls: one u8 class grid per UTC day on the raw grid
+     (ewb_live/viz/flood_frames.py). Cached per DAY (the four frames of a day
+     share it); a day absent from index.flood.days never fetches, and a
+     failed fetch caches null — the lane draws nothing, honestly. */
+  const flCache = new Map();               // day -> Uint8Array | null
+  function getFl(i) {
+    if (!raw || !raw.flood || !Array.isArray(raw.flood.days)) return Promise.resolve(null);
+    const ts = raw.frames[i];
+    if (!ts) return Promise.resolve(null);
+    const day = ts.slice(0, 8);
+    const days = raw.flood._set || (raw.flood._set = new Set(raw.flood.days));
+    if (!days.has(day)) return Promise.resolve(null);
+    if (flCache.has(day)) return Promise.resolve(flCache.get(day));
+    return inflateUrl(`data/results/raw_exceedance/flood_${day}.cls`)
+      .then((u) => {
+        const g = raw.grid;
+        if (u.length !== g.ny * g.nx) {            // grid skew: never paint garbage
+          console.warn('flood class frame size mismatch:', day, u.length);
+          u = null;
+        }
+        if (flCache.size >= 12) flCache.delete(flCache.keys().next().value);
+        flCache.set(day, u);
+        return u;
+      })
+      .catch((err) => {
+        console.warn('flood class frame unavailable:', day, err.message);
+        flCache.set(day, null);
+        return null;
+      });
+  }
+
   /* ---------------- projection / fit ---------------- */
   function fitProjection() {
     const wrap = $('#raw-map-wrap');
@@ -224,7 +295,21 @@
     path = d3.geoPath(proj.scale(1).translate([0, 0]));
     const [[x0, y0], [x1, y1]] = path.bounds({ type: 'Sphere' });
     const dw = x1 - x0, dh = y1 - y0;
-    const H = Math.round(Math.min((dh / dw) * (W - 2 * PAD) + 2 * PAD, W * 0.75));
+    let H = Math.round(Math.min((dh / dw) * (W - 2 * PAD) + 2 * PAD, W * 0.75));
+    /* Theater mode caps the map's height in CSS (styles.css: html.theater
+       #raw-map-wrap) so the map and the timeline stay on one screen. The canvas
+       is sized from here, not from CSS, so read the cap back and fit inside it:
+       fitExtent keeps the sphere's aspect and letterboxes it in ocean instead
+       of stretching it, and the wrap's content height lands on H exactly (the
+       #gm-boxes overlay matches the canvas pixel for pixel either way). A
+       border-box max-height is the outer box, so the frame/padding comes off. */
+    const wrapCs = getComputedStyle(wrap);
+    const cap = parseFloat(wrapCs.maxHeight);
+    if (Number.isFinite(cap)) {
+      const frame = parseFloat(wrapCs.borderTopWidth) + parseFloat(wrapCs.borderBottomWidth)
+        + parseFloat(wrapCs.paddingTop) + parseFloat(wrapCs.paddingBottom);
+      H = Math.max(160, Math.min(H, Math.floor(cap - (Number.isFinite(frame) ? frame : 0))));
+    }
     /* Region view (Region dropdown, briefs/regional_breakdowns.md): fit to the
        region's corner bbox — MultiPoint, because Equal Earth is monotone in
        both axes so the corners' bounds ARE the region's bounds. Canvas size
@@ -245,7 +330,38 @@
     const bx = $('#gm-boxes');                     // overlay tracks the canvas exactly
     bx.setAttribute('width', W); bx.setAttribute('height', H);
     bx.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    emitTracks('resize');      // the track layer is sized/projection-matched here
   }
+
+  /* ---------------- TRACK lanes: the seam to tracklayer.js ----------------
+     A cyclone entry carries its own geometry, and drawing it (canvas lines +
+     fix dots, plus one interactive SVG marker per positioned storm) is that
+     module's business, not the merged map's. This hands it what only the map
+     knows — the live projection, the fit, the selected step, the region/tab
+     filter, the selection — at every state change the map owns. Absent module
+     (or a timeline with no track entries) is a no-op: nothing here assumes it.
+     See notes/tc_map.md for the layer's own contract. */
+  function emitTracks(reason) {
+    if (typeof window.onMapTracks !== 'function') return;
+    try {
+      window.onMapTracks({
+        reason, proj, fit, mounted,
+        ts: raw ? raw.frames[idx] : null,
+        readout: raw ? fmtReadout(raw.frames[idx]).replace(/^Valid time: /, '') : '',
+        region, tab: pageTab(), sel: Array.from(sel), previewId,
+        events: tl ? tlEvents() : [],
+      });
+    } catch (err) { console.warn('track layer:', err.message); }
+  }
+
+  /* The wind asset can arrive AFTER the layer has drawn and the legend has been
+     built (it is a separate fetch). Repaint and rebuild the legend, so the
+     swatches and the canvas can never disagree about what is on the map. */
+  window.onTracksAssetReady = () => {
+    if (!mounted) return;
+    emitTracks('asset');
+    try { renderLegend(); } catch (err) { console.warn('track legend:', err.message); }
+  };
 
   function drawBase(ctx) {
     const dpr = window.devicePixelRatio || 1;
@@ -283,6 +399,7 @@
       ghostCache = null;   // packed colours: one cache per theme
   let curIvt = null;                                   // AR IVT class plane of the painted frame (hover)
   let curPaint = null;   // {u8, plane, ghostPlane, ivtS2} of the painted frame (hover reads the AR bit)
+  let curFl = null;      // flood class grid (u8) of the painted day, null = no flood evidence layer
   const IVT_BINS = [250, 500, 750, 1000, 1250];        // kg m-1 s-1 class edges (index.ivt.bins)
   function buildLut() {
     const g = raw.grid, nx = g.nx, ny = g.ny, stride = Math.ceil(nx / 8);
@@ -331,15 +448,18 @@
     drawBase(ctx);
     curIvt = null;                                    // no frame → nothing for hover to read
     curPaint = null;
-    if (!frame || !raw || !fit) { dimOutside(ctx); return; }
-    const u8 = frame.bin;                        // binary exceedance bits (4 planes)
-    const run = (raw.dur && frame.run) ? frame.run : null;   // null → binary paint (fallback)
+    const fl = curFl;      // flood day frame paints even past the ERA5 cutoff (the rain source
+                                       // — PARDIG by default — reaches later than ERA5 truth)
+    if (!raw || (!frame && !fl)) { dimOutside(ctx); return; }
+    const u8 = frame ? frame.bin : null;              // binary exceedance bits (4 planes)
+    const run = (frame && raw.dur && frame.run) ? frame.run : null;   // null → binary paint (fallback)
+    if (!fit) { dimOutside(ctx); return; }
     if (!lut || lut.cw !== cv.width || lut.ch !== cv.height) buildLut();
     const g = raw.grid, plane = g.ny * Math.ceil(g.nx / 8), cells = g.ny * g.nx;
     // plane 3 'bridged' (v8 assets): AR cells that are only a carried-over
     // footprint across a 1-step mask dropout. Feature-detected on the payload
     // length, so pre-v8 3-plane assets still paint exactly as before.
-    const ghostPlane = u8.length >= 4 * plane ? 3 * plane : -1;
+    const ghostPlane = u8 && u8.length >= 4 * plane ? 3 * plane : -1;
     // .ivt schema 2: class in the low 3 bits, bit 7 = IVT >= index.ivt.ar_min
     // (the AR threshold). Schema 1 sidecars were class-only AND were zeroed
     // wherever the AR layer did not paint — which is how "IVT values just
@@ -374,7 +494,7 @@
     const packed = packedCache, ramp = rampCache, ghostCol = ghostCache;
     const durV2 = !!(raw.dur && String(raw.dur.rev || '').indexOf('v2') === 0);
     const act = LAYERS.map((L, li) => (on[L.key] ? li : -1)).filter((li) => li >= 0);
-    const ivt = curIvt = (raw.ivt && frame.ivt) ? frame.ivt : null;   // IVT class plane (u8, per-cell; hover reads curIvt)
+    const ivt = curIvt = (frame && raw.ivt && frame.ivt) ? frame.ivt : null;   // IVT class plane (u8, per-cell; hover reads curIvt)
     curPaint = { u8, plane, ghostPlane, ivtS2 };
     const n = cw * ch;
     for (let p = 0; p < n; p++) {
@@ -383,7 +503,13 @@
       const m = bitMask[p];
       for (let a = 0; a < act.length; a++) {                  // later layers paint over earlier
         const li = act[a];
-        if (li === 2) {
+        if (li === 3) {
+          // flood: a daily CLASS grid, not bit planes — class > 0 IS the rule
+          // (union exceedance), the class is the accumulation bin
+          const v = fl ? fl[cellIdx[p]] : 0;
+          if (v > 0 && ramp[3]) px[p] = ramp[3][Math.min(v, LAYERS[3].bins) - 1];
+        } else if (li === 2) {
+          if (!u8) continue;                       // past-cutoff frame: no AR bits
           // AR: the binary bit says PAINT, the class plane says how strong.
           // Never index run[] for AR — .run has 2 planes (heat, freeze);
           // reading plane 2 is undefined = the AR-outage bug class of
@@ -408,7 +534,7 @@
             && ((((p % cw) >> 1) + ((p / cw) | 0) >> 1) & 1);
           px[p] = ramp[li][runBin(done + (prov ? 1 : 0), L.bins)];
           continue;
-        } else if (u8[li * plane + bi] & m) px[p] = packed[li];
+        } else if (u8 && (u8[li * plane + bi] & m)) px[p] = packed[li];
       }
     }
     rctx.putImageData(img, 0, 0);
@@ -546,14 +672,16 @@
     const anySel = sel.size > 0;
     // list preview of an event that is not on screen at this time step: a
     // non-interactive outline, so pointing at a row always shows WHERE it is
+    // (a TRACK event's preview outline is drawn by tracklayer.js instead)
     const ghost = previewId && !active.some((e) => e.id === previewId)
       ? tl.events.find((e) => e.id === previewId) : null;
-    if (ghost) {
+    if (ghost && !isTrack(ghost)) {
       const gd = bboxPaths(ghost), gt = TYPES[ghost.type] || { css: 'heat' };
       if (gd) mk('path', { class: 'gm-ghost', d: gd, 'aria-hidden': 'true',
                            style: `stroke: var(--series-${gt.css}); fill: var(--series-${gt.css})` }, g);
     }
     for (const ev of active) {
+      if (isTrack(ev)) continue;             // TRACK lane → tracklayer.js
       const t = TYPES[ev.type] || { css: 'heat' };
       const cls = 'gm-ev' + (sel.has(ev.id) ? ' sel' : '') + (anySel && !sel.has(ev.id) ? ' dim' : '')
         + (previewId === ev.id ? ' hov' : '');
@@ -618,17 +746,26 @@
       if (t) t.focus({ preventScroll: true });
     }
     if (typeof window.onMapEvents === 'function') window.onMapEvents(active.map((e) => e.id), Array.from(sel));
-    const nHeat = active.filter((e) => e.type === 'heat_wave').length;
-    const nFrz = active.filter((e) => e.type === 'freeze').length;
-    const nAr = active.filter((e) => e.type === 'atmospheric_river').length;
+    // the canvas describes what the CANVAS paints (layers + boxes); a track
+    // lane is a separate layer with its own aria-label on #gm-track-marks
+    const boxed = active.filter((e) => !isTrack(e));
+    const nHeat = boxed.filter((e) => e.type === 'heat_wave').length;
+    const nFrz = boxed.filter((e) => e.type === 'freeze').length;
+    const nCold = boxed.filter((e) => e.type === 'cold_snap').length;
+    const nAr = boxed.filter((e) => e.type === 'atmospheric_river').length;
+    const nFl = boxed.filter((e) => e.type === 'flood').length;
+    const nTk = active.length - boxed.length;
     const parts = [];
     if (nHeat) parts.push(`${nHeat} heat`);
     if (nFrz) parts.push(`${nFrz} freeze`);
+    if (nCold) parts.push(`${nCold} cold snap`);
     if (nAr) parts.push(`${nAr} AR`);
+    if (nFl) parts.push(`${nFl} flood`);
     $('#raw-canvas').setAttribute('aria-label',
       `Equal Earth world map — raw detector layers and event boxes: `
-      + `${active.length} event${active.length === 1 ? '' : 's'} visible`
-      + (parts.length ? ` (${parts.join(', ')})` : ''));
+      + `${boxed.length} event${boxed.length === 1 ? '' : 's'} visible`
+      + (parts.length ? ` (${parts.join(', ')})` : '')
+      + (nTk ? ` — plus ${nTk} cyclone track${nTk === 1 ? '' : 's'} in the track layer` : ''));
   }
   const spanLon = (b) => (b[2] <= b[3] ? b[3] - b[2] : 360);
   function hoverRow(id, on) {                  // map box → its row in the event list
@@ -638,70 +775,370 @@
   function preview(id) {                       // event list → outline on map + timeline (no canvas repaint)
     if (!mounted || !raw || previewId === id) return;
     previewId = id;
-    renderBoxes(); renderGantt();
+    renderBoxes(); renderGantt(); emitTracks('preview');
   }
   function layersForTab(tab) {                 // the page's type filter narrows the raw layers too
-    const key = { heat_wave: 'h', freeze: 'f', atmospheric_river: 'a' }[tab];
-    for (const L of LAYERS) on[L.key] = !key || L.key === key;
+    // Owner F0 (2026-11-19): a single chip shows ONLY its own lane's raw
+    // shading — heat/AR sheets under a flood chip read as flood evidence.
+    // cold_snap has no raw layer of its own: the P15 (freeze) lane IS its
+    // mask; flood has its own daily class frames (key 'l'). Lanes with no
+    // raster at all (the cyclone TRACK lanes) turn every raster OFF: their
+    // evidence is tracks and boxes, never another lane's shading.
+    const key = { heat_wave: 'h', freeze: 'f', cold_snap: 'f',
+                  atmospheric_river: 'a', flood: 'l' }[tab];
+    for (const L of LAYERS) on[L.key] = tab === 'all' || (!!key && L.key === key);
   }
 
-  /* ---------------- Gantt strip (qualified → end, shared time scale) ---------------- */
+  /* ---------------- Gantt strip (qualified → end, shared time scale) ----------------
+     Round 1 (2026-11-19) made the strip FIT its box (1 user unit = 1 CSS px, height
+     a function of the LANE COUNT only) and stop bars HIDING each other (greedy
+     sub-row packing). Round 2 (2026-11-20) makes it survive DENSE lanes: the live
+     window has heat/AR/freeze, but a new-event run adds midlat cyclone (80),
+     tropical cyclone (44) and flood (40), and a packed 7-deep lane in a fixed slot
+     thinned its bars to 2.2 px hairlines. The strip now:
+       · shows EVERY lane with events in the window, midlat_cyclone included;
+       · keeps ONE bar height (G_BAR) everywhere — it never thins a bar below G_BAR;
+       · lets a SPARSE lane (max concurrency <= G_DENSE) grow its slot to fit its
+         sub-rows (bar + gap each), and
+       · draws a DENSITY RIBBON for a DENSE lane instead of hairlines: a step area
+         whose height is how many events are active at that moment, in the lane
+         colour, clickable to jump the slider and labelled with a hover readout.
+         Selected / list-previewed events of a dense lane are ALWAYS drawn as a
+         full bar over the ribbon, so selection never disappears; the lane label
+         toggles a dense lane between ribbon and fully-expanded packed rows.
+     The height is still content-driven and depends ONLY on the data window and the
+     expand toggles — never on hover or the frame — so the CLS reservation in
+     styles.css (min-height) stays exact for the collapsed default view. */
+  const G_BAR = 6;        // ONE uniform bar height (>= 5 px), every lane, never thinned
+  const G_ROWGAP = 2;     // gap between sub-rows inside a lane
+  const G_DENSE = 3;      // max concurrency <= this packs as sub-rows; more is a ribbon
+  const G_RIB = 14;       // density-ribbon lane height (~2.3 bar heights)
+  const G_GAP = 2;        // vertical gap between lane bands
+  const G_AX = 13;        // month-label band under the lanes (a 10 px label, baseline 3 px up)
+  const G_RIGHT = 12;     // trailing inset = slider thumb half-width (see styles.css)
+  const G_MIN_W = 240;    // never shrink the axis below this
+  const GUT = 2;          // x gutter between bars in one sub-row
+  const NARROW_W = 440;   // below this container width, labels move ABOVE their lane
+  const G_CAP = 11;       // the caption row a narrow strip puts each lane name on
+  const G_LAB_MIN = 40, G_LAB_MAX = 150, G_LAB_FRAC = 0.34;   // label column limits
+  // a lane's band height from its packed row count (>= 1) in bars-mode
+  const G_BARS_H = (rows) => Math.max(G_BAR, rows * G_BAR + (rows - 1) * G_ROWGAP);
+  // a bar's top within its lane (row 0 at the band top)
+  const G_BAR_Y = (row) => row * (G_BAR + G_ROWGAP);
+  const G_LANE_MIN = 12;  // wide: a band is never shorter than its centred label
+
+  /* Lane labels are the strip's only text that must never be clipped: the old 44 px
+     column clipped nothing only because the whole strip was scaled to 56%; at true
+     size `Tropical cyclone` needs ~101 px of --text-2xs mono. Widths are measured
+     once per font and cached — required for correctness, not just speed, because
+     getComputedTextLength() returns 0 while the section is hidden (detail view
+     open), and caching a 0 would collapse the column under the slider's margin and
+     misalign the axis. Below G_LAB_FRAC of the width the names are ellipsised by
+     CHARACTER (the label font is mono, so one advance is exact) and the full name
+     moves to the label's tooltip. */
+  const gLab = { font: '', ch: 0, w: new Map(), pad: G_LAB_MIN };
+  function labelMetrics(svg, W, names) {
+    const root = getComputedStyle(document.documentElement);
+    const font = root.getPropertyValue('--text-2xs').trim() + '|'
+      + root.getPropertyValue('--font-mono').trim();
+    if (gLab.font !== font) { gLab.font = font; gLab.ch = 0; gLab.w.clear(); }
+    let max = 0, ch = gLab.ch, ok = gLab.ch > 0;
+    const probe = mk('text', { class: 'gm-lane-lab', x: 0, y: -9999 }, svg);
+    for (const n of names) {
+      let w = gLab.w.get(n);
+      if (w === undefined) {
+        probe.textContent = n;
+        w = probe.getComputedTextLength();
+        if (w > 0) gLab.w.set(n, w); else ok = false;   // hidden: measure nothing
+      }
+      if (w > 0) { max = Math.max(max, w); ch = Math.max(ch, w / n.length); }
+    }
+    probe.textContent = 'M';
+    const em = probe.getComputedTextLength();
+    probe.remove();
+    if (em > 0) { ch = Math.max(ch, em); ok = true; }
+    if (!ok) return { pad: gLab.w.size ? gLab.pad : G_LAB_MIN, name: (n) => n };
+    // The label column is never allowed to eat more than 20 % of the strip, so the
+    // time axis keeps >= 80 % of the width even on a phone (round 2: a clipped or
+    // 30 %-wide label column made the axis unreadable at 390 px). If the widest
+    // name still will not fit the column it is ellipsised (below), never clipped.
+    const axisCap = Math.max(30, Math.floor(0.2 * W - G_RIGHT));
+    const pad = Math.min(axisCap, Math.min(Math.max(G_LAB_MIN, Math.round(max) + 9), G_LAB_MAX,
+      Math.max(G_LAB_MIN + 12, Math.round(W * G_LAB_FRAC))));
+    gLab.pad = pad;
+    const name = (short) => {
+      if ((gLab.w.get(short) || 0) <= pad - 8) return short;
+      const fits = Math.floor((pad - 8) / ch);
+      return fits < 3 ? short.slice(0, 1) + '…'
+        : short.slice(0, fits - 1).replace(/[\s.]+$/, '') + '…';
+    };
+    return { pad, name };
+  }
+
+  /* Two pieces of the strip are pure geometry, so they live apart from the SVG:
+   they take numbers and return numbers, which means the rules that decide what
+   the reader can and cannot see can be read — and argued with — without a
+   browser. */
+
+  /* Greedy interval packing on x, UNCAPPLIED: a bar takes the first row whose last
+   bar has already ended, so a lane gets EXACTLY as many rows as its own overlap
+   depth — no cap, no thinning, one G_BAR height on every row. The caller decides
+   whether those rows are drawn (a sparse lane, or a dense lane the reader expanded)
+   or replaced by a density ribbon. Bars in one row never overlap in x and rows never
+   overlap in y, so a drawn bar is always visible and clickable. Returns the row
+   count (the lane's max concurrency), which also picks sparse vs dense. */
+  function packLane(items) {
+    items.sort((a, b) => a.bx - b.bx || a.x1 - b.x1);   // left to right, ties: early end first
+    const ends = [];
+    for (const it of items) {
+      const free = ends.findIndex((e) => it.bx >= e);
+      it.row = free >= 0 ? free : ends.length;
+      if (it.row === ends.length) ends.push(-Infinity);
+      ends[it.row] = it.x1 + GUT;
+    }
+    return { rows: ends.length };
+  }
+
+  /* A dense lane's DENSITY RIBBON: one rectangle per constant-activity span, whose
+   height is how many of the lane's events are active in that span, scaled to the
+   lane's peak. It is a step area, not bars: the reader sees WHERE the lane crowds
+   without a smear of hairlines, each span answers hover with "N active, <date>", and
+   clicking a span jumps the slider to it. Returns spans [{xa, xb, n, h}] sized inside
+   a lane band of `h` pixels (a single active event clamps to >= 2 px, so it stays visible). */
+  function ribbonSpans(items, h) {
+    if (!items.length) return { spans: [], peak: 0 };
+    const lo = items[0].bx, hi = items[items.length - 1].x1;
+    const cl = (v) => Math.max(lo, Math.min(hi, v));
+    const bounds = [...new Set([lo, hi, ...items.map((it) => cl(it.bx)), ...items.map((it) => cl(it.x1))])]   // sorted after clamping
+      .sort((a, b) => a - b).filter((v, i, a) => !i || v > a[i - 1] + 0.01);
+    const active = (mid) => items.reduce((n, it) => n + (it.bx <= mid && it.x1 > mid ? 1 : 0), 0);
+    let peak = 1;
+    const spans = [];
+    for (let i = 0; i < bounds.length - 1; i++) {
+      const xa = bounds[i], xb = bounds[i + 1];
+      const n = active((xa + xb) / 2);
+      if (n <= 0) continue;                                  // gap: leave the lane ground bare
+      peak = Math.max(peak, n);
+      spans.push({ xa, xb, n, h: n });                        // height filled after peak is known
+    }
+    for (const s of spans) s.h = Math.max(2, Math.round((s.n / peak) * h));
+    return { spans, peak };
+  }
+
+  /* The axis's own calendar: Mondays once a week is wide enough to tell them
+   apart (16 px), month starts when it is not. `named` marks the tick that carries
+   a month label — the first Monday of a month in week mode, every month start in
+   month mode — and the caller drops labels closer together than the text is wide. */
+  function timeTicks(t0, t1, pxDay) {
+    const weekly = pxDay * 7 >= 16;
+    const d = new Date(t0);
+    d.setUTCDate(d.getUTCDate() + 1); d.setUTCHours(0, 0, 0, 0);
+    if (weekly) while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1);
+    else while (d.getUTCDate() !== 1) d.setUTCDate(d.getUTCDate() + 1);
+    const out = [];
+    for (; d.getTime() <= t1; weekly ? d.setUTCDate(d.getUTCDate() + 7) : d.setUTCMonth(d.getUTCMonth() + 1))
+      out.push({ ms: d.getTime(), named: weekly ? d.getUTCDate() <= 7 : true,
+                 label: d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }) });
+    return out;
+  }
+
   function renderGantt() {
     const svg = $('#gm-gantt');
     svg.innerHTML = '';
-    if (!tl) return;
-    const W = Math.max(320, $('#raw-map-wrap').clientWidth);
-    const LANE_H = 12, GAP = 4, LAB = 44, TOP = 2, AX = 16;
-    const H = TOP + LANE_H * 3 + GAP * 2 + AX;
-    svg.setAttribute('width', W); svg.setAttribute('height', H);
-    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    if (!tl) { svg.removeAttribute('viewBox'); return; }
+    // The strip's OWN content box is the geometry: `width: 100%` makes it the
+    // card's content width, and the slider sits in that same box (same origin x,
+    // same width), so [LAB, W - G_RIGHT] is exactly the thumb's travel and 1 user
+    // unit is 1 CSS px. Hidden (detail view open) it measures 0 — fall back to the
+    // map column's width minus the card's gutters rather than paint a 0-wide axis.
+    const own = svg.clientWidth || $('#raw-map-wrap').clientWidth - 26;
+    const W = Math.max(G_MIN_W, own);
+    // below NARROW_W there is no room for a label column that is ALSO >= 80 % axis,
+    // so the names move to a caption row above each lane and the axis gets the full
+    // width (round 2: a 30 %-wide column clipped "Tropical cyclone" at 390 px)
+    const narrow = W < NARROW_W;
+    let shortNames = narrow;
+    const labOf = (type) => (shortNames ? (TYPES[type].narrow || TYPES[type].short) : TYPES[type].short);
     const t0 = tsToDate(raw.frames[0]).getTime();
     const t1 = tsToDate(raw.frames[raw.frames.length - 1]).getTime();
-    const x = (ms) => LAB + Math.min(1, Math.max(0, (ms - t0) / (t1 - t0))) * (W - LAB - 12);  // trailing 12 = slider thumb inset
+    const span = Math.max(1, t1 - t0);
     const anySel = sel.size > 0;
     const tab = pageTab();
-    for (const type of LANE_ORDER) {
-      const li = LANE_ORDER.indexOf(type);
-      const y = TOP + li * (LANE_H + GAP);
-      const lab = mk('text', { x: 0, y: y + LANE_H - 3, class: 'gm-lane-lab' }, svg);
-      lab.textContent = TYPES[type].short;
-      mk('rect', { class: 'gm-lane', x: LAB, y, width: W - LAB - 12, height: LANE_H, rx: 2, opacity: .35 }, svg);
-      for (const ev of tlEvents()) {
-        if (ev.type !== type) continue;
-        const q = qualTs(ev), e = endTs(ev);
-        if (q > raw.frames[raw.frames.length - 1] || e < raw.frames[0]) continue;   // clamped out
-        const bx = x(tsToDate(q).getTime()), be = x(tsToDate(e).getTime());
-        const bw = Math.max(2, be - bx);
-        const isSel = sel.has(ev.id) || previewId === ev.id;
-        const bar = mk('rect', {
-          class: 'gm-bar', 'data-id': ev.id, x: bx, y, width: bw, height: LANE_H, rx: 2,
-          style: `fill: var(--series-${TYPES[type].css})`,
-          opacity: isSel ? 1 : (anySel ? .18 : (tab !== 'all' && tab !== type ? .18 : .8)),
-          stroke: isSel ? 'var(--canvas)' : 'none', 'stroke-width': isSel ? 1 : 0,
-          cursor: 'pointer',
-        }, svg);
-        mk('title', {}, bar).textContent = `${ev.title} — qualified ${fmtShort(q)}${evSpan(ev)}`;
-        bar.addEventListener('click', () => {
-          if (!sel.has(ev.id)) sel.add(ev.id); else sel.delete(ev.id);
-          jumpTo(q);
-          writeUrl(true); render();
-        });
+
+    /* 1 · filter first — the region view and the frame-window clamp behave exactly
+     as before, because the label column is sized to the names this strip will
+     actually DRAW. A LANE belongs to the strip when its type has any event in the
+     window (Region then hides BARS, never lanes), so the strip's height and its
+     label column — hence the axis origin — stay constant across the frame step,
+     the type tab and the Region dropdown: that is what the CLS reservation in
+     styles.css and the "nothing below the legend moved" contract need. */
+    const inWindow = (ev) => qualTs(ev) <= raw.frames[raw.frames.length - 1] && endTs(ev) >= raw.frames[0];
+    const lanes = LANE_ORDER.filter((type) => tl.events.some((ev) => ev.type === type && inWindow(ev)));
+
+    /* Which lanes are DENSE is decided from the overlap DEPTH, which a greedy
+     packing count gives the same way at any width — so it can be known before the
+     label column (which needs it to reserve ▸/▾ room for the expand toggle). */
+    const depthOf = (items) => {
+      const iv = items.map((ev) => [tsToDate(qualTs(ev)).getTime(), tsToDate(endTs(ev)).getTime()])
+        .sort((a, b) => a[0] - b[0]);
+      const ends = []; let rows = 0;
+      for (const [a, b] of iv) {
+        const f = ends.findIndex((e) => a >= e); const r = f >= 0 ? f : ends.length;
+        if (r === ends.length) ends.push(0); ends[r] = b; rows = Math.max(rows, ends.length);
+      }
+      return rows;
+    };
+    const laneItems = new Map(lanes.map((type) =>
+      [type, tlEvents().filter((ev) => ev.type === type && inWindow(ev))]));
+    const dense = new Set(lanes.filter((type) => depthOf(laneItems.get(type)) > G_DENSE));
+    // WIDE: names sit in a left column sized to them (caret reserved for dense lanes).
+    // NARROW: the column would eat the axis, so LAB collapses to 0, the axis runs the
+    // full width, and each lane is named on a caption row above its band instead.
+    let LAB, laneName;
+    if (narrow) { LAB = 0; laneName = (s) => s; }
+    else {
+      const names = () => lanes.map((type) => (dense.has(type) ? '▸ ' : '') + labOf(type));
+      ({ pad: LAB, name: laneName } = labelMetrics(svg, W, names()));
+      // a column too narrow for a full name takes the short forms (TC, MLC), not an ellipsis
+      if (names().some((n) => laneName(n) !== n)) {
+        shortNames = true;
+        ({ pad: LAB, name: laneName } = labelMetrics(svg, W, names()));
       }
     }
-    // cursor: the current frame (G-23 lineage), 1px ink line spanning the lanes
+    $('#global-sec').style.setProperty('--gm-lab', LAB + 'px');
+
+    const x = (ms) => LAB + Math.min(1, Math.max(0, (ms - t0) / span)) * (W - LAB - G_RIGHT);
+    const xInv = (px) => t0 + ((px - LAB) / (W - LAB - G_RIGHT)) * span;   // px → ms (ribbon click)
+    const pxDay = (W - LAB - G_RIGHT) / (span / 86400e3);
+    const BW_MIN = Math.max(2, Math.min(4, pxDay * 0.8));   // a day stays findable, capped at 4 px
+
+    /* 2 · pack each lane (rows = its own concurrency), then choose a mode: a lane
+     with nothing to draw is an empty rule; a DENSE lane collapsed is a ribbon; a
+     dense lane the reader expanded, or any SPARSE lane, draws packed sub-rows at
+     ONE uniform bar height. Band height follows from the mode, and bands are then
+     stacked — so the strip grows for content, never for crowding-in-a-slot. */
+    const groups = lanes.map((type) => {
+      const items = laneItems.get(type).map((ev) => {
+        const q = qualTs(ev), e = endTs(ev);
+        const bx = x(tsToDate(q).getTime());
+        const bw = Math.max(BW_MIN, x(tsToDate(e).getTime()) - bx);
+        return { ev, q, bx, bw, x1: bx + bw, row: 0 };
+      });
+      const { rows } = packLane(items);
+      const isDense = dense.has(type);
+      const expanded = gExpand.has(type);
+      const mode = rows === 0 ? 'empty' : (isDense && !expanded ? 'ribbon' : 'bars');
+      const bh = mode === 'empty' ? 2 : (mode === 'ribbon' ? G_RIB
+        : (narrow ? G_BARS_H(rows) : Math.max(G_LANE_MIN, G_BARS_H(rows))));
+      return { type, items, rows, isDense, expanded, mode, bh, lab: labOf(type) };
+    });
+    let top = 0;
+    for (const g of groups) {
+      // narrow: a caption row (G_CAP) sits ABOVE the band for a named lane, so the
+      // axis can run the full width with no left column; g.y stays the BAND top.
+      g.capH = (narrow && g.rows) ? G_CAP : 0;
+      g.capY = top;
+      g.y = top + g.capH;
+      top += g.capH + g.bh + G_GAP;
+    }
+    const gridBot = groups.length ? groups[groups.length - 1].y + groups[groups.length - 1].bh : 0;
+    const H = gridBot + G_AX;
+    svg.setAttribute('width', W); svg.setAttribute('height', H);
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    // the box IS the viewBox: nothing is ever scaled, whatever the lane count
+    svg.style.height = H + 'px'; svg.style.minHeight = H + 'px';
+
+    const msLabel = (ms) => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+    /* 3 · lane chrome + labels. Every non-empty lane is named (as on the chips); a
+     DENSE lane's label is a button that toggles it between ribbon and expanded rows
+     (aria-expanded, ▸/▾ affordance, keyboard). An empty lane collapses to a 2 px
+     rule with NO label, handing its column back to the axis. */
+    groups.forEach((g, i) => {
+      mk('rect', { class: 'gm-lane' + (i % 2 ? ' gm-lane-alt' : '') + (g.rows ? '' : ' gm-lane-none'),
+                   x: LAB, y: g.y, width: W - LAB - G_RIGHT, height: g.bh, rx: Math.min(2.5, g.bh / 2) }, svg);
+      if (i) mk('line', { class: 'gm-lane-sep', x1: 0, x2: W - G_RIGHT,
+                          y1: g.capY - G_GAP / 2, y2: g.capY - G_GAP / 2 }, svg);
+      if (!g.rows) return;
+      const caret = g.isDense ? (g.expanded ? '▾ ' : '▸ ') : '';
+      const full = caret + g.lab;
+      const labY = narrow ? g.capY + G_CAP - 2 : g.y + g.bh / 2;   // above the band, or centred in it
+      const t = mk('text', { class: 'gm-lane-lab' + (g.isDense ? ' toggle' : ''),
+                             x: 0, y: labY, dy: narrow ? '0' : '.36em' }, svg);
+      t.textContent = laneName(full);
+      if (g.isDense) {
+        t.setAttribute('role', 'button'); t.setAttribute('tabindex', '0');
+        t.setAttribute('aria-expanded', String(g.expanded));
+        mk('title', {}, t).textContent = g.lab + ' — ' + g.rows + ' at once: click to '
+          + (g.expanded ? 'collapse to a density ribbon' : 'expand every bar');
+        const toggle = (e) => { e.stopPropagation();
+          if (gExpand.has(g.type)) gExpand.delete(g.type); else gExpand.add(g.type); render(); };
+        t.addEventListener('click', toggle);
+        t.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(e); } });
+      } else if (t.textContent !== full) mk('title', {}, t).textContent = g.lab;   // ellipsis: full name on hover
+    });
+
+    /* 4 · event marks. A bars lane paints every item at G_BAR height, one row per
+     sub-row. A ribbon lane paints its density spans (click jumps the slider) and
+     then ALWAYS re-paints a selected / list-previewed event as a full bar on top,
+     so a selection is never lost inside the ribbon. */
+    const drawBar = (g, it, over) => {
+      const ev = it.ev;
+      const isSel = sel.has(ev.id) || previewId === ev.id;
+      const by = g.mode === 'ribbon' ? g.y + (g.bh - G_BAR) / 2
+        : g.y + (g.bh - G_BARS_H(g.rows)) / 2 + G_BAR_Y(it.row);   // packed rows centred in the band
+      const bar = mk('rect', {
+        class: 'gm-bar', 'data-id': ev.id, x: it.bx, y: by,
+        width: it.bw, height: G_BAR, rx: Math.min(2.5, G_BAR / 2),
+        style: `fill: var(--series-${TYPES[g.type].css})`,
+        opacity: isSel ? 1 : (anySel ? .18 : (tab !== 'all' && tab !== g.type ? .18 : .85)),
+        stroke: isSel ? 'var(--canvas)' : 'none', 'stroke-width': isSel ? 1 : 0,
+        cursor: 'pointer',
+      }, svg);
+      mk('title', {}, bar).textContent = `${ev.title} — qualified ${fmtShort(it.q)}${evSpan(ev)}`;
+      bar.addEventListener('click', () => {
+        if (!sel.has(ev.id)) sel.add(ev.id); else sel.delete(ev.id);
+        jumpTo(it.q); writeUrl(true); render();
+      });
+    };
+    for (const g of groups) {
+      if (g.mode === 'bars') {
+        for (const it of g.items) drawBar(g, it, false);
+      } else if (g.mode === 'ribbon') {
+        const { spans } = ribbonSpans(g.items, g.bh);
+        const dim = anySel ? .3 : (tab !== 'all' && tab !== g.type ? .28 : .8);
+        const grp = mk('g', { class: 'gm-ribbon' }, svg);
+        for (const s of spans) {
+          const r = mk('rect', { class: 'gm-rib-seg', x: s.xa, y: g.y + g.bh - s.h,
+                                 width: Math.max(0.6, s.xb - s.xa), height: s.h,
+                                 style: `fill: var(--series-${TYPES[g.type].css})`,
+                                 opacity: dim, cursor: 'pointer' }, grp);
+          mk('title', {}, r).textContent = `${g.lab} — ${s.n} active, ${msLabel(xInv(s.xa))}`;
+          r.addEventListener('click', () => {
+            const ts = tsToStr(new Date(xInv(s.xa)));
+            jumpTo(ts); writeUrl(true); render();
+          });
+        }
+        for (const it of g.items) {                 // selection always on top of the ribbon
+          if (sel.has(it.ev.id) || previewId === it.ev.id) drawBar(g, it, true);
+        }
+      }
+    }
+
+    /* 5 · cursor + time axis: the current frame is a 1 px ink line over the lanes
+     (G-23 lineage, still the topmost thing painted); ticks are Mondays when a
+     week is wide enough to tell them apart and month starts when it is not; month
+     names sit under the axis and never closer than 34 px. */
     const cx = x(tsToDate(raw.frames[idx]).getTime());
-    mk('line', { x1: cx, x2: cx, y1: 0, y2: H - AX + 3,
-                 style: 'stroke: var(--matte-black); stroke-width: 1; pointer-events: none' }, svg);
+    mk('line', { class: 'gm-cursor', x1: cx, x2: cx, y1: 0, y2: gridBot }, svg);
     let lastLab = -1e9;
-    const d = new Date(t0);
-    d.setUTCDate(d.getUTCDate() + 1); d.setUTCHours(0, 0, 0, 0);
-    for (; d.getTime() <= t1; d.setUTCDate(d.getUTCDate() + 1)) {
-      if (d.getUTCDate() !== 1) continue;
-      mk('line', { class: 'gm-tick', x1: x(d.getTime()), x2: x(d.getTime()), y1: TOP, y2: H - AX + 3 }, svg);
-      if (x(d.getTime()) - lastLab < 34) continue;
-      lastLab = x(d.getTime());
-      const t = mk('text', { x: x(d.getTime()) + 2, y: H - 3 }, svg);
-      t.textContent = d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    for (const tk of timeTicks(t0, t1, pxDay)) {
+      const tx = x(tk.ms);
+      mk('line', { class: 'gm-tick' + (tk.named ? '' : ' minor'),
+                   x1: tx, x2: tx, y1: 0, y2: gridBot }, svg);
+      if (!tk.named || tx - lastLab < 34) continue;   // 34 px: a month name plus a gap
+      lastLab = tx;
+      mk('text', { class: 'gm-month', x: tx + 2, y: H - 3 }, svg).textContent = tk.label;
     }
   }
 
@@ -716,19 +1153,24 @@
     $('#raw-readout').textContent = fmtReadout(ts);
     const past = ts > rawLast();
     const badge = $('#raw-badge');
-    badge.classList.toggle('hidden', !past);   // .sec-badge sets display; class hides it
+    const noTruth = (raw.no_truth || []).includes(ts);   // blank because ERA5 has no data
+    badge.classList.toggle('hidden', !past && !noTruth);   // .sec-badge sets display; class hides it
     // design-recommended copy (19:05): honest end-of-frames marker, not an IFS claim
-    badge.textContent = past ? `raw layers end ${fmtShort(raw.cutoff)} ${raw.cutoff.slice(8, 10)}Z · ERA5 lag` : '';
+    badge.textContent = past ? `raw layers end ${fmtShort(raw.cutoff)} ${raw.cutoff.slice(8, 10)}Z · ERA5 lag`
+      : noTruth ? 'No ERA5 data for this step' : '';
     renderBoxes();
     renderGantt();
-    getFrame(idx).then((frame) => {
+    emitTracks('frame');       // track lanes follow the step, the tab and the region
+    Promise.all([getFrame(idx), getFl(idx)]).then(([frame, fl]) => {
       if (seq !== renderSeq) return;
+      curFl = fl;                          // flood day frame of THIS step (flood_frames contract)
       const note = $('#raw-note');
       if (frame === null && ts && !past) {
         note.classList.remove('hidden');
         note.textContent = `Frame ${fmtReadout(ts)} is not available yet — `
           + 'the raw exceedance build has not produced it.';
-        legStats = null; paintFrame(null);
+        legStats = censusFrame(frame);     // a flood day frame still answers
+        paintFrame(frame);
       } else {
         note.classList.add('hidden');
         legStats = censusFrame(frame);        // legend describes THIS painted frame
@@ -791,7 +1233,7 @@
     if ('layers' in params) {                        // positive list of ON layers
       const keep = new Set((params.layers || '').split(',').filter(Boolean));
       for (const L of LAYERS) { const v = keep.has(L.key); if (on[L.key] !== v) { on[L.key] = v; changed = true; } }
-      if (!on.h && !on.f && !on.a) on.h = on.f = on.a = true;
+      if (LAYERS.every((L) => !on[L.key])) LAYERS.forEach((L) => { on[L.key] = true; });
       // no widget: the type tabs are the only layer toggles (complaint 3);
       // #layers= deep links ride the state alone. render() below repaints.
     }
@@ -821,9 +1263,50 @@
       flat: 'below P15', flatTip: 'Below P15 — the duration sidecar is unavailable, so one flat colour paints every exceeded cell' },
     ar:     { name: 'AR IVT', unit: 'kg m⁻¹ s⁻¹',
       flat: 'AR mask', flatTip: 'AR mask — the IVT class sidecar is unavailable, so one flat green paints every masked cell' },
+    flood:  { name: 'Flood', unit: 'mm/day-equiv',
+      flat: 'over threshold', flatTip: 'Over the flood rule — the accumulation class frame is unavailable, so one flat colour paints every exceeded cell' },
   };
+  // fallback legend edges when index.flood.bins_mm is absent (kept in sync
+  // with ewb_live/viz/flood_frames.BINS_MM)
+  const FLOOD_BINS_FALLBACK = [20, 50, 100, 200, 350];
   let legStats = null;                         // lane census of the painted frame
   let legHtml = '';                            // last rendered markup (playback: no reflow churn)
+  let legOpen = false;                         // popover OPEN (3+ lanes) — closed by default
+  let legBtn = null;                           // floating `Legend ▾` toggle (created on demand)
+  let legHome = null;                          // where the page parked #gm-legend (parent, next)
+
+  /* Cold snap has no raster of its own — the P15 lane IS its mask (layersForTab).
+     Under the Cold snap tab the strip therefore has to say `Cold snap`: a lane
+     called `Freeze` next to a `Cold snap` chip reads as a missing layer. */
+  const COLD_SNAP_LEGEND = {
+    name: 'Cold snap', unit: 'days < P15',
+    flat: 'below P15',
+    flatTip: 'Below P15 — the duration sidecar is unavailable, so one flat colour paints every exceeded cell',
+    tip: 'Cold snap: the P15 lane is the cold-snap mask — consecutive COMPLETED UTC days '
+      + 'the cell fell below the P15 climatology at all four 6-hourly steps. A cold-snap '
+      + 'EVENT still needs the detector minimum; the shading starts at its first day for context.',
+  };
+
+  /* The floating popover (AC-4.1). Styles are inline on purpose: styles.css is
+     another workstream's file, and inline declarations beat the ID-selectors of
+     the stylesheet, so the popover renders correctly whichever revision of the
+     sheet ships beside this file. Colours are tokens, so light and dark need no
+     separate rule, and the box is clamped inside #raw-map-wrap (which clips with
+     overflow:hidden) so it can never hang off a 390 px map. */
+  let legPopTop = null;                        // cached px below the corner tools
+  let legCss = '';                             // last cssText written (no per-frame churn)
+  const legPopCss = (top) => 'position:absolute;top:' + top + 'px;right:8px;z-index:6;'
+    + 'box-sizing:border-box;max-width:min(440px,calc(100% - 16px));'
+    + 'max-height:calc(100% - ' + (top + 10) + 'px);overflow:auto;margin:0;'
+    + 'display:flex;flex-direction:column;align-items:stretch;gap:3px;'
+    + 'padding:7px 10px;border:1px solid var(--border);border-radius:6px;'
+    + 'background:var(--paper);color:var(--matte-black);'
+    + 'box-shadow:0 6px 20px rgba(0,0,0,.18);pointer-events:auto;text-align:left';
+  const LEG_BTN_CSS = 'display:none;align-items:center;gap:5px;padding:4px 8px;'
+    + 'border:1px solid var(--border);border-radius:6px;background:var(--paper);'
+    + 'color:var(--matte-black);font-family:var(--font-sans);font-size:var(--text-2xs);'
+    + 'font-weight:600;letter-spacing:.08em;line-height:1.4;white-space:nowrap;'
+    + 'cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.10)';
 
   const legStop = (bg, label, title, out, extraCls) =>
     `<span class="lg-bin${out ? ' out' : ''}">`
@@ -844,20 +1327,36 @@
      what to show), and it is cached on the frame object, recomputed when the
      Region changes. */
   function censusFrame(frame) {
-    if (!raw || !frame || !frame.bin) return null;
+    if (!raw) return null;
     const key = region ? region.key : 'global';
+    const fl = curFl;
+    if (!frame || !frame.bin) {
+      if (!fl) return null;
+      // past the ERA5 cutoff (or a missing .bin): only the flood day frame
+      // can still describe what paints — every other lane draws nothing
+      const s = { key, durV2: false,
+                  ramp: { heat: false, freeze: false, ar: false, flood: true },
+                  n: LAYERS.map((L) => new Uint8Array(L.bins)), prov: LAYERS.map(() => 0) };
+      for (let c = 0; c < fl.length; c++) {
+        const v = fl[c];
+        if (v > 0) s.n[3][Math.min(v, LAYERS[3].bins) - 1] = 1;
+      }
+      if (frame) { frame.leg = s; frame.legKey = key; }
+      return s;
+    }
     if (frame.legKey === key) return frame.leg;
     const g = raw.grid, nx = g.nx, ny = g.ny, cells = nx * ny;
     const durV2 = !!(raw.dur && String(raw.dur.rev || '').indexOf('v2') === 0);
     const run = (raw.dur && frame.run) ? frame.run : null;
     const ivt = (raw.ivt && frame.ivt) ? frame.ivt : null;
-    const s = { key, durV2, ramp: { heat: !!run, freeze: !!run, ar: !!ivt },
-                n: LAYERS.map((L) => new Uint8Array(L.bins)), prov: [0, 0, 0] };
-    const clampGate = (li) => (li === 2 ? 1
+    const s = { key, durV2, ramp: { heat: !!run, freeze: !!run, ar: !!ivt, flood: !!fl },
+                n: LAYERS.map((L) => new Uint8Array(L.bins)), prov: LAYERS.map(() => 0) };
+    const clampGate = (li) => (li >= 2 ? 1
       : Math.min(Math.max(minDays(LAYERS[li]), 1), LAYERS[li].bins));
     const reach = (li) => (li === 2 ? (ivt ? LAYERS[2].bins : 1)
+      : li === 3 ? (fl ? LAYERS[3].bins : 0)
       : !run ? 1 : LAYERS[li].bins - clampGate(li) + 1 + (durV2 ? 1 : 0));
-    const need = [reach(0), reach(1), reach(2)];    // stops still missing per lane
+    const need = LAYERS.map((L, li) => reach(li));    // stops still missing per lane
     const hit = (li, b) => { if (!s.n[li][b]) { s.n[li][b] = 1; need[li]--; } };
     const bin = frame.bin, stride = Math.ceil(nx / 8), planeB = ny * stride;
     const stride4 = bin.length >= 4 * planeB;         // v8+ carries the bridged plane
@@ -908,9 +1407,13 @@
           // in the light ramp anyway.
           else if (bin[2 * planeB + byte] & m) hit(2, 0);
         }
+        if (need[3] && fl) {                          // flood: daily class grid
+          const v = fl[c];
+          if (v > 0) hit(3, Math.min(v, LAYERS[3].bins) - 1);
+        }
       }
     };
-    for (let j = j0; j <= j1 && need[0] + need[1] + need[2] > 0; j++) {
+    for (let j = j0; j <= j1 && need.reduce((a, b) => a + b, 0) > 0; j++) {
       if (i0 <= i1) span(j, i0, i1);
       else { span(j, i0, nx - 1); span(j, 0, i1); }         // dateline-crossing region
     }
@@ -926,11 +1429,17 @@
       const cen = legStats;
       LAYERS.forEach((L, li) => {
         if (!on[L.key]) return;                            // off the map → off the legend
-        const M = LEGEND[L.name];
+        if (L.name === 'flood' && !raw.flood) return;      // no asset on this site: no phantom group
+        const cold = L.name === 'freeze' && pageTab() === 'cold_snap';
+        const M = cold ? COLD_SNAP_LEGEND : LEGEND[L.name];
         const n = cen ? cen.n[li] : null;                  // null = nothing painted yet
         const ramp = !cen || cen.ramp[L.name];
         const live = n ? n.reduce((a, b) => a + b, 0) : -1;  // stops present in this frame
         const from = L.name === 'ar' ? 1 : Math.min(Math.max(minDays(L), 1), L.bins);
+        // flood legend stops are mm/day-equivalent ranges, not day counts
+        const fe = L.name === 'flood'
+          ? ((raw.flood && Array.isArray(raw.flood.bins_mm) && raw.flood.bins_mm.length === L.bins
+              && raw.flood.bins_mm) || FLOOD_BINS_FALLBACK) : null;
         const stops = [];
         if (ramp) {
           // only stops the lane can paint: days below the gate never reach the canvas
@@ -940,10 +1449,16 @@
               `var(--dur-${L.name}-${b})`,
               // top class reads '1250+' — same '+ suffix as the day ramps; the
               // caption column stays narrow enough that the digits never touch
-              L.name === 'ar' ? (b < L.bins ? String(lo) : `${lo}+`) : dayLbl(b, L.bins),
+              L.name === 'ar' ? (b < L.bins ? String(lo) : `${lo}+`)
+                : fe ? (b < L.bins ? `${fe[b - 1]}\u2013${fe[b]}` : `${fe[L.bins - 1]}+`)
+                : dayLbl(b, L.bins),
               L.name === 'ar'
                 ? (b < L.bins ? `${lo}\u2013${IVT_BINS[b]} kg m\u207b\u00b9 s\u207b\u00b9` : `\u2265${lo} kg m\u207b\u00b9 s\u207b\u00b9`)
-                : dayTip(L, b),
+                : fe
+                  ? (b < L.bins
+                     ? `${fe[b - 1]}\u2013${fe[b]} mm/day-equivalent \u2014 max(daily rain, 72 h total / 3)`
+                     : `\u2265${fe[L.bins - 1]} mm/day-equivalent \u2014 max(daily rain, 72 h total / 3)`)
+                  : dayTip(L, b),
               !!n && n[b - 1] === 0));
           }
           // 'today so far' rides as a dithered shade, never a new colour (dur rev v2)
@@ -958,21 +1473,203 @@
           stops.push(legStop(`var(--series-${L.name})`, M.flat, M.flatTip, !!n && live === 0));
         }
         const none = !!n && live === 0;
+        const tip = (cold ? COLD_SNAP_LEGEND.tip : null)
+          || (L.key === 'l' && raw && raw.flood && raw.flood.tip) || L.tip || M.name;
         groups.push(`<span class="lg-group${none ? ' none' : ''}" data-layer="${L.key}"`
-          + ` title="${L.tip || M.name}">`
+          + ` title="${tip}">`
           + `<span class="lg-head"><span class="lg-name">${M.name}</span>`
           + `<span class="lg-unit">${M.unit}</span>`
           + (none ? '<span class="lg-none">none in view</span>' : '') + '</span>'
           + `<span class="lg-stops">${stops.join('')}</span></span>`);
       });
     }
+    /* TRACK lanes contribute their own groups (tracklayer.js): a lane only
+       appears when it has published events, so the raster-only pages keep
+       their exact legend contract (counts, widths, fixed height). */
+    if (typeof window.onTrackLegend === 'function') {
+      try {
+        const extra = window.onTrackLegend({ tab: pageTab(), ts: raw && raw.frames[idx],
+          region, events: tl ? tlEvents() : [], sel: Array.from(sel) });
+        if (extra) groups.push(extra);
+      } catch (err) { console.warn('track legend:', err.message); }
+    }
+    /* THREE OR MORE LANES (the `All` tab) no longer get a ~160 px card between
+       the map and the timeline (AC-4.1, owner 2026-11-21: the 7-lane strip ate
+       the first screen). The scales move into a FLOATING popover over the map's
+       top-right corner, opened by the `Legend ▾` button beside the theater
+       toggle and CLOSED by default, so the strip costs 0 px of height until it
+       is asked for. One or two lanes (a single hazard tab) stay a slim labelled
+       strip under the map — a row does not deserve a popover. The old
+       swatch-only `compact` strip is gone in every state: the popover shows the
+       numbers and units, because an unlabelled swatch is exactly the "what does
+       this colour mean" complaint the popover exists to answer. */
+    const pop = groups.length >= 3;
+    if (!pop) legOpen = false;                 // a tab switch always re-opens closed
     const html = groups.join('');
-    if (html === legHtml) return;              // same legend: no reflow per frame
-    legHtml = html;
-    leg.innerHTML = html;
-    // never display:none: the strip's height is a CLS reservation (styles.css
-    // #gm-legend:empty), and "all layers off" cannot happen anyway
-    leg.classList.remove('hidden');
+    if (html !== legHtml) {                    // same legend: no reflow per frame
+      legHtml = html;
+      leg.innerHTML = html;
+    }
+    applyLegendMode(pop);
+    if (!pop) legendHug();
+  }
+
+  /* One place decides what the legend IS right now: where its node lives, which
+     classes and inline styles it carries, and what the floating button says.
+     Everything below is idempotent, so a playback frame that changed no markup
+     still lands in the right state without touching innerHTML. */
+  function applyLegendMode(pop) {
+    const leg = $('#gm-legend');
+    if (!leg) return;
+    legendAnchor(pop);
+    leg.classList.toggle('is-popover', pop);
+    leg.classList.remove('compact', 'hug', 'cols', 'abbr', 'hidden');
+    if (pop) {
+      // the popover floats over the map: it is never in the flow, so the space
+      // between the map and the timeline it used to eat is back on the first screen
+      leg.hidden = !legOpen;
+      const btn = legendBtnEl();
+      if (btn) {
+        btn.hidden = false;
+        btn.style.display = 'inline-flex';
+        btn.setAttribute('aria-expanded', String(legOpen));
+        btn.title = legOpen ? 'Hide the colour scales (Esc)' : 'Show the colour scales';
+        const chev = btn.querySelector('.lg-chev, span[aria-hidden="true"]');
+        if (chev) chev.textContent = legOpen ? '▴' : '▾';
+      }
+      if (legOpen && legPopTop === null) legPopTop = legAnchorTop(btn);
+      const css = legPopCss(legPopTop === null ? 44 : legPopTop)
+        + (legOpen ? '' : ';display:none');
+      if (css !== legCss) { legCss = css; leg.style.cssText = css; }
+    } else {
+      leg.hidden = false;
+      if (legCss !== '') { legCss = ''; leg.style.cssText = ''; }   // the sheet's inline strip again
+      const btn = $('#legend-btn');
+      if (btn) { btn.style.display = 'none'; btn.hidden = true; }   // one row explains itself
+    }
+  }
+
+  /* Where the popover hangs: just under the corner tools, measured once when it
+     opens (a live rect beats a magic number when another workstream owns the
+     button's size) and 44 px when there is nothing to measure. */
+  function legAnchorTop(btn) {
+    const wrap = $('#raw-map-wrap');
+    if (!btn || !wrap || !btn.offsetParent) return 44;
+    const t = Math.round(btn.getBoundingClientRect().bottom - wrap.getBoundingClientRect().top + 8);
+    return Number.isFinite(t) && t > 8 ? t : 44;
+  }
+
+  /* The strip is a popover ONLY while it floats, and a popover must be a child of
+     the box it is anchored to. #gm-legend may be parked either inside #raw-map-wrap
+     (the contract's shape) or as its next sibling (what the shipped index.html
+     does), so: move it in when it floats, and put it back where the page had it
+     when it does not — never a FLOW child of the wrap, whose height the map's own
+     ResizeObserver refits the projection from. */
+  function legendAnchor(pop) {
+    const wrap = $('#raw-map-wrap');
+    const leg = $('#gm-legend');
+    if (!wrap || !leg) return;
+    if (!legHome) legHome = { parent: leg.parentElement, next: leg.nextSibling };
+    if (pop) {
+      if (leg.parentElement !== wrap) wrap.appendChild(leg);
+      return;
+    }
+    let parent = legHome.parent, next = legHome.next;
+    if (parent === wrap) { parent = wrap.parentElement; next = wrap.nextSibling; }
+    if (!parent || leg.parentElement === parent) return;
+    parent.insertBefore(leg, next && next.parentElement === parent ? next : null);
+  }
+
+  /* The floating toggle: `Legend ▾`, in the map's top-right corner beside the
+     theater button. index.html already ships the `.map-corner-tools` row and the
+     button (WP1); creating them here is the fallback for a page that has not, so
+     the map works with either revision. Styles are only added where the sheet
+     left the element unstyled — an authored `.map-leg-btn` rule always wins, and
+     the corner row is only placed here when nothing else places it (the theater
+     button's own absolute corner rule must not fight a row that already sits in
+     the corner). */
+  function legendBtnEl() {
+    if (legBtn && legBtn.isConnected) return legBtn;
+    const wrap = $('#raw-map-wrap');
+    if (!wrap) return null;
+    let tools = wrap.querySelector('.map-corner-tools');
+    if (!tools) {
+      tools = document.createElement('div');
+      tools.className = 'map-corner-tools';
+      tools.style.cssText = 'position:absolute;top:8px;right:8px;z-index:7;'
+        + 'display:flex;align-items:center;gap:6px';
+      const th0 = $('#theater-btn');
+      if (th0 && th0.parentElement === wrap) tools.appendChild(th0);
+      wrap.appendChild(tools);
+    }
+    const tcs = getComputedStyle(tools);
+    if (tcs.position === 'static') {           // unplaced row: the map's top-right corner
+      tools.style.position = 'absolute'; tools.style.top = '8px';
+      tools.style.right = '8px'; tools.style.zIndex = '7';
+    }
+    if (/^(block|inline|inline-block)$/.test(tcs.display)) {
+      tools.style.display = 'flex'; tools.style.alignItems = 'center'; tools.style.gap = '6px';
+    }
+    const th = $('#theater-btn');
+    if (th && th.parentElement === tools && th.style.position !== 'static') {
+      th.style.position = 'static'; th.style.top = 'auto'; th.style.right = 'auto';
+    }
+    legBtn = $('#legend-btn');
+    if (!legBtn) {
+      legBtn = document.createElement('button');
+      legBtn.id = 'legend-btn';
+      legBtn.innerHTML = 'Legend <span class="lg-chev" aria-hidden="true">▾</span>';
+    }
+    legBtn.setAttribute('type', 'button');
+    legBtn.classList.add('map-leg-btn');
+    legBtn.setAttribute('aria-controls', 'gm-legend');
+    legBtn.setAttribute('aria-expanded', String(legOpen));
+    if (!legBtn.title) legBtn.title = 'Show the colour scales';
+    if (!legBtn.querySelector('span[aria-hidden="true"]')) {
+      const chev = document.createElement('span');
+      chev.setAttribute('aria-hidden', 'true');
+      chev.className = 'lg-chev';
+      chev.textContent = '▾';
+      legBtn.append(' ', chev);
+    }
+    const bcs = getComputedStyle(legBtn);
+    if ((bcs.backgroundColor === 'rgba(0, 0, 0, 0)' || bcs.backgroundColor === 'transparent')
+        && (bcs.borderTopStyle === 'none' || bcs.borderTopWidth === '0px')) {
+      legBtn.style.cssText = LEG_BTN_CSS;      // no sheet skin yet: a crisp paper chip
+    } else {
+      legBtn.style.position = 'static';        // the row places it, not the map
+    }
+    if (legBtn.parentElement !== tools) tools.appendChild(legBtn);
+    return legBtn;
+  }
+
+  function setLegOpen(v, refocus) {
+    const leg = $('#gm-legend');
+    if (!leg || !leg.classList.contains('is-popover')) { legOpen = false; return; }
+    legOpen = !!v;
+    if (legOpen) legPopTop = null;             // re-anchor: the tools may have moved
+    applyLegendMode(true);
+    // Esc hands focus back to the control it closed; a click-outside leaves the
+    // focus where the click put it (stealing it would break tab order)
+    if (!legOpen && refocus && legBtn && legBtn.isConnected) legBtn.focus({ preventScroll: true });
+  }
+
+  /* The strip that stays in the flow (one or two lanes under the map) has no
+     measured layout any more: the stylesheet owns its shape — `width:
+     fit-content` from the 450 px container query, the label|ramp grid below it —
+     because a one- or two-lane row never needs the column arithmetic the old
+     seven-lane compact strip did (that state is the floating popover now, which
+     hugs nothing). What is left is the cleanup those measured layouts used to
+     write, so an inline track list, a reserved corner or the short-name
+     abbreviation can never ride into the next state or fight the sheet. Runs on
+     legend rebuilds and on container resizes, never per animation frame. */
+  function legendHug() {
+    const leg = $('#gm-legend');
+    if (!leg) return;
+    if (leg.classList.contains('is-popover')) return;   // a floating box hugs nothing
+    leg.classList.remove('abbr', 'hug', 'cols', 'compact');
+    leg.style.gridTemplateColumns = '';
+    leg.style.paddingRight = '';
   }
 
   /* ---------------- boot ---------------- */
@@ -987,6 +1684,24 @@
     if (mounted) return;
     const slider = $('#raw-slider');
     $('#raw-play').onclick = togglePlay;
+    /* The floating `Legend ▾` (AC-4.1): the button toggles the popover, a click
+       outside it closes it, Escape closes it and hands focus back. The strip
+       itself no longer carries a click handler — the in-card "Scales" expander
+       it served is gone, the popover shows its numbers from the start. */
+    const lbtn = legendBtnEl();
+    if (lbtn) lbtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      setLegOpen(!legOpen);
+    });
+    document.addEventListener('click', (ev) => {
+      if (!legOpen) return;
+      const t = ev.target, cur = $('#gm-legend');
+      if (t instanceof Node && ((cur && cur.contains(t)) || (legBtn && legBtn.contains(t)))) return;
+      setLegOpen(false);
+    });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && legOpen) setLegOpen(false, true);
+    });
     $('#raw-prev').onclick = () => { stopPlay(); if (idx > 0) { idx--; writeUrl(false); render(); } };
     $('#raw-next').onclick = () => { stopPlay(); if (idx < (raw && raw.frames.length - 1)) { idx++; writeUrl(true); render(); } };
     $('#raw-speed').onchange = (e) => {
@@ -998,6 +1713,7 @@
     new MutationObserver(() => {
       packedCache = null; rampCache = null; ghostCache = null;   // theme flip: repack colours
       if (raw && fit) paintFrame(frameCache.get(raw.frames[idx]) || null);
+      emitTracks('theme');     // the track layer bakes lane/ramp colours too
     })
       .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
@@ -1116,7 +1832,9 @@
       let raf = 0;
       new ResizeObserver(() => {
         cancelAnimationFrame(raf);
-        raf = requestAnimationFrame(() => { if (mounted) { fitProjection(); render(); } });
+        raf = requestAnimationFrame(() => {
+          if (mounted) { legPopTop = null; fitProjection(); render(); legendHug(); }
+        });
       }).observe($('#raw-map-wrap'));
     }
   }
@@ -1137,6 +1855,12 @@
 
   window.MergedMap = { mount, urlParams, applyUrl,
     preview,
+    isLegendOpen: () => legOpen,
+    closeLegend: (refocus) => setLegOpen(false, refocus),
+    /* the two ways another layer may act on the map (tracklayer.js): select an
+       event (the same multi-highlight + #sel= a box click does) and open its
+       detail page; hover mirrors the box ↔ event-list row highlight. */
+    select: toggleSel, open: openEvent, hover: hoverRow,
     /* Region view (app.js Region dropdown): null/`global` = whole world.
        Refits the projection + repaints; before mount it just parks the view
        (mount's fitProjection picks it up). */
@@ -1170,5 +1894,8 @@
       arAt: (j, i) => { if (!raw || !curPaint) return 0;
         const nx = raw.grid.nx, stride = Math.ceil(nx / 8);
         return (curPaint.u8[2 * curPaint.plane + j * stride + (i >> 3)]
-                >> (7 - (i & 7))) & 1; } }) };
+                >> (7 - (i & 7))) & 1; },
+      // the flood CLASS of a cell in the painted day frame (0 = no evidence):
+      // the flood layer answers from the daily grid, not the 6-hourly bits
+      flAt: (j, i) => (curFl && raw ? (curFl[j * raw.grid.nx + i] || 0) : 0) }) };
 })();

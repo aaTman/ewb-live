@@ -47,16 +47,31 @@ def _cache_dir() -> Path:
 
 
 def _region_key(bbox: tuple[float, float, float, float]) -> tuple | None:
+    """Padded cache region for bbox, or None = not cacheable.
+
+    Antimeridian-wrapping boxes (lon_min > lon_max) are padded on the
+    UNWRAPPED arc [lon_min, lon_max + 360] and returned still-wrapped —
+    every consumer (subset_latlon, _cut) resolves wrapped boxes via
+    lon_indices, so the wrapped key round-trips through fetch, zarr write
+    and re-cut unchanged. A wrapped box whose 10-degree padding would
+    cover the whole globe cannot be keyed and stays uncached.
+    """
     lat_min, lat_max, lon_min, lon_max = bbox
-    if lon_min > lon_max:  # antimeridian-wrapping: don't cache
-        return None
     import math
 
+    if lon_min <= lon_max:
+        lon_lo = math.floor(lon_min / _PAD) * _PAD
+        lon_hi = math.ceil(lon_max / _PAD) * _PAD
+    else:
+        lon_lo = math.floor(lon_min / _PAD) * _PAD
+        lon_hi = math.ceil((lon_max + 360.0) / _PAD) * _PAD - 360.0
+        if lon_hi >= lon_lo:  # padding covers the globe: no key
+            return None
     return (
         math.floor(min(lat_min, lat_max) / _PAD) * _PAD,
         math.ceil(max(lat_min, lat_max) / _PAD) * _PAD,
-        math.floor(lon_min / _PAD) * _PAD,
-        math.ceil(lon_max / _PAD) * _PAD,
+        lon_lo,
+        lon_hi,
     )
 
 
