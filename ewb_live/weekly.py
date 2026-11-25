@@ -170,6 +170,10 @@ def run(days: int = 90, jobs: int = 2, models: list[str] | None = None) -> int:
     )
     logging.getLogger("extremeweatherbench").setLevel(logging.WARNING)
     logger.info("=== weekly run start week=%s (UTC %s) ===", week, now.isoformat())
+    # one run identity for the pipeline's per-event commits AND this weekly's publish step
+    os.environ.setdefault("EWB_LIVE_RUN_WEEK", week)
+    os.environ.setdefault("EWB_LIVE_RUN_ID", f"{week}-{now:%Y%m%dT%H%M%SZ}")
+    os.environ.setdefault("EWB_LIVE_RUN_WINDOW_END", str(now.date()))   # a 14 h run crosses midnight
 
     try:
         # 1. forecast source update (skips cleanly when mlwp_icechunk absent)
@@ -297,6 +301,11 @@ def run(days: int = 90, jobs: int = 2, models: list[str] | None = None) -> int:
             except Exception as exc:  # noqa: BLE001 — best-effort like viz
                 logger.warning("TC wind step failed (non-fatal): %s", exc)
 
+        # 6e. results store (SPEC §6 phase 2, dual-write): attach viz + run docs to the
+        # events the pipeline committed, then tag the week and move `main`. Non-fatal:
+        # the files above stay the source of truth until the server switches over.
+        _results_store_finish(days)
+
         # 7. final public leak gate (re-check after meta/viz writes)
         if not _leak_gate("post-publish"):
             return 1
@@ -307,6 +316,28 @@ def run(days: int = 90, jobs: int = 2, models: list[str] | None = None) -> int:
 
     logger.info("=== weekly run complete (log: %s) ===", log_path)
     return 0
+
+
+def _results_store_finish(days: int) -> None:
+    """Attach per-event viz + docs to the run branch, publish it, log a parity report."""
+    try:
+        from ewb_live.results_sink import ResultsSink
+        from ewb_live.tools import results_parity
+
+        end = dt.date.fromisoformat(os.environ.get("EWB_LIVE_RUN_WINDOW_END", str(dt.date.today())))
+        sink = ResultsSink.open(end - dt.timedelta(days=days), end)
+        if sink is None:
+            return
+        ids = [e["id"] for e in json.loads((RESULTS / "events_selected.json").read_text())]
+        logger.info("results store attach: %s", sink.attach_files(RESULTS, ids))
+        pub = sink.publish()
+        if pub:
+            rep = results_parity.compare(RESULTS, sink.repo, "main")
+            logger.info("results store parity vs files: %s (store %.1f MB)",
+                        "OK" if rep["ok"] else f"MISMATCH {json.dumps(rep['problems'][:5])}",
+                        pub.get("bytes", 0) / 1e6)
+    except Exception as exc:  # noqa: BLE001 — dual-write must never fail the weekly
+        logger.warning("results store finish failed (non-fatal): %s", exc)
 
 
 def _build_parser() -> argparse.ArgumentParser:

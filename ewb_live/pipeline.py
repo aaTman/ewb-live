@@ -950,11 +950,14 @@ def run(
                     pass
     _sweep_orphan_temps(RESULTS)
 
+    def _public_pair_status() -> dict:
+        return {k: ({**v, "reason": public_reason(v["reason"])}
+                    if isinstance(v, dict) and v.get("reason") else v)
+                for k, v in pair_status.items()}
+
     def _persist_pair_status() -> None:
         # process-unique tmp: ops publish-only can run while the unit scores
-        pub = {k: ({**v, "reason": public_reason(v["reason"])}
-                   if isinstance(v, dict) and v.get("reason") else v)
-               for k, v in pair_status.items()}
+        pub = _public_pair_status()
         tmp = pair_status_path.with_suffix(f".json.tmp.{os.getpid()}")
         tmp.write_text(json.dumps(pub))
         tmp.replace(pair_status_path)
@@ -1016,6 +1019,11 @@ def run(
     # are shown as not verified, never counted as misses
     track_verification = _track_verification_meta(events)
     flood_scoring = _flood_scoring_meta(events, models)
+
+    # Dual-write (SPEC §6 phase 2): mirror every publish into the versioned results
+    # store, one commit per changed event. Best-effort; EWB_LIVE_RESULTS_STORE=0 disables.
+    from ewb_live.results_sink import ResultsSink
+    sink = ResultsSink.open(start, end)
 
     def _write_outputs(frames: list) -> int:
         """Concat + (re)write scores/scorecard/meta atomically. Called
@@ -1131,6 +1139,8 @@ def run(
                       lambda f: json.dump(public_meta(meta), f, indent=1))
         _atomic_write(RESULTS.parent / "perf.json",
                       lambda f: json.dump({"perf": perf_stats}, f, indent=1))
+        if sink is not None:
+            sink.sync(events, scores[SCORE_COLUMNS], _public_pair_status(), force=complete)
         return len(scores)
 
     # Publish-on-start (stall postmortem 2026-11-07): make cached scores and

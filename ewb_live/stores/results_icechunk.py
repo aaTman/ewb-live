@@ -33,6 +33,7 @@ import argparse
 import contextlib
 import datetime as dt
 import fcntl
+import hashlib
 import json
 import os
 import sys
@@ -159,14 +160,19 @@ def _put(group, name: str, arr, *, dtype=None, chunks=None):
         out[...] = arr
 
 
+def sha_bytes(b: bytes) -> str:
+    return hashlib.sha1(b).hexdigest()
+
+
 def commit_event(repo, run: Run, event: dict, scores: pd.DataFrame, *,
                  status: dict | None = None, blobs: dict[str, bytes] | None = None,
-                 grids: dict[str, np.ndarray] | None = None) -> str:
+                 grids: dict[str, np.ndarray] | None = None, sha: str = "") -> str:
     """Replace the event's whole subtree in ONE commit on the run branch.
 
     An event that is rescored or extended simply overwrites itself; readers see the
     old version until the commit lands and the new one after, never a mixture.
-    Returns the snapshot id.
+    ``sha`` is the caller's content hash of (event, scores, status); ``content_shas``
+    returns it so a re-sync can skip events that did not change. Returns the snapshot id.
     """
     import zarr
 
@@ -180,7 +186,9 @@ def commit_event(repo, run: Run, event: dict, scores: pd.DataFrame, *,
     g.attrs.update({"event": json.loads(json.dumps(event, default=str)),
                     "status": status or {}, "start": str(event.get("start", "")),
                     "end": str(event.get("end", "")),
-                    "event_type": str(event.get("event_type", ""))})
+                    "event_type": str(event.get("event_type", "")),
+                    "content_sha": sha,
+                    "blob_sha": {n: sha_bytes(b) for n, b in (blobs or {}).items()}})
     sg = g.require_group("scores")
     for col in _SCORE_COLS:
         vals = scores[col].to_numpy() if col in scores else np.array([])
@@ -229,6 +237,100 @@ def prune_window(repo, run: Run, window_start: dt.date | str | None = None) -> l
         s.commit(f"prune {len(gone)} events ended before {cutoff}",
                  metadata=run.meta(kind="prune", removed=len(gone)))
     return sorted(gone)
+
+
+def content_shas(repo, ref: str) -> dict[str, dict]:
+    """{event_id: {"sha": content hash, "blobs": {name: sha}}} at ``ref``."""
+    import zarr
+
+    root = zarr.open_group(_ro(repo, ref).store, mode="r")
+    if "events" not in root:
+        return {}
+    return {eid: {"sha": g.attrs.get("content_sha", ""),
+                  "blobs": dict(g.attrs.get("blob_sha", {}))}
+            for eid, g in root["events"].groups()}
+
+
+def retain_only(repo, run: Run, ids) -> list[str]:
+    """Drop run-branch events not in ``ids`` (selection churn) in ONE commit."""
+    import zarr
+
+    keep = {str(i) for i in ids}
+    s = repo.writable_session(run.branch)
+    root = zarr.open_group(s.store, mode="r+")
+    if "events" not in root:
+        return []
+    gone = sorted(eid for eid, _g in root["events"].groups() if eid not in keep)
+    for eid in gone:
+        del root["events"][eid]
+    if gone:
+        s.commit(f"retain selection: drop {len(gone)} events",
+                 metadata=run.meta(kind="retain", removed=len(gone)))
+    return gone
+
+
+def attach_blobs(repo, run: Run, per_event: dict[str, dict[str, bytes]]) -> int:
+    """Add/replace blobs on EXISTING events in ONE commit; unchanged blobs are skipped.
+
+    Returns the number of blobs written. Events not on the branch are ignored (their
+    scores have not been committed yet; the next attach picks them up).
+    """
+    import zarr
+
+    s = repo.writable_session(run.branch)
+    root = zarr.open_group(s.store, mode="r+")
+    n = 0
+    for eid, blobs in per_event.items():
+        path = f"events/{eid}"
+        if path not in root:
+            continue
+        g = root[path]
+        have = dict(g.attrs.get("blob_sha", {}))
+        bg = g.require_group("blobs")
+        for name, data in blobs.items():
+            h = sha_bytes(data)
+            if have.get(name) == h:
+                continue
+            if name in bg:
+                del bg[name]
+            _put(bg, name, np.frombuffer(data, dtype="uint8"))
+            have[name] = h
+            n += 1
+        g.attrs["blob_sha"] = have
+    if n:
+        s.commit(f"attach {n} blobs", metadata=run.meta(kind="attach", blobs=n))
+    return n
+
+
+def put_docs(repo, run: Run, docs: dict[str, bytes]) -> int:
+    """Store run-level documents (``/docs/<name>``: meta, scorecard, ...) in ONE commit."""
+    import zarr
+
+    s = repo.writable_session(run.branch)
+    root = zarr.open_group(s.store, mode="r+")
+    dg = root.require_group("docs")
+    have = dict(dg.attrs.get("sha", {}))
+    n = 0
+    for name, data in docs.items():
+        h = sha_bytes(data)
+        if have.get(name) == h:
+            continue
+        if name in dg:
+            del dg[name]
+        _put(dg, name, np.frombuffer(data, dtype="uint8"))
+        have[name] = h
+        n += 1
+    dg.attrs["sha"] = have
+    if n:
+        s.commit(f"docs: {n} updated", metadata=run.meta(kind="docs", docs=n))
+    return n
+
+
+def read_doc(repo, name: str, ref: str = PUBLISHED) -> bytes:
+    import zarr
+
+    root = zarr.open_group(_ro(repo, ref).store, mode="r")
+    return bytes(root[f"docs/{name}"][:].tobytes())
 
 
 def publish(repo, run: Run) -> str:
